@@ -2590,6 +2590,14 @@ function renderMoney() {
           </div>
           <div class="trail chev"></div>
         </div>
+        <div class="row tappable" onclick="rentalPropertySheet()" role="button" tabindex="0">
+          <div class="lead">🏘️</div>
+          <div class="body">
+            <div class="t1">Rental property analyzer</div>
+            <div class="t2">Cap rate · cash flow · cash-on-cash return</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
       </div>
     `;
 
@@ -5792,6 +5800,230 @@ function wealthHealthSheet() {
   `);
 }
 
+/* ================ RENTAL PROPERTY CALCULATOR ================
+   Investment real estate underwriting: cap rate, monthly cash flow, and
+   cash-on-cash return. Distinct from the primary-residence affordability
+   calc — this evaluates a property as an income-producing asset.
+
+   Standard expense assumptions baked in (industry rule of thumb):
+     - Property management: 8% of rent
+     - Maintenance + repairs reserve: 5% of rent
+     - CapEx reserve (roof, HVAC, etc.): 5% of rent
+     - Vacancy: 5% (~3 weeks/year empty)
+   User can adjust these. Insurance + taxes from inputs, not %.
+
+   Key metrics:
+     - 1% rule: rent should be ≥ 1% of purchase price (rough screen)
+     - Cap rate: NOI / purchase price (good rentals: 6-10%)
+     - Cash-on-cash: annual cash flow / total cash invested
+     - Monthly cash flow: rent - PI - operating exp - taxes - insurance
+*/
+
+function computeRental(p) {
+  const price = Math.max(0, +p.price || 0);
+  const downPct = Math.max(0, Math.min(100, +p.downPct || 25));
+  const rate = Math.max(0, +p.rate || 7);
+  const term = Math.max(1, +p.term || 30);
+  const rent = Math.max(0, +p.rent || 0);
+  const closing = Math.max(0, +p.closing || price * 0.03);
+  const taxRate = Math.max(0, +p.taxRate || 1.2);
+  const insurance = Math.max(0, +p.insurance || 1500);
+  const hoa = Math.max(0, +p.hoa || 0);
+  // Expense rates (as % of rent)
+  const mgmtPct = Math.max(0, +p.mgmtPct || 8);
+  const maintPct = Math.max(0, +p.maintPct || 5);
+  const capexPct = Math.max(0, +p.capexPct || 5);
+  const vacancyPct = Math.max(0, +p.vacancyPct || 5);
+
+  const downPayment = price * (downPct / 100);
+  const loan = price - downPayment;
+  const monthlyPmt = monthlyPI(loan, rate, term);
+  const monthlyTax = (price * (taxRate / 100)) / 12;
+  const monthlyIns = insurance / 12;
+  const monthlyMgmt = rent * (mgmtPct / 100);
+  const monthlyMaint = rent * (maintPct / 100);
+  const monthlyCapex = rent * (capexPct / 100);
+  const effectiveRent = rent * (1 - vacancyPct / 100);
+  const monthlyOpEx = monthlyTax + monthlyIns + hoa + monthlyMgmt + monthlyMaint + monthlyCapex;
+  const monthlyCashFlow = effectiveRent - monthlyPmt - monthlyOpEx;
+  const annualCashFlow = monthlyCashFlow * 12;
+  // NOI excludes financing — pure operating return
+  const annualNOI = (effectiveRent - (monthlyTax + monthlyIns + hoa + monthlyMgmt + monthlyMaint + monthlyCapex)) * 12;
+  const capRate = price > 0 ? (annualNOI / price) * 100 : 0;
+  const totalCashIn = downPayment + closing;
+  const cocReturn = totalCashIn > 0 ? (annualCashFlow / totalCashIn) * 100 : 0;
+  const onePctRule = price > 0 ? (rent / price) * 100 : 0;
+  return {
+    price, downPayment, loan, closing, totalCashIn,
+    monthlyPmt, monthlyTax, monthlyIns, hoa, monthlyMgmt, monthlyMaint, monthlyCapex, monthlyOpEx,
+    effectiveRent, monthlyCashFlow, annualCashFlow, annualNOI, capRate, cocReturn, onePctRule,
+  };
+}
+
+function rentalPropertySheet() {
+  let state = {
+    price: 250000, downPct: 25, rate: 7.5, term: 30,
+    rent: 2200, closing: 7500, taxRate: 1.2, insurance: 1500, hoa: 0,
+    mgmtPct: 8, maintPct: 5, capexPct: 5, vacancyPct: 5,
+  };
+
+  const verdict = (r) => {
+    const flowColor = r.monthlyCashFlow > 0 ? "var(--green)" : "var(--red)";
+    const capColor = r.capRate >= 8 ? "var(--green)" : r.capRate >= 6 ? "var(--blue)" : r.capRate >= 4 ? "var(--orange)" : "var(--red)";
+    const cocColor = r.cocReturn >= 10 ? "var(--green)" : r.cocReturn >= 8 ? "var(--blue)" : r.cocReturn >= 5 ? "var(--orange)" : "var(--red)";
+    return { flowColor, capColor, cocColor };
+  };
+
+  const render = (s) => {
+    const r = computeRental(s);
+    const v = verdict(r);
+    return `
+      <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Monthly cash flow</div>
+          <div style="font-size:11px;color:var(--t3)">${r.onePctRule.toFixed(2)}% of price (1% rule: ≥1%)</div>
+        </div>
+        <div style="font-size:30px;font-weight:700;color:${v.flowColor};margin:6px 0" data-priv="amount">${r.monthlyCashFlow >= 0 ? "+" : ""}${fmt$0(r.monthlyCashFlow)}</div>
+        <div style="display:flex;gap:14px;margin-top:10px">
+          <div style="flex:1">
+            <div style="font-size:11px;color:var(--t3);text-transform:uppercase;font-weight:600">Cap rate</div>
+            <div style="font-size:20px;font-weight:700;color:${v.capColor}">${r.capRate.toFixed(2)}%</div>
+            <div style="font-size:10px;color:var(--t3)">8%+ great · 6%+ ok</div>
+          </div>
+          <div style="flex:1">
+            <div style="font-size:11px;color:var(--t3);text-transform:uppercase;font-weight:600">Cash-on-cash</div>
+            <div style="font-size:20px;font-weight:700;color:${v.cocColor}">${r.cocReturn.toFixed(2)}%</div>
+            <div style="font-size:10px;color:var(--t3)">10%+ great · 8%+ ok</div>
+          </div>
+        </div>
+      </div>
+
+      <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Monthly breakdown</div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0;color:var(--green)"><span>+ Rent (after ${s.vacancyPct}% vacancy)</span><span data-priv="amount">+${fmt$0(r.effectiveRent)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span>− Mortgage P&amp;I</span><span data-priv="amount">${fmt$0(r.monthlyPmt)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span>− Property tax</span><span data-priv="amount">${fmt$0(r.monthlyTax)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span>− Insurance</span><span data-priv="amount">${fmt$0(r.monthlyIns)}</span></div>
+        ${r.hoa > 0 ? `<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span>− HOA</span><span data-priv="amount">${fmt$0(r.hoa)}</span></div>` : ""}
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span>− Management (${s.mgmtPct}%)</span><span data-priv="amount">${fmt$0(r.monthlyMgmt)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span>− Maintenance (${s.maintPct}%)</span><span data-priv="amount">${fmt$0(r.monthlyMaint)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span>− CapEx reserve (${s.capexPct}%)</span><span data-priv="amount">${fmt$0(r.monthlyCapex)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:14px;padding:8px 0 4px;border-top:1px solid var(--sep);margin-top:6px;font-weight:600;color:${v.flowColor}"><span>Net monthly cash flow</span><span data-priv="amount">${r.monthlyCashFlow >= 0 ? "+" : ""}${fmt$0(r.monthlyCashFlow)}</span></div>
+      </div>
+
+      <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Cash invested</div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span>Down payment (${s.downPct}%)</span><span data-priv="amount">${fmt$0(r.downPayment)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span>Closing costs</span><span data-priv="amount">${fmt$0(r.closing)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:14px;padding:8px 0 4px;border-top:1px solid var(--sep);margin-top:6px;font-weight:600"><span>Total cash in</span><span data-priv="amount">${fmt$0(r.totalCashIn)}</span></div>
+        <div style="font-size:11px;color:var(--t3);margin-top:6px">Annual cash flow ${fmt$0(r.annualCashFlow)} ÷ ${fmt$0(r.totalCashIn)} = ${r.cocReturn.toFixed(2)}% cash-on-cash</div>
+      </div>
+    `;
+  };
+
+  openSheet(`
+    <h2>🏘️ Rental property analyzer</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Underwrite an investment property: cap rate, cash-on-cash return, monthly cash flow. Different math from primary-residence affordability — here the property must pay for itself plus return.</p>
+    <div id="rp-output">${render(state)}</div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Property + financing</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rp-price">Purchase price</label>
+        <input id="rp-price" type="number" min="0" step="5000" value="${state.price}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:110px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rp-rent">Monthly rent</label>
+        <input id="rp-rent" type="number" min="0" step="50" value="${state.rent}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:110px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rp-down">Down payment (%)</label>
+        <input id="rp-down" type="number" min="0" max="100" step="5" value="${state.downPct}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rp-rate">Interest rate (%)</label>
+        <input id="rp-rate" type="number" min="0" max="20" step="0.125" value="${state.rate}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rp-term">Term (yr)</label>
+        <select id="rp-term" style="background:var(--card);padding:6px 10px;border-radius:6px">
+          <option value="15" ${state.term===15?"selected":""}>15</option>
+          <option value="20" ${state.term===20?"selected":""}>20</option>
+          <option value="30" ${state.term===30?"selected":""}>30</option>
+        </select>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rp-closing">Closing costs ($)</label>
+        <input id="rp-closing" type="number" min="0" step="500" value="${state.closing}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:90px;text-align:right" />
+      </div>
+    </div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Operating expenses</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rp-tax">Property tax (%/yr)</label>
+        <input id="rp-tax" type="number" min="0" max="5" step="0.1" value="${state.taxRate}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:70px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rp-ins">Insurance ($/yr)</label>
+        <input id="rp-ins" type="number" min="0" step="100" value="${state.insurance}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:90px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rp-hoa">HOA ($/mo)</label>
+        <input id="rp-hoa" type="number" min="0" step="10" value="${state.hoa}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rp-mgmt">Property mgmt (%)</label>
+        <input id="rp-mgmt" type="number" min="0" max="20" step="1" value="${state.mgmtPct}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:60px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rp-maint">Maintenance (%)</label>
+        <input id="rp-maint" type="number" min="0" max="20" step="1" value="${state.maintPct}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:60px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rp-capex">CapEx reserve (%)</label>
+        <input id="rp-capex" type="number" min="0" max="20" step="1" value="${state.capexPct}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:60px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+        <label for="rp-vac">Vacancy (%)</label>
+        <input id="rp-vac" type="number" min="0" max="30" step="1" value="${state.vacancyPct}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:60px;text-align:right" />
+      </div>
+    </div>
+
+    <p class="muted" style="font-size:11px;line-height:1.5">
+      <b>Rules of thumb:</b> The 1% rule (rent ≥ 1% of price) screens out bad deals quickly. Cap rate of 6-8% is typical for stabilized properties. 10%+ cash-on-cash is excellent. The numbers above don't include appreciation (potential upside) or tenant trouble (potential downside).
+    </p>
+
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+
+  const refresh = () => {
+    const s = {
+      price: +$("#rp-price").value || 0,
+      rent: +$("#rp-rent").value || 0,
+      downPct: +$("#rp-down").value || 0,
+      rate: +$("#rp-rate").value || 0,
+      term: +$("#rp-term").value || 30,
+      closing: +$("#rp-closing").value || 0,
+      taxRate: +$("#rp-tax").value || 0,
+      insurance: +$("#rp-ins").value || 0,
+      hoa: +$("#rp-hoa").value || 0,
+      mgmtPct: +$("#rp-mgmt").value || 0,
+      maintPct: +$("#rp-maint").value || 0,
+      capexPct: +$("#rp-capex").value || 0,
+      vacancyPct: +$("#rp-vac").value || 0,
+    };
+    $("#rp-output").innerHTML = render(s);
+  };
+  ["#rp-price","#rp-rent","#rp-down","#rp-rate","#rp-term","#rp-closing",
+   "#rp-tax","#rp-ins","#rp-hoa","#rp-mgmt","#rp-maint","#rp-capex","#rp-vac"].forEach(sel => {
+    $(sel).addEventListener("input", refresh);
+    $(sel).addEventListener("change", refresh);
+  });
+}
+
 /* ================ NET WORTH BENCHMARKS BY AGE ================
    Federal Reserve Survey of Consumer Finances (2022) net-worth percentiles
    by age bracket. Median is more representative than mean (which is skewed
@@ -8637,6 +8869,7 @@ function init() {
     sinkingFundsSheet, sinkingFundEditSheet, contributeSinkingFund,
     resetSinkingFund, deleteSinkingFund,
     NW_BENCHMARKS, benchmarkForAge, benchmarksSheet,
+    computeRental, rentalPropertySheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
