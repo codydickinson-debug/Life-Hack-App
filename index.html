@@ -1351,6 +1351,11 @@ async function _enrollDevice() {
     body: JSON.stringify({ userId, clientSecret: secret }),
   });
   DB.user.clientSecret = secret;
+  // Enrollment succeeded — clear the operator's long-lived enrollment key from
+  // local storage. From here on, this device authenticates with its own
+  // per-device clientSecret. If the device ever needs to re-enroll (e.g. KV
+  // reset), the user pastes the enrollment key again in Settings.
+  DB.settings.apiKey = "";
   await save();
   return secret;
 }
@@ -2367,7 +2372,9 @@ function renderMoney() {
             </div>
             ${t.source === "plaid" ? `<button class="del-x" style="font-size:14px" onclick="quickRuleFromTx(${jsAttr(t.id)})" title="Recategorize">↻</button>` : `<button class="del-x" onclick="deleteSpend(${jsAttr(t.id)})">×</button>`}
           </div>
-        `).join("") : `<div class="row"><div class="body"><div class="t2 muted">${(DB.spendSearch||"").trim() ? "No matches." : "No transactions yet."}</div></div></div>`}
+        `).join("") : ((DB.spendSearch||"").trim()
+          ? `<div class="row"><div class="body"><div class="t2 muted">No matches.</div></div></div>`
+          : `<div class="empty"><div class="e-emoji">💳</div><div class="e-title">No transactions yet</div><div class="e-sub">Log one with the form above, or connect a bank in Settings → Bank sync to auto-import.</div></div>`)}
       </div>
     `;
   }
@@ -3072,6 +3079,11 @@ function addCategoryRule(rule) {
 }
 function deleteCategoryRule(id) {
   DB.categoryRules = (DB.categoryRules || []).filter(r => r.id !== id);
+  // Scrub stale references from any transactions tagged by this rule so the
+  // "rule" badge doesn't point to a deleted rule.
+  for (const t of (DB.spend || [])) {
+    if (t._ruleId === id) delete t._ruleId;
+  }
   save(); render();
 }
 function ruleSheet(prefill) {
@@ -4163,9 +4175,14 @@ function showLockScreen() {
   ppEl().addEventListener("keydown", e => { if (e.key === "Enter") tryUnlock(); });
   document.getElementById("lock-reset").addEventListener("click", (e) => {
     e.preventDefault();
-    if (confirm("Erase all encrypted data? This cannot be undone.")) {
+    // Two-step confirmation: a simple confirm() is too easy to fat-finger for
+    // an irreversible localStorage.clear(). Require the user to type DELETE.
+    const typed = prompt("This will permanently erase ALL your encrypted data. There is no recovery.\n\nType DELETE to confirm:");
+    if (typed === "DELETE") {
       localStorage.clear();
       location.reload();
+    } else if (typed != null) {
+      alert("Cancelled — your data is unchanged. (You must type DELETE exactly.)");
     }
   });
 
