@@ -1136,6 +1136,13 @@ const DEFAULT_DB = {
     employerMatch: false,    // true if employer offers 401k match — flags "free money" play
     hsaEligible: false,      // true if on a high-deductible health plan — flags HSA play
     state: "",               // 2-letter postal code (e.g. "FL") — informational only in v1
+    // Self-reported "have I done this?" flags for the Account-Priority Pyramid.
+    // Users toggle these in priorityPyramidSheet(); they reset each January.
+    k401MatchClaimed: false,
+    rothMaxedYTD: false,
+    hsaMaxedYTD: false,
+    k401MaxedYTD: false,
+    pyramidFlagsYear: 0,     // year these flags apply to; if != current year, treat as unset
   },
   retirement: {              // assumptions for the retirement projector
     targetAge: 65,           // age at which the projection ends
@@ -2427,10 +2434,33 @@ function renderMoney() {
       `;
     })();
 
+    // Account-Priority Pyramid summary — single row showing which step is active
+    const pyramidSummary = (() => {
+      const r = accountPriorityPyramid();
+      const active = r.steps[r.activeIdx] || null;
+      const subtitle = r.allDone
+        ? "All 7 steps complete — you're in advanced territory"
+        : `Step ${r.activeIdx+1} of 7 · ${active ? esc(active.title) : ""}`;
+      return `
+        <div class="section-h"><span class="lbl">🪜 Priority pyramid</span></div>
+        <div class="list">
+          <div class="row tappable" onclick="priorityPyramidSheet()" role="button" tabindex="0">
+            <div class="lead">${active ? active.emoji : "🎉"}</div>
+            <div class="body">
+              <div class="t1">${r.allDone ? "Complete!" : (active ? `Focus: ${esc(active.title)}` : "")}</div>
+              <div class="t2">${subtitle}</div>
+            </div>
+            <div class="trail chev"></div>
+          </div>
+        </div>
+      `;
+    })();
+
     body = `
       ${healthCard}
       ${chartCard}
       ${compBar}
+      ${pyramidSummary}
       ${retireSummary}
 
       <div class="section-h"><span class="lbl">Manual assets</span><button class="act" onclick="assetSheet()">+ Add</button></div>
@@ -5524,6 +5554,210 @@ function wealthHealthSheet() {
   `);
 }
 
+/* ================ ACCOUNT-PRIORITY PYRAMID ================
+   The canonical FI-community priority order for where each dollar should
+   go. Computed against DB + DB.profile; surfaces the next step the user
+   should focus on, marks completed steps, and recommends actions for the
+   active step.
+
+   Steps (in order):
+     1. Crush high-APR debt (anything ≥ 7%)
+     2. Build emergency fund (3-6 months of expenses)
+     3. Capture 401k employer match
+     4. Max your Roth IRA
+     5. Max your HSA (if eligible)
+     6. Max 401k beyond the match
+     7. Open / fund a taxable brokerage
+
+   Steps users haven't reached are shown locked; this is a priority guide,
+   not a strict gate — the sheet notes that parallel pursuit is fine.
+*/
+
+// Reset the per-year "I did it" flags if the stored year is stale.
+function _ensurePyramidFlagsCurrent() {
+  if (!DB.profile) return;
+  const year = new Date().getFullYear();
+  if (DB.profile.pyramidFlagsYear !== year) {
+    DB.profile.k401MatchClaimed = false;
+    DB.profile.rothMaxedYTD = false;
+    DB.profile.hsaMaxedYTD = false;
+    DB.profile.k401MaxedYTD = false;
+    DB.profile.pyramidFlagsYear = year;
+  }
+}
+
+function accountPriorityPyramid() {
+  _ensurePyramidFlagsCurrent();
+  const profile = DB.profile || {};
+  const monthlyFixed = _playsMonthlyFixed();
+  const totalSavings = _playsTotalSavings();
+  const months = monthlyFixed > 0 ? totalSavings / monthlyFixed : 0;
+  const highApr = _playsHighestAprDebt();
+  const comp = wealthComposition();
+
+  const steps = [
+    {
+      id: "high-apr-debt",
+      step: 1, emoji: "🔥",
+      title: "Crush high-APR debt",
+      done: !(highApr && +highApr.apr >= 7),
+      progress: highApr && +highApr.apr >= 7
+        ? `${highApr.name} · ${(+highApr.apr).toFixed(1)}% APR · ${fmt$0(highApr.balance)}`
+        : "No debt ≥ 7% APR",
+      detail: "Any debt with APR ≥ 7% beats most reasonable investments. Pay it off before investing more.",
+      action: highApr && +highApr.apr >= 7 ? { label: "Open debts", fn: "showTab('money')" } : null,
+    },
+    {
+      id: "emergency-fund",
+      step: 2, emoji: "🛡️",
+      title: "Build emergency fund (3-6 mo)",
+      done: months >= 3,
+      progress: monthlyFixed > 0
+        ? `${months.toFixed(1)} months of expenses · ${fmt$0(totalSavings)} saved`
+        : "Set monthly fixed expenses to compute",
+      detail: "3 months is the safety floor; 6 months gives real flexibility. Cash, not invested.",
+      action: months < 3 ? { label: "Add to savings", fn: "addSavingSheet()" } : null,
+    },
+    {
+      id: "401k-match",
+      step: 3, emoji: "🎁",
+      title: "Capture 401k employer match",
+      done: !profile.employerMatch || !!profile.k401MatchClaimed,
+      progress: profile.employerMatch
+        ? (profile.k401MatchClaimed ? "Match claimed for " + new Date().getFullYear() : "Not yet contributing to match")
+        : "No employer match (per profile)",
+      detail: "An employer match is an instant 50-100% return. Always contribute at least enough to get the full match.",
+      action: profile.employerMatch && !profile.k401MatchClaimed
+        ? { label: "Mark as claimed", fn: "togglePyramidFlag('k401MatchClaimed')" }
+        : null,
+      toggleable: profile.employerMatch,
+      flagKey: "k401MatchClaimed",
+    },
+    {
+      id: "roth-ira",
+      step: 4, emoji: "🎯",
+      title: "Max your Roth IRA",
+      done: !!profile.rothMaxedYTD,
+      progress: profile.rothMaxedYTD
+        ? "Maxed for " + new Date().getFullYear()
+        : (() => {
+            const age = _playsAge();
+            const limit = _iraLimit(new Date().getFullYear(), age);
+            return `Target: ${fmt$0(limit)} this year`;
+          })(),
+      detail: "Post-tax in, tax-free growth forever, tax-free withdrawals after 59½. Best account in personal finance.",
+      action: !profile.rothMaxedYTD
+        ? { label: "Mark as maxed", fn: "togglePyramidFlag('rothMaxedYTD')" }
+        : null,
+      toggleable: true,
+      flagKey: "rothMaxedYTD",
+    },
+    {
+      id: "hsa",
+      step: 5, emoji: "🏥",
+      title: "Max your HSA",
+      done: !profile.hsaEligible || !!profile.hsaMaxedYTD,
+      progress: profile.hsaEligible
+        ? (profile.hsaMaxedYTD ? "Maxed for " + new Date().getFullYear() : "Eligible — not yet maxed")
+        : "Not HDHP-eligible (per profile)",
+      detail: "Triple tax advantage: pre-tax in, tax-free growth, tax-free out for medical. Best account in the entire tax code.",
+      action: profile.hsaEligible && !profile.hsaMaxedYTD
+        ? { label: "Mark as maxed", fn: "togglePyramidFlag('hsaMaxedYTD')" }
+        : null,
+      toggleable: profile.hsaEligible,
+      flagKey: "hsaMaxedYTD",
+    },
+    {
+      id: "max-401k",
+      step: 6, emoji: "💼",
+      title: "Max 401k beyond match",
+      done: !!profile.k401MaxedYTD,
+      progress: profile.k401MaxedYTD
+        ? "Maxed for " + new Date().getFullYear()
+        : "After match, fill more pre-tax / Roth 401k room",
+      detail: "Once Roth IRA + HSA are maxed, additional 401k contributions still get tax advantages.",
+      action: !profile.k401MaxedYTD
+        ? { label: "Mark as maxed", fn: "togglePyramidFlag('k401MaxedYTD')" }
+        : null,
+      toggleable: true,
+      flagKey: "k401MaxedYTD",
+    },
+    {
+      id: "taxable",
+      step: 7, emoji: "📈",
+      title: "Fund a taxable brokerage",
+      done: comp.investments > 0,
+      progress: comp.investments > 0
+        ? `${fmt$0(comp.investments)} invested`
+        : "Nothing in taxable yet",
+      detail: "Once tax-advantaged accounts are maxed, taxable brokerage is the next step. Long-term holds = favorable capital-gains treatment.",
+      action: comp.investments === 0 ? { label: "Track first investment", fn: "assetSheet()" } : null,
+    },
+  ];
+
+  // Find the active step: first not-done. Subsequent steps marked as "locked"
+  // visually, though we don't actually prevent the user from doing them in parallel.
+  let activeIdx = steps.findIndex(s => !s.done);
+  if (activeIdx === -1) activeIdx = steps.length; // all done
+  steps.forEach((s, i) => {
+    s.status = i < activeIdx ? "complete" : i === activeIdx ? "active" : "locked";
+  });
+
+  return { steps, activeIdx, allDone: activeIdx === steps.length };
+}
+
+function togglePyramidFlag(key) {
+  _ensurePyramidFlagsCurrent();
+  DB.profile[key] = !DB.profile[key];
+  save();
+  closeSheet(); priorityPyramidSheet();
+}
+
+function priorityPyramidSheet() {
+  const r = accountPriorityPyramid();
+  const colorFor = (status) => status === "complete" ? "#34C759" : status === "active" ? "#007AFF" : "var(--t4)";
+  const stepRow = (s) => `
+    <div style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:8px;opacity:${s.status==="locked"?"0.55":"1"}">
+      <div style="display:flex;align-items:center;gap:12px">
+        <div style="display:flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:50%;background:${colorFor(s.status)}22;color:${colorFor(s.status)};font-weight:700;font-size:13px;flex-shrink:0">
+          ${s.status === "complete" ? "✓" : s.step}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:14px">${s.emoji} ${esc(s.title)}</div>
+          <div style="font-size:12px;color:${colorFor(s.status)};font-weight:600;margin-top:2px">${s.status === "complete" ? "Complete" : s.status === "active" ? "Active — focus here" : "Up next"}</div>
+        </div>
+        ${s.toggleable ? `<input type="checkbox" ${s.done ? "checked" : ""} onchange="togglePyramidFlag(${jsAttr(s.flagKey)})" style="width:24px;height:24px;flex-shrink:0" />` : ""}
+      </div>
+      <div style="font-size:13px;color:var(--t2);margin-top:8px">${esc(s.progress)}</div>
+      <details style="margin-top:8px;font-size:12px">
+        <summary style="cursor:pointer;color:var(--t3);font-size:12px">Why this step</summary>
+        <div style="margin-top:6px;color:var(--t3);line-height:1.5">${esc(s.detail)}</div>
+      </details>
+      ${s.action && s.status === "active" ? `
+        <button class="btn sm" style="margin-top:10px;width:100%;font-size:12px" onclick="closeSheet();${s.action.fn}">${esc(s.action.label)}</button>
+      ` : ""}
+    </div>
+  `;
+  const intro = r.allDone
+    ? `<div style="background:var(--card);border-radius:var(--r);padding:18px;text-align:center;margin-bottom:14px">
+         <div style="font-size:40px">🎉</div>
+         <div style="font-weight:600;margin-top:6px">You're through the priority ladder!</div>
+         <div style="font-size:13px;color:var(--t3);margin-top:4px">Once you're funding taxable brokerage on top of maxed tax-advantaged accounts, you're in advanced-territory. Consider real estate, alternative investments, or larger goals.</div>
+       </div>`
+    : `<div style="background:var(--bg-elev);border-radius:var(--r);padding:12px;margin-bottom:14px;font-size:13px;color:var(--t2);line-height:1.5">
+         You're focused on <b>Step ${r.activeIdx+1}</b> of 7. Steps above are complete; steps below unlock as you progress. Parallel pursuit is fine — this is a priority guide, not strict gating.
+       </div>`;
+  openSheet(`
+    <h2>🪜 Account-Priority Pyramid</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">The canonical FI-community order for where each dollar goes. Tick off the steps you've done.</p>
+    ${intro}
+    ${r.steps.map(stepRow).join("")}
+    <div class="actions" style="margin-top:12px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
 /* ================ FINANCIAL CALENDAR ================
    Important upcoming dates: federal tax deadlines, IRA/HSA contribution
    cutoffs, estimated tax dates, savings/goal target dates, and any custom
@@ -6482,6 +6716,7 @@ function init() {
     deleteCalendarDate, hideBuiltinCalendarEvent, resetCalendarBuiltins,
     daysUntil, dayLabel,
     computeWealthHealth, wealthHealthLabel, wealthHealthSheet,
+    accountPriorityPyramid, priorityPyramidSheet, togglePyramidFlag,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
