@@ -1152,6 +1152,7 @@ const DEFAULT_DB = {
   },
   calendarDates: [],         // user-added important dates: [{id, title, date(YYYY-MM-DD), icon, note}]
   dismissedCalendarBuiltins: {},  // { builtinId: true } — built-in dates (tax, IRA, etc.) user has hidden
+  lessonsRead: {},           // { lessonId: true } — wealth-lesson IDs the user has opened
 
   spendSearch: "",
   holdings: [],              // [{account_id, ticker, name, type, quantity, institution_value, cost_basis}]
@@ -2477,6 +2478,25 @@ function renderMoney() {
       `;
     })();
 
+    // Wealth Lessons entry — a tappable row to the curated educational library.
+    const learnEntry = (() => {
+      const read = DB.lessonsRead || {};
+      const readCount = WEALTH_LESSONS.filter(l => read[l.id]).length;
+      return `
+        <div class="section-h"><span class="lbl">📚 Learn</span></div>
+        <div class="list">
+          <div class="row tappable" onclick="learnSheet()" role="button" tabindex="0">
+            <div class="lead">🎓</div>
+            <div class="body">
+              <div class="t1">Wealth lessons</div>
+              <div class="t2">${readCount} of ${WEALTH_LESSONS.length} read · short opinionated lessons on building wealth</div>
+            </div>
+            <div class="trail chev"></div>
+          </div>
+        </div>
+      `;
+    })();
+
     body = `
       ${healthCard}
       ${chartCard}
@@ -2484,6 +2504,7 @@ function renderMoney() {
       ${pyramidSummary}
       ${retireSummary}
       ${taxSummary}
+      ${learnEntry}
 
       <div class="section-h"><span class="lbl">Manual assets</span><button class="act" onclick="assetSheet()">+ Add</button></div>
       <div class="list">
@@ -5576,6 +5597,159 @@ function wealthHealthSheet() {
   `);
 }
 
+/* ================ WEALTH LESSONS ================
+   Curated short-form lessons covering the foundational concepts an
+   educated investor / financial-independence-aware adult should know.
+   Educational, not advice. Each lesson is short (~250 words), opinionated,
+   and frames the concept in terms the user can act on.
+
+   Schema per lesson: { id, emoji, title, summary, body, category }
+   - id: stable short string (used to track which lessons user has read)
+   - category: Foundations | Investing | Tax | Debt | Mindset
+*/
+const WEALTH_LESSONS = [
+  {
+    id: "savings-rate", emoji: "💰", category: "Foundations",
+    title: "Savings rate beats return",
+    summary: "Your savings rate predicts retirement age more than your investment return does.",
+    body: "Most people obsess over investment returns. Pick the right stock, get rich. The math says otherwise. \n\nA person saving 10% of income with a 7% real return retires in ~51 years. Same person saving 50% retires in ~17 years. Same return — 34 years difference. \n\nWhy? When you save 50%, two things happen: you need less money to live on (so 'enough' is smaller), and you put more in the market (so it compounds faster). \n\nThis is liberating. You don't need to be a stock-picking genius. You don't need 10% returns. You need a high savings rate. Cut expenses, grow income, automate the gap. \n\nMr. Money Mustache's classic table: at 10% savings, 51 years to retirement. 20% → 37 years. 40% → 22 years. 60% → 12.5 years. 70% → 8.5 years. \n\nThe return you earn matters. But it's the second-most-important lever. The first is what fraction of every dollar you save.",
+  },
+  {
+    id: "first-100k", emoji: "💎", category: "Foundations",
+    title: "The first $100k is the hardest",
+    summary: "Munger called the first $100k 'a bitch.' After that, money compounds for you.",
+    body: "Charlie Munger, when asked what advice he'd give a young person: 'The first $100,000 is a bitch. You've got to do it. I don't care what you have to do — if it means walking everywhere and not eating anything that wasn't purchased with a coupon, find a way to get your hands on $100,000. After that, you can ease off the gas a little bit.'\n\nWhy? At 7% real return, $100,000 grows by ~$7,000/year passively. Once your portfolio earns more than your savings rate, you've crossed a threshold: the market is now your primary wealth-creation engine, not your paycheck.\n\nGetting to $100k is brute force. There's no compound growth on $5,000 — you can't shortcut it. You save, you invest, you wait. \n\nAfter $100k, math takes over. $100k → $200k typically takes half as long as $0 → $100k, with the same savings rate. $200k → $400k is faster still. By $1M, your portfolio earns you ~$70k/yr doing nothing.\n\nFocus relentlessly on the first $100k. Then ease up — the engine is running.",
+  },
+  {
+    id: "pay-yourself-first", emoji: "📤", category: "Foundations",
+    title: "Pay yourself first",
+    summary: "Save before you spend. Automate it. Willpower at month-end is a losing strategy.",
+    body: "The classic mistake: budget income → spend on expenses → save what's left. Almost nothing is left. \n\nThe fix is mechanical: automate savings the day after payday. Money moves to a separate account before you 'see' it. You spend what's actually in your checking account, which is now smaller.\n\nWhy this works: humans rationalize spending in the moment but don't fight account balances. If $500 is gone before you log into your bank app, you don't miss it. If $500 is sitting in checking, you'll find a reason to spend it.\n\nResearch is unambiguous: automated savers save 2-3x more over a decade than people relying on monthly willpower. The discipline isn't repeated daily decisions. The discipline is one decision (the auto-transfer setup), then the system runs.\n\nAction: set up an automatic transfer from checking to a separate savings or brokerage on payday + 1. Start small ($50/paycheck if needed). Increase by 1% of income every time you get a raise. Within 5 years you'll save a quarter of every dollar without noticing.",
+  },
+  {
+    id: "emergency-fund", emoji: "🛡️", category: "Foundations",
+    title: "Emergency fund: how much, and where",
+    summary: "3-6 months in cash. Boring high-yield savings, not invested.",
+    body: "Before investing aggressively, build a buffer that lets you absorb life's hits without selling investments at a loss or running up credit cards.\n\nHow much: 3 months of fixed expenses is the floor. 6 months is comfortable. If you have unstable income (commission, freelance, business owner), aim for 9-12 months.\n\nWhere: A high-yield savings account (HYSA) at an online bank — currently paying 4-5% APY. NOT a brokerage. NOT crypto. NOT 'I'll just put it on a credit card and pay it off.' Liquidity matters more than yield here.\n\nWhy not invest it: Emergencies happen during recessions. Layoffs and stock crashes correlate. If your only buffer is invested, you're forced to sell at a 30% loss in the worst possible moment. The opportunity cost (4% HYSA vs 7% stocks) is small relative to that risk.\n\nWhat counts as an emergency: Job loss, major medical, car or appliance failure, unexpected travel for family crisis. Vacation is NOT an emergency. A great deal on a new TV is NOT an emergency. If you can plan for it, save separately for it.\n\nBuild this first. Then everything else gets easier.",
+  },
+  {
+    id: "index-funds", emoji: "📊", category: "Investing",
+    title: "Why index funds beat 90% of active investors",
+    summary: "Over 20 years, 92% of active mutual funds underperform a simple S&P 500 index fund.",
+    body: "S&P Dow Jones publishes the SPIVA report annually. The pattern is stable: over any 15-20 year window, 85-92% of actively-managed US large-cap funds underperform the S&P 500 index. Same pattern internationally and across asset classes.\n\nWhy do professionals lose to a robot following a list?\n\n1. **Fees.** Active funds charge 0.5-1.5%/year. Index funds charge 0.03-0.1%. Over 30 years, a 1% fee gap consumes ~25% of your final balance.\n\n2. **Trading costs.** Active managers trade. Trades have spreads and tax drag. Index funds barely trade.\n\n3. **Market efficiency.** When everyone smart is looking at the same information, prices already reflect it. Beating the market consistently requires informational edges that don't exist in transparent public markets.\n\n4. **Survivorship bias.** When you see 'Fund X beat the market 5 years running,' you're not seeing the 99 Fund Xs that didn't survive long enough to be cited.\n\nWhat to buy: VTI (US total market), VXUS (international), BND (bonds). Or single funds like VOO (S&P 500) or VT (entire world). Three-fund portfolio of US/international/bonds covers it. Boring. Effective. \n\nDon't pick stocks. Don't chase last year's winners. Buy the haystack.",
+  },
+  {
+    id: "compound-interest", emoji: "📈", category: "Investing",
+    title: "Compound interest: the 8th wonder",
+    summary: "Money invested at 7% doubles every ~10 years. Time is your biggest weapon.",
+    body: "$10,000 at 7% real return:\n- Year 10: $19,672 (almost double)\n- Year 20: $38,697 (almost quadruple)\n- Year 30: $76,123 (~7.6x)\n- Year 40: $149,745 (~15x)\n\nThe shape is exponential. The first 10 years are slow. The last 10 years are dramatic.\n\nThis is why starting early matters more than the dollar amount. A 22-year-old investing $200/month until 65 ends with ~$700k. A 32-year-old investing $400/month (twice as much) until 65 ends with ~$650k. The early starter put in HALF as much money and came out ahead.\n\nPractical implication: the dollar you save at 22 is worth multiples of the dollar you save at 50. Front-load your saving and investing as early as possible. Even small amounts. Especially small amounts — they have the most time to grow.\n\nThe second implication: don't break the chain. Withdrawing money mid-compound costs you the future growth, not just the principal. If you raid your retirement at 35 for a 'one-time' need, you don't lose the $10k — you lose the $80k it would have been at 65.\n\nTime is the variable you can't get back. Use it.",
+  },
+  {
+    id: "time-in-market", emoji: "⏳", category: "Investing",
+    title: "Time in the market beats timing the market",
+    summary: "Missing the 10 best days in 20 years cuts your return in half.",
+    body: "JP Morgan's classic study: $10,000 invested in the S&P 500 from 2003-2022 grew to $64,844 if you stayed fully invested. If you missed just the 10 BEST days during that 20-year window, you ended with $29,708 — less than half.\n\nThe 10 best days usually happen within 2 weeks of the 10 worst days. The instinct to 'wait until the market calms down' is exactly wrong — you miss the rebound.\n\nThis is why 'I'll just wait until things are stable to invest' is a wealth killer. The market is never stable. Stability is a feeling we have in retrospect, not a real signal.\n\nWhat works: Dollar-cost averaging. Set up automatic monthly contributions. Buy on a schedule. Ignore the news. Don't check daily. Don't change allocation based on headlines.\n\nWhat doesn't work: Holding cash 'until the time is right.' Selling when scared. Buying when excited. Watching CNBC.\n\nThe practical rule: lump-sum invest immediately if you have cash. Time in market mathematically beats waiting. If you can't psychologically commit, dollar-cost average over 12 months. After that, automate forever.",
+  },
+  {
+    id: "roth-vs-traditional", emoji: "⚖️", category: "Tax",
+    title: "Roth vs Traditional IRA — which when",
+    summary: "Roth if you expect higher taxes later. Traditional if you expect lower. Most young people: Roth.",
+    body: "Roth IRA: contribute post-tax money, never pay taxes again. \nTraditional IRA: contribute pre-tax money, pay taxes on withdrawal in retirement.\n\nThe difference is purely WHEN you pay tax. Math-wise, if your tax rate is constant, they're identical. The real decision is: is your tax rate higher now or higher in retirement?\n\n**Choose Roth if:**\n- You're early in your career (low income → low tax bracket NOW)\n- You expect to earn more later\n- Tax rates may rise (current rates expire in 2025 — they're historically low)\n- You want flexibility (Roth contributions can be withdrawn anytime without penalty)\n\n**Choose Traditional if:**\n- You're at a peak earning year (high income now → high bracket)\n- You expect retirement to be at a much lower bracket\n- You need the tax deduction this year\n\n**For most readers:** Roth is the default answer. You're likely earning less now than you will later. Tax rates are at historic lows. Tax-free growth for 30+ years is hard to beat.\n\n**Hybrid:** Many people max Roth IRA + traditional 401k. Diversifies tax exposure: some retirement income will be taxable, some won't. Lets you optimize withdrawal strategy later.\n\nWhen in doubt, Roth.",
+  },
+  {
+    id: "account-order", emoji: "🪜", category: "Tax",
+    title: "Tax-advantaged account priority order",
+    summary: "401k match → high-interest debt → Roth IRA → HSA → max 401k → taxable.",
+    body: "Where should each dollar go? The community-consensus order (also implemented in this app's Priority Pyramid):\n\n**1. 401k to employer match.** This is free money — up to 100% instant return. Always take it.\n\n**2. Pay off high-interest debt (>7%).** Mathematically dominates any reasonable investment. Guaranteed return at the debt's interest rate.\n\n**3. Emergency fund.** 3-6 months in cash. Pre-investing.\n\n**4. Roth IRA up to the annual cap ($7,000 in 2024-2026).** Tax-free growth forever. Best individual retirement account.\n\n**5. HSA if HDHP-eligible.** Triple tax advantage: pre-tax in, tax-free growth, tax-free out for medical. Best account in the entire tax code.\n\n**6. Max 401k beyond match.** Pre-tax (or Roth 401k) up to the annual cap. Substantial tax advantage if income is high.\n\n**7. Taxable brokerage.** Once tax-advantaged accounts are full, taxable is next. Long-term capital gains rates (15-20%) are still favorable.\n\n**Skip in retirement:** Don't fund a 401k beyond the match if you don't have an emergency fund. Don't max Roth IRA if you have 20%+ APR credit card debt. The order isn't rigid — parallel pursuit is fine — but the priority matters.\n\nNew accounts open from these steps in order: 401k via your employer, Roth IRA at Fidelity/Schwab/Vanguard, HSA via your health plan provider.",
+  },
+  {
+    id: "debt-strategy", emoji: "🔥", category: "Debt",
+    title: "Avalanche vs Snowball — which method",
+    summary: "Avalanche is mathematically optimal. Snowball wins more often in practice. Pick one and commit.",
+    body: "Two strategies for paying off multiple debts:\n\n**Avalanche:** Pay minimums on all debts. Throw every extra dollar at the HIGHEST APR debt. When that one's gone, move to the next-highest. Mathematically optimal — minimizes total interest paid.\n\n**Snowball:** Pay minimums on all debts. Throw every extra dollar at the SMALLEST BALANCE. When that one's gone, move to the next-smallest. Mathematically suboptimal, but you eliminate accounts faster — more wins, more momentum.\n\nResearch (Northwestern, 2016): people on snowball pay off all debt 11% more often than people on avalanche. Why? Behavior matters more than math. The dopamine hit of closing accounts keeps people in the game.\n\n**Use snowball if:** You have 4+ debts, struggle with motivation, need quick wins to stay consistent.\n\n**Use avalanche if:** You're math-driven, have 2-3 debts, your highest APR is significantly higher than the rest (so the math gap is meaningful).\n\n**Either way:**\n- Don't add new debt during paydown\n- Track total balance, not individual accounts\n- Celebrate milestones ($1k paid, half paid, last $5k)\n- Once debt-free, redirect that monthly payment to savings/investing — don't let it become lifestyle creep\n\nThe best method is the one you'll actually finish. Decide in 5 minutes, then commit for the next 6-24 months.",
+  },
+  {
+    id: "lifestyle-creep", emoji: "🎈", category: "Mindset",
+    title: "Lifestyle creep kills wealth",
+    summary: "Raises feel like new income. They're actually new permanent expenses unless you intervene.",
+    body: "The classic trap: get a 10% raise → upgrade apartment, eat out more, lease a nicer car. Six months later, you 'don't feel rich.' Because you're not. You converted the raise into permanent monthly costs.\n\nThe math: a $5,000 raise spent feels like a one-time upgrade but functions like a permanent $5,000/year expense. Over 30 years at 7%, that's ~$500,000 of lost potential wealth from one decision.\n\nThe fix: pre-commit. Before the raise, write down what % of it goes to savings vs lifestyle. Half-and-half is generous. 75/25 is aggressive. The rule: every raise immediately bumps your auto-transfer.\n\nWhy this works: the raise was never in your hands. You didn't 'sacrifice' anything by saving it. You just kept your old life and accelerated the next one.\n\nWhy people don't do it: 'I deserve a better X' after working hard. True — and you can have it. But upgrade ONE thing per raise, not your whole baseline. The mortgage stays. The savings increase. The car waits.\n\nLifestyle creep is the silent destroyer of high incomes. Doctors, lawyers, tech workers earning $300k+ frequently retire later than teachers because their fixed costs absorbed every raise.\n\nThe two-list test: When a purchase tempts you, list 'what does this give me?' vs 'what does the money invested give me?' Make the trade conscious.",
+  },
+  {
+    id: "buy-assets", emoji: "🏗️", category: "Mindset",
+    title: "Buy assets, not liabilities",
+    summary: "Assets put money in your pocket monthly. Liabilities take it out. Most 'things' are liabilities.",
+    body: "Robert Kiyosaki's simplification (Rich Dad, Poor Dad): an asset is something that puts money in your pocket. A liability takes money out.\n\nThis is purposefully different from accounting definitions. A house you live in is an accounting asset (it has resale value) but functions as a liability (you pay it each month). A rental property is an asset (it pays you monthly).\n\nThe principle: pile up things that pay you. Avoid (or minimize) things that drain you.\n\n**True assets:** Index funds (dividends + appreciation), rental property (cash flow + appreciation), businesses you own, royalties, dividend stocks.\n\n**Functional liabilities even though they 'feel' like assets:** Primary home (you pay it), vehicles (depreciating + insurance + gas + repairs), boats, expensive watches, jewelry.\n\nThis isn't anti-house. It's anti-confusing-the-categories. Own a home if you want to — but recognize the monthly cost and don't tell yourself it's 'investing.'\n\nThe wealth-building shift: spend less on liabilities so you can buy more assets. The assets eventually pay for some of the liabilities — that's financial independence.\n\nPractical: every dollar you redirect from a liability to an asset compounds for life. Skip the $50k truck upgrade, put it in index funds, in 30 years you have $400k. The truck would have been scrap.",
+  },
+];
+
+const LESSON_CATEGORIES = ["Foundations", "Investing", "Tax", "Debt", "Mindset"];
+
+function markLessonRead(id) {
+  DB.lessonsRead = DB.lessonsRead || {};
+  DB.lessonsRead[id] = true;
+  save();
+}
+
+function learnSheet() {
+  const read = DB.lessonsRead || {};
+  const readCount = WEALTH_LESSONS.filter(l => read[l.id]).length;
+  const byCategory = LESSON_CATEGORIES.map(cat => ({
+    cat,
+    lessons: WEALTH_LESSONS.filter(l => l.category === cat),
+  }));
+  const html = byCategory.map(g => `
+    <div class="section-h"><span class="lbl">${esc(g.cat)}</span></div>
+    <div class="list">
+      ${g.lessons.map(l => `
+        <div class="row tappable" onclick="lessonSheet(${jsAttr(l.id)})" role="button" tabindex="0">
+          <div class="lead">${l.emoji}</div>
+          <div class="body">
+            <div class="t1">${esc(l.title)}${read[l.id] ? ` <span class="muted" style="font-weight:400;font-size:11px">✓ read</span>` : ""}</div>
+            <div class="t2">${esc(l.summary)}</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      `).join("")}
+    </div>
+  `).join("");
+  openSheet(`
+    <h2>📚 Wealth Lessons</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">${readCount} of ${WEALTH_LESSONS.length} read · Short, opinionated lessons on the foundational concepts.</p>
+    ${html}
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+function lessonSheet(id) {
+  const l = WEALTH_LESSONS.find(x => x.id === id);
+  if (!l) { learnSheet(); return; }
+  markLessonRead(id);
+  // Split body on double newlines into paragraphs for readability.
+  const paragraphs = l.body.split(/\n\n+|\n/).map(p => p.trim()).filter(Boolean);
+  const bodyHtml = paragraphs.map(p => {
+    // Recognize **bold** markdown for emphasis lines.
+    const formatted = esc(p).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+    return `<p style="margin:0 0 12px;line-height:1.6;font-size:14px">${formatted}</p>`;
+  }).join("");
+  openSheet(`
+    <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:14px">
+      <div style="font-size:36px;line-height:1">${l.emoji}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;font-weight:600">${esc(l.category)}</div>
+        <h2 style="margin:2px 0 0">${esc(l.title)}</h2>
+      </div>
+    </div>
+    <p class="muted" style="font-size:13px;margin-bottom:14px;font-style:italic">${esc(l.summary)}</p>
+    <div>${bodyHtml}</div>
+    <div class="actions" style="margin-top:18px">
+      <button class="btn secondary" onclick="closeSheet();learnSheet()">← All lessons</button>
+      <button class="btn" onclick="closeSheet()">Got it</button>
+    </div>
+  `);
+}
+
 /* ================ TAX PLANNING ================
    Federal income tax bracket calculator + contribution-savings projector.
    Educational, not advice. State taxes vary widely and aren't modeled in v1.
@@ -6893,6 +7067,7 @@ function init() {
     computeWealthHealth, wealthHealthLabel, wealthHealthSheet,
     accountPriorityPyramid, priorityPyramidSheet, togglePyramidFlag,
     computeFederalTax, taxPlanningSheet, TAX_DATA_2024,
+    WEALTH_LESSONS, LESSON_CATEGORIES, learnSheet, lessonSheet, markLessonRead,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
