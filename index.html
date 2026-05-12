@@ -2498,6 +2498,27 @@ function renderMoney() {
       `;
     })();
 
+    // Net Worth Benchmarks vs age — quick comparison
+    const benchmarksCard = (() => {
+      const profile = DB.profile || {};
+      const current = wealthComposition().total;
+      if (current <= 0) return "";
+      const age = +profile.age || 30;
+      const bench = benchmarkForAge(age);
+      const ratio = bench.median > 0 ? current / bench.median : 0;
+      const color = ratio >= 1.2 ? "var(--green)" : ratio >= 0.8 ? "var(--blue)" : ratio >= 0.4 ? "var(--orange)" : "var(--red)";
+      return `
+        <div class="row tappable" onclick="benchmarksSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:12px;align-items:center">
+          <div style="font-size:24px;width:40px;text-align:center">📐</div>
+          <div class="body">
+            <div class="t1" style="margin:0">vs Age ${esc(bench.label)}: <span style="color:${color}">${ratio.toFixed(2)}× median</span></div>
+            <div class="t2">${fmt$0(bench.median)} typical · ${profile.age ? "" : "set age in profile for accuracy"}</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      `;
+    })();
+
     // Account-Priority Pyramid summary — single row showing which step is active
     const pyramidSummary = (() => {
       const r = accountPriorityPyramid();
@@ -2633,6 +2654,7 @@ function renderMoney() {
       ${compBar}
       ${cashFlowCardHtml()}
       ${milestonesCard}
+      ${benchmarksCard}
       ${(() => {
         // Sinking funds quick entry — only render section if there are funds OR show as a single empty-state row when none.
         const funds = DB.sinkingFunds || [];
@@ -5770,6 +5792,112 @@ function wealthHealthSheet() {
   `);
 }
 
+/* ================ NET WORTH BENCHMARKS BY AGE ================
+   Federal Reserve Survey of Consumer Finances (2022) net-worth percentiles
+   by age bracket. Median is more representative than mean (which is skewed
+   by ultra-wealthy households).
+
+   Use as a sanity-check lens — not as a goal. Wealth-builders typically
+   want to be well above median for their age bracket because:
+   1. Median includes households not actively building wealth
+   2. Compound growth means above-median young → far-above-median old
+*/
+
+// 2022 SCF data — median and mean US household net worth by age of head.
+// Source: Federal Reserve, Bulletin 2023.
+const NW_BENCHMARKS = [
+  { ageMin: 18, ageMax: 34, label: "Under 35",  median: 39000,  mean: 183500  },
+  { ageMin: 35, ageMax: 44, label: "35-44",     median: 135300, mean: 549600  },
+  { ageMin: 45, ageMax: 54, label: "45-54",     median: 247700, mean: 975800  },
+  { ageMin: 55, ageMax: 64, label: "55-64",     median: 364500, mean: 1566900 },
+  { ageMin: 65, ageMax: 74, label: "65-74",     median: 409900, mean: 1794600 },
+  { ageMin: 75, ageMax: 120,label: "75+",       median: 335600, mean: 1624100 },
+];
+
+function benchmarkForAge(age) {
+  const a = +age || 30;
+  return NW_BENCHMARKS.find(b => a >= b.ageMin && a <= b.ageMax) || NW_BENCHMARKS[0];
+}
+
+function benchmarksSheet() {
+  const profile = DB.profile || {};
+  const age = +profile.age || 30;
+  const current = wealthComposition().total;
+  const bench = benchmarkForAge(age);
+  const ratio = bench.median > 0 ? current / bench.median : 0;
+  const positionLabel =
+    ratio >= 2     ? { word: "Well above median", color: "var(--green)" }
+    : ratio >= 1.2 ? { word: "Above median",      color: "var(--green)" }
+    : ratio >= 0.8 ? { word: "Near median",       color: "var(--blue)" }
+    : ratio >= 0.4 ? { word: "Below median",      color: "var(--orange)" }
+                   : { word: "Well below median", color: "var(--red)" };
+
+  // Tiny visual: a horizontal scale from 0 to 2× median with markers
+  const maxScale = Math.max(bench.median * 2, current);
+  const userPct = Math.min(100, (current / maxScale) * 100);
+  const medianPct = Math.min(100, (bench.median / maxScale) * 100);
+  const meanPct = Math.min(100, (bench.mean / maxScale) * 100);
+
+  openSheet(`
+    <h2>📐 Net worth vs your age group</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Where you stand among US households in your age bracket. Federal Reserve Survey of Consumer Finances (2022). Median is more representative than mean (skewed by billionaires).</p>
+
+    <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Your net worth · age ${profile.age ? age : "30 (default)"}</div>
+      <div style="font-size:30px;font-weight:700;letter-spacing:-.5px;margin:6px 0" data-priv="amount">${fmt$0(current)}</div>
+      <div style="font-size:14px;font-weight:600;color:${positionLabel.color}">${esc(positionLabel.word)} for age bracket ${esc(bench.label)}</div>
+      <div style="font-size:12px;color:var(--t3);margin-top:4px">${ratio.toFixed(2)}× the median for your age group</div>
+    </div>
+
+    <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">${esc(bench.label)} bracket</div>
+      <div style="position:relative;height:32px;background:var(--bg-elev);border-radius:6px;overflow:hidden">
+        <div style="position:absolute;left:${userPct}%;top:0;bottom:0;width:3px;background:${positionLabel.color};transform:translateX(-1.5px);z-index:3" title="You"></div>
+        <div style="position:absolute;left:${medianPct}%;top:0;bottom:0;width:2px;background:var(--t2);transform:translateX(-1px);z-index:2" title="Median"></div>
+        <div style="position:absolute;left:${meanPct}%;top:0;bottom:0;width:2px;background:var(--t3);transform:translateX(-1px);z-index:2" title="Mean"></div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-top:14px;font-size:13px">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:${positionLabel.color};border-radius:2px"></span>You</span>
+          <span style="font-weight:600" data-priv="amount">${fmt$0(current)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:var(--t2);border-radius:2px"></span>Median household</span>
+          <span data-priv="amount">${fmt$0(bench.median)}</span>
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:var(--t3);border-radius:2px"></span>Mean household</span>
+          <span data-priv="amount">${fmt$0(bench.mean)}</span>
+        </div>
+      </div>
+      <div style="font-size:11px;color:var(--t3);margin-top:12px;line-height:1.6">
+        The big gap between median and mean reflects extreme wealth concentration — a small fraction of households pull the average way up. Median is closer to "typical."
+      </div>
+    </div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">All age brackets</div>
+      ${NW_BENCHMARKS.map(b => {
+        const isYours = age >= b.ageMin && age <= b.ageMax;
+        return `
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0;${isYours?`color:${positionLabel.color};font-weight:600`:""}">
+            <span>${esc(b.label)}${isYours?" ← you":""}</span>
+            <span data-priv="amount">${fmt$0(b.median)} median · ${fmt$0(b.mean)} mean</span>
+          </div>
+        `;
+      }).join("")}
+    </div>
+
+    <p class="muted" style="font-size:11px;line-height:1.5">
+      <b>Reality check:</b> being above median isn't the goal — most households aren't actively building wealth. Aim for above the 75th percentile if you're serious about FI. The compounding power of being well-above-median young is massive: at 7% real return, $100k at 30 → $1M at 65 without any further contributions.
+    </p>
+
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
 /* ================ SINKING FUNDS ================
    Buckets within savings for irregular recurring expenses — annual or
    semi-annual outflows that you smooth into monthly inflows. Distinct
@@ -8508,6 +8636,7 @@ function init() {
     computeInflation, inflationSheet,
     sinkingFundsSheet, sinkingFundEditSheet, contributeSinkingFund,
     resetSinkingFund, deleteSinkingFund,
+    NW_BENCHMARKS, benchmarkForAge, benchmarksSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
