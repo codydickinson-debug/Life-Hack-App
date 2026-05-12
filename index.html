@@ -1143,6 +1143,8 @@ const DEFAULT_DB = {
     annualReturn: 7,         // real (post-inflation) annual return %
     withdrawalRate: 4,       // safe withdrawal % at retirement (Trinity Study default)
   },
+  calendarDates: [],         // user-added important dates: [{id, title, date(YYYY-MM-DD), icon, note}]
+  dismissedCalendarBuiltins: {},  // { builtinId: true } — built-in dates (tax, IRA, etc.) user has hidden
 
   spendSearch: "",
   holdings: [],              // [{account_id, ticker, name, type, quantity, institution_value, cost_basis}]
@@ -1975,6 +1977,33 @@ function renderToday() {
               <div class="trail chev"></div>
             </div>
           `).join("")}
+        </div>
+      `;
+    })()}
+
+    ${(() => {
+      const events = computeFinancialCalendar({ horizonMonths: 12 });
+      // Surface only events within the next 60 days here — Coming Up + Important Dates
+      // overlap less when this section focuses on a tighter window.
+      const soon = events.filter(e => daysUntil(e.date) <= 60).slice(0, 3);
+      if (!soon.length) return "";
+      return `
+        <div class="section-h"><span class="lbl">📅 Important dates</span><button class="act" onclick="financialCalendarSheet()">View all</button></div>
+        <div class="list">
+          ${soon.map(e => {
+            const days = daysUntil(e.date);
+            const color = days <= 7 ? "var(--orange)" : days <= 30 ? "var(--blue)" : "var(--t3)";
+            return `
+              <div class="row tappable" onclick="financialCalendarSheet()" role="button" tabindex="0">
+                <div class="lead">${e.icon}</div>
+                <div class="body">
+                  <div class="t1">${esc(e.title)}</div>
+                  <div class="t2"><span style="color:${color};font-weight:600">${dayLabel(e.date)}</span> · ${e.date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+                </div>
+                <div class="trail chev"></div>
+              </div>
+            `;
+          }).join("")}
         </div>
       `;
     })()}
@@ -5308,6 +5337,265 @@ function retirementSheet() {
   });
 }
 
+/* ================ FINANCIAL CALENDAR ================
+   Important upcoming dates: federal tax deadlines, IRA/HSA contribution
+   cutoffs, estimated tax dates, savings/goal target dates, and any custom
+   dates the user adds. Sorted ascending, filtered to today + future.
+*/
+
+function _startOfDay(d) {
+  return new Date(d.getFullYear(), d.getMonth(), d.getDate());
+}
+function daysUntil(date) {
+  const today = _startOfDay(new Date());
+  return Math.round((date - today) / 86400000);
+}
+function dayLabel(date) {
+  const days = daysUntil(date);
+  if (days < 0) return `${Math.abs(days)}d ago`;
+  if (days === 0) return "Today";
+  if (days === 1) return "Tomorrow";
+  if (days < 7)   return `In ${days} days`;
+  if (days < 30)  return `In ${Math.round(days/7)} weeks`;
+  if (days < 365) return `In ${Math.round(days/30)} months`;
+  return `In ${Math.round(days/365)} years`;
+}
+
+function computeFinancialCalendar(opts) {
+  opts = opts || {};
+  const horizonMonths = opts.horizonMonths || 18;
+  const now = new Date();
+  const today = _startOfDay(now);
+  const cutoff = new Date(today);
+  cutoff.setMonth(cutoff.getMonth() + horizonMonths);
+  const out = [];
+  const dismissed = DB.dismissedCalendarBuiltins || {};
+
+  // === Built-in tax / contribution dates ===
+  // Generate for this year + next year so the IRA contribution play (which
+  // pays into the prior tax year through Apr 15) is visible year-round.
+  const years = [now.getFullYear(), now.getFullYear() + 1];
+  for (const y of years) {
+    const taxId = `builtin:tax-${y}`;
+    if (!dismissed[taxId]) {
+      out.push({
+        id: taxId, builtin: true,
+        date: new Date(y, 3, 15), // Apr 15
+        icon: "🧾",
+        title: `Federal tax day ${y}`,
+        subtitle: `${y-1} tax return filing deadline (may shift to next business day)`,
+        kind: "tax",
+      });
+    }
+    const iraId = `builtin:ira-${y}`;
+    if (!dismissed[iraId]) {
+      out.push({
+        id: iraId, builtin: true,
+        date: new Date(y, 3, 15),
+        icon: "🏦",
+        title: `Last day to fund ${y-1} IRA`,
+        subtitle: `Roth / Traditional / SEP IRA contributions for tax year ${y-1}`,
+        kind: "tax",
+      });
+    }
+    const hsaId = `builtin:hsa-${y}`;
+    if (!dismissed[hsaId]) {
+      out.push({
+        id: hsaId, builtin: true,
+        date: new Date(y, 3, 15),
+        icon: "🏥",
+        title: `Last day to fund ${y-1} HSA`,
+        subtitle: `If HDHP-eligible — contributions to prior tax year`,
+        kind: "tax",
+      });
+    }
+    // Quarterly estimated taxes — relevant for 1099 / self-employed
+    const estDates = [
+      { m: 3, d: 15, q: "Q1" },
+      { m: 5, d: 15, q: "Q2" },
+      { m: 8, d: 15, q: "Q3" },
+      { m: 0, d: 15, q: "Q4", nextYear: true },
+    ];
+    for (const ed of estDates) {
+      const eyear = ed.nextYear ? y + 1 : y;
+      const id = `builtin:est-${eyear}-q${ed.q}`;
+      if (dismissed[id]) continue;
+      out.push({
+        id, builtin: true,
+        date: new Date(eyear, ed.m, ed.d),
+        icon: "📃",
+        title: `Estimated tax ${ed.q} due`,
+        subtitle: "For self-employment / 1099 / large investment gains",
+        kind: "tax",
+      });
+    }
+    // Year-end — last day for 401k / charitable / tax-loss harvesting
+    const yeId = `builtin:year-end-${y}`;
+    if (!dismissed[yeId]) {
+      out.push({
+        id: yeId, builtin: true,
+        date: new Date(y, 11, 31),
+        icon: "🎆",
+        title: `${y} tax-year cutoff`,
+        subtitle: "Last day for 401k contributions, charitable gifts, tax-loss harvesting",
+        kind: "tax",
+      });
+    }
+  }
+
+  // === Goal target dates (if set) ===
+  for (const g of (DB.goals || [])) {
+    if (!g.targetDate) continue;
+    const d = new Date(g.targetDate + "T00:00:00");
+    if (isNaN(d)) continue;
+    out.push({
+      id: `goal:${g.id}`, builtin: false,
+      date: d,
+      icon: "🎯",
+      title: `Goal: ${g.title}`,
+      subtitle: g.note || "Goal target date",
+      kind: "goal",
+    });
+  }
+
+  // === Savings target dates (if set) ===
+  for (const s of (DB.savings || [])) {
+    if (!s.targetDate) continue;
+    const d = new Date(s.targetDate + "T00:00:00");
+    if (isNaN(d)) continue;
+    out.push({
+      id: `saving:${s.id}`, builtin: false,
+      date: d,
+      icon: s.emoji || "💰",
+      title: `${s.name} target`,
+      subtitle: `${fmt$0(s.current)} of ${fmt$0(s.target)} saved`,
+      kind: "savings",
+    });
+  }
+
+  // === User custom dates ===
+  for (const d of (DB.calendarDates || [])) {
+    const dt = new Date(d.date + "T00:00:00");
+    if (isNaN(dt)) continue;
+    out.push({
+      id: `custom:${d.id}`, builtin: false, customId: d.id,
+      date: dt,
+      icon: d.icon || "📌",
+      title: d.title,
+      subtitle: d.note || "",
+      kind: "custom",
+    });
+  }
+
+  // Filter to (today..cutoff] and sort ascending
+  return out
+    .filter(e => e.date >= today && e.date <= cutoff)
+    .sort((a,b) => a.date - b.date);
+}
+
+function financialCalendarSheet() {
+  const events = computeFinancialCalendar();
+  const dismissedCount = Object.keys(DB.dismissedCalendarBuiltins || {}).length;
+
+  const renderEvent = (e) => {
+    const days = daysUntil(e.date);
+    const color = days <= 7 ? "var(--orange)" : days <= 30 ? "var(--blue)" : "var(--t3)";
+    const dateStr = e.date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+    // Custom events tap to edit; everything else gets a tiny "hide" button for built-ins.
+    const tail = e.builtin
+      ? `<button class="del-x" style="font-size:14px" onclick="hideBuiltinCalendarEvent(${jsAttr(e.id)})" title="Hide">×</button>`
+      : (e.kind === "custom"
+          ? `<button class="del-x" onclick="closeSheet();addCalendarDateSheet(${jsAttr(e.customId)})" title="Edit">⋯</button>`
+          : `<div class="trail chev"></div>`);
+    return `
+      <div class="row">
+        <div class="lead">${e.icon}</div>
+        <div class="body">
+          <div class="t1">${esc(e.title)}</div>
+          <div class="t2"><span style="color:${color};font-weight:600">${dayLabel(e.date)}</span> · ${dateStr}${e.subtitle ? ` · ${esc(e.subtitle)}` : ""}</div>
+        </div>
+        ${tail}
+      </div>
+    `;
+  };
+
+  const body = events.length
+    ? `<div class="list">${events.map(renderEvent).join("")}</div>`
+    : `<div class="empty"><div class="e-emoji">📅</div><div class="e-title">Nothing on the horizon</div><div class="e-sub">Tax dates and other built-ins were hidden — restore them below, or add a custom date.</div></div>`;
+
+  openSheet(`
+    <h2>📅 Financial calendar</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Tax & contribution deadlines, goal targets, custom dates — 18-month horizon.</p>
+    ${body}
+    <button class="btn" style="width:100%;margin-top:14px" onclick="closeSheet();addCalendarDateSheet()">+ Add custom date</button>
+    ${dismissedCount > 0 ? `<button class="btn secondary" style="width:100%;margin-top:8px;font-size:12px" onclick="resetCalendarBuiltins();closeSheet();financialCalendarSheet()">Restore ${dismissedCount} hidden built-in${dismissedCount===1?"":"s"}</button>` : ""}
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+function hideBuiltinCalendarEvent(id) {
+  DB.dismissedCalendarBuiltins = DB.dismissedCalendarBuiltins || {};
+  DB.dismissedCalendarBuiltins[id] = true;
+  save();
+  closeSheet(); financialCalendarSheet();
+}
+
+function resetCalendarBuiltins() {
+  DB.dismissedCalendarBuiltins = {};
+  save();
+  toast("Hidden dates restored");
+}
+
+function addCalendarDateSheet(existingId) {
+  const list = DB.calendarDates || [];
+  const existing = existingId ? list.find(x => x.id === existingId) : null;
+  const isEdit = !!existing;
+  const e = existing || { title: "", date: todayKey(), icon: "📌", note: "" };
+  openSheet(`
+    <h2>${isEdit ? "Edit date" : "Add important date"}</h2>
+    <label>Title</label>
+    <input id="cd-title" placeholder="e.g. Property tax due" value="${esc(e.title)}" autofocus />
+    <label>Date</label>
+    <input id="cd-date" type="date" value="${esc(e.date)}" />
+    <div class="grid2">
+      <div>
+        <label>Icon (emoji)</label>
+        <input id="cd-icon" placeholder="📌" value="${esc(e.icon || "📌")}" maxlength="4" />
+      </div>
+      <div>
+        <label>Note (optional)</label>
+        <input id="cd-note" placeholder="Context" value="${esc(e.note || "")}" />
+      </div>
+    </div>
+    <div class="actions">
+      ${isEdit ? `<button class="btn danger" onclick="if(confirm('Delete this date?')){deleteCalendarDate(${jsAttr(existing.id)});closeSheet();financialCalendarSheet();}">Delete</button>` : ""}
+      <button class="btn secondary" onclick="closeSheet();financialCalendarSheet()">Cancel</button>
+      <button class="btn" id="cd-save">${isEdit ? "Save" : "Add"}</button>
+    </div>
+  `);
+  $("#cd-save").addEventListener("click", async () => {
+    const title = $("#cd-title").value.trim();
+    if (!title) { toast("Add a title"); return; }
+    const date = $("#cd-date").value;
+    if (!date) { toast("Pick a date"); return; }
+    const icon = $("#cd-icon").value.trim() || "📌";
+    const note = $("#cd-note").value.trim();
+    if (isEdit) {
+      Object.assign(existing, { title, date, icon, note });
+    } else {
+      (DB.calendarDates = DB.calendarDates || []).push({ id: uid(), title, date, icon, note });
+    }
+    await save(); closeSheet(); financialCalendarSheet();
+  });
+}
+
+function deleteCalendarDate(id) {
+  DB.calendarDates = (DB.calendarDates || []).filter(d => d.id !== id);
+  save();
+}
+
 /* Confetti celebration */
 function celebrate(intensity) {
   if (intensity == null) intensity = 1;
@@ -5932,6 +6220,9 @@ function init() {
     computeSmartPlays, smartPlaysSheet, dismissPlay, resetDismissedPlays, profileSheet,
     wealthComposition, setWealthRange, filteredNwHistory,
     currentInvested, projectRetirement, retirementChart, retirementSheet,
+    computeFinancialCalendar, financialCalendarSheet, addCalendarDateSheet,
+    deleteCalendarDate, hideBuiltinCalendarEvent, resetCalendarBuiltins,
+    daysUntil, dayLabel,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
