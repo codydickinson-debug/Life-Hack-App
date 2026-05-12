@@ -1153,6 +1153,7 @@ const DEFAULT_DB = {
   calendarDates: [],         // user-added important dates: [{id, title, date(YYYY-MM-DD), icon, note}]
   dismissedCalendarBuiltins: {},  // { builtinId: true } — built-in dates (tax, IRA, etc.) user has hidden
   lessonsRead: {},           // { lessonId: true } — wealth-lesson IDs the user has opened
+  celebratedMilestones: {},  // { "1000": true, "10000": true, ... } — net-worth milestones the user has crossed
 
   spendSearch: "",
   holdings: [],              // [{account_id, ticker, name, type, quantity, institution_value, cost_basis}]
@@ -2473,6 +2474,26 @@ function renderMoney() {
       `;
     })();
 
+    // Net Worth Milestones — small progress card showing next achievement
+    const milestonesCard = (() => {
+      const r = computeNetWorthMilestones();
+      if (r.current <= 0 && !r.next) return "";
+      const nextEmoji = r.next ? r.next.emoji : "🪐";
+      const nextLabel = r.next ? r.next.title : "Off the chart";
+      const togo = r.next ? r.next.value - r.current : 0;
+      return `
+        <div class="row tappable" onclick="milestonesSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:12px">
+          <div style="font-size:24px;width:40px;text-align:center">${nextEmoji}</div>
+          <div class="body">
+            <div class="t1" style="margin:0">Next: ${esc(nextLabel)}</div>
+            <div class="t2">${r.next ? `${fmt$0(togo)} to go · ${r.progress.toFixed(0)}% from last milestone` : "Beyond the highest tracked milestone"}</div>
+            ${r.next ? `<div style="height:5px;background:var(--bg-elev);border-radius:3px;overflow:hidden;margin-top:8px"><div style="height:100%;width:${r.progress}%;background:var(--blue)"></div></div>` : ""}
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      `;
+    })();
+
     // Account-Priority Pyramid summary — single row showing which step is active
     const pyramidSummary = (() => {
       const r = accountPriorityPyramid();
@@ -2556,6 +2577,7 @@ function renderMoney() {
       ${chartCard}
       ${compBar}
       ${cashFlowCardHtml()}
+      ${milestonesCard}
       ${pyramidSummary}
       ${projectionsSection}
       ${taxSummary}
@@ -4403,6 +4425,10 @@ function snapshotNetWorth() {
   else DB.netWorthHistory.push(snap);
   // cap ~2 years
   if (DB.netWorthHistory.length > 730) DB.netWorthHistory = DB.netWorthHistory.slice(-730);
+  // Check for newly-crossed milestones — fires a celebration toast + confetti.
+  // Guarded with try/catch since this is a side effect; never let a milestone
+  // bug block a snapshot from saving.
+  try { checkNetWorthMilestones(); } catch {}
 }
 
 function netWorthSparkline(history, w=300, h=60) {
@@ -5648,6 +5674,99 @@ function wealthHealthSheet() {
       </div>
     ` : ""}
     <div class="actions">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+/* ================ NET WORTH MILESTONES ================
+   Gamification of the wealth-building journey. Crossing each milestone
+   should feel like an achievement — the app celebrates with confetti +
+   a milestone-specific encouragement message. Persists which milestones
+   the user has celebrated so it only fires once per crossing.
+*/
+
+const NW_MILESTONES = [
+  { value: 1000,     emoji: "🌱", title: "First $1,000", quote: "The hardest dollar is the first one. You're past zero." },
+  { value: 5000,     emoji: "🪴", title: "$5k saved", quote: "A real emergency fund start. Compounding starts to notice you." },
+  { value: 10000,    emoji: "💵", title: "$10k milestone", quote: "Five figures. This is the foundation everything else compounds on." },
+  { value: 25000,    emoji: "💰", title: "$25k saved", quote: "A quarter of the way to your first $100k. Keep the system running." },
+  { value: 50000,    emoji: "📈", title: "$50k milestone", quote: "Halfway to Munger's $100k threshold. Don't ease off — the next $50k is faster." },
+  { value: 100000,   emoji: "💎", title: "$100k — the hardest one", quote: "Charlie Munger called this 'a bitch.' You did it. Math takes over from here." },
+  { value: 250000,   emoji: "🏆", title: "$250k milestone", quote: "Quarter-million. Your portfolio earns more passively per year than most start with." },
+  { value: 500000,   emoji: "🚀", title: "$500k milestone", quote: "Half a million. Compound interest is the engine now — you just feed it." },
+  { value: 1000000,  emoji: "👑", title: "$1,000,000 — millionaire", quote: "Seven figures. Statistically rare, mathematically inevitable from here at your pace." },
+  { value: 2500000,  emoji: "🦅", title: "$2.5M milestone", quote: "FI-ready at most spending levels. Time is now your most valuable asset, not money." },
+  { value: 5000000,  emoji: "🌟", title: "$5M milestone", quote: "Top 2% of households. The question shifts from 'how much' to 'what for'." },
+  { value: 10000000, emoji: "🪐", title: "$10M+", quote: "Generational wealth territory. Estate planning > earning rate now." },
+];
+
+function computeNetWorthMilestones() {
+  const comp = wealthComposition();
+  const current = comp.total;
+  const celebrated = DB.celebratedMilestones || {};
+  const hit = NW_MILESTONES.filter(m => current >= m.value);
+  // Next = first milestone above current; null if at top
+  const next = NW_MILESTONES.find(m => m.value > current) || null;
+  const lastHit = hit[hit.length - 1] || null;
+  const progress = next
+    ? Math.max(0, Math.min(100, ((current - (lastHit?.value || 0)) / (next.value - (lastHit?.value || 0))) * 100))
+    : 100;
+  const uncelebrated = hit.filter(m => !celebrated[String(m.value)]);
+  return { current, hit, next, lastHit, progress, uncelebrated };
+}
+
+// Called from snapshotNetWorth to detect newly-crossed milestones.
+// Fires a celebration for each unclebrated milestone (usually just 1).
+function checkNetWorthMilestones() {
+  const r = computeNetWorthMilestones();
+  if (!r.uncelebrated.length) return;
+  DB.celebratedMilestones = DB.celebratedMilestones || {};
+  for (const m of r.uncelebrated) {
+    DB.celebratedMilestones[String(m.value)] = Date.now();
+  }
+  save();
+  // Use the highest newly-celebrated milestone for the toast (in case the user
+  // crossed multiple between snapshots — rare but possible with big swings).
+  const m = r.uncelebrated[r.uncelebrated.length - 1];
+  toast(`🎉 ${m.title} — ${m.quote.split(".")[0]}!`);
+  try { celebrate(1.2); } catch {}
+}
+
+function milestonesSheet() {
+  const r = computeNetWorthMilestones();
+  const rows = NW_MILESTONES.map(m => {
+    const hit = r.current >= m.value;
+    const isNext = !hit && r.next && r.next.value === m.value;
+    const color = hit ? "var(--green)" : isNext ? "var(--blue)" : "var(--t4)";
+    return `
+      <div style="display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid var(--sep);opacity:${hit||isNext?"1":"0.6"}">
+        <div style="font-size:24px;width:32px;text-align:center">${m.emoji}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:13px;color:${color}">${esc(m.title)}${hit ? " ✓" : isNext ? " · next" : ""}</div>
+          <div style="font-size:11px;color:var(--t3);margin-top:2px;line-height:1.4">${esc(m.quote)}</div>
+        </div>
+      </div>
+    `;
+  }).join("");
+  openSheet(`
+    <h2>🏔️ Net worth milestones</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Crossing each level is a real achievement. The app celebrates with you.</p>
+    <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:12px;text-align:center">
+      <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;font-weight:600">Current net worth</div>
+      <div style="font-size:30px;font-weight:700;letter-spacing:-.5px;margin:4px 0" data-priv="amount">${fmt$0(r.current)}</div>
+      ${r.next ? `
+        <div style="margin-top:10px">
+          <div style="font-size:12px;color:var(--t3);margin-bottom:6px">${r.next.emoji} Next: ${esc(r.next.title)} · ${fmt$0(r.next.value - r.current)} to go</div>
+          <div style="height:8px;background:var(--bg-elev);border-radius:4px;overflow:hidden">
+            <div style="height:100%;width:${r.progress}%;background:var(--blue);transition:width .3s"></div>
+          </div>
+          <div style="font-size:11px;color:var(--t3);margin-top:4px">${r.progress.toFixed(0)}% from last milestone</div>
+        </div>
+      ` : `<div style="font-size:13px;color:var(--green);margin-top:6px">🪐 Off the chart — beyond the highest tracked milestone</div>`}
+    </div>
+    <div>${rows}</div>
+    <div class="actions" style="margin-top:14px">
       <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
     </div>
   `);
@@ -7605,6 +7724,7 @@ function init() {
     computeFire, fireChart, fireSheet,
     CURATED_CARDS, CARD_CATEGORIES, estimatedMonthlySpendByCategory,
     computeCardRewards, recommendCards, cardRecommendationsSheet,
+    NW_MILESTONES, computeNetWorthMilestones, checkNetWorthMilestones, milestonesSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
