@@ -1,0 +1,26 @@
+# Secrets — never commit
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+*.pem
+*.key
+
+# Wrangler / Cloudflare local state
+.wrangler/
+
+# Node
+node_modules/
+
+# Claude Code local settings
+.claude/
+
+# OS / editor junk
+Thumbs.db
+.DS_Store
+desktop.ini
+.vscode/
+.idea/
+
+# Local user-data exports
+ascend-backup-*.json

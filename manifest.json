@@ -1,0 +1,22 @@
+{
+  "name": "Ascend — Habits, Goals & Money",
+  "short_name": "Ascend",
+  "description": "Your daily habits, life goals, and money — in one private, encrypted, offline-first place.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F7F7F5",
+  "theme_color": "#F7F7F5",
+  "categories": ["productivity", "lifestyle", "finance"],
+  "icons": [
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "Today", "short_name": "Today", "description": "Open today's habits and safe-to-spend", "url": "./index.html?tab=today" },
+    { "name": "Add spend", "short_name": "+Spend", "description": "Log a transaction", "url": "./index.html?tab=money&action=add-spend" },
+    { "name": "Goals", "short_name": "Goals", "description": "Open goals tab", "url": "./index.html?tab=goals" }
+  ]
+}

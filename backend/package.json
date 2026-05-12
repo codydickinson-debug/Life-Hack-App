@@ -1,0 +1,15 @@
+{
+  "name": "ascend-backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "tail": "wrangler tail",
+    "kv:create": "wrangler kv namespace create ASCEND_KV"
+  },
+  "devDependencies": {
+    "wrangler": "^3.78.0"
+  }
+}

@@ -1,0 +1,16 @@
+name = "ascend-backend"
+main = "worker.js"
+compatibility_date = "2024-09-01"
+
+# After running `wrangler kv namespace create ASCEND_KV`, paste the id below.
+[[kv_namespaces]]
+binding = "ASCEND_KV"
+id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+
+# Secrets are NOT set here. Set them via the CLI (one-time) so they don't end up in git:
+#   wrangler secret put PLAID_CLIENT_ID
+#   wrangler secret put PLAID_SECRET
+#   wrangler secret put PLAID_ENV          # value: sandbox | development | production
+#   wrangler secret put API_KEY            # any random string; the PWA will send this as Bearer
+#   wrangler secret put ENCRYPTION_KEY     # base64 32-byte key (run: openssl rand -base64 32)
+#   wrangler secret put ALLOWED_ORIGIN     # the URL of your deployed PWA, e.g. https://ascend-yourname.netlify.app
