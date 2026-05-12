@@ -2637,7 +2637,7 @@ function renderMoney() {
       </div>
     `;
 
-    // Wealth Lessons entry — a tappable row to the curated educational library.
+    // Wealth Lessons + Bill Negotiation entries — grouped under "Learn".
     const learnEntry = (() => {
       const read = DB.lessonsRead || {};
       const readCount = WEALTH_LESSONS.filter(l => read[l.id]).length;
@@ -2649,6 +2649,14 @@ function renderMoney() {
             <div class="body">
               <div class="t1">Wealth lessons</div>
               <div class="t2">${readCount} of ${WEALTH_LESSONS.length} read · short opinionated lessons on building wealth</div>
+            </div>
+            <div class="trail chev"></div>
+          </div>
+          <div class="row tappable" onclick="negotiationToolkitSheet()" role="button" tabindex="0">
+            <div class="lead">🗣️</div>
+            <div class="body">
+              <div class="t1">Bill negotiation toolkit</div>
+              <div class="t2">${NEGOTIATION_TEMPLATES.length} scripts for cable, insurance, credit cards, rent &amp; more</div>
             </div>
             <div class="trail chev"></div>
           </div>
@@ -5800,6 +5808,172 @@ function wealthHealthSheet() {
   `);
 }
 
+/* ================ BILL NEGOTIATION TOOLKIT ================
+   Scripts + tips for negotiating common monthly bills. The single highest
+   ROI/hour exercise most people skip because it feels uncomfortable.
+   Educational — savings ranges are typical but vary by region and tenure.
+*/
+
+const NEGOTIATION_TEMPLATES = [
+  {
+    id: "internet-cable",
+    emoji: "📡",
+    title: "Internet / Cable",
+    avgSavings: "$20-50/mo (10-30%)",
+    bestTiming: "When promo expires, or every 12 months. Right before holidays / new-year promos run.",
+    successRate: "70-80% if you actually call",
+    script: `Hi, I'm calling to look at my account — my bill has gone up and I'm comparing options with [competitor in your area]. Their similar plan is [\$X] for new customers.\n\nI've been a customer for [X years] and would prefer to stay, but I need my bill to come down. What promotions can you put on my account?\n\n(If first agent can't help) Could you transfer me to retention or loyalty?`,
+    tips: [
+      "Know the competitor's current promo before calling",
+      "Ask for 'retention' or 'loyalty' department — different scripts than billing",
+      "Be polite but specific: 'I need this bill at \$X or I'm switching'",
+      "Don't accept the first offer — counter once",
+      "If they won't budge, actually be willing to switch (or threaten convincingly)",
+    ],
+  },
+  {
+    id: "cell-phone",
+    emoji: "📱",
+    title: "Cell phone plan",
+    avgSavings: "$15-40/mo per line",
+    bestTiming: "After 24+ months on the same plan, or when phone is paid off.",
+    successRate: "60-70%, much higher if you're paying for a phone you've already paid off",
+    script: `Hi, I'd like to review my plan. My current bill is [\$X]/mo for [number of lines]. I've seen [Mint Mobile / Visible / Cricket / etc.] offering equivalent service for less.\n\nWhat plans do you have that would lower my bill while keeping my coverage?`,
+    tips: [
+      "If your phone is paid off, you may still be getting charged for it — check the bill carefully",
+      "Prepaid carriers (Mint, Visible, Cricket, US Mobile) often save 50%+",
+      "Don't pay for unlimited if you average <15 GB/month",
+      "Family plans often work better consolidated with one carrier",
+    ],
+  },
+  {
+    id: "credit-card-apr",
+    emoji: "💳",
+    title: "Credit card APR reduction",
+    avgSavings: "2-5 percentage points off APR",
+    bestTiming: "Any time, but better odds if you have a balance + good payment history (12+ months on time).",
+    successRate: "50-60% for established cardholders",
+    script: `Hi, I'd like to request a reduction in my interest rate. I've been a customer for [X years/months] with on-time payments. I've seen competing cards offering me rates of [X%]. What can you do to lower my APR?`,
+    tips: [
+      "Have a competing offer ready (real one from a balance transfer mailer)",
+      "Mention specific number of months on-time",
+      "If denied, ask when you can re-apply (typically 3-6 months)",
+      "Best leverage: 700+ FICO + low utilization on this card",
+      "Always pay in full anyway — APR doesn't matter at \$0 balance",
+    ],
+  },
+  {
+    id: "auto-insurance",
+    emoji: "🚗",
+    title: "Auto insurance",
+    avgSavings: "$30-80/mo (15-40%)",
+    bestTiming: "At renewal, or after any life change (move, married, paid off car, age 25/65).",
+    successRate: "60-70%, very high if you actually shop competing quotes",
+    script: `Hi, I'm reviewing my auto insurance. I got a quote from [Geico/Progressive/USAA — whichever applies] for [\$X]/6 months with similar coverage. I'd like to stay with you if you can match or beat it. What can you do?`,
+    tips: [
+      "Get 3 actual quotes online first (15 min total)",
+      "Check for discounts: defensive driving course, low mileage, telematics, paid-in-full, bundle home+auto",
+      "If you own your car outright, drop comprehensive on cars worth <\$3k",
+      "Increase deductibles from \$250 to \$500 or \$1000 — usually 10-25% savings",
+      "Switch carriers if your current one won't compete — loyalty rarely pays here",
+    ],
+  },
+  {
+    id: "medical-bill",
+    emoji: "🏥",
+    title: "Medical bill",
+    avgSavings: "20-50% off the bill",
+    bestTiming: "Before paying, ideally within 30 days of receiving the bill.",
+    successRate: "80%+ on most hospital bills",
+    script: `Hi, I'd like to discuss [bill from date X for amount Y]. Two things:\n\n1. Can I get an itemized bill? I want to verify each charge against the services I received.\n\n2. After review, I'd like to discuss a discount for prompt payment. I can pay [40-50% of the amount] today if you'll accept it as payment in full.`,
+    tips: [
+      "ALWAYS request the itemized bill first — common errors found in 80%+ of hospital bills",
+      "Many hospitals have financial assistance programs you can apply for retroactively",
+      "Negotiate BEFORE the bill goes to collections (much harder after)",
+      "If they won't discount, ask for an interest-free payment plan",
+      "Use Medical Billing Advocates if the bill is >\$5,000 (they take a %)",
+    ],
+  },
+  {
+    id: "rent",
+    emoji: "🏠",
+    title: "Rent increase",
+    avgSavings: "\$50-200/mo (offset increase or partial)",
+    bestTiming: "60-90 days before renewal, in writing.",
+    successRate: "30-50%, higher if you've been a quiet tenant in a soft market",
+    script: `Dear [Landlord/Property Manager],\n\nI'd like to discuss my renewal terms. I've been a tenant for [X years], always paid on time, and have taken good care of the unit.\n\nI understand costs are rising, but the proposed increase of [X%] is steep. Comparable units in the area are listing for [\$Y]. Would you consider [renewing at current rate / a smaller increase / X months at old rate then increase]?\n\nI'd prefer to stay and continue being a reliable tenant.`,
+    tips: [
+      "Have real comps ready (Zillow/Apartments.com)",
+      "Emphasize tenure, on-time payments, low maintenance requests",
+      "Offer to sign 24-month lease for rate lock",
+      "Vacancies cost landlords 1-2 months of rent — they often prefer renewal",
+      "Put it in writing (email), keep it professional",
+    ],
+  },
+];
+
+function negotiationToolkitSheet() {
+  const html = NEGOTIATION_TEMPLATES.map(t => `
+    <div class="row tappable" onclick="negotiationScriptSheet(${jsAttr(t.id)})" role="button" tabindex="0">
+      <div class="lead">${t.emoji}</div>
+      <div class="body">
+        <div class="t1">${esc(t.title)}</div>
+        <div class="t2">${esc(t.avgSavings)} typical · ${esc(t.successRate)}</div>
+      </div>
+      <div class="trail chev"></div>
+    </div>
+  `).join("");
+  openSheet(`
+    <h2>🗣️ Bill negotiation toolkit</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Scripts and tips for negotiating common bills. The single highest-ROI hour most people skip. Tap any to see the full script.</p>
+    <div class="list">${html}</div>
+    <p class="muted" style="font-size:11px;margin-top:14px;line-height:1.5">
+      <b>The framework:</b> 1) Know the competing alternative. 2) Be polite but specific. 3) Ask for retention/loyalty department. 4) Don't accept the first offer. 5) Be ready to actually leave. Most savings come from companies that would rather discount than lose you.
+    </p>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+function negotiationScriptSheet(id) {
+  const t = NEGOTIATION_TEMPLATES.find(x => x.id === id);
+  if (!t) { negotiationToolkitSheet(); return; }
+  // Format the script: convert \n\n into paragraphs.
+  const scriptHtml = t.script.split(/\n\n+/).map(p => `<p style="margin:0 0 10px;line-height:1.6;font-size:13px">${esc(p).replace(/\n/g, "<br>")}</p>`).join("");
+  openSheet(`
+    <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:14px">
+      <div style="font-size:36px;line-height:1">${t.emoji}</div>
+      <div style="flex:1;min-width:0">
+        <h2 style="margin:0">${esc(t.title)}</h2>
+        <div style="font-size:12px;color:var(--t3);margin-top:4px">${esc(t.avgSavings)} typical savings · ${esc(t.successRate)}</div>
+      </div>
+    </div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">When to call</div>
+      <div style="font-size:13px;line-height:1.5">${esc(t.bestTiming)}</div>
+    </div>
+
+    <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:12px;border-left:3px solid var(--blue)">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Script</div>
+      ${scriptHtml}
+    </div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Tips</div>
+      <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7">
+        ${t.tips.map(tip => `<li>${esc(tip)}</li>`).join("")}
+      </ul>
+    </div>
+
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" onclick="closeSheet();negotiationToolkitSheet()">← All scripts</button>
+      <button class="btn" onclick="closeSheet()">Got it</button>
+    </div>
+  `);
+}
+
 /* ================ RENTAL PROPERTY CALCULATOR ================
    Investment real estate underwriting: cap rate, monthly cash flow, and
    cash-on-cash return. Distinct from the primary-residence affordability
@@ -8870,6 +9044,7 @@ function init() {
     resetSinkingFund, deleteSinkingFund,
     NW_BENCHMARKS, benchmarkForAge, benchmarksSheet,
     computeRental, rentalPropertySheet,
+    NEGOTIATION_TEMPLATES, negotiationToolkitSheet, negotiationScriptSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
