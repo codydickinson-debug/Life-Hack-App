@@ -2560,6 +2560,14 @@ function renderMoney() {
           </div>
           <div class="trail chev"></div>
         </div>
+        <div class="row tappable" onclick="inflationSheet()" role="button" tabindex="0">
+          <div class="lead">📉</div>
+          <div class="body">
+            <div class="t1">Inflation calculator</div>
+            <div class="t2">What's money "really" worth at different points in time</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
       </div>
     `;
 
@@ -5727,6 +5735,97 @@ function wealthHealthSheet() {
   `);
 }
 
+/* ================ INFLATION CALCULATOR ================
+   Two views: what an amount today is worth in N years (purchasing power
+   erosion), and what an amount N years ago is worth today (price drift).
+   Default rate is 3% — close to the long-run US CPI average.
+
+   Educational lens: encourages thinking in real (post-inflation) terms
+   rather than nominal dollars. A $100k salary today is not the same as
+   $100k in 20 years.
+*/
+
+function computeInflation(amount, years, ratePct) {
+  const a = Math.max(0, +amount || 0);
+  const y = +years || 0;
+  const r = Math.max(0, +ratePct || 0) / 100;
+  const factor = Math.pow(1 + r, Math.abs(y));
+  return {
+    todayValue: a,
+    futureValue: a * factor,           // a today → a × factor in y years
+    pastEquivalent: a / factor,        // a today is worth a/factor y years ago in 'then dollars'
+    purchasingPowerLoss: a - (a / factor), // dollars of purchasing power lost over y years
+  };
+}
+
+function inflationSheet() {
+  let amount = 100000;
+  let years = 20;
+  let rate = 3;
+
+  const render = (vals) => {
+    const r = computeInflation(vals.amount, vals.years, vals.rate);
+    return `
+      <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">${fmt$0(vals.amount)} today, in ${vals.years} years</div>
+        <div style="font-size:14px;color:var(--t2);margin-top:4px">Will require <b data-priv="amount">${fmt$0(r.futureValue)}</b> in future dollars to buy the same thing</div>
+        <div style="font-size:13px;color:var(--red);margin-top:6px">Purchasing power loss: ${fmt$0(r.todayValue - r.todayValue * (r.todayValue / r.futureValue))}</div>
+      </div>
+
+      <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">${fmt$0(vals.amount)} ${vals.years} years ago</div>
+        <div style="font-size:14px;color:var(--t2);margin-top:4px">Had the buying power of <b data-priv="amount">${fmt$0(r.futureValue)}</b> today (so it grew in nominal terms but stayed flat in real terms)</div>
+      </div>
+
+      <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Real take-home</div>
+        <div style="font-size:13px;color:var(--t2);line-height:1.6;margin-top:4px">
+          A salary of <b>${fmt$0(vals.amount)}</b> today is equivalent to <b data-priv="amount">${fmt$0(r.futureValue)}</b> in ${vals.years} years — if it doesn't grow at least ${vals.rate}%/yr, you're getting a real pay cut every year.<br><br>
+          The reverse: <b data-priv="amount">${fmt$0(r.pastEquivalent)}</b> ${vals.years} years ago bought what <b>${fmt$0(vals.amount)}</b> does today.
+        </div>
+      </div>
+    `;
+  };
+
+  openSheet(`
+    <h2>📉 Inflation calculator</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Most financial decisions involve dollars across time. This tool shows what a dollar amount is "really" worth at different points. Use it to think in real terms instead of nominal.</p>
+    <div id="inf-output">${render({ amount, years, rate })}</div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Inputs</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="inf-amt">Amount ($)</label>
+        <input id="inf-amt" type="number" min="0" step="1000" value="${amount}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:110px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="inf-yrs">Years</label>
+        <input id="inf-yrs" type="number" min="1" max="80" step="1" value="${years}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+        <label for="inf-rate">Inflation rate (%/yr)</label>
+        <input id="inf-rate" type="number" min="0" max="20" step="0.25" value="${rate}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <p class="muted" style="font-size:11px;margin-top:10px;line-height:1.5">3% is the long-run US CPI average. Recent years have run higher; long-run picks the trend. The Fed targets 2% PCE inflation but headline CPI typically runs slightly higher.</p>
+    </div>
+
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+
+  const refresh = () => {
+    $("#inf-output").innerHTML = render({
+      amount: +$("#inf-amt").value || 0,
+      years: +$("#inf-yrs").value || 1,
+      rate: +$("#inf-rate").value || 0,
+    });
+  };
+  ["#inf-amt","#inf-yrs","#inf-rate"].forEach(sel => {
+    $(sel).addEventListener("input", refresh);
+  });
+}
+
 /* ================ BIG PURCHASE DECISION TOOL ================
    Frames any major purchase against the alternative of investing the
    same money. Educational, not advice — but the math is sobering and
@@ -8230,6 +8329,7 @@ function init() {
     RISK_LEVELS, computeTargetAllocation, investingPlanSheet,
     monthlyPI, realEstateSheet,
     computePurchaseDecision, purchaseDecisionSheet,
+    computeInflation, inflationSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
