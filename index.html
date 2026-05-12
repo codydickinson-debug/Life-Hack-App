@@ -1161,6 +1161,7 @@ const DEFAULT_DB = {
   estateCheckProgress: {},   // { taskId: { done: true, doneAt: timestamp } } — estate-planning checklist progress
   booksRead: {},             // { bookId: { read: true, at: timestamp } } — wealth-building reading list progress
   subscriptionUsage: {},     // { recurringId: { lastUsed: ts, decision: "keep"|"cancel"|"negotiate" } } — subscription audit answers
+  moneyPersonality: null,    // { primary: type, secondary: type, scores: {type:score}, takenAt: ts } — quiz result
   setupChecklistDismissed: false, // when true, hide the setup banner on Today even if incomplete
 
   spendSearch: "",
@@ -2755,6 +2756,14 @@ function renderMoney() {
             <div class="body">
               <div class="t1">Subscription audit</div>
               <div class="t2">Keep / negotiate / cancel each recurring expense · surface savings</div>
+            </div>
+            <div class="trail chev"></div>
+          </div>
+          <div class="row tappable" onclick="moneyPersonalityIntroSheet()" role="button" tabindex="0">
+            <div class="lead">🎭</div>
+            <div class="body">
+              <div class="t1">Money personality quiz</div>
+              <div class="t2">${DB.moneyPersonality ? `You're a ${esc(MONEY_TYPES[DB.moneyPersonality.primary]?.name || "money type")}` : "9 questions · surface your money patterns + blind spots"}</div>
             </div>
             <div class="trail chev"></div>
           </div>
@@ -5945,6 +5954,339 @@ function wealthHealthSheet() {
     ` : ""}
     <div class="actions">
       <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+/* ================ MONEY PERSONALITY QUIZ ================
+   9-question assessment that maps to one of 6 money personality types.
+   Each type has characteristic strengths, blind spots, and specific
+   recommendations.
+
+   Types (loosely based on common money-psychology frameworks):
+     Saver      — high control, future-oriented, may under-spend on experiences
+     Spender    — present-oriented, generous, may struggle with delayed gratification
+     Avoider    — anxious about money, prefers not to engage, often underinformed
+     Status     — uses money for signaling and identity, may overspend on appearance
+     Monk       — frugal by values, may neglect income growth or quality of life
+     Security  — risk-averse, optimizes safety, may miss growth opportunities
+*/
+
+const MONEY_TYPES = {
+  saver: {
+    emoji: "💰",
+    name: "The Saver",
+    desc: "Future-oriented. You see money as a tool for security and freedom. You'd rather have a growing balance than a memorable night out.",
+    strengths: ["High savings rate", "Strong emergency fund", "Disciplined long-term planning"],
+    blindSpots: ["May under-spend on experiences that compound differently than money", "Risk of treating money as the goal rather than a tool", "Can miss income-growth opportunities by over-focusing on cutting"],
+    nextMoves: [
+      "Run the Die With Zero math — you might be under-spending on experiences",
+      "Shift some focus to income strategies (you've already mastered the saving side)",
+      "Pick ONE big experience/upgrade per year — don't suppress all spending",
+    ],
+  },
+  spender: {
+    emoji: "💸",
+    name: "The Spender",
+    desc: "Present-oriented. Money is for living. You're generous, optimistic, and good at extracting joy from purchases.",
+    strengths: ["Strong YOLO clarity — knows what feels good", "Often generous + builds community", "Doesn't over-stress about money"],
+    blindSpots: ["May under-save → tight retirement", "Lifestyle creep is the real enemy", "Income often outpaces savings until very late in career"],
+    nextMoves: [
+      "Automate savings BEFORE you see the money — the single highest-leverage move for you",
+      "Run the Big Purchase Decision tool on impulse buys above your threshold",
+      "Set a hard floor on savings rate (10-15%) before the next raise hits lifestyle",
+    ],
+  },
+  avoider: {
+    emoji: "🙈",
+    name: "The Avoider",
+    desc: "Anxious about money. You'd rather not look. Decisions get postponed. Statements pile up.",
+    strengths: ["Often emotionally healthy in non-money domains", "Once engaged, makes good decisions", "Not driven by greed or status"],
+    blindSpots: ["Compound interest works against you here", "Small problems become big ones from neglect", "Often paying more than necessary in fees, interest, missed opportunities"],
+    nextMoves: [
+      "Set ONE 15-min money appointment per week — just open the app + look",
+      "Automate everything you can (savings, bill pay, retirement) — reduces decisions",
+      "Read the Psychology of Money (in Reading List) — most accessible money book ever written",
+    ],
+  },
+  status: {
+    emoji: "💎",
+    name: "The Status Seeker",
+    desc: "Money is identity. You signal through purchases — car, watch, address, dinner. Quality matters, and you'll pay for it.",
+    strengths: ["Often higher-earning (status drives income)", "Strong taste, can identify quality", "Networking-friendly — visible wealth opens doors"],
+    blindSpots: ["High monthly fixed costs from status purchases", "Often net worth lags income substantially", "The Millionaire Next Door truth: most actually-wealthy don't look it"],
+    nextMoves: [
+      "Track net worth, not income — they're different scoreboards",
+      "Read The Millionaire Next Door (in Reading List) — recalibrating read",
+      "Pick ONE status category you actually care about. Cut the others ruthlessly.",
+    ],
+  },
+  monk: {
+    emoji: "🧘",
+    name: "The Monk",
+    desc: "Frugal by values. You're suspicious of consumerism, prefer experiences and self-sufficiency. Voluntary simplicity.",
+    strengths: ["Often highest savings rate of any type", "Resilient to lifestyle creep", "Clear about what actually matters"],
+    blindSpots: ["May leave income on the table — frugality has a floor; income doesn't have a ceiling", "Can be judgmental of others' spending choices", "Sometimes optimizes the wrong variable"],
+    nextMoves: [
+      "Read Income Strategies — your savings game is solid; income game has unlimited upside",
+      "Avoid spending guilt on things you actually value (Die With Zero territory)",
+      "Consider: at your savings rate, you can afford the occasional 'monk-violating' splurge",
+    ],
+  },
+  security: {
+    emoji: "🛡️",
+    name: "The Security Seeker",
+    desc: "Risk-averse. You want sleep more than upside. Bonds, savings accounts, large emergency funds. Investing makes you nervous.",
+    strengths: ["Almost never lose money to bad decisions", "Often well-prepared for emergencies", "Predictable, sustainable financial life"],
+    blindSpots: ["Inflation slowly erodes 'safe' cash savings", "Long horizons reward more risk than your gut wants", "Over-funding emergency means under-funding wealth"],
+    nextMoves: [
+      "Read The Simple Path to Wealth (in Reading List) — gentle introduction to indexing",
+      "Try a 'shoe-string' invested account: $200 in VTI just to feel the volatility",
+      "Use the Asset Allocation tool — the right balance for YOUR risk profile, not the gut answer",
+    ],
+  },
+};
+
+const MONEY_QUIZ = [
+  {
+    q: "An unexpected $5,000 hits your account. First reaction?",
+    options: [
+      { text: "Save or invest it immediately", type: "saver" },
+      { text: "Plan a small celebration purchase + save the rest", type: "spender" },
+      { text: "Honestly? I'd let it sit while I figure out what to do", type: "avoider" },
+      { text: "Upgrade something I've had my eye on", type: "status" },
+      { text: "Save it. Nothing I need warrants the spending", type: "monk" },
+      { text: "Move it to high-yield savings, leave it untouched", type: "security" },
+    ],
+  },
+  {
+    q: "When you check your bank balance, you feel:",
+    options: [
+      { text: "Curious — what's the trend look like?", type: "saver" },
+      { text: "Anxious to spend it before bills hit", type: "spender" },
+      { text: "I avoid checking. Sometimes for weeks.", type: "avoider" },
+      { text: "Pride if it's good, motivation if it's not", type: "status" },
+      { text: "Neutral. The number doesn't change my life", type: "monk" },
+      { text: "Calmer when it's high. Worried when low.", type: "security" },
+    ],
+  },
+  {
+    q: "A friend invites you to an expensive dinner. You:",
+    options: [
+      { text: "Say no — it's not in the budget this month", type: "saver" },
+      { text: "Yes immediately. This is what money is for.", type: "spender" },
+      { text: "Go but stress about the bill the whole time", type: "avoider" },
+      { text: "Yes — show up well-dressed, pick the wine", type: "status" },
+      { text: "Suggest cooking together at home instead", type: "monk" },
+      { text: "Yes, but cut elsewhere this week to absorb it", type: "security" },
+    ],
+  },
+  {
+    q: "How would you describe your current relationship with money?",
+    options: [
+      { text: "Tool I'm learning to wield more skillfully", type: "saver" },
+      { text: "Energy I exchange for life experiences", type: "spender" },
+      { text: "Source of anxiety I'd rather not think about", type: "avoider" },
+      { text: "Reflection of what I've built and where I'm going", type: "status" },
+      { text: "Necessary but I try to need very little of it", type: "monk" },
+      { text: "Cushion that lets me sleep at night", type: "security" },
+    ],
+  },
+  {
+    q: "Investing in the stock market feels:",
+    options: [
+      { text: "Like a system I can master with study", type: "saver" },
+      { text: "Boring. I'd rather buy something I can use today.", type: "spender" },
+      { text: "Confusing. I keep meaning to learn but haven't", type: "avoider" },
+      { text: "Important — wealthy people invest", type: "status" },
+      { text: "Necessary but I keep it simple and rarely look", type: "monk" },
+      { text: "Risky. I prefer guaranteed returns even if lower", type: "security" },
+    ],
+  },
+  {
+    q: "Your biggest money regret would most likely be:",
+    options: [
+      { text: "Missing a market opportunity I could've taken", type: "saver" },
+      { text: "Not enjoying my prime years because of money fear", type: "spender" },
+      { text: "Not engaging with money until it was too late", type: "avoider" },
+      { text: "Trading too much present for future I never got to", type: "status" },
+      { text: "Letting lifestyle creep undo years of discipline", type: "monk" },
+      { text: "Taking on more risk than I could handle", type: "security" },
+    ],
+  },
+  {
+    q: "When you get a raise, you typically:",
+    options: [
+      { text: "Bump up auto-savings by the entire raise", type: "saver" },
+      { text: "Plan a small lifestyle upgrade I've been wanting", type: "spender" },
+      { text: "Not sure — I should track it but don't", type: "avoider" },
+      { text: "Upgrade visible spending — car, apartment, watch", type: "status" },
+      { text: "Don't really notice — my lifestyle doesn't need it", type: "monk" },
+      { text: "Add it to emergency fund first, then maybe invest", type: "security" },
+    ],
+  },
+  {
+    q: "Your ideal retirement looks like:",
+    options: [
+      { text: "Financial independence well before 65", type: "saver" },
+      { text: "Honestly, I don't think about it much", type: "spender" },
+      { text: "I haven't really planned for it", type: "avoider" },
+      { text: "Comfortable lifestyle, maintaining current standard", type: "status" },
+      { text: "Quiet life, low expenses, lots of time", type: "monk" },
+      { text: "Predictable income from safe sources", type: "security" },
+    ],
+  },
+  {
+    q: "The phrase that resonates most:",
+    options: [
+      { text: "'Pay yourself first.'", type: "saver" },
+      { text: "'You can't take it with you.'", type: "spender" },
+      { text: "'I'll deal with it later.'", type: "avoider" },
+      { text: "'Quality is remembered long after price is forgotten.'", type: "status" },
+      { text: "'The cost of a thing is the amount of life energy it takes.'", type: "monk" },
+      { text: "'Better safe than sorry.'", type: "security" },
+    ],
+  },
+];
+
+function scoreMoneyPersonality(answers) {
+  // answers: array of type strings (one per question)
+  const scores = { saver: 0, spender: 0, avoider: 0, status: 0, monk: 0, security: 0 };
+  for (const t of answers) {
+    if (scores[t] != null) scores[t]++;
+  }
+  const ranked = Object.entries(scores).sort((a,b) => b[1] - a[1]);
+  return {
+    scores,
+    primary: ranked[0][0],
+    secondary: ranked[1][0],
+  };
+}
+
+function moneyPersonalityIntroSheet() {
+  const existing = DB.moneyPersonality;
+  if (existing) {
+    return moneyPersonalityResultSheet(existing.primary, existing.secondary, existing.scores);
+  }
+  openSheet(`
+    <h2>🎭 Money personality quiz</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">9 quick questions about your relationship with money. No right answers — the goal is awareness. Takes about 2 minutes.</p>
+
+    <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">The 6 types</div>
+      ${Object.entries(MONEY_TYPES).map(([k,t]) => `
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px">
+          <div style="width:20px;text-align:center">${t.emoji}</div>
+          <div><b>${esc(t.name.replace("The ",""))}</b> — ${esc(t.desc.split(".")[0])}</div>
+        </div>
+      `).join("")}
+    </div>
+
+    <p class="muted" style="font-size:11px;line-height:1.5">
+      You'll likely score across multiple types. The point is to surface patterns, not box you in. Use the results to identify blind spots and next moves.
+    </p>
+
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" onclick="closeSheet()">Maybe later</button>
+      <button class="btn" id="mq-start">Start quiz</button>
+    </div>
+  `);
+  $("#mq-start").addEventListener("click", () => {
+    closeSheet();
+    moneyPersonalityQuizSheet(0, []);
+  });
+}
+
+function moneyPersonalityQuizSheet(qIndex, answers) {
+  const q = MONEY_QUIZ[qIndex];
+  if (!q) {
+    // Done — score and show results
+    const r = scoreMoneyPersonality(answers);
+    DB.moneyPersonality = { ...r, takenAt: Date.now() };
+    save();
+    moneyPersonalityResultSheet(r.primary, r.secondary, r.scores);
+    return;
+  }
+  // Shuffle option order so the user doesn't pattern-match the order
+  const opts = q.options.slice().sort(() => Math.random() - 0.5);
+  openSheet(`
+    <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:8px">Question ${qIndex+1} of ${MONEY_QUIZ.length}</div>
+    <div style="height:5px;background:var(--bg-elev);border-radius:3px;overflow:hidden;margin-bottom:18px">
+      <div style="height:100%;width:${((qIndex)/MONEY_QUIZ.length)*100}%;background:var(--blue);transition:width .3s"></div>
+    </div>
+    <h2 style="font-size:18px;margin-bottom:18px">${esc(q.q)}</h2>
+    <div>
+      ${opts.map(o => `
+        <button class="btn secondary" style="width:100%;text-align:left;margin-bottom:8px;padding:14px;line-height:1.4;font-size:13px;white-space:normal" onclick="window.__answerMoneyQ(${qIndex},${jsAttr(o.type)})">${esc(o.text)}</button>
+      `).join("")}
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" onclick="closeSheet()">Quit</button>
+    </div>
+  `);
+  window.__answerMoneyQ = (idx, type) => {
+    closeSheet();
+    setTimeout(() => moneyPersonalityQuizSheet(idx + 1, [...answers, type]), 50);
+  };
+}
+
+function moneyPersonalityResultSheet(primary, secondary, scores) {
+  const p = MONEY_TYPES[primary];
+  const s = MONEY_TYPES[secondary];
+  if (!p || !s) { moneyPersonalityIntroSheet(); return; }
+  const totalAnswers = Object.values(scores).reduce((a,b) => a+b, 0) || 1;
+
+  openSheet(`
+    <h2 style="display:flex;align-items:center;gap:10px">${p.emoji} ${esc(p.name)}</h2>
+    <p class="muted" style="font-size:13px;margin-bottom:14px;font-style:italic">${esc(p.desc)}</p>
+
+    <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Strengths</div>
+      <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7">
+        ${p.strengths.map(x => `<li>${esc(x)}</li>`).join("")}
+      </ul>
+    </div>
+
+    <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:12px;border-left:3px solid var(--orange)">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Blind spots</div>
+      <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7">
+        ${p.blindSpots.map(x => `<li>${esc(x)}</li>`).join("")}
+      </ul>
+    </div>
+
+    <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:12px;border-left:3px solid var(--green)">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Next moves for you</div>
+      <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7">
+        ${p.nextMoves.map(x => `<li>${esc(x)}</li>`).join("")}
+      </ul>
+    </div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">You also lean toward: ${s.emoji} ${esc(s.name)}</div>
+      <div style="font-size:12px;color:var(--t2);line-height:1.5">${esc(s.desc)}</div>
+    </div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Full breakdown</div>
+      ${Object.entries(scores).sort((a,b) => b[1]-a[1]).map(([k,v]) => {
+        const t = MONEY_TYPES[k];
+        const pct = (v / totalAnswers) * 100;
+        return `
+          <div style="display:flex;align-items:center;gap:10px;padding:4px 0;font-size:12px">
+            <div style="width:20px;text-align:center">${t.emoji}</div>
+            <div style="flex:1">${esc(t.name)}</div>
+            <div style="width:80px;height:6px;background:var(--bg);border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:${pct}%;background:${k===primary?'var(--blue)':k===secondary?'var(--orange)':'var(--t3)'}"></div>
+            </div>
+            <div style="width:32px;text-align:right;color:var(--t3)">${v}/${totalAnswers}</div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+
+    <div class="actions">
+      <button class="btn secondary" onclick="DB.moneyPersonality=null;save();closeSheet();moneyPersonalityIntroSheet()">Retake quiz</button>
+      <button class="btn" onclick="closeSheet()">Done</button>
     </div>
   `);
 }
@@ -10567,6 +10909,8 @@ function init() {
     subscriptionAuditSheet,
     MONEY_PROMPTS, todaysMoneyPrompt, moneyPromptSheet,
     computeSpendingByCategory, spendingBreakdownSheet, CATEGORY_COLORS,
+    MONEY_TYPES, MONEY_QUIZ, scoreMoneyPersonality,
+    moneyPersonalityIntroSheet, moneyPersonalityQuizSheet, moneyPersonalityResultSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
