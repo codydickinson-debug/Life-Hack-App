@@ -1157,6 +1157,7 @@ const DEFAULT_DB = {
   investing: {
     riskTolerance: "moderate",  // conservative | moderate | aggressive — drives stock/bond split
   },
+  sinkingFunds: [],          // [{ id, name, emoji, annual, current, lastReset, notes }] — buckets for irregular recurring expenses
 
   spendSearch: "",
   holdings: [],              // [{account_id, ticker, name, type, quantity, institution_value, cost_basis}]
@@ -2632,6 +2633,40 @@ function renderMoney() {
       ${compBar}
       ${cashFlowCardHtml()}
       ${milestonesCard}
+      ${(() => {
+        // Sinking funds quick entry — only render section if there are funds OR show as a single empty-state row when none.
+        const funds = DB.sinkingFunds || [];
+        if (funds.length === 0) {
+          return `
+            <div class="section-h"><span class="lbl">🪣 Sinking funds</span><button class="act" onclick="sinkingFundsSheet()">+ Add</button></div>
+            <div class="list">
+              <div class="row tappable" onclick="sinkingFundsSheet()">
+                <div class="lead">🪣</div>
+                <div class="body">
+                  <div class="t1">Smooth out irregular bills</div>
+                  <div class="t2">Car insurance, gifts, vacation — monthly savings toward annual lumps</div>
+                </div>
+                <div class="trail chev"></div>
+              </div>
+            </div>
+          `;
+        }
+        const total = funds.reduce((s,f) => s + (+f.current || 0), 0);
+        const monthly = funds.reduce((s,f) => s + ((+f.annual || 0) / 12), 0);
+        return `
+          <div class="section-h"><span class="lbl">🪣 Sinking funds</span><button class="act" onclick="sinkingFundsSheet()">View all ${funds.length}</button></div>
+          <div class="list">
+            <div class="row tappable" onclick="sinkingFundsSheet()">
+              <div class="lead">🪣</div>
+              <div class="body">
+                <div class="t1"><span data-priv="amount">${fmt$0(total)}</span> saved across ${funds.length} fund${funds.length===1?"":"s"}</div>
+                <div class="t2">${fmt$0(monthly)}/mo suggested contribution</div>
+              </div>
+              <div class="trail chev"></div>
+            </div>
+          </div>
+        `;
+      })()}
       ${pyramidSummary}
       ${projectionsSection}
       ${allocationEntry}
@@ -5735,6 +5770,147 @@ function wealthHealthSheet() {
   `);
 }
 
+/* ================ SINKING FUNDS ================
+   Buckets within savings for irregular recurring expenses — annual or
+   semi-annual outflows that you smooth into monthly inflows. Distinct
+   from savings goals (one-time accumulation toward a fixed target) and
+   from budget expenses (regular monthly outflows).
+
+   Examples: car insurance $1,200/yr → contribute $100/mo
+             Christmas gifts $600/yr → contribute $50/mo
+             Annual vacation $2,400/yr → contribute $200/mo
+
+   Schema: { id, name, emoji, annual, current, lastReset, notes }
+   - annual: target dollars per year
+   - current: dollars currently in the fund (resets when used)
+   - lastReset: timestamp of last "fund used" reset (or 0)
+*/
+
+function sinkingFundsSheet() {
+  const funds = DB.sinkingFunds || [];
+  const totalCurrent = funds.reduce((s,f) => s + (+f.current || 0), 0);
+  const totalMonthlyContrib = funds.reduce((s,f) => s + ((+f.annual || 0) / 12), 0);
+  const totalAnnual = funds.reduce((s,f) => s + (+f.annual || 0), 0);
+
+  const fundRow = (f) => {
+    const annual = +f.annual || 0;
+    const monthly = annual / 12;
+    const current = +f.current || 0;
+    const pct = annual > 0 ? Math.min(100, (current / annual) * 100) : 0;
+    return `
+      <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:10px;border:1px solid var(--sep)">
+        <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+          <div style="font-size:20px">${f.emoji || "🪣"}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:14px">${esc(f.name)}</div>
+            <div style="font-size:11px;color:var(--t3)">${fmt$0(annual)}/yr target · ${fmt$0(monthly)}/mo suggested</div>
+          </div>
+          <button class="del-x" onclick="sinkingFundEditSheet(${jsAttr(f.id)})" title="Edit">⋯</button>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+          <span data-priv="amount">${fmt$0(current)}</span>
+          <span style="color:var(--t3)">${pct.toFixed(0)}% of ${fmt$0(annual)}</span>
+        </div>
+        <div style="height:6px;background:var(--bg-elev);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${pct}%;background:${pct >= 100 ? "var(--green)" : "var(--blue)"}"></div>
+        </div>
+        <div style="display:flex;gap:6px;margin-top:10px">
+          <button class="btn sm secondary" style="flex:1;font-size:12px;padding:6px" onclick="contributeSinkingFund(${jsAttr(f.id)}, ${monthly.toFixed(2)});closeSheet();sinkingFundsSheet()">+ ${fmt$0(monthly)} (1mo)</button>
+          ${current > 0 ? `<button class="btn sm secondary" style="flex:0 0 auto;font-size:12px;padding:6px 10px;color:var(--orange)" onclick="if(confirm('Mark this fund used? Resets to $0.'))resetSinkingFund(${jsAttr(f.id)});closeSheet();sinkingFundsSheet()">Used ↺</button>` : ""}
+        </div>
+      </div>
+    `;
+  };
+
+  const body = funds.length
+    ? funds.map(fundRow).join("")
+    : `<div class="empty"><div class="e-emoji">🪣</div><div class="e-title">No sinking funds yet</div><div class="e-sub">Smooth out irregular bills — car insurance, gifts, vacation — by saving monthly toward annual targets.</div></div>`;
+
+  openSheet(`
+    <h2>🪣 Sinking funds</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">${funds.length ? `${funds.length} active · ${fmt$0(totalCurrent)} saved · ${fmt$0(totalMonthlyContrib)}/mo suggested toward ${fmt$0(totalAnnual)}/yr` : "Save monthly for irregular bills. Educational framework."}</p>
+    ${body}
+    <button class="btn" style="width:100%;margin-top:14px" onclick="closeSheet();sinkingFundEditSheet()">+ Add sinking fund</button>
+    <p class="muted" style="font-size:11px;margin-top:12px;line-height:1.5">
+      <b>How sinking funds work:</b> a fund for car insurance with $1,200 annual target means you contribute ${fmt$0(100)}/mo. When the bill arrives, you have the money ready — no surprise. Hit "Used ↺" after paying to reset for next cycle.
+    </p>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+function sinkingFundEditSheet(existingId) {
+  const list = DB.sinkingFunds || [];
+  const existing = existingId ? list.find(x => x.id === existingId) : null;
+  const isEdit = !!existing;
+  const f = existing || { name: "", emoji: "🪣", annual: 0, current: 0, notes: "" };
+
+  openSheet(`
+    <h2>${isEdit ? "Edit sinking fund" : "Add sinking fund"}</h2>
+    <label>Name</label>
+    <input id="sf-name" placeholder="e.g. Car insurance, Christmas gifts" value="${esc(f.name)}" autofocus />
+    <div class="grid2">
+      <div>
+        <label>Emoji</label>
+        <input id="sf-emoji" placeholder="🪣" value="${esc(f.emoji || "🪣")}" maxlength="4" />
+      </div>
+      <div>
+        <label>Annual target ($)</label>
+        <input id="sf-annual" type="number" min="0" step="50" value="${+f.annual || 0}" />
+      </div>
+    </div>
+    <label>Current balance ($)</label>
+    <input id="sf-current" type="number" min="0" step="10" value="${+f.current || 0}" />
+    <label>Notes (optional)</label>
+    <input id="sf-notes" placeholder="Context, due dates, etc." value="${esc(f.notes || "")}" />
+    <div class="actions">
+      ${isEdit ? `<button class="btn danger" onclick="if(confirm('Delete this sinking fund?')){deleteSinkingFund(${jsAttr(existing.id)});closeSheet();sinkingFundsSheet();}">Delete</button>` : ""}
+      <button class="btn secondary" onclick="closeSheet();sinkingFundsSheet()">Cancel</button>
+      <button class="btn" id="sf-save">${isEdit ? "Save" : "Add"}</button>
+    </div>
+  `);
+
+  $("#sf-save").addEventListener("click", async () => {
+    const name = $("#sf-name").value.trim();
+    if (!name) { toast("Add a name"); return; }
+    const emoji = $("#sf-emoji").value.trim() || "🪣";
+    const annual = Math.max(0, +$("#sf-annual").value || 0);
+    const current = Math.max(0, +$("#sf-current").value || 0);
+    const notes = $("#sf-notes").value.trim();
+    if (isEdit) {
+      Object.assign(existing, { name, emoji, annual, current, notes });
+    } else {
+      (DB.sinkingFunds = DB.sinkingFunds || []).push({
+        id: uid(), name, emoji, annual, current, notes, lastReset: 0,
+      });
+    }
+    await save(); closeSheet(); sinkingFundsSheet();
+  });
+}
+
+function contributeSinkingFund(id, amount) {
+  const f = (DB.sinkingFunds || []).find(x => x.id === id);
+  if (!f) return;
+  f.current = Math.max(0, (+f.current || 0) + (+amount || 0));
+  save();
+  toast(`+${fmt$0(amount)} → ${esc(f.name)}`);
+}
+
+function resetSinkingFund(id) {
+  const f = (DB.sinkingFunds || []).find(x => x.id === id);
+  if (!f) return;
+  f.current = 0;
+  f.lastReset = Date.now();
+  save();
+  toast(`${esc(f.name)} reset — fund used`);
+}
+
+function deleteSinkingFund(id) {
+  DB.sinkingFunds = (DB.sinkingFunds || []).filter(f => f.id !== id);
+  save();
+}
+
 /* ================ INFLATION CALCULATOR ================
    Two views: what an amount today is worth in N years (purchasing power
    erosion), and what an amount N years ago is worth today (price drift).
@@ -8330,6 +8506,8 @@ function init() {
     monthlyPI, realEstateSheet,
     computePurchaseDecision, purchaseDecisionSheet,
     computeInflation, inflationSheet,
+    sinkingFundsSheet, sinkingFundEditSheet, contributeSinkingFund,
+    resetSinkingFund, deleteSinkingFund,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
