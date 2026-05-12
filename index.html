@@ -2390,31 +2390,69 @@ function renderMoney() {
       `;
     })();
 
-    // Retirement projection summary — tappable row that opens the full projector.
-    const retireSummary = (() => {
+    // Projections section — Retirement (traditional, age-based) + FIRE
+    // (expense-based "when can I quit?"). Two rows in one section.
+    const projectionsSection = (() => {
       const profile = DB.profile || {};
       const retire = DB.retirement || {};
       const currentAge = +profile.age || 30;
-      let targetAge = +retire.targetAge || 65;
-      if (targetAge <= currentAge) targetAge = currentAge + 1;
       const invested = currentInvested();
-      const monthly = +retire.monthlyContribution || +DB.settings.monthlySavingsTarget || 500;
+      const monthly = +retire.monthlyContribution || +DB.settings.monthlySavingsTarget || 1000;
       const annualReturn = +retire.annualReturn || 7;
       const withdrawalRate = +retire.withdrawalRate || 4;
-      const points = projectRetirement({ currentAge, targetAge, currentBalance: invested, monthlyContribution: monthly, annualReturn });
-      const final = points[points.length-1].balance;
-      const monthlyWd = (final * (withdrawalRate / 100)) / 12;
-      return `
-        <div class="section-h"><span class="lbl">Retirement projection</span></div>
-        <div class="list">
-          <div class="row tappable" onclick="retirementSheet()" role="button" tabindex="0">
-            <div class="lead">🏖️</div>
+
+      // Retirement row (always shown)
+      let targetAge = +retire.targetAge || 65;
+      if (targetAge <= currentAge) targetAge = currentAge + 1;
+      const retPoints = projectRetirement({ currentAge, targetAge, currentBalance: invested, monthlyContribution: monthly, annualReturn });
+      const retFinal = retPoints[retPoints.length-1].balance;
+      const retMonthlyWd = (retFinal * (withdrawalRate / 100)) / 12;
+      const retirementRow = `
+        <div class="row tappable" onclick="retirementSheet()" role="button" tabindex="0">
+          <div class="lead">🏖️</div>
+          <div class="body">
+            <div class="t1" data-priv="amount">${fmt$0(retFinal)} at age ${targetAge}</div>
+            <div class="t2">${fmt$0(retMonthlyWd)}/mo safe withdrawal · ${profile.age ? `age ${currentAge}` : "default age 30"} · ${fmt$0(monthly)}/mo · ${annualReturn}% return</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      `;
+
+      // FIRE row (only when annual expenses are computable)
+      const monthlyFixed = _playsMonthlyFixed();
+      const annualExp = monthlyFixed * 12;
+      let fireRow = "";
+      if (annualExp > 0) {
+        const r = computeFire({
+          currentBalance: invested,
+          monthlyContribution: monthly,
+          annualReturn: annualReturn,
+          annualExpenses: annualExp,
+          withdrawalRate: withdrawalRate,
+        });
+        const fiYears = r.monthsToFi != null ? (r.monthsToFi / 12).toFixed(1) : null;
+        const subtitle = !r.reached
+          ? `Path too slow at current rate — open to adjust`
+          : r.monthsToFi === 0
+            ? `Already at FI · ${fmt$0(r.fiNumber)} target reached`
+            : `In ${fiYears} years${profile.age ? ` at age ${Math.round(currentAge + r.monthsToFi/12)}` : ""} · ${fmt$0(r.fiNumber)} target`;
+        fireRow = `
+          <div class="row tappable" onclick="fireSheet()" role="button" tabindex="0">
+            <div class="lead">🔥</div>
             <div class="body">
-              <div class="t1" data-priv="amount">${fmt$0(final)} at age ${targetAge}</div>
-              <div class="t2">${fmt$0(monthlyWd)}/mo safe withdrawal · ${profile.age ? `age ${currentAge}` : "default age 30"} · ${fmt$0(monthly)}/mo · ${annualReturn}% return</div>
+              <div class="t1">${r.monthsToFi === 0 ? "Financially independent!" : "Financial Independence (FIRE)"}</div>
+              <div class="t2">${esc(subtitle)}</div>
             </div>
             <div class="trail chev"></div>
           </div>
+        `;
+      }
+
+      return `
+        <div class="section-h"><span class="lbl">Projections</span></div>
+        <div class="list">
+          ${retirementRow}
+          ${fireRow}
         </div>
       `;
     })();
@@ -2503,7 +2541,7 @@ function renderMoney() {
       ${compBar}
       ${cashFlowCardHtml()}
       ${pyramidSummary}
-      ${retireSummary}
+      ${projectionsSection}
       ${taxSummary}
       ${learnEntry}
 
@@ -5598,6 +5636,163 @@ function wealthHealthSheet() {
   `);
 }
 
+/* ================ FIRE CALCULATOR ================
+   Financial Independence / Retire Early math: when does the user's
+   invested balance reach a multiple of their annual expenses such that
+   safe withdrawal sustains them indefinitely?
+
+   FI number = annual_expenses × (100 / withdrawal_rate%)
+   At 4% rule: FI = 25 × annual_expenses
+   At 3.5% rule: FI = ~28.6 × annual_expenses (more conservative)
+
+   Time to FI: simulate compound growth month-by-month until
+   balance ≥ FI number, capped at 80 years.
+*/
+
+function computeFire(opts) {
+  const annualExpenses = Math.max(0, opts.annualExpenses || 0);
+  const withdrawalRate = Math.max(1, Math.min(10, opts.withdrawalRate || 4));
+  const balance0 = Math.max(0, opts.currentBalance || 0);
+  const monthly = Math.max(0, opts.monthlyContribution || 0);
+  const annualReturn = Math.max(0, Math.min(20, opts.annualReturn || 7));
+  const monthlyR = (annualReturn / 100) / 12;
+  const fiNumber = annualExpenses * (100 / withdrawalRate);
+  const result = { fiNumber, annualExpenses, withdrawalRate, balance0, monthly, annualReturn, monthsToFi: null, points: [], reached: false };
+  if (annualExpenses <= 0) return result;
+  if (balance0 >= fiNumber) {
+    result.monthsToFi = 0;
+    result.reached = true;
+    result.points = [{ month: 0, balance: balance0 }];
+    return result;
+  }
+  // Simulate
+  let balance = balance0;
+  let cappedMonths = 80 * 12;
+  const points = [{ month: 0, balance }];
+  for (let m = 1; m <= cappedMonths; m++) {
+    balance = balance * (1 + monthlyR) + monthly;
+    if (m % 12 === 0 || balance >= fiNumber) {
+      points.push({ month: m, balance: Math.round(balance) });
+    }
+    if (balance >= fiNumber) {
+      result.monthsToFi = m;
+      result.reached = true;
+      break;
+    }
+  }
+  result.points = points;
+  return result;
+}
+
+function fireChart(points, fiNumber, w=300, h=120) {
+  if (!points.length) return "";
+  const vals = points.map(p => p.balance);
+  const max = Math.max(fiNumber, ...vals) || 1;
+  const stepX = points.length > 1 ? w / (points.length - 1) : 0;
+  const pts = vals.map((v,i) => `${(i*stepX).toFixed(1)},${(h - (v / max) * h).toFixed(1)}`).join(" ");
+  const fiY = h - (fiNumber / max) * h;
+  return `
+    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:${h}px;display:block;margin-top:10px">
+      <defs>
+        <linearGradient id="fire-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#FF9500" stop-opacity="0.35"/>
+          <stop offset="100%" stop-color="#FF9500" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <polygon fill="url(#fire-fill)" points="0,${h} ${pts} ${w},${h}"/>
+      <line x1="0" y1="${fiY.toFixed(1)}" x2="${w}" y2="${fiY.toFixed(1)}" stroke="#34C759" stroke-width="1.5" stroke-dasharray="4,4" />
+      <polyline fill="none" stroke="#FF9500" stroke-width="2" points="${pts}"/>
+    </svg>
+  `;
+}
+
+function fireSheet() {
+  const profile = DB.profile || {};
+  const currentAge = +profile.age || 30;
+  const monthlyFixed = _playsMonthlyFixed();
+  const initialExpenses = monthlyFixed > 0 ? Math.round(monthlyFixed * 12) : 36000;
+  const monthly0 = +DB.retirement?.monthlyContribution || +DB.settings.monthlySavingsTarget || 1000;
+  const return0 = +DB.retirement?.annualReturn || 7;
+  const withdrawal0 = +DB.retirement?.withdrawalRate || 4;
+  const invested = currentInvested();
+
+  const render = (annualExp, monthly, ret, wr) => {
+    const r = computeFire({
+      currentBalance: invested,
+      monthlyContribution: monthly,
+      annualReturn: ret,
+      annualExpenses: annualExp,
+      withdrawalRate: wr,
+    });
+    const yearsLeft = r.monthsToFi != null ? r.monthsToFi / 12 : null;
+    const fiAge = yearsLeft != null ? Math.round(currentAge + yearsLeft) : null;
+    const fiDate = yearsLeft != null ? new Date(Date.now() + yearsLeft * 365.25 * 86400000) : null;
+    const headlineText = !r.reached
+      ? "Path too slow — increase savings or return to reach FI within 80 years"
+      : r.monthsToFi === 0
+        ? "You're already FI! 🎉"
+        : `${yearsLeft.toFixed(1)} years to FI`;
+    return `
+      <div style="background:var(--card);border-radius:var(--r);padding:16px;border:1px solid var(--sep)">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">FI number (${wr}% rule)</div>
+        <div style="font-size:28px;font-weight:700;letter-spacing:-.5px;margin:6px 0" data-priv="amount">${fmt$0(r.fiNumber)}</div>
+        <div style="font-size:13px;color:var(--t2)">${annualExp > 0 ? `${(100/wr).toFixed(0)}× annual expenses (${fmt$0(annualExp)}/yr)` : "Set annual expenses to compute"}</div>
+        ${fireChart(r.points, r.fiNumber, 300, 100)}
+        <div style="font-size:11px;color:var(--t3);text-align:right;margin-top:6px">Dashed line = FI threshold · Curve = projected balance</div>
+        <div style="border-top:1px solid var(--sep);margin-top:12px;padding-top:12px">
+          <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">${r.reached && r.monthsToFi > 0 ? "Time to FI" : ""}</div>
+          <div style="font-size:24px;font-weight:700;margin-top:4px;color:${r.reached ? "var(--green)" : "var(--orange)"}">${headlineText}</div>
+          ${fiAge != null && r.monthsToFi > 0 ? `<div style="font-size:13px;color:var(--t2);margin-top:4px">At ${profile.age ? `age ${fiAge}` : `age ${fiAge} (default 30 → set in profile)`} · ${fiDate.toLocaleDateString("en-US", { month: "short", year: "numeric" })}</div>` : ""}
+        </div>
+      </div>
+    `;
+  };
+
+  openSheet(`
+    <h2>🔥 FIRE Calculator</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Financial Independence Retire Early: when does your investment income cover your expenses indefinitely? Educational — actual paths vary.</p>
+    <div id="fire-output">${render(initialExpenses, monthly0, return0, withdrawal0)}</div>
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-top:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Inputs</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <span>Current invested</span>
+        <span style="font-weight:600" data-priv="amount">${fmt$0(invested)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="fire-expenses">Annual expenses</label>
+        <input id="fire-expenses" type="number" min="0" step="1000" value="${initialExpenses}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:110px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="fire-monthly">Monthly contribution</label>
+        <input id="fire-monthly" type="number" min="0" step="50" value="${monthly0}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:90px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="fire-return">Annual return (%)</label>
+        <input id="fire-return" type="number" min="0" max="20" step="0.5" value="${return0}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+        <label for="fire-wr">Withdrawal rate (%)</label>
+        <input id="fire-wr" type="number" min="2" max="8" step="0.25" value="${withdrawal0}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <p class="muted" style="font-size:11px;margin-top:10px;line-height:1.5">The "4% rule" comes from the Trinity Study: withdrawing 4%/yr from a stock-heavy portfolio has historically lasted 30+ years. More conservative paths (3.5%) sustain longer; FIRE communities sometimes use 3% for very early retirement.</p>
+    </div>
+    <div class="actions">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+
+  const refresh = () => {
+    const e = +$("#fire-expenses").value || 0;
+    const m = +$("#fire-monthly").value || 0;
+    const r = +$("#fire-return").value || 0;
+    const w = +$("#fire-wr").value || 4;
+    $("#fire-output").innerHTML = render(e, m, r, w);
+  };
+  ["#fire-expenses","#fire-monthly","#fire-return","#fire-wr"].forEach(sel => {
+    $(sel).addEventListener("input", refresh);
+  });
+}
+
 /* ================ CASH FLOW VISUALIZATION ================
    Where does each monthly dollar actually go? Renders income as a 100% bar
    split into Fixed expenses / Savings target / Discretionary, with a deficit
@@ -7135,6 +7330,7 @@ function init() {
     computeFederalTax, taxPlanningSheet, TAX_DATA_2024,
     WEALTH_LESSONS, LESSON_CATEGORIES, learnSheet, lessonSheet, markLessonRead,
     computeCashFlow, cashFlowCardHtml,
+    computeFire, fireChart, fireSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
