@@ -2792,6 +2792,15 @@ function renderMoney() {
       ${compBar}
       <div id="wh-flow"></div>
       ${cashFlowCardHtml()}
+      <div id="wh-spending-breakdown"></div>
+      <div class="row tappable" onclick="spendingBreakdownSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:12px">
+        <div style="font-size:24px;width:40px;text-align:center">📊</div>
+        <div class="body">
+          <div class="t1" style="margin:0">Spending by category</div>
+          <div class="t2">See where money actually goes · monthly equivalent across all sources</div>
+        </div>
+        <div class="trail chev"></div>
+      </div>
       <div id="wh-milestones"></div>
       ${milestonesCard}
       ${benchmarksCard}
@@ -5938,6 +5947,140 @@ function wealthHealthSheet() {
       <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
     </div>
   `);
+}
+
+/* ================ SPENDING BY CATEGORY BREAKDOWN ================
+   Aggregate spending by category across DB.recurring (monthly equivalent),
+   DB.budget.expenses, and recent DB.spend (manual + Plaid). Shows where
+   money is actually going in a horizontal stacked bar + per-category list.
+
+   Uses last-30-days for manual spend so it complements the existing
+   "this month" budget view rather than duplicating it.
+*/
+
+function computeSpendingByCategory(daysWindow) {
+  const days = daysWindow || 30;
+  const cats = {}; // category -> { amount, sources: { recurring, budget, manual } }
+  const add = (cat, amount, source) => {
+    const k = (cat || "Other").trim() || "Other";
+    if (!cats[k]) cats[k] = { name: k, amount: 0, sources: { recurring: 0, budget: 0, manual: 0 } };
+    cats[k].amount += amount;
+    cats[k].sources[source] += amount;
+  };
+
+  // Recurring expenses (monthly equivalent)
+  for (const r of (DB.recurring || [])) {
+    if (r.kind !== "expense") continue;
+    const monthly = (+r.amount || 0) * (RECURRING_PER_MONTH[r.cadence] || 1);
+    if (monthly > 0) add(r.category, monthly, "recurring");
+  }
+  // Budget expenses (already monthly)
+  for (const e of (DB.budget?.expenses || [])) {
+    const a = +e.amount || 0;
+    if (a > 0) add(e.c || e.name, a, "budget");
+  }
+  // Manual + Plaid spend in window (scale to monthly equivalent)
+  const cutoff = Date.now() - days * 86400000;
+  const recentSpend = (DB.spend || []).filter(t => {
+    if (+t.amount <= 0) return false;
+    const ts = new Date(t.date).getTime();
+    return ts >= cutoff;
+  });
+  for (const t of recentSpend) {
+    const monthlyEquiv = (+t.amount || 0) * (30 / days);
+    add(t.category, monthlyEquiv, "manual");
+  }
+
+  const list = Object.values(cats).sort((a,b) => b.amount - a.amount);
+  const total = list.reduce((s,c) => s + c.amount, 0);
+  return { categories: list, total, daysWindow: days };
+}
+
+const CATEGORY_COLORS = ["#34C759","#007AFF","#5856D6","#AF52DE","#FF9500","#FFCC00","#FF2D55","#5AC8FA","#FF3B30","#FFD60A","#30D158","#64D2FF","#BF5AF2","#FF9F0A","#FF453A"];
+
+function spendingBreakdownSheet() {
+  let windowDays = 30;
+
+  const render = (days) => {
+    const r = computeSpendingByCategory(days);
+    if (!r.categories.length || r.total === 0) {
+      return `
+        <div class="empty"><div class="e-emoji">📊</div><div class="e-title">No spending data yet</div><div class="e-sub">Add recurring expenses or log some transactions to see breakdown.</div></div>
+      `;
+    }
+    // Horizontal stacked bar
+    const barSegments = r.categories.map((c, i) => {
+      const pct = (c.amount / r.total) * 100;
+      return `<div style="width:${pct}%;background:${CATEGORY_COLORS[i % CATEGORY_COLORS.length]};min-width:1px" title="${esc(c.name)}"></div>`;
+    }).join("");
+
+    const rows = r.categories.map((c, i) => {
+      const pct = (c.amount / r.total) * 100;
+      const sources = [];
+      if (c.sources.recurring > 0) sources.push(`${fmt$0(c.sources.recurring)}/mo recurring`);
+      if (c.sources.budget > 0)    sources.push(`${fmt$0(c.sources.budget)}/mo budgeted`);
+      if (c.sources.manual > 0)    sources.push(`${fmt$0(c.sources.manual)}/mo from txns`);
+      return `
+        <div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--sep)">
+          <div style="width:10px;height:24px;background:${CATEGORY_COLORS[i % CATEGORY_COLORS.length]};border-radius:2px;flex-shrink:0"></div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:13px;font-weight:600">${esc(c.name)}</div>
+            <div style="font-size:11px;color:var(--t3)">${esc(sources.join(" · "))}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-weight:600" data-priv="amount">${fmt$0(c.amount)}</div>
+            <div style="font-size:11px;color:var(--t3)">${pct.toFixed(1)}%</div>
+          </div>
+        </div>
+      `;
+    }).join("");
+
+    return `
+      <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+          <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Monthly equivalent</div>
+          <div style="font-size:11px;color:var(--t3)">${r.categories.length} categor${r.categories.length===1?"y":"ies"}</div>
+        </div>
+        <div style="font-size:28px;font-weight:700;letter-spacing:-.5px;margin-bottom:12px" data-priv="amount">${fmt$0(r.total)}/mo</div>
+        <div style="display:flex;height:24px;border-radius:6px;overflow:hidden;background:var(--bg-elev)">
+          ${barSegments}
+        </div>
+        ${rows}
+      </div>
+    `;
+  };
+
+  openSheet(`
+    <h2>📊 Spending by category</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Aggregated from recurring expenses + budget + recent transactions. Manual transactions averaged over the selected window. Useful for seeing where money <i>actually</i> goes vs where you think it goes.</p>
+
+    <div style="display:flex;gap:6px;margin-bottom:12px">
+      ${[30, 60, 90].map(d => `<button class="btn sm secondary" id="sb-w-${d}" style="flex:1;font-size:11px;padding:6px" onclick="window.__setSpendWindow(${d})">${d} days</button>`).join("")}
+    </div>
+
+    <div id="sb-output">${render(windowDays)}</div>
+
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+
+  window.__setSpendWindow = (d) => {
+    windowDays = d;
+    $("#sb-output").innerHTML = render(d);
+    // Highlight active button
+    [30,60,90].forEach(n => {
+      const el = document.getElementById("sb-w-"+n);
+      if (el) {
+        if (n === d) {
+          el.classList.remove("secondary");
+        } else {
+          el.classList.add("secondary");
+        }
+      }
+    });
+  };
+  window.__setSpendWindow(windowDays);
 }
 
 /* ================ MONEY REFLECTION PROMPTS ================
@@ -10423,6 +10566,7 @@ function init() {
     _markBookRead, _unmarkBookRead,
     subscriptionAuditSheet,
     MONEY_PROMPTS, todaysMoneyPrompt, moneyPromptSheet,
+    computeSpendingByCategory, spendingBreakdownSheet, CATEGORY_COLORS,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
