@@ -2118,6 +2118,50 @@ function renderGoals() {
 
 /* ===== MONEY ===== */
 var moneySub = "savings";
+var wealthRange = "90"; // "30" | "90" | "365" | "all" — controls net-worth chart window
+
+// Net-worth composition for the Wealth dashboard. Computes how much wealth lives
+// in each major bucket so we can show a stacked-bar breakdown.
+function wealthComposition() {
+  let cash = 0, investments = 0, realAssets = 0, debts = 0;
+  // Plaid accounts
+  for (const a of (DB.accounts || [])) {
+    const bal = +a.balance_current || 0;
+    if (a.type === "depository") cash += bal;
+    else if (a.type === "investment" || a.type === "brokerage") investments += bal;
+    else if (a.type === "credit" || a.type === "loan") debts += bal;
+  }
+  // Manual assets — bucketed by type
+  for (const a of (DB.assets || [])) {
+    const v = +a.value || 0;
+    if (a.type === "cash") cash += v;
+    else if (a.type === "investment" || a.type === "crypto") investments += v;
+    else realAssets += v;
+  }
+  // Manual liabilities all roll into debts
+  for (const l of (DB.liabilities || [])) {
+    debts += +l.balance || 0;
+  }
+  const total = cash + investments + realAssets - debts;
+  return { cash, investments, realAssets, debts, total };
+}
+
+function setWealthRange(r) { wealthRange = r; renderMoney(); }
+
+function filteredNwHistory() {
+  const days = wealthRange === "30" ? 30 : wealthRange === "90" ? 90 : wealthRange === "365" ? 365 : Infinity;
+  const hist = DB.netWorthHistory || [];
+  if (days === Infinity) return hist;
+  const cutoff = Date.now() - days * 86400000;
+  return hist.filter(s => new Date(s.date + "T00:00:00").getTime() >= cutoff);
+}
+
+// Days since the latest net-worth snapshot (or null if no history)
+function _nwLastSnapshotAge() {
+  const hist = DB.netWorthHistory || [];
+  if (!hist.length) return null;
+  return Math.floor((Date.now() - new Date(hist[hist.length-1].date + "T00:00:00").getTime()) / 86400000);
+}
 function renderMoney() {
   // Cashflow forecast (only when there's enough signal)
   const hasMoneyData = (+DB.budget?.income || 0) > 0 || (DB.recurring || []).length > 0 || (DB.spend || []).length > 0;
@@ -2200,20 +2244,90 @@ function renderMoney() {
     `;
   }
   else if (moneySub === "wealth") {
-    const totalAssets = totalManualAssets();
-    const totalLiabs  = totalManualLiabilities();
-    // Plaid contributes to true total but here we focus on what user manages manually
-    const plaidNet = (DB.accounts || []).reduce((s,a) => {
-      const bal = +a.balance_current || 0;
-      return ["credit","loan"].includes(a.type) ? s - bal : s + bal;
-    }, 0);
-    const overallNet = plaidNet + totalAssets - totalLiabs;
+    const comp = wealthComposition();
+    const overallNet = comp.total;
+    const hist = filteredNwHistory();
+    const nwAge = _nwLastSnapshotAge();
+    const stale = nwAge === null || nwAge > 7;
+
+    // Chart card — bigger than the sparkline on Stats, with a range selector.
+    const chartCard = (() => {
+      if (!hist.length) {
+        return `
+          <div style="background:var(--card);border-radius:var(--r);padding:18px;margin-bottom:12px;border:1px solid var(--sep);text-align:center">
+            <div style="font-size:36px;margin-bottom:6px">📈</div>
+            <div style="font-weight:600;margin-bottom:6px">No net-worth history yet</div>
+            <div style="font-size:13px;color:var(--t3);margin-bottom:12px">Snapshot now to start tracking how your wealth changes over time.</div>
+            <button class="btn" onclick="snapshotNetWorth();render();toast('Snapshot saved')">Snapshot now</button>
+          </div>
+        `;
+      }
+      const cur = hist[hist.length-1].total;
+      const prev = hist.length > 1 ? hist[0].total : cur;
+      const delta = cur - prev;
+      const pct = prev ? (delta / Math.abs(prev)) * 100 : 0;
+      const color = delta >= 0 ? "var(--green)" : "var(--red)";
+      const ranges = [
+        { id: "30",  label: "30D" },
+        { id: "90",  label: "90D" },
+        { id: "365", label: "1Y"  },
+        { id: "all", label: "All" },
+      ];
+      return `
+        <div style="background:var(--card);border-radius:var(--r);padding:18px;margin-bottom:12px;border:1px solid var(--sep)">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+            <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Net worth</div>
+            <div style="font-size:12px;color:${color};font-weight:600">${delta>=0?"+":""}${fmt$0(delta)} (${pct>=0?"+":""}${pct.toFixed(1)}%)</div>
+          </div>
+          <div style="font-size:34px;font-weight:700;letter-spacing:-.5px;margin-bottom:10px" data-priv="amount">${overallNet>=0?"":"-"}${fmt$0(Math.abs(overallNet))}</div>
+          ${netWorthSparkline(hist, 300, 100)}
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-top:6px">
+            <span>${hist[0].date}</span><span>${hist[hist.length-1].date}</span>
+          </div>
+          <div style="display:flex;gap:6px;margin-top:12px">
+            ${ranges.map(r => `<button class="btn sm ${wealthRange===r.id?"":"secondary"}" style="flex:1;font-size:11px;padding:6px 0" onclick="setWealthRange(${jsAttr(r.id)})">${r.label}</button>`).join("")}
+          </div>
+          ${stale ? `<button class="btn secondary" style="width:100%;font-size:12px;margin-top:10px" onclick="snapshotNetWorth();render();toast('Snapshot saved')">${nwAge === null ? "Take first snapshot" : `Snapshot now (last ${nwAge}d ago)`}</button>` : ""}
+        </div>
+      `;
+    })();
+
+    // Composition bar — where the wealth lives.
+    const compBar = (() => {
+      const positive = comp.cash + comp.investments + comp.realAssets;
+      if (positive <= 0 && comp.debts <= 0) {
+        return `
+          <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:12px;border:1px solid var(--sep);text-align:center">
+            <div style="font-size:13px;color:var(--t3)">Add assets and debts below to see your wealth composition.</div>
+          </div>
+        `;
+      }
+      const cashPct = positive ? (comp.cash / positive) * 100 : 0;
+      const invPct  = positive ? (comp.investments / positive) * 100 : 0;
+      const realPct = positive ? (comp.realAssets / positive) * 100 : 0;
+      return `
+        <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:12px;border:1px solid var(--sep)">
+          <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Where your wealth lives</div>
+          ${positive > 0 ? `
+            <div style="display:flex;height:22px;border-radius:6px;overflow:hidden;background:var(--bg-elev)">
+              ${cashPct > 0 ? `<div style="width:${cashPct}%;background:#34C759"></div>` : ""}
+              ${invPct  > 0 ? `<div style="width:${invPct}%;background:#007AFF"></div>`  : ""}
+              ${realPct > 0 ? `<div style="width:${realPct}%;background:#AF52DE"></div>` : ""}
+            </div>
+          ` : ""}
+          <div style="display:flex;flex-direction:column;gap:6px;margin-top:12px;font-size:13px">
+            <div style="display:flex;justify-content:space-between"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:#34C759;border-radius:2px"></span>Cash</span><span data-priv="amount">${fmt$0(comp.cash)}${positive?` <span class="muted" style="font-weight:400">${Math.round(cashPct)}%</span>`:""}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:#007AFF;border-radius:2px"></span>Investments</span><span data-priv="amount">${fmt$0(comp.investments)}${positive?` <span class="muted" style="font-weight:400">${Math.round(invPct)}%</span>`:""}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:#AF52DE;border-radius:2px"></span>Real assets</span><span data-priv="amount">${fmt$0(comp.realAssets)}${positive?` <span class="muted" style="font-weight:400">${Math.round(realPct)}%</span>`:""}</span></div>
+            ${comp.debts > 0 ? `<div style="display:flex;justify-content:space-between;color:var(--red);border-top:1px solid var(--sep);padding-top:6px;margin-top:2px"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:var(--red);border-radius:2px"></span>Debts</span><span data-priv="amount">-${fmt$0(comp.debts)}</span></div>` : ""}
+          </div>
+        </div>
+      `;
+    })();
+
     body = `
-      <div class="budget-hero">
-        <div class="bh-lbl">Net worth</div>
-        <div class="bh-val" style="color:${overallNet>=0?'var(--green)':'var(--red)'}">${overallNet>=0?'':'-'}${fmt$0(Math.abs(overallNet))}</div>
-        <div class="bh-sub">Plaid ${fmt$0(plaidNet)} · Assets ${fmt$0(totalAssets)} · Debts ${fmt$0(totalLiabs)}</div>
-      </div>
+      ${chartCard}
+      ${compBar}
 
       <div class="section-h"><span class="lbl">Manual assets</span><button class="act" onclick="assetSheet()">+ Add</button></div>
       <div class="list">
@@ -5626,6 +5740,7 @@ function init() {
     applyRules, applyRulesToAll, addCategoryRule, deleteCategoryRule, ruleSheet, quickRuleFromTx,
     upcomingBills, dismissBill,
     computeSmartPlays, smartPlaysSheet, dismissPlay, resetDismissedPlays, profileSheet,
+    wealthComposition, setWealthRange, filteredNwHistory,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
