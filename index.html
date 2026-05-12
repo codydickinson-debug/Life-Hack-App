@@ -1159,6 +1159,7 @@ const DEFAULT_DB = {
   },
   sinkingFunds: [],          // [{ id, name, emoji, annual, current, lastReset, notes }] — buckets for irregular recurring expenses
   estateCheckProgress: {},   // { taskId: { done: true, doneAt: timestamp } } — estate-planning checklist progress
+  booksRead: {},             // { bookId: { read: true, at: timestamp } } — wealth-building reading list progress
   setupChecklistDismissed: false, // when true, hide the setup banner on Today even if incomplete
 
   spendSearch: "",
@@ -2710,6 +2711,14 @@ function renderMoney() {
             <div class="body">
               <div class="t1">Estate planning checklist</div>
               <div class="t2">${(() => { const p = DB.estateCheckProgress || {}; return ESTATE_TASKS.filter(t => p[t.id]?.done).length; })()} of ${ESTATE_TASKS.length} complete · will, POA, beneficiaries</div>
+            </div>
+            <div class="trail chev"></div>
+          </div>
+          <div class="row tappable" onclick="readingListSheet()" role="button" tabindex="0">
+            <div class="lead">📖</div>
+            <div class="body">
+              <div class="t1">Reading list</div>
+              <div class="t2">${(() => { const r = DB.booksRead || {}; return READING_LIST.filter(b => r[b.id]?.read).length; })()} of ${READING_LIST.length} read · curated wealth-building books</div>
             </div>
             <div class="trail chev"></div>
           </div>
@@ -5857,6 +5866,231 @@ function wealthHealthSheet() {
     ` : ""}
     <div class="actions">
       <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+/* ================ WEALTH-BUILDING READING LIST ================
+   Curated short-list of high-signal books across foundations, investing,
+   mindset, and FI/early retirement. Each entry has a one-sentence "why
+   read this" and a key idea. The full library people credit with shaping
+   their financial life is short — most of these appear on those lists.
+*/
+
+const READING_LIST = [
+  // === Foundations ===
+  {
+    id: "psychology-of-money",
+    emoji: "🧠",
+    title: "The Psychology of Money",
+    author: "Morgan Housel",
+    category: "Foundations",
+    pages: 250,
+    whyRead: "The single best introduction to money for non-experts. Short chapters, each with one durable idea.",
+    keyIdea: "Doing well with money has little to do with how smart you are and a lot to do with how you behave. Behavior is hard to teach but easy to recognize.",
+  },
+  {
+    id: "richest-man-babylon",
+    emoji: "🏛️",
+    title: "The Richest Man in Babylon",
+    author: "George S. Clason",
+    category: "Foundations",
+    pages: 144,
+    whyRead: "Personal finance basics told as ancient parables. Cliché but the rules are timeless.",
+    keyIdea: "Pay yourself first. Make every coin you save work to earn more coins. Live below your means. Boring rules — that's why they work.",
+  },
+  {
+    id: "i-will-teach-you",
+    emoji: "🎓",
+    title: "I Will Teach You to Be Rich",
+    author: "Ramit Sethi",
+    category: "Foundations",
+    pages: 380,
+    whyRead: "The most practical step-by-step setup guide for a young earner. Down-to-the-account-form specifics.",
+    keyIdea: "Automate ruthlessly. Spend extravagantly on the things you love and cut mercilessly on the things you don't. Boring middle is where most people fail.",
+  },
+  // === Investing ===
+  {
+    id: "simple-path",
+    emoji: "🛤️",
+    title: "The Simple Path to Wealth",
+    author: "JL Collins",
+    category: "Investing",
+    pages: 280,
+    whyRead: "The bogleheads philosophy in 280 readable pages. Written as letters to his daughter.",
+    keyIdea: "Buy total-market index funds (VTSAX or equivalent). Hold them. Forget about them. Avoid debt. That's it.",
+  },
+  {
+    id: "common-sense-investing",
+    emoji: "📊",
+    title: "The Little Book of Common Sense Investing",
+    author: "John C. Bogle",
+    category: "Investing",
+    pages: 300,
+    whyRead: "By the inventor of the index fund. Methodical case for why active investing loses to indexing over time.",
+    keyIdea: "Don't look for the needle — buy the haystack. After fees, the math of active management is doomed for the average investor.",
+  },
+  {
+    id: "intelligent-investor",
+    emoji: "📖",
+    title: "The Intelligent Investor",
+    author: "Benjamin Graham",
+    category: "Investing",
+    pages: 640,
+    whyRead: "The investing book Buffett calls 'the best book on investing ever written.' Dense but foundational.",
+    keyIdea: "The intelligent investor is a realist who sells to optimists and buys from pessimists. Mr. Market offers prices daily; you decide when to act.",
+  },
+  // === FI / Early Retirement ===
+  {
+    id: "your-money-or-your-life",
+    emoji: "⏳",
+    title: "Your Money or Your Life",
+    author: "Vicki Robin",
+    category: "FI / Early retirement",
+    pages: 350,
+    whyRead: "The book that started the FIRE movement. Reframes spending as 'life energy.'",
+    keyIdea: "Every purchase costs hours of your life. Calculate your true hourly wage after job-related expenses. Then ask: is this purchase worth those hours?",
+  },
+  {
+    id: "early-retirement-extreme",
+    emoji: "🔥",
+    title: "Early Retirement Extreme",
+    author: "Jacob Lund Fisker",
+    category: "FI / Early retirement",
+    pages: 240,
+    whyRead: "Extreme version of FIRE — retire in 5-10 years on a moderate income. Polarizing but useful at the limit.",
+    keyIdea: "You don't need more money — you need fewer needs. Skills replace purchases. Versatility replaces specialization. Most 'middle-class needs' are luxuries dressed as essentials.",
+  },
+  // === Mindset / Lifestyle ===
+  {
+    id: "millionaire-next-door",
+    emoji: "🏘️",
+    title: "The Millionaire Next Door",
+    author: "Thomas J. Stanley",
+    category: "Mindset",
+    pages: 260,
+    whyRead: "Empirical study of American millionaires — they're not who you think. The rich looking people you see are probably broke.",
+    keyIdea: "Income is what you earn. Wealth is what you keep. The real millionaire drives a 10-year-old car, lives in a modest house, and consistently spends less than they make.",
+  },
+  {
+    id: "die-with-zero",
+    emoji: "⚖️",
+    title: "Die With Zero",
+    author: "Bill Perkins",
+    category: "Mindset",
+    pages: 220,
+    whyRead: "Counterintuitive book about NOT over-saving. Hits hard if you're a saver by nature.",
+    keyIdea: "Maximize life experiences, not your final balance. Your peak experience years are limited by health, not money. Optimal life trajectory: spend down to zero around your expected death.",
+  },
+  {
+    id: "rich-dad-poor-dad",
+    emoji: "🏗️",
+    title: "Rich Dad Poor Dad",
+    author: "Robert Kiyosaki",
+    category: "Mindset",
+    pages: 200,
+    whyRead: "Polarizing but influential. Most people's first introduction to thinking about assets vs liabilities.",
+    keyIdea: "Buy assets that put money in your pocket. Avoid liabilities that take money out. A house you live in is a liability, even though it has resale value.",
+  },
+  // === Sleep aids ===
+  {
+    id: "boglehead-guide",
+    emoji: "📚",
+    title: "The Bogleheads' Guide to Investing",
+    author: "Larimore, Lindauer, LeBoeuf",
+    category: "Investing",
+    pages: 320,
+    whyRead: "The most comprehensive practical reference for index investing. Less inspirational, more reference manual.",
+    keyIdea: "20 principles: live below your means, invest early and often, never bear too much or too little risk, diversify, never try to time the market, use index funds.",
+  },
+];
+
+const READING_CATEGORIES = ["Foundations", "Investing", "FI / Early retirement", "Mindset"];
+
+function _markBookRead(id) {
+  DB.booksRead = DB.booksRead || {};
+  DB.booksRead[id] = { read: true, at: Date.now() };
+  save();
+}
+
+function _unmarkBookRead(id) {
+  DB.booksRead = DB.booksRead || {};
+  delete DB.booksRead[id];
+  save();
+}
+
+function readingListSheet() {
+  const read = DB.booksRead || {};
+  const readCount = READING_LIST.filter(b => read[b.id]?.read).length;
+
+  const html = READING_CATEGORIES.map(cat => {
+    const books = READING_LIST.filter(b => b.category === cat);
+    if (!books.length) return "";
+    return `
+      <div class="section-h"><span class="lbl">${esc(cat)}</span></div>
+      <div class="list">
+        ${books.map(b => {
+          const isRead = !!read[b.id]?.read;
+          return `
+            <div class="row tappable" onclick="bookDetailSheet(${jsAttr(b.id)})">
+              <div class="lead">${b.emoji}</div>
+              <div class="body">
+                <div class="t1">${esc(b.title)}${isRead ? ` <span class="muted" style="font-weight:400;font-size:11px">✓ read</span>` : ""}</div>
+                <div class="t2">${esc(b.author)} · ${b.pages} pages</div>
+              </div>
+              <div class="trail chev"></div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  }).join("");
+
+  openSheet(`
+    <h2>📚 Wealth-building reading list</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">${readCount} of ${READING_LIST.length} read · Books that consistently show up on "what shaped my financial life" lists. Short reading commitment, lifetime payoff.</p>
+    ${html}
+    <p class="muted" style="font-size:11px;margin-top:14px;line-height:1.5">
+      <b>Reading strategy:</b> Don't try to read all of these. Pick ONE in each category over a year. Highlighting + revisiting is worth more than racing through more. The same 3-4 ideas appear across most of these books — durable signal, not noise.
+    </p>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+function bookDetailSheet(id) {
+  const b = READING_LIST.find(x => x.id === id);
+  if (!b) { readingListSheet(); return; }
+  const read = DB.booksRead || {};
+  const isRead = !!read[b.id]?.read;
+
+  openSheet(`
+    <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:14px">
+      <div style="font-size:36px;line-height:1">${b.emoji}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;font-weight:600">${esc(b.category)}</div>
+        <h2 style="margin:2px 0 0">${esc(b.title)}</h2>
+        <div style="font-size:13px;color:var(--t3);margin-top:4px">${esc(b.author)} · ${b.pages} pages</div>
+      </div>
+    </div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Why read this</div>
+      <div style="font-size:14px;line-height:1.6">${esc(b.whyRead)}</div>
+    </div>
+
+    <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:12px;border-left:3px solid var(--blue)">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Key idea</div>
+      <div style="font-size:14px;line-height:1.6;font-style:italic">${esc(b.keyIdea)}</div>
+    </div>
+
+    <div class="actions">
+      <button class="btn secondary" onclick="closeSheet();readingListSheet()">← Reading list</button>
+      ${isRead
+        ? `<button class="btn secondary" onclick="_unmarkBookRead(${jsAttr(b.id)});closeSheet();bookDetailSheet(${jsAttr(b.id)})">Mark unread</button>`
+        : `<button class="btn" onclick="_markBookRead(${jsAttr(b.id)});closeSheet();bookDetailSheet(${jsAttr(b.id)});toast('Marked as read')">Mark read</button>`
+      }
     </div>
   `);
 }
@@ -9909,6 +10143,8 @@ function init() {
     ESTATE_TASKS, estatePlanningSheet, _markEstateTask,
     computeSetupChecklist, setupChecklistSheet,
     COLLEGE_PRESETS, computeCollegePlan, collegePlannerSheet,
+    READING_LIST, READING_CATEGORIES, readingListSheet, bookDetailSheet,
+    _markBookRead, _unmarkBookRead,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
