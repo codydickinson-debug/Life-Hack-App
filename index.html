@@ -2619,6 +2619,14 @@ function renderMoney() {
           </div>
           <div class="trail chev"></div>
         </div>
+        <div class="row tappable" onclick="collegePlannerSheet()" role="button" tabindex="0">
+          <div class="lead">🎓</div>
+          <div class="body">
+            <div class="t1">College / 529 planner</div>
+            <div class="t2">Project future cost · solve for monthly contribution needed</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
       </div>
     `;
 
@@ -5851,6 +5859,182 @@ function wealthHealthSheet() {
       <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
     </div>
   `);
+}
+
+/* ================ COLLEGE / EDUCATION COST PLANNER ================
+   Project the future cost of college and the monthly contribution needed
+   to fund some percentage of it. Includes both undergrad and graduate
+   if applicable. Educational — costs vary widely by institution.
+
+   College cost inflation has historically run ~5-6%/yr — higher than
+   general inflation. The default 5% reflects this.
+
+   2024 typical sticker prices (College Board):
+     Public in-state 4yr:     ~$28k/yr (tuition + room/board)
+     Public out-of-state 4yr: ~$46k/yr
+     Private 4yr:             ~$60k/yr
+*/
+
+const COLLEGE_PRESETS = {
+  public_in: { label: "Public in-state",     annualCost: 28000 },
+  public_out:{ label: "Public out-of-state", annualCost: 46000 },
+  private:   { label: "Private 4yr",         annualCost: 60000 },
+  community: { label: "Community + transfer", annualCost: 18000 },
+  custom:    { label: "Custom",              annualCost: 30000 },
+};
+
+function computeCollegePlan({ currentAge, currentSavings, monthlyContribution, costPreset, customAnnualCost, inflationPct, investReturnPct, fundPct }) {
+  const yearsUntilStart = Math.max(0, 18 - currentAge);
+  const annualCostToday = costPreset === "custom" ? (+customAnnualCost || 30000) : (COLLEGE_PRESETS[costPreset]?.annualCost || 30000);
+  const r = Math.max(0, +inflationPct || 5) / 100;
+  // Project cost into the future (compounded inflation)
+  const futureCostYr1 = annualCostToday * Math.pow(1 + r, yearsUntilStart);
+  // 4 years of college, each year's cost inflates further
+  let totalCost = 0;
+  for (let i = 0; i < 4; i++) {
+    totalCost += annualCostToday * Math.pow(1 + r, yearsUntilStart + i);
+  }
+  const fundFraction = Math.max(0, Math.min(100, +fundPct || 100)) / 100;
+  const fundingTarget = totalCost * fundFraction;
+  // Project current savings + monthly contributions forward
+  const investR = (Math.max(0, +investReturnPct || 6)) / 100 / 12;
+  let balance = +currentSavings || 0;
+  const months = yearsUntilStart * 12;
+  for (let m = 0; m < months; m++) {
+    balance = balance * (1 + investR) + (+monthlyContribution || 0);
+  }
+  const projectedSavings = balance;
+  const gap = Math.max(0, fundingTarget - projectedSavings);
+  // Suggested monthly contribution to fully cover target (FV annuity solve)
+  const monthlyR = investR;
+  const startingBal = +currentSavings || 0;
+  // FV needed = fundingTarget
+  // FV = PV * (1+r)^n + PMT * ((1+r)^n - 1) / r
+  // Solve for PMT
+  let suggestedMonthly = 0;
+  if (months > 0 && monthlyR > 0) {
+    const fvOfStarting = startingBal * Math.pow(1 + monthlyR, months);
+    const remaining = fundingTarget - fvOfStarting;
+    if (remaining > 0) {
+      suggestedMonthly = remaining * monthlyR / (Math.pow(1 + monthlyR, months) - 1);
+    }
+  } else if (months > 0) {
+    const remaining = fundingTarget - startingBal;
+    suggestedMonthly = remaining > 0 ? remaining / months : 0;
+  }
+  return {
+    yearsUntilStart, annualCostToday, futureCostYr1, totalCost,
+    fundingTarget, projectedSavings, gap, suggestedMonthly,
+  };
+}
+
+function collegePlannerSheet() {
+  let state = {
+    currentAge: 0,
+    currentSavings: 0,
+    monthlyContribution: 200,
+    costPreset: "public_in",
+    customAnnualCost: 30000,
+    inflationPct: 5,
+    investReturnPct: 6,
+    fundPct: 100,
+  };
+
+  const render = (s) => {
+    const r = computeCollegePlan(s);
+    const onTrack = r.projectedSavings >= r.fundingTarget;
+    return `
+      <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Funding target (${(+s.fundPct||100)}% of 4-yr cost)</div>
+        <div style="font-size:28px;font-weight:700;letter-spacing:-.5px;margin:6px 0" data-priv="amount">${fmt$0(r.fundingTarget)}</div>
+        <div style="font-size:13px;color:var(--t2)">4-year total cost (inflated): <b data-priv="amount">${fmt$0(r.totalCost)}</b> · starting Year 1 at <span data-priv="amount">${fmt$0(r.futureCostYr1)}</span></div>
+      </div>
+
+      <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Projected savings in ${r.yearsUntilStart} years</div>
+        <div style="font-size:28px;font-weight:700;letter-spacing:-.5px;margin:6px 0;color:${onTrack?"var(--green)":"var(--orange)"}" data-priv="amount">${fmt$0(r.projectedSavings)}</div>
+        <div style="font-size:13px;color:var(--t2)">${onTrack ? `✓ ${fmt$0(r.projectedSavings - r.fundingTarget)} above target — overfunded` : `Gap: <b style="color:var(--red)" data-priv="amount">${fmt$0(r.gap)}</b>`}</div>
+        <div style="font-size:12px;color:var(--t3);margin-top:8px;padding-top:8px;border-top:1px solid var(--sep)">
+          To hit ${(+s.fundPct||100)}% of target: contribute <b data-priv="amount">${fmt$0(r.suggestedMonthly)}/mo</b>
+        </div>
+      </div>
+    `;
+  };
+
+  openSheet(`
+    <h2>🎓 College / education planner</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Project the cost of college 18 years out and the savings needed to fund some or all of it. College costs have historically inflated ~5%/yr — higher than general inflation. Educational, not advice.</p>
+    <div id="cp-output">${render(state)}</div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Child + cost</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="cp-age">Child's current age</label>
+        <input id="cp-age" type="number" min="0" max="22" step="1" value="${state.currentAge}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="cp-type">School type</label>
+        <select id="cp-type" style="background:var(--card);padding:6px 10px;border-radius:6px">
+          ${Object.entries(COLLEGE_PRESETS).map(([k,v]) => `<option value="${k}" ${state.costPreset===k?"selected":""}>${esc(v.label)} (${fmt$0(v.annualCost)}/yr today)</option>`).join("")}
+        </select>
+      </div>
+      <div id="cp-custom-row" style="display:${state.costPreset==="custom"?"flex":"none"};justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="cp-custom">Custom annual cost ($)</label>
+        <input id="cp-custom" type="number" min="0" step="1000" value="${state.customAnnualCost}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:110px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+        <label for="cp-fund">% of cost to fund</label>
+        <input id="cp-fund" type="number" min="0" max="200" step="5" value="${state.fundPct}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+    </div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Savings + assumptions</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="cp-current">Current 529 / savings</label>
+        <input id="cp-current" type="number" min="0" step="500" value="${state.currentSavings}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:110px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="cp-monthly">Monthly contribution</label>
+        <input id="cp-monthly" type="number" min="0" step="25" value="${state.monthlyContribution}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:90px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="cp-inflation">College inflation (%/yr)</label>
+        <input id="cp-inflation" type="number" min="0" max="15" step="0.5" value="${state.inflationPct}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+        <label for="cp-return">Investment return (%/yr)</label>
+        <input id="cp-return" type="number" min="0" max="20" step="0.5" value="${state.investReturnPct}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+    </div>
+
+    <p class="muted" style="font-size:11px;line-height:1.5">
+      <b>529 plan basics:</b> tax-advantaged accounts for education expenses. Contributions are after-tax (federal) but grow + withdraw tax-free for qualifying education costs. Most states offer state-tax deductions on contributions. Direct-sold plans (Utah, NY, California) have the lowest fees. <b>Smart strategies:</b> save what you reasonably can, scholarship gaps + summer jobs cover the rest, don't sacrifice retirement for college (kid can borrow for school, you can't borrow for retirement).
+    </p>
+
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+
+  const refresh = () => {
+    const s = {
+      currentAge: +$("#cp-age").value || 0,
+      currentSavings: +$("#cp-current").value || 0,
+      monthlyContribution: +$("#cp-monthly").value || 0,
+      costPreset: $("#cp-type").value,
+      customAnnualCost: +$("#cp-custom").value || 0,
+      inflationPct: +$("#cp-inflation").value || 0,
+      investReturnPct: +$("#cp-return").value || 0,
+      fundPct: +$("#cp-fund").value || 100,
+    };
+    $("#cp-custom-row").style.display = s.costPreset === "custom" ? "flex" : "none";
+    $("#cp-output").innerHTML = render(s);
+  };
+  ["#cp-age","#cp-current","#cp-monthly","#cp-type","#cp-custom","#cp-inflation","#cp-return","#cp-fund"].forEach(sel => {
+    $(sel).addEventListener("input", refresh);
+    $(sel).addEventListener("change", refresh);
+  });
 }
 
 /* ================ FIRST-RUN SETUP CHECKLIST ================
@@ -9724,6 +9908,7 @@ function init() {
     INSURANCE_TYPES, insuranceChecklistSheet, insuranceDetailSheet,
     ESTATE_TASKS, estatePlanningSheet, _markEstateTask,
     computeSetupChecklist, setupChecklistSheet,
+    COLLEGE_PRESETS, computeCollegePlan, collegePlannerSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
