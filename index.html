@@ -2018,6 +2018,24 @@ function renderToday() {
     })()}
 
     ${(() => {
+      // Money reflection prompt — small card with today's question. Tap to journal.
+      // Only show if user has profile filled in (signal they're engaged with the app).
+      const profile = DB.profile || {};
+      if (!profile.age) return "";
+      const prompt = todaysMoneyPrompt();
+      return `
+        <div class="row tappable" onclick="moneyPromptSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-left:3px solid var(--blue);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:flex-start">
+          <div style="font-size:20px;width:32px;text-align:center;line-height:1.4">💭</div>
+          <div class="body">
+            <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:4px">Today's money reflection</div>
+            <div class="t1" style="margin:0;font-size:14px;line-height:1.4">${esc(prompt)}</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      `;
+    })()}
+
+    ${(() => {
       const plays = computeSmartPlays();
       if (!plays.length) return "";
       const top = plays.slice(0, 2);
@@ -5920,6 +5938,92 @@ function wealthHealthSheet() {
       <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
     </div>
   `);
+}
+
+/* ================ MONEY REFLECTION PROMPTS ================
+   30 rotating prompts (one per day, cycles monthly) to deepen money
+   mindset. Sits on Today as a small card; tap to journal a reflection
+   using the existing reflections system.
+
+   Most personal finance content is about WHAT to do. These prompts are
+   about WHY — surfacing your relationships, fears, beliefs around money.
+*/
+
+const MONEY_PROMPTS = [
+  "What does 'enough money' mean to me, specifically?",
+  "What's one money belief from my childhood that still drives my behavior today?",
+  "If money were no constraint, what would my Monday morning look like?",
+  "What's the smallest unnecessary expense I've made this week? Why did I make it?",
+  "If I had to cut 20% of my expenses tomorrow, what would I cut first?",
+  "What's a purchase I'm proud of from the last year — and why?",
+  "What's a purchase I regret — and what would I do differently?",
+  "Who's the wealthiest person I know personally? What do they do differently?",
+  "What would my financial life look like in 5 years if I just kept doing what I'm doing now?",
+  "What's one financial fear that holds me back from making bigger moves?",
+  "If I lost my job tomorrow, how many months could I cover? How does that feel?",
+  "Do I feel anxious or peaceful when I check my accounts? Why?",
+  "What's something I'm spending on that doesn't match my stated values?",
+  "What would I do with an unexpected $10,000? What does that say about my priorities?",
+  "What's one money skill I'd like to be better at by this time next year?",
+  "Who do I compare my finances to? Is that comparison useful?",
+  "What do I want my kids / future kids to know about money that I had to learn the hard way?",
+  "When was the last time I felt truly generous with money? What did it feel like?",
+  "If I could send my 20-year-old self one money message, what would it be?",
+  "What's my relationship with risk — too cautious, too reckless, or about right?",
+  "What does 'rich' actually mean to me — and is it about a number, a feeling, or a freedom?",
+  "What financial habit am I most proud of?",
+  "What financial habit am I most ashamed of?",
+  "If money is a tool, what am I building with it?",
+  "What's one small experiment I could run this month to improve my money life?",
+  "How would I describe my money personality to a stranger?",
+  "What do I tell myself when I'm tempted by an impulse buy? Does that script work?",
+  "What income level would actually make me feel 'safe'? Is that number realistic — or arbitrary?",
+  "What did I learn about money this week that I want to remember?",
+  "If I died tomorrow, what would I want my money to do for the people I love?",
+];
+
+// Pick today's prompt deterministically — same prompt all day, rotates daily.
+function todaysMoneyPrompt() {
+  const day = new Date();
+  const dayOfYear = Math.floor((day - new Date(day.getFullYear(), 0, 0)) / 86400000);
+  return MONEY_PROMPTS[dayOfYear % MONEY_PROMPTS.length];
+}
+
+function moneyPromptSheet() {
+  const prompt = todaysMoneyPrompt();
+  // Compose a default reflection date stamp for the journal
+  openSheet(`
+    <h2>💭 Money reflection</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Different from "what should I do with money" — this is "what's my relationship with money." Most financial decisions are emotional first, rational second.</p>
+
+    <div style="background:var(--card);border-radius:var(--r);padding:18px;margin-bottom:14px;border-left:3px solid var(--blue)">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Today's prompt</div>
+      <div style="font-size:17px;font-weight:600;line-height:1.5">${esc(prompt)}</div>
+    </div>
+
+    <label>Your response</label>
+    <textarea id="mp-text" rows="6" placeholder="Free-write. Nobody else sees this. Encrypted with the rest of your data when you set a passphrase." autofocus></textarea>
+
+    <p class="muted" style="font-size:11px;margin-top:10px;line-height:1.5">
+      Saved to your reflections journal alongside any other entries.
+    </p>
+
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" onclick="closeSheet()">Cancel</button>
+      <button class="btn" id="mp-save">Save reflection</button>
+    </div>
+  `);
+
+  $("#mp-save").addEventListener("click", async () => {
+    const text = $("#mp-text").value.trim();
+    if (!text) { toast("Write something first"); return; }
+    // Prepend the prompt to the saved text so the user has context later
+    const fullText = "💭 " + prompt + "\n\n" + text;
+    (DB.reflections = DB.reflections || []).unshift({
+      id: uid(), text: fullText, date: todayKey(), createdAt: Date.now(),
+    });
+    await save(); closeSheet(); render(); toast("Reflection saved");
+  });
 }
 
 /* ================ 30-DAY SUBSCRIPTION AUDIT ================
@@ -10318,6 +10422,7 @@ function init() {
     READING_LIST, READING_CATEGORIES, readingListSheet, bookDetailSheet,
     _markBookRead, _unmarkBookRead,
     subscriptionAuditSheet,
+    MONEY_PROMPTS, todaysMoneyPrompt, moneyPromptSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
