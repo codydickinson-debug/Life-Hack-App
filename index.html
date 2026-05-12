@@ -2668,6 +2668,14 @@ function renderMoney() {
             </div>
             <div class="trail chev"></div>
           </div>
+          <div class="row tappable" onclick="insuranceChecklistSheet()" role="button" tabindex="0">
+            <div class="lead">🛡️</div>
+            <div class="body">
+              <div class="t1">Insurance checklist</div>
+              <div class="t2">${INSURANCE_TYPES.length} coverage types · wealth protection guide</div>
+            </div>
+            <div class="trail chev"></div>
+          </div>
         </div>
       `;
     })();
@@ -5812,6 +5820,167 @@ function wealthHealthSheet() {
     ` : ""}
     <div class="actions">
       <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+/* ================ INSURANCE COVERAGE CHECKLIST ================
+   Wealth PROTECTION is the often-overlooked counterpart to wealth building.
+   One uninsured catastrophe (disability, lawsuit, medical) can erase decades
+   of savings. The right coverage is cheap relative to that risk.
+
+   For each insurance type: when to have it, how much, common mistakes.
+   Educational — get actual quotes from licensed agents; coverage details
+   vary by state and personal situation.
+*/
+
+const INSURANCE_TYPES = [
+  {
+    id: "term-life",
+    emoji: "👨‍👩‍👧",
+    title: "Term life insurance",
+    priority: "Critical if you have dependents",
+    needIf: "Someone depends on your income (spouse, kids, aging parents). Skip if single + no dependents.",
+    coverage: "10-15× annual income, level term, 20-30 year duration",
+    cost: "Cheap — healthy 30yo: \$25-50/mo for \$1M / 30yr",
+    summary: "Replace your future earnings if you die unexpectedly. Term, not whole life. Buy when young + healthy = locked-in low rates.",
+    body: `**Why term, not whole life:**\nWhole life insurance combines insurance + investment. Both are usually worse than buying them separately ("buy term and invest the difference"). Commissions on whole life are high → agents push it. Almost everyone is better with term + index investing.\n\n**How much:**\nThe rough rule is 10-15× your annual income. A 30yo making \$80k → \$800k-1.2M policy. The math: invested at 4% safe withdrawal, that replaces income for the dependent.\n\n**Duration:**\nPick a term that covers your dependent years. If you have a 3yo and want to cover until they're 25 + your mortgage paid off → 25-year term. 30-year terms are common.\n\n**When to buy:**\nYounger + healthier = much cheaper. A 25yo non-smoker can lock in 30 years of coverage for less than what a 45yo pays for 10. Don't wait.\n\n**Where to buy:**\nTerm life is a commodity. Get quotes from 3+ insurers (Policygenius, Term4Sale, Quotacy). The product is identical at the same rating + duration; price varies 30-50%.\n\n**Medical exam vs no-exam:**\nNo-exam policies are 30-50% more expensive but faster. If you're healthy, do the exam — significant savings over 30 years.`,
+    tips: [
+      "Avoid 'return of premium' riders — they cost more than the math justifies",
+      "Stack multiple shorter policies (e.g., \$500k/30yr + \$500k/15yr) for cheaper coverage that drops as need decreases",
+      "Recheck health rating every 5-10 years — if you've improved (lost weight, quit smoking), reapply",
+      "Beneficiary designations override your will — keep them updated",
+    ],
+  },
+  {
+    id: "long-term-disability",
+    emoji: "🦽",
+    title: "Long-term disability (LTD)",
+    priority: "Critical if you depend on your income",
+    needIf: "You earn an income and aren't independently wealthy. 1 in 4 workers experiences a disability before retirement.",
+    coverage: "60-70% of gross income, 'own occupation' definition, 90-day elimination period",
+    cost: "1-3% of gross income annually (\$80k income → \$800-2,400/yr)",
+    summary: "Replaces income if you can't work due to illness or injury. More likely to use than life insurance (you're 3-4× more likely to be disabled than die before 65).",
+    body: `**Why this matters more than life insurance:**\nIf you die, your family has expenses but loses one person. If you're disabled, your family has the same expenses AND care costs AND lost income. Long-term disability is statistically more financially devastating than death.\n\n**Through employer vs private:**\n- Group LTD through employer: usually cheap or free, but capped (typically 60% of base salary). Benefits are taxable if employer paid premiums.\n- Private LTD: more expensive but portable + benefits tax-free if you paid premiums.\n- Best practice: take employer LTD AND consider supplemental private policy if your income is high or variable.\n\n**Key terms (matter a lot):**\n- **"Own occupation"**: pays if you can't do YOUR specific job. Best definition. More expensive.\n- **"Any occupation"**: pays only if you can't do ANY job. Cheaper. Much worse coverage.\n- **Elimination period**: waiting time before benefits start. Usually 90 days. Longer = cheaper.\n- **Benefit period**: how long benefits last. 'To age 65' is the gold standard.\n\n**For self-employed / 1099 workers:**\nNo employer plan to fall back on. Private LTD is essentially required if you have dependents.\n\n**What it doesn't cover:**\nPre-existing conditions usually excluded for first 1-2 years. Mental health benefits often limited (2 years max). Read the fine print.`,
+    tips: [
+      "Verify your employer plan's tax treatment — pay-with-after-tax-dollars makes benefits tax-free",
+      "Buy young and healthy — disability insurance rejection rates climb fast with age + conditions",
+      "Most claims are NOT from accidents — they're from cancer, mental health, back issues",
+      "Check if your group plan has 'COBRA-like' portability when you leave the job",
+    ],
+  },
+  {
+    id: "umbrella",
+    emoji: "☂️",
+    title: "Umbrella (personal liability)",
+    priority: "Get when net worth exceeds ~\$250-500k",
+    needIf: "You have assets that could be taken in a lawsuit (home equity, savings, future income).",
+    coverage: "\$1-2M for most; \$3-5M if net worth > \$2M",
+    cost: "Cheap — \$1M umbrella usually \$150-300/yr",
+    summary: "Catastrophic liability coverage above your auto/home policies. The cheapest way to protect a growing net worth from one bad day (car accident, dog bite, pool incident).",
+    body: `**What it covers:**\nLiability claims that exceed your auto or home insurance limits. Example: you're at fault in a car accident, the injured party's medical bills hit \$700k. Your auto policy maxes at \$300k. Umbrella covers the \$400k gap (up to its limit).\n\n**Why it's so cheap:**\nInsurers price umbrella low because claims this big are rare. You're paying for tail-risk protection — exactly what insurance should do.\n\n**Requirements:**\nMost insurers require you to carry minimum underlying coverage:\n- Auto: \$250k/\$500k bodily injury, \$100k property\n- Home: \$300k+ personal liability\nIf you don't already, increasing these is part of the umbrella cost.\n\n**When you definitely need this:**\n- Teenage drivers in the house (massively elevates risk)\n- Pool or trampoline (attractive nuisance lawsuits)\n- Dog (especially certain breeds)\n- You rent property or have an Airbnb\n- Public-facing job (you have a "target on your back" for lawsuits)\n- Net worth > \$500k\n\n**Where to buy:**\nUsually cheapest as a bundle with your existing auto + home insurer. Get standalone quotes if your insurer's bundle isn't competitive.\n\n**Honest framing:**\nYou'll likely never use this. That's the point. \$200/yr to remove the catastrophic case from your worry list.`,
+    tips: [
+      "Buy the umbrella when you get the home — easier to bundle and qualify",
+      "Match coverage to net worth + future income (younger doctors carry \$5M+ for malpractice + personal)",
+      "Re-shop every 2-3 years — bundling discounts shift over time",
+      "Keep at least 1× your liquid net worth in umbrella coverage as a floor",
+    ],
+  },
+  {
+    id: "health",
+    emoji: "🏥",
+    title: "Health insurance",
+    priority: "Essential. Never go without.",
+    needIf: "Always. An uninsured medical event is the #1 cause of bankruptcy.",
+    coverage: "Bronze/Silver if young + healthy + cash-flush. Gold/Platinum if you use a lot of healthcare.",
+    cost: "\$300-800/mo for healthy adult; \$1,500+ for family. Varies massively by employer subsidy.",
+    summary: "Non-optional. The choice is which plan, not whether to have one. HDHP + HSA is mathematically optimal for healthy savers; PPO is better if you have ongoing care.",
+    body: `**The biggest decision: HDHP vs traditional**\n\n**HDHP (High-Deductible Health Plan):**\n- Lower premiums, higher deductible (\$1,600+ individual, \$3,200+ family)\n- HSA-eligible — triple-tax-advantaged savings\n- Best if: healthy, low expected healthcare use, want to invest the HSA long-term\n\n**Traditional PPO:**\n- Higher premiums, lower out-of-pocket per visit\n- No HSA, just FSA (use-it-or-lose-it)\n- Best if: ongoing prescriptions, chronic condition, expected pregnancy, plan to use a lot of care\n\n**Through employer vs marketplace:**\nEmployer plans usually subsidized 70-90% (premiums look fake-low). Marketplace plans cost full price with potential ACA subsidies if income is moderate. If you're early-retired or self-employed, plan for full marketplace cost.\n\n**What to actually compare:**\n- Annual deductible\n- Out-of-pocket maximum (the catastrophic cap)\n- In-network vs out-of-network\n- Whether your doctors and prescriptions are covered\n- Coinsurance % (you pay X% after deductible)\n\n**HSA is the secret weapon:**\nIf you pick HDHP, contribute the max to your HSA (\$4,150 single / \$8,300 family for 2024). Pay current medical bills out of pocket if you can. Invest the HSA. After 65, withdraw for anything penalty-free (taxed as income for non-medical).\n\n**Catastrophic cap matters most:**\nIn a bad year, you'll hit your out-of-pocket max. Make sure that number is one you can absorb (e.g., from your emergency fund).`,
+    tips: [
+      "Check your plan's preventive care list — most check-ups, vaccines, screenings are free",
+      "Use HSA dollars for current medical only if you can't cover from cash flow — let them grow",
+      "Network is more important than the plan tier — verify your doctors before enrolling",
+      "Don't let perfect be the enemy of good — any plan beats no plan",
+    ],
+  },
+  {
+    id: "home-auto",
+    emoji: "🏠",
+    title: "Home / auto insurance",
+    priority: "Required (by lenders + most states)",
+    needIf: "You own a home, rent a place with valuables, or drive a car.",
+    coverage: "Replacement cost (not actual cash value) on home; high liability limits on auto; uninsured/underinsured motorist",
+    cost: "Highly variable — shop every 2-3 years",
+    summary: "The boring required insurance. Two big optimizations: pick replacement cost over actual cash value, and carry high liability limits cheaply.",
+    body: `**Home insurance — the two big choices:**\n\n1. **Replacement cost vs Actual Cash Value (ACV):**\n   - Replacement cost: pays what it costs to rebuild new\n   - ACV: pays depreciated value (worth way less, especially for older homes)\n   - ALWAYS choose replacement cost. ACV is a trap.\n\n2. **Dwelling coverage:** insure for rebuild cost, NOT market value. Land doesn't burn — only the structure needs coverage.\n\n**Renter's insurance — the underrated bargain:**\nUsually \$10-25/month. Covers your possessions + liability if someone's hurt at your place. Often required by landlords. Skip at your peril.\n\n**Auto insurance — the two big optimizations:**\n\n1. **Liability limits:** carry 250/500/100 minimum (\$250k per person/\$500k per accident bodily injury / \$100k property). The premium difference vs the legal minimum is small; the protection is huge.\n\n2. **Uninsured/underinsured motorist:** match your liability limits. ~13% of US drivers are uninsured. If they hit you and have nothing, your own policy pays. This is one of the most overlooked coverages.\n\n**Drop coverage when it stops making sense:**\n- On older cars (worth <\$3k): drop comprehensive + collision. Just carry liability. Cars depreciate; coverage premiums don't.\n\n**Shop every 2-3 years:**\nLoyalty almost never pays in insurance. Premiums creep up. Get 3 competing quotes and switch when the savings exceed the friction.`,
+    tips: [
+      "Raise deductibles to \$1k+ if you have an emergency fund — significant premium savings",
+      "Bundle home + auto for 10-15% off, but verify the bundle is actually cheaper after each renewal",
+      "Document possessions with photos/video — claim process is night-and-day faster with proof",
+      "Check claim history before switching — too many small claims raises rates more than one big one",
+    ],
+  },
+];
+
+function insuranceChecklistSheet() {
+  const html = INSURANCE_TYPES.map(t => `
+    <div class="row tappable" onclick="insuranceDetailSheet(${jsAttr(t.id)})" role="button" tabindex="0">
+      <div class="lead">${t.emoji}</div>
+      <div class="body">
+        <div class="t1">${esc(t.title)}</div>
+        <div class="t2">${esc(t.priority)}</div>
+      </div>
+      <div class="trail chev"></div>
+    </div>
+  `).join("");
+  openSheet(`
+    <h2>🛡️ Insurance checklist</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Wealth PROTECTION is the often-skipped half of building wealth. One uninsured catastrophe can erase decades of saving. Educational — get quotes from licensed agents.</p>
+    <div class="list">${html}</div>
+    <p class="muted" style="font-size:11px;margin-top:14px;line-height:1.5">
+      <b>Order of priority:</b> Health (always) → Term life (if dependents) → LTD (if income-dependent) → Auto/Home (required) → Umbrella (as net worth grows). The total cost of doing this right is typically 3-7% of income — far less than the cost of one uncovered event.
+    </p>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+function insuranceDetailSheet(id) {
+  const t = INSURANCE_TYPES.find(x => x.id === id);
+  if (!t) { insuranceChecklistSheet(); return; }
+  const paragraphs = t.body.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+  const bodyHtml = paragraphs.map(p => {
+    const formatted = esc(p).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
+    return `<p style="margin:0 0 12px;line-height:1.6;font-size:14px">${formatted}</p>`;
+  }).join("");
+  openSheet(`
+    <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:14px">
+      <div style="font-size:36px;line-height:1">${t.emoji}</div>
+      <div style="flex:1;min-width:0">
+        <h2 style="margin:0">${esc(t.title)}</h2>
+        <div style="font-size:12px;color:var(--t3);margin-top:4px">${esc(t.priority)}</div>
+      </div>
+    </div>
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Who needs this</div>
+      <div style="font-size:13px;line-height:1.5">${esc(t.needIf)}</div>
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin:12px 0 6px">Coverage target</div>
+      <div style="font-size:13px;line-height:1.5">${esc(t.coverage)}</div>
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin:12px 0 6px">Typical cost</div>
+      <div style="font-size:13px;line-height:1.5">${esc(t.cost)}</div>
+    </div>
+    <p class="muted" style="font-size:13px;margin-bottom:14px;font-style:italic">${esc(t.summary)}</p>
+    <div>${bodyHtml}</div>
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-top:14px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Tips</div>
+      <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7">
+        ${t.tips.map(tip => `<li>${esc(tip)}</li>`).join("")}
+      </ul>
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" onclick="closeSheet();insuranceChecklistSheet()">← All types</button>
+      <button class="btn" onclick="closeSheet()">Got it</button>
     </div>
   `);
 }
@@ -9253,6 +9422,7 @@ function init() {
     computeRental, rentalPropertySheet,
     NEGOTIATION_TEMPLATES, negotiationToolkitSheet, negotiationScriptSheet,
     INCOME_STRATEGIES, incomeStrategiesSheet, incomeStrategySheet,
+    INSURANCE_TYPES, insuranceChecklistSheet, insuranceDetailSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
