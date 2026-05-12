@@ -1129,6 +1129,14 @@ const DEFAULT_DB = {
   dismissedBills: {},
   pendingDeposits: [],
   dismissedDeposits: [],     // plaid_ids of deposits the user explicitly Skipped — prevents re-surfacing on next sync
+  dismissedPlays: {},        // { playId: true } — smart-play recommendations user has dismissed
+  profile: {                 // optional self-reported info that sharpens smart-play recommendations
+    age: 0,                  // 0 = not set; play engine uses 30 as a neutral default when missing
+    filingStatus: "single",  // single | married | hoh — for tax-related plays
+    employerMatch: false,    // true if employer offers 401k match — flags "free money" play
+    hsaEligible: false,      // true if on a high-deductible health plan — flags HSA play
+    state: "",               // 2-letter postal code (e.g. "FL") — informational only in v1
+  },
 
   spendSearch: "",
   holdings: [],              // [{account_id, ticker, name, type, quantity, institution_value, cost_basis}]
@@ -1944,6 +1952,28 @@ function renderToday() {
     ${stsHtml}
 
     ${(() => {
+      const plays = computeSmartPlays();
+      if (!plays.length) return "";
+      const top = plays.slice(0, 2);
+      const moreCount = plays.length - top.length;
+      return `
+        <div class="section-h"><span class="lbl">💡 Smart plays</span><button class="act" onclick="smartPlaysSheet()">${moreCount > 0 ? `View all ${plays.length}` : "Details"}</button></div>
+        <div class="list">
+          ${top.map(p => `
+            <div class="row tappable" onclick="smartPlaysSheet()" role="button" tabindex="0">
+              <div class="lead">${p.emoji}</div>
+              <div class="body">
+                <div class="t1">${esc(p.title)}</div>
+                <div class="t2">${esc(p.body)}</div>
+              </div>
+              <div class="trail chev"></div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    })()}
+
+    ${(() => {
       const bills = upcomingBills();
       if (!bills.length) return "";
       return `
@@ -2608,6 +2638,27 @@ function renderSettings() {
           value="${esc(DB.user.name||"")}" placeholder="Name"
           oninput="DB.user.name=this.value;save();renderHeader()" />
       </div>
+    </div>
+
+    <div class="section-h"><span class="lbl">Smart money plays</span></div>
+    <div class="list">
+      <div class="row tappable" onclick="smartPlaysSheet()">
+        <div class="lead">💡</div>
+        <div class="body"><div class="t1">Open Smart Plays</div><div class="t2">Personalized next moves based on your situation</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="profileSheet()">
+        <div class="lead">👤</div>
+        <div class="body"><div class="t1">About you</div><div class="t2">${DB.profile?.age ? `Age ${DB.profile.age}${DB.profile.state?` · ${esc(DB.profile.state)}`:""}${DB.profile.employerMatch?" · 401k match":""}${DB.profile.hsaEligible?" · HSA":""}` : "Optional — sharpens recommendations"}</div></div>
+        <div class="trail chev"></div>
+      </div>
+      ${Object.keys(DB.dismissedPlays || {}).length ? `
+        <div class="row tappable" onclick="if(confirm('Reset all dismissed Smart Plays?'))resetDismissedPlays()">
+          <div class="lead">↺</div>
+          <div class="body"><div class="t1">Reset dismissed plays</div><div class="t2">${Object.keys(DB.dismissedPlays).length} dismissed — un-hide them all</div></div>
+          <div class="trail chev"></div>
+        </div>
+      ` : ""}
     </div>
 
     <div class="section-h"><span class="lbl">Appearance</span></div>
@@ -4633,6 +4684,326 @@ function autoLockSetup() {
   });
 }
 
+/* ================ SMART MONEY PLAYS ================
+   Rule-based "what should I do next?" recommendations. Each rule reads
+   DB + optional DB.profile and returns a play card or null. Plays are
+   EDUCATION, not advice — they suggest frameworks, not specific securities.
+
+   Adding a new play: write a function that returns { id, priority, emoji,
+   title, body, why, actionLabel, actionFn } or null, then push it into the
+   `rules` array in computeSmartPlays(). Higher priority = surfaced earlier.
+*/
+
+// IRS contribution limits — bump annually
+const IRA_LIMIT_BY_YEAR = { 2025: 7000, 2026: 7000, 2027: 7500 };
+const IRA_CATCHUP_DELTA = 1000; // age 50+ adds this much
+function _iraLimit(year, age) {
+  const base = IRA_LIMIT_BY_YEAR[year] || IRA_LIMIT_BY_YEAR[2026];
+  return base + (age >= 50 ? IRA_CATCHUP_DELTA : 0);
+}
+
+function _playsAge() { return +DB.profile?.age || 30; }
+function _playsMonthlyIncome() {
+  // Use budget income if set; otherwise fall back to detected recurring income.
+  return (+(DB.budget?.income) || 0) + recurringMonthlyTotal("income");
+}
+function _playsMonthlyFixed() {
+  // Don't double-count recurring with budget.expenses — they often overlap.
+  // Use the larger of the two as the conservative estimate.
+  const rec = recurringMonthlyTotal("expense");
+  const bud = (DB.budget?.expenses || []).reduce((s,e) => s + (+e.amount || 0), 0);
+  return Math.max(rec, bud);
+}
+function _playsTotalSavings() {
+  return (DB.savings || []).reduce((s,x) => s + (+x.current || 0), 0);
+}
+function _playsHighestAprDebt() {
+  const items = (DB.liabilities || []).filter(l => +l.apr > 0);
+  if (!items.length) return null;
+  return items.slice().sort((a,b) => +b.apr - +a.apr)[0];
+}
+function _playsNwSnapshotAgeDays() {
+  const hist = DB.netWorthHistory || [];
+  if (!hist.length) return null;
+  const last = hist[hist.length - 1];
+  return Math.floor((Date.now() - new Date(last.date + "T00:00:00").getTime()) / 86400000);
+}
+
+function computeSmartPlays() {
+  const out = [];
+  const dismissed = DB.dismissedPlays || {};
+  const income = _playsMonthlyIncome();
+  const fixed = _playsMonthlyFixed();
+  const savings = _playsTotalSavings();
+  const monthsRunway = fixed > 0 ? savings / fixed : 0;
+  const debt = _playsHighestAprDebt();
+  const nwAge = _playsNwSnapshotAgeDays();
+  const age = _playsAge();
+  const profile = DB.profile || {};
+  const year = new Date().getFullYear();
+
+  // P1 — Pay off high-APR debt (highest priority — beats almost any investment)
+  if (debt && +debt.apr >= 7) {
+    out.push({
+      id: "high-apr-debt",
+      priority: 95,
+      emoji: "🔥",
+      title: `Prioritize ${debt.name}`,
+      body: `${(+debt.apr).toFixed(1)}% APR on ${fmt$0(debt.balance)}. Paying this off is a guaranteed return — beats any reasonable market expectation.`,
+      why: "Debt with APR above ~7% mathematically dominates investing: it's a guaranteed return at that rate. Stocks average 7-10% historically but with risk. Crush the high-APR debt first, then invest.",
+      actionLabel: "Open debts",
+      actionFn: "showTab('money')",
+    });
+  }
+
+  // P2 — 401k match if employer offers it
+  if (profile.employerMatch && income > 0) {
+    out.push({
+      id: "401k-match",
+      priority: 92,
+      emoji: "🎁",
+      title: "Contribute to your 401k match",
+      body: "Your employer offers a match. This is the closest thing to free money in personal finance.",
+      why: "A 401k match is an instant 50-100% return on the matched portion. No investment beats that. Contribute at least enough to get the full match — anything less is leaving compensation on the table.",
+      actionLabel: "Got it (dismiss)",
+      actionFn: "dismissPlay('401k-match')",
+    });
+  }
+
+  // P3 — Build emergency fund to 3 months
+  if (fixed > 0 && monthsRunway < 3) {
+    const target3mo = fixed * 3;
+    const gap = Math.max(0, target3mo - savings);
+    const months = 6;
+    const need = Math.max(10, Math.round((gap / months) / 10) * 10);
+    out.push({
+      id: "emergency-fund-3mo",
+      priority: 88,
+      emoji: "🛡️",
+      title: "Build a 3-month emergency fund",
+      body: `You have ${fmt$0(savings)} saved — about ${monthsRunway.toFixed(1)} months of expenses. Target: ${fmt$0(target3mo)} (3 months). Saving ${fmt$0(need)}/mo gets you there in ${months} months.`,
+      why: "Before investing aggressively, anchor on 3-6 months of expenses in cash. A layoff or medical event without this fund forces you to sell investments at a loss or take on high-interest debt — both of which set you back years.",
+      actionLabel: "Set up savings goal",
+      actionFn: "addSavingSheet()",
+    });
+  }
+
+  // P4 — Max Roth IRA before year-end
+  if (income > 0 && age < 70) {
+    const limit = _iraLimit(year, age);
+    const today = new Date();
+    const yearEnd = new Date(today.getFullYear(), 11, 31);
+    const monthsLeft = Math.max(1, Math.ceil((yearEnd - today) / (30.4 * 86400000)));
+    const monthlyToMax = Math.ceil(limit / monthsLeft / 10) * 10;
+    out.push({
+      id: "max-roth-ira-" + year,
+      priority: 78,
+      emoji: "🎯",
+      title: `Max your Roth IRA for ${year}`,
+      body: `${year} limit: ${fmt$0(limit)}${age >= 50 ? " (includes age-50 catchup)" : ""}. ${monthsLeft} months left → ${fmt$0(monthlyToMax)}/mo to hit it.`,
+      why: "A Roth IRA is post-tax money in, tax-free growth, tax-free withdrawals. Contributions (not earnings) can be withdrawn anytime without penalty, so it doubles as a backup emergency fund. Use it before any taxable brokerage.",
+      actionLabel: "Add as savings goal",
+      actionFn: "addSavingSheet()",
+    });
+  }
+
+  // P5 — HSA if eligible (triple tax advantage)
+  if (profile.hsaEligible && income > 0) {
+    out.push({
+      id: "hsa-contribution",
+      priority: 75,
+      emoji: "🏥",
+      title: "Max your HSA contribution",
+      body: "You're on a high-deductible health plan, which means HSA eligibility. HSAs have a triple tax advantage — the best account in the entire tax code.",
+      why: "Pre-tax in, tax-free growth, tax-free out (for medical). After 65, withdrawals for any purpose are taxed like a traditional 401k — making it effectively a stealth retirement account on top of medical coverage.",
+      actionLabel: "Got it (dismiss)",
+      actionFn: "dismissPlay('hsa-contribution')",
+    });
+  }
+
+  // P6 — Auto-allocate paychecks
+  if (income > 0 && !(DB.allocations || []).length && (DB.savings || []).length) {
+    out.push({
+      id: "setup-allocations",
+      priority: 60,
+      emoji: "💸",
+      title: "Auto-allocate your paycheck",
+      body: "Set rules to split each paycheck into savings goals automatically. 'Pay yourself first' is the single highest-leverage money habit.",
+      why: "Manual saving fails because it relies on willpower at month-end. Automation moves saving to the front — you save first, spend the rest, never miss it. People who automate save 2-3× more over a decade.",
+      actionLabel: "Set up allocations",
+      actionFn: "showTab('settings')",
+    });
+  }
+
+  // P7 — Add first savings goal
+  if (!(DB.savings || []).length) {
+    out.push({
+      id: "first-savings-goal",
+      priority: 70,
+      emoji: "🌱",
+      title: "Add your first savings goal",
+      body: "Specific goals beat 'just save more' 2× in research. Name a number and a date.",
+      why: "Goal-setting research is unambiguous: specificity beats intensity. 'Save $1,000 emergency fund by August' moves the needle. 'Save more' doesn't.",
+      actionLabel: "Add a savings goal",
+      actionFn: "addSavingSheet()",
+    });
+  }
+
+  // P8 — Recurring bill audit
+  const recExp = recurringMonthlyTotal("expense");
+  if (income > 0 && recExp > 0 && recExp / income > 0.5) {
+    out.push({
+      id: "review-recurring-" + new Date().toISOString().slice(0,7),
+      priority: 50,
+      emoji: "🔄",
+      title: "Audit your recurring bills",
+      body: `${fmt$0(recExp)}/mo in recurring expenses — ${Math.round(recExp/income*100)}% of income. High fixed costs reduce flexibility.`,
+      why: "Recurring charges bypass willpower because you never re-decide. An annual audit typically cuts 15-30% of monthly recurring spend just by canceling things you stopped using.",
+      actionLabel: "Review recurring",
+      actionFn: "showTab('settings')",
+    });
+  }
+
+  // P9 — Add recurring bills if none entered
+  if (income > 0 && !(DB.recurring || []).length) {
+    out.push({
+      id: "add-recurring-bills",
+      priority: 45,
+      emoji: "📅",
+      title: "Add your recurring bills",
+      body: "Rent, gym, subscriptions, insurance. Used for Safe-to-spend and to surface upcoming bills.",
+      why: "Without recurring bills entered, the app can't tell you what's safe to spend or what's coming up. 5 minutes of setup, then it runs on autopilot.",
+      actionLabel: "Add a recurring bill",
+      actionFn: "addRecurringSheet()",
+    });
+  }
+
+  // P10 — Track net worth (small but compounds)
+  if (nwAge === null || nwAge > 7) {
+    out.push({
+      id: "snapshot-net-worth",
+      priority: 30,
+      emoji: "📈",
+      title: nwAge === null ? "Take your first net-worth snapshot" : "Snapshot net worth this week",
+      body: nwAge === null
+        ? "One tap creates the first point on your wealth chart."
+        : `Last snapshot was ${nwAge} days ago. Weekly is the sweet spot.`,
+      why: "What gets measured gets managed. A weekly net-worth point reveals whether your strategy is working faster than any spending analysis can. Hours of dashboards can't replace one data point a week.",
+      actionLabel: "Snapshot now",
+      actionFn: "snapshotNetWorth(); render(); toast('Snapshot saved')",
+    });
+  }
+
+  // P11 — Set basic profile so plays sharpen
+  if (!profile.age) {
+    out.push({
+      id: "fill-profile",
+      priority: 25,
+      emoji: "👤",
+      title: "Tell us about yourself",
+      body: "Age, 401k match, HSA eligibility — these inputs make Smart Plays a lot sharper.",
+      why: "Without basic profile info, the engine has to use neutral defaults. A 30-second profile unlocks age-aware contribution catchups, tax-bracket hints, and account-priority adjustments.",
+      actionLabel: "Fill in profile",
+      actionFn: "profileSheet()",
+    });
+  }
+
+  return out
+    .filter(p => !dismissed[p.id])
+    .sort((a,b) => b.priority - a.priority);
+}
+
+function dismissPlay(id) {
+  DB.dismissedPlays = DB.dismissedPlays || {};
+  DB.dismissedPlays[id] = true;
+  save();
+  // If called from inside a sheet, the sheet caller is responsible for refreshing.
+  // Otherwise, re-render Today so the dismissed play disappears immediately.
+  render();
+}
+
+function resetDismissedPlays() {
+  DB.dismissedPlays = {};
+  save(); render();
+  toast("Smart Plays reset");
+}
+
+function smartPlaysSheet() {
+  const plays = computeSmartPlays();
+  const body = plays.length ? plays.map(p => `
+    <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:10px;border:1px solid var(--sep)">
+      <div style="display:flex;gap:12px;align-items:flex-start">
+        <div style="font-size:28px;line-height:1">${p.emoji}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:15px;margin-bottom:2px">${esc(p.title)}</div>
+          <div style="font-size:13px;color:var(--t2);line-height:1.4">${esc(p.body)}</div>
+        </div>
+      </div>
+      <details style="margin-top:10px;font-size:12px;color:var(--t3)">
+        <summary style="cursor:pointer;color:var(--t2);font-size:12px">Why this matters</summary>
+        <div style="margin-top:6px;line-height:1.5">${esc(p.why)}</div>
+      </details>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="btn sm secondary" style="flex:0 0 auto;font-size:12px;padding:6px 10px" onclick="dismissPlay(${jsAttr(p.id)});closeSheet();smartPlaysSheet()">Skip</button>
+        <button class="btn sm" style="flex:1;font-size:13px;padding:8px 12px" onclick="closeSheet();${p.actionFn}">${esc(p.actionLabel)}</button>
+      </div>
+    </div>
+  `).join("") : `
+    <div class="empty" style="padding:24px 0"><div class="e-emoji">✨</div><div class="e-title">All caught up</div><div class="e-sub">No active plays right now. Keep doing what's working — check back next week.</div></div>
+  `;
+  const dismissedCount = Object.keys(DB.dismissedPlays || {}).length;
+  openSheet(`
+    <h2>💡 Smart money plays</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Personalized next moves based on your situation. Education, not advice.</p>
+    ${body}
+    ${dismissedCount > 0 ? `<button class="btn secondary" style="width:100%;margin-top:10px;font-size:12px" onclick="resetDismissedPlays();closeSheet();smartPlaysSheet()">Reset dismissed plays (${dismissedCount})</button>` : ""}
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+/* Profile sheet — optional self-reported info that sharpens Smart Plays */
+function profileSheet() {
+  const p = Object.assign({ age: "", filingStatus: "single", employerMatch: false, hsaEligible: false, state: "" }, DB.profile || {});
+  openSheet(`
+    <h2>About you</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Optional. These inputs make Smart Plays sharper. Nothing leaves this device.</p>
+    <label>Age</label>
+    <input id="pr-age" type="number" inputmode="numeric" min="13" max="100" placeholder="e.g. 28" value="${esc(p.age||"")}" />
+    <label>Filing status</label>
+    <select id="pr-fs">
+      <option value="single"  ${p.filingStatus==="single"?"selected":""}>Single</option>
+      <option value="married" ${p.filingStatus==="married"?"selected":""}>Married (jointly)</option>
+      <option value="hoh"     ${p.filingStatus==="hoh"?"selected":""}>Head of household</option>
+    </select>
+    <label>State (2-letter)</label>
+    <input id="pr-state" maxlength="2" placeholder="e.g. FL" value="${esc(p.state||"")}" style="text-transform:uppercase" />
+    <div class="row" style="margin-top:12px">
+      <div class="body"><div class="t1">Employer offers 401k match</div><div class="t2">Flags the "free money" play</div></div>
+      <input id="pr-match" type="checkbox" ${p.employerMatch?"checked":""} style="width:50px;height:30px" />
+    </div>
+    <div class="row">
+      <div class="body"><div class="t1">On a high-deductible health plan</div><div class="t2">Unlocks HSA play if eligible</div></div>
+      <input id="pr-hsa" type="checkbox" ${p.hsaEligible?"checked":""} style="width:50px;height:30px" />
+    </div>
+    <div class="actions">
+      <button class="btn secondary" onclick="closeSheet()">Cancel</button>
+      <button class="btn" id="pr-save">Save</button>
+    </div>
+  `);
+  $("#pr-save").addEventListener("click", async () => {
+    DB.profile = {
+      age: Math.max(0, Math.min(100, Number($("#pr-age").value) || 0)),
+      filingStatus: $("#pr-fs").value,
+      state: $("#pr-state").value.trim().toUpperCase().slice(0, 2),
+      employerMatch: !!$("#pr-match").checked,
+      hsaEligible: !!$("#pr-hsa").checked,
+    };
+    await save(); closeSheet(); render(); toast("Profile saved");
+  });
+}
+
 /* Confetti celebration */
 function celebrate(intensity) {
   if (intensity == null) intensity = 1;
@@ -5254,6 +5625,7 @@ function init() {
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,
     applyRules, applyRulesToAll, addCategoryRule, deleteCategoryRule, ruleSheet, quickRuleFromTx,
     upcomingBills, dismissBill,
+    computeSmartPlays, smartPlaysSheet, dismissPlay, resetDismissedPlays, profileSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
