@@ -1960,6 +1960,28 @@ function renderToday() {
     ${stsHtml}
 
     ${(() => {
+      // Wealth Health score — only show when there's meaningful financial data,
+      // otherwise the score is artificially 0 and demotivating for new users.
+      const hasMoneyContext = (+(DB.budget?.income) || 0) > 0
+        || (DB.savings || []).length > 0
+        || (DB.liabilities || []).length > 0
+        || (DB.recurring || []).length > 0;
+      if (!hasMoneyContext) return "";
+      const r = computeWealthHealth();
+      const lbl = wealthHealthLabel(r.total);
+      return `
+        <div class="row tappable" onclick="wealthHealthSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:center">
+          <div style="font-size:30px;font-weight:700;color:${lbl.color};line-height:1;margin-right:14px;min-width:60px;text-align:center">${r.total}</div>
+          <div class="body">
+            <div class="t1" style="margin:0">🩺 Wealth Health · <span style="color:${lbl.color}">${lbl.word}</span></div>
+            <div class="t2">${r.topGap ? esc(r.topGap.suggest) : "Strong across all dimensions — keep compounding"}</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      `;
+    })()}
+
+    ${(() => {
       const plays = computeSmartPlays();
       if (!plays.length) return "";
       const top = plays.slice(0, 2);
@@ -2389,7 +2411,24 @@ function renderMoney() {
       `;
     })();
 
+    // Wealth Health card — always visible on the dashboard (this IS the wealth screen).
+    const healthCard = (() => {
+      const r = computeWealthHealth();
+      const lbl = wealthHealthLabel(r.total);
+      return `
+        <div class="row tappable" onclick="wealthHealthSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:12px;align-items:center">
+          <div style="font-size:32px;font-weight:700;color:${lbl.color};line-height:1;margin-right:14px;min-width:60px;text-align:center">${r.total}</div>
+          <div class="body">
+            <div class="t1" style="margin:0">🩺 Wealth Health · <span style="color:${lbl.color}">${lbl.word}</span></div>
+            <div class="t2">${r.topGap ? esc(r.topGap.suggest) : "Strong across all dimensions"}</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      `;
+    })();
+
     body = `
+      ${healthCard}
       ${chartCard}
       ${compBar}
       ${retireSummary}
@@ -5337,6 +5376,154 @@ function retirementSheet() {
   });
 }
 
+/* ================ WEALTH HEALTH SCORE ================
+   A 0-100 composite score reflecting financial health across 5 dimensions:
+     Runway (25)   — months of fixed expenses covered by savings
+     Debt   (20)   — penalty for high-interest debt
+     Savings (20)  — what % of income is being saved
+     Trend  (15)   — net-worth growth direction over recent history
+     Investing (20)— what % of wealth is invested
+
+   The score is intentionally generous toward starting users (we want
+   the green-light moments to come early) but each dimension has clear
+   thresholds the user can pursue.
+*/
+
+function _scoreClamp(x, max) { return Math.max(0, Math.min(max, x)); }
+
+function computeWealthHealth() {
+  const monthlyFixed = _playsMonthlyFixed();
+  const totalSavings = _playsTotalSavings();
+  const income = _playsMonthlyIncome();
+  const comp = wealthComposition();
+  const hist = DB.netWorthHistory || [];
+
+  // --- Runway (0-25) ---
+  // 6+ months of expenses = full marks. 0 = 0. Linear interpolation.
+  const months = monthlyFixed > 0 ? totalSavings / monthlyFixed : (totalSavings > 0 ? 6 : 0);
+  const runwayScore = Math.round(_scoreClamp((months / 6) * 25, 25));
+
+  // --- Debt (0-20) ---
+  // No debt = 20. Each $1 of debt above $1k of income reduces by a small amount.
+  // High-APR debt (>7%) caps the score at 5.
+  let debtScore = 20;
+  const highApr = _playsHighestAprDebt();
+  if (highApr && +highApr.apr >= 7) {
+    debtScore = 5;
+  } else if (comp.debts > 0 && income > 0) {
+    // Debt-to-income ratio penalty (annual income).
+    const dti = comp.debts / (income * 12);
+    debtScore = Math.round(_scoreClamp(20 * (1 - dti), 20));
+  } else if (comp.debts > 0 && income === 0) {
+    debtScore = 10; // can't compute DTI without income
+  }
+
+  // --- Savings rate (0-20) ---
+  // (income - fixed) / income — what fraction of pay survives fixed bills.
+  // 50%+ = full marks. <0% = 0.
+  let savingsScore = 0;
+  if (income > 0) {
+    const surplus = (income - monthlyFixed) / income;
+    savingsScore = Math.round(_scoreClamp((surplus / 0.5) * 20, 20));
+  }
+
+  // --- Trend (0-15) ---
+  // Compare current net worth to 90 days ago. Up = full marks.
+  // Flat = half. Down = 0.
+  let trendScore = 8; // neutral default when no history
+  if (hist.length >= 2) {
+    const cur = hist[hist.length - 1].total;
+    // Find a point ~90 days ago, or the oldest available if shorter
+    const cutoff = Date.now() - 90 * 86400000;
+    let baseIdx = 0;
+    for (let i = hist.length - 1; i >= 0; i--) {
+      if (new Date(hist[i].date + "T00:00:00").getTime() <= cutoff) { baseIdx = i; break; }
+    }
+    const base = hist[baseIdx].total || 1;
+    const growthRate = (cur - base) / Math.abs(base);
+    // 10%+ growth in 90d = max marks. 0% = half. -10%+ = 0.
+    trendScore = Math.round(_scoreClamp(15 * (0.5 + growthRate * 5), 15));
+  }
+
+  // --- Investing (0-20) ---
+  // Investments / (cash + investments + real). 30%+ = full marks for the
+  // average user (excludes home equity which often dominates real assets).
+  const investableTotal = comp.cash + comp.investments;
+  let investScore = 0;
+  if (investableTotal > 0) {
+    const invRatio = comp.investments / investableTotal;
+    investScore = Math.round(_scoreClamp((invRatio / 0.3) * 20, 20));
+  }
+
+  const total = runwayScore + debtScore + savingsScore + trendScore + investScore;
+
+  // Top suggestion = the dimension with the largest unclaimed score
+  const dims = [
+    { name: "Runway", score: runwayScore, max: 25, suggest: months < 3 ? `Build emergency fund to 3+ months of expenses (currently ${months.toFixed(1)})` : months < 6 ? `Stretch emergency fund to 6 months (${months.toFixed(1)} now)` : null },
+    { name: "Debt", score: debtScore, max: 20, suggest: highApr && +highApr.apr >= 7 ? `Pay off ${highApr.name} (${(+highApr.apr).toFixed(1)}% APR)` : (comp.debts > 0 ? "Reduce overall debt load" : null) },
+    { name: "Savings rate", score: savingsScore, max: 20, suggest: income > 0 && savingsScore < 16 ? "Cut recurring expenses or grow income — target 50% surplus" : null },
+    { name: "Trend", score: trendScore, max: 15, suggest: hist.length < 2 ? "Snapshot net worth weekly to start tracking trend" : trendScore < 10 ? "Focus on growing net worth — even +1% / month compounds" : null },
+    { name: "Investing", score: investScore, max: 20, suggest: investScore < 16 ? (comp.investments === 0 ? "Open a brokerage and start automatic investing" : "Increase investing share of your wealth") : null },
+  ];
+  const topGap = dims
+    .filter(d => d.suggest)
+    .sort((a, b) => (b.max - b.score) - (a.max - a.score))[0];
+
+  return { total, dims, topGap, monthsRunway: months };
+}
+
+function wealthHealthLabel(score) {
+  if (score >= 80) return { word: "Excellent", color: "#34C759" };
+  if (score >= 65) return { word: "Strong",    color: "#34C759" };
+  if (score >= 50) return { word: "On track",  color: "#FFCC00" };
+  if (score >= 30) return { word: "Building",  color: "#FF9500" };
+  return                  { word: "Just starting", color: "#FF3B30" };
+}
+
+function wealthHealthSheet() {
+  const r = computeWealthHealth();
+  const lbl = wealthHealthLabel(r.total);
+  const bar = (d) => {
+    const pct = (d.score / d.max) * 100;
+    return `
+      <div style="margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
+          <span>${d.name}</span>
+          <span style="color:var(--t3);font-weight:600">${d.score} / ${d.max}</span>
+        </div>
+        <div style="height:8px;background:var(--bg-elev);border-radius:4px;overflow:hidden">
+          <div style="height:100%;background:${lbl.color};width:${pct}%;transition:width .3s"></div>
+        </div>
+        ${d.suggest ? `<div style="font-size:11px;color:var(--t3);margin-top:4px">→ ${esc(d.suggest)}</div>` : ""}
+      </div>
+    `;
+  };
+  openSheet(`
+    <h2>🩺 Wealth Health</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">A composite 0-100 score across 5 dimensions of financial health. Educational, not advice.</p>
+    <div style="background:var(--card);border-radius:var(--r);padding:18px;text-align:center;margin-bottom:14px">
+      <div style="font-size:56px;font-weight:700;letter-spacing:-1px;color:${lbl.color};line-height:1">${r.total}</div>
+      <div style="font-size:14px;font-weight:600;color:${lbl.color};margin-top:4px">${lbl.word}</div>
+      <div style="font-size:12px;color:var(--t3);margin-top:4px">out of 100</div>
+    </div>
+    <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:14px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:12px">Breakdown</div>
+      ${r.dims.map(bar).join("")}
+    </div>
+    ${r.topGap ? `
+      <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:14px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Biggest opportunity</div>
+        <div style="font-size:14px;font-weight:600;margin-bottom:4px">${esc(r.topGap.name)} (${r.topGap.score} / ${r.topGap.max})</div>
+        <div style="font-size:13px;color:var(--t2)">${esc(r.topGap.suggest)}</div>
+        <button class="btn sm" style="margin-top:10px;font-size:12px" onclick="closeSheet();smartPlaysSheet()">See Smart Plays</button>
+      </div>
+    ` : ""}
+    <div class="actions">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
 /* ================ FINANCIAL CALENDAR ================
    Important upcoming dates: federal tax deadlines, IRA/HSA contribution
    cutoffs, estimated tax dates, savings/goal target dates, and any custom
@@ -6294,6 +6481,7 @@ function init() {
     computeFinancialCalendar, financialCalendarSheet, addCalendarDateSheet,
     deleteCalendarDate, hideBuiltinCalendarEvent, resetCalendarBuiltins,
     daysUntil, dayLabel,
+    computeWealthHealth, wealthHealthLabel, wealthHealthSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
