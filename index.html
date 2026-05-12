@@ -1158,6 +1158,7 @@ const DEFAULT_DB = {
     riskTolerance: "moderate",  // conservative | moderate | aggressive — drives stock/bond split
   },
   sinkingFunds: [],          // [{ id, name, emoji, annual, current, lastReset, notes }] — buckets for irregular recurring expenses
+  estateCheckProgress: {},   // { taskId: { done: true, doneAt: timestamp } } — estate-planning checklist progress
 
   spendSearch: "",
   holdings: [],              // [{account_id, ticker, name, type, quantity, institution_value, cost_basis}]
@@ -2673,6 +2674,14 @@ function renderMoney() {
             <div class="body">
               <div class="t1">Insurance checklist</div>
               <div class="t2">${INSURANCE_TYPES.length} coverage types · wealth protection guide</div>
+            </div>
+            <div class="trail chev"></div>
+          </div>
+          <div class="row tappable" onclick="estatePlanningSheet()" role="button" tabindex="0">
+            <div class="lead">📋</div>
+            <div class="body">
+              <div class="t1">Estate planning checklist</div>
+              <div class="t2">${(() => { const p = DB.estateCheckProgress || {}; return ESTATE_TASKS.filter(t => p[t.id]?.done).length; })()} of ${ESTATE_TASKS.length} complete · will, POA, beneficiaries</div>
             </div>
             <div class="trail chev"></div>
           </div>
@@ -5819,6 +5828,160 @@ function wealthHealthSheet() {
       </div>
     ` : ""}
     <div class="actions">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+/* ================ ESTATE PLANNING CHECKLIST ================
+   The last piece of comprehensive financial planning — what happens to
+   your assets and dependents if you die or become incapacitated.
+
+   Most adults procrastinate this indefinitely. The cost of not doing it:
+   probate court decides for you, often badly. The cost of doing it: a
+   few hundred dollars and a couple weekend afternoons.
+
+   10 tasks ordered by typical priority. Each can be marked complete.
+*/
+
+const ESTATE_TASKS = [
+  {
+    id: "beneficiary-designations",
+    emoji: "📝",
+    title: "Update beneficiary designations on all accounts",
+    priority: "Do this first — fastest win",
+    effort: "30 min",
+    detail: "Beneficiary designations on 401k, IRA, HSA, life insurance, and bank accounts override your will. Make sure they're current — common cases of ex-spouses inheriting because nobody updated. Each account has its own designation form, usually online.",
+    when: "After any life event (marriage, divorce, kids, parent's death). At minimum, review annually.",
+  },
+  {
+    id: "will",
+    emoji: "📜",
+    title: "Get a will",
+    priority: "Essential for anyone with kids or >$100k in assets",
+    effort: "1-3 hours + $0-300",
+    detail: "A will names a guardian for minor kids, an executor for your estate, and how assets pass. Without one, your state's intestacy law decides — usually badly. Options: online services like Trust & Will ($160), local attorney ($300-1,500), or DIY with state-specific templates (free but riskier). Sign with two witnesses; some states also require notarization.",
+    when: "Now if you have kids. ASAP otherwise.",
+  },
+  {
+    id: "healthcare-directive",
+    emoji: "🩺",
+    title: "Healthcare directive + medical power of attorney",
+    priority: "Critical if incapacitated",
+    effort: "30-60 min",
+    detail: "Two related documents:\n• Healthcare directive (living will) — your wishes for end-of-life medical care (life support, resuscitation, etc.)\n• Medical power of attorney — who decides for you if you can't decide for yourself\nMany states provide free forms. Discuss your wishes with the person you're naming BEFORE signing — they need to know what you want.",
+    when: "Now. Don't wait until you're sick.",
+  },
+  {
+    id: "financial-poa",
+    emoji: "💼",
+    title: "Financial power of attorney",
+    priority: "Critical if incapacitated",
+    effort: "30 min",
+    detail: "Names someone who can manage your finances if you're incapacitated — pay bills, access accounts, handle taxes. Without one, your family may need to go to court to gain access, even for routine things. 'Durable' POA stays in effect through incapacity (vs regular which terminates). Pick someone you trust completely.",
+    when: "Same time as healthcare directive.",
+  },
+  {
+    id: "trust-decision",
+    emoji: "🏛️",
+    title: "Decide if you need a trust",
+    priority: "Worth considering if estate >$500k or special situations",
+    effort: "$500-3,000 attorney fees if yes",
+    detail: "A revocable living trust lets assets pass without probate (faster, cheaper, private). Whether you need one depends on:\n• Total estate value\n• State (some states have fast probate, some don't)\n• Real estate in multiple states\n• Privacy concerns\n• Special-needs beneficiaries\nNot everyone needs a trust. Talk to an estate attorney once your assets cross ~$500k or you have complex circumstances.",
+    when: "When estate complexity warrants — usually after $500k net worth or with property.",
+  },
+  {
+    id: "document-inventory",
+    emoji: "📂",
+    title: "Create an emergency document inventory",
+    priority: "Help your family find everything",
+    effort: "2-3 hours",
+    detail: "A single document (paper + digital) listing:\n• All bank, investment, retirement accounts (institution + account number)\n• Insurance policies (carrier + policy number)\n• Mortgage and other debts\n• Property deeds and titles\n• Safety deposit box location + key\n• Tax records location\n• Recent tax preparer contact\n• Estate planning documents location\nStore at home + with executor + in a secure cloud (e.g., 1Password vault, encrypted Google Doc).",
+    when: "Once you have one, update every 6-12 months.",
+  },
+  {
+    id: "letter-of-instructions",
+    emoji: "💌",
+    title: "Write a 'letter of instructions'",
+    priority: "Often-skipped but high-value",
+    effort: "1-2 hours",
+    detail: "A non-legal companion to your will. Covers:\n• Funeral/burial preferences\n• Personal messages to family\n• Pet care arrangements\n• Where various items 'should go' (the sentimental stuff lawsuits get fought over)\n• Passwords + digital assets handoff\n• Your obituary (if you want to write your own)\nNot legally binding, but reduces family stress dramatically during grief.",
+    when: "After the will + POAs. Revisit annually.",
+  },
+  {
+    id: "digital-estate",
+    emoji: "🔐",
+    title: "Plan your digital estate",
+    priority: "Increasingly important",
+    effort: "1-2 hours",
+    detail: "Modern estates include:\n• Email accounts (often the gateway to other recovery)\n• Social media (Facebook, Instagram, Twitter — each has memorialization options)\n• Cryptocurrency (literally inaccessible without keys)\n• Cloud photos (Google Photos, iCloud)\n• Subscription accounts (Spotify, Netflix, etc. — to cancel)\n• Domain names + websites\n• Online businesses\n• Loyalty points (often non-transferable but check)\nSolution: a password manager (1Password, Bitwarden) with emergency access enabled. Document crypto seed phrases somewhere your heir can find. Mention digital assets in your will.",
+    when: "Now — gets worse the more digital your life gets.",
+  },
+  {
+    id: "guardian-conversation",
+    emoji: "👶",
+    title: "Choose + ASK guardians for minor kids",
+    priority: "Critical if you have kids",
+    effort: "Conversations only",
+    detail: "Your will names guardians. But:\n• Have the conversation BEFORE — don't surprise them\n• Ask their values about parenting, religion, education\n• Discuss financial support (you can leave them money in trust for kid expenses)\n• Pick a SEPARATE financial trustee if guardianship + money would be too much for them\n• Update as kids grow + relationships change\nThe #1 reason families fight after a death is unclear or surprising guardian choices.",
+    when: "When you have the will. Re-confirm every few years.",
+  },
+  {
+    id: "annual-review",
+    emoji: "🔄",
+    title: "Set an annual review reminder",
+    priority: "Maintenance",
+    effort: "30 min/year",
+    detail: "Estate planning is set-it-AND-revisit-it. Annual or after-major-event review:\n• Beneficiary designations match current wishes\n• Will still names current people you trust\n• Document inventory is up to date\n• Net worth threshold for trust decisions\n• Life changes (marriage, divorce, births, deaths) triggered updates\nMost important after: marriage, divorce, having a child, child becoming adult, parent's death, major asset purchase, significant net worth changes.",
+    when: "Annually. Schedule it as a recurring task.",
+  },
+];
+
+function _markEstateTask(id, done) {
+  DB.estateCheckProgress = DB.estateCheckProgress || {};
+  if (done) {
+    DB.estateCheckProgress[id] = { done: true, doneAt: Date.now() };
+  } else {
+    delete DB.estateCheckProgress[id];
+  }
+  save();
+}
+
+function estatePlanningSheet() {
+  const progress = DB.estateCheckProgress || {};
+  const doneCount = ESTATE_TASKS.filter(t => progress[t.id]?.done).length;
+
+  const html = ESTATE_TASKS.map(t => {
+    const done = !!progress[t.id]?.done;
+    return `
+      <div style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:8px;opacity:${done?"0.65":"1"}">
+        <div style="display:flex;align-items:flex-start;gap:12px">
+          <input type="checkbox" ${done ? "checked" : ""} onchange="_markEstateTask(${jsAttr(t.id)}, this.checked);closeSheet();estatePlanningSheet()" style="width:22px;height:22px;margin-top:2px;flex-shrink:0" />
+          <div style="flex:1;min-width:0">
+            <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;font-weight:600">${esc(t.priority)}</div>
+            <div style="font-weight:600;font-size:14px;margin:2px 0;${done?"text-decoration:line-through":""}">${t.emoji} ${esc(t.title)}</div>
+            <div style="font-size:11px;color:var(--t3);margin-bottom:6px">${esc(t.effort)} · ${esc(t.when)}</div>
+            <details>
+              <summary style="cursor:pointer;color:var(--blue);font-size:12px">Details</summary>
+              <div style="margin-top:8px;font-size:12px;color:var(--t2);line-height:1.6;white-space:pre-line">${esc(t.detail)}</div>
+            </details>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+
+  openSheet(`
+    <h2>📋 Estate planning checklist</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:6px">The last piece of comprehensive financial planning. What happens to your assets and dependents if you die or become incapacitated. <b>${doneCount}</b> of ${ESTATE_TASKS.length} complete.</p>
+    <div style="height:6px;background:var(--bg-elev);border-radius:3px;overflow:hidden;margin-bottom:14px">
+      <div style="height:100%;width:${(doneCount/ESTATE_TASKS.length)*100}%;background:var(--green);transition:width .3s"></div>
+    </div>
+    ${html}
+    <p class="muted" style="font-size:11px;margin-top:14px;line-height:1.5">
+      <b>Reality check:</b> ~67% of US adults don't have a will. The cost of doing this isn't money (you can DIY most for free) — it's overcoming the discomfort of thinking about death. But the people you love bear the cost of you not doing it.
+    </p>
+    <div class="actions" style="margin-top:14px">
       <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
     </div>
   `);
@@ -9423,6 +9586,7 @@ function init() {
     NEGOTIATION_TEMPLATES, negotiationToolkitSheet, negotiationScriptSheet,
     INCOME_STRATEGIES, incomeStrategiesSheet, incomeStrategySheet,
     INSURANCE_TYPES, insuranceChecklistSheet, insuranceDetailSheet,
+    ESTATE_TASKS, estatePlanningSheet, _markEstateTask,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
