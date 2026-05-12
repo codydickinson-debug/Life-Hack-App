@@ -1154,6 +1154,9 @@ const DEFAULT_DB = {
   dismissedCalendarBuiltins: {},  // { builtinId: true } — built-in dates (tax, IRA, etc.) user has hidden
   lessonsRead: {},           // { lessonId: true } — wealth-lesson IDs the user has opened
   celebratedMilestones: {},  // { "1000": true, "10000": true, ... } — net-worth milestones the user has crossed
+  investing: {
+    riskTolerance: "moderate",  // conservative | moderate | aggressive — drives stock/bond split
+  },
 
   spendSearch: "",
   holdings: [],              // [{account_id, ticker, name, type, quantity, institution_value, cost_basis}]
@@ -2537,6 +2540,26 @@ function renderMoney() {
       `;
     })();
 
+    // Asset allocation entry — opens the investing plan sheet.
+    const allocationEntry = (() => {
+      const profile = DB.profile || {};
+      const risk = DB.investing?.riskTolerance || "moderate";
+      const t = computeTargetAllocation(+profile.age || 30, risk);
+      return `
+        <div class="section-h"><span class="lbl">📊 Investing</span></div>
+        <div class="list">
+          <div class="row tappable" onclick="investingPlanSheet()" role="button" tabindex="0">
+            <div class="lead">⚖️</div>
+            <div class="body">
+              <div class="t1">Target asset allocation</div>
+              <div class="t2">${t.stockPct}% stocks (${t.usStockPct}/${t.intlStockPct} US/intl) · ${t.bondPct}% bonds · ${esc(RISK_LEVELS[risk].label)} risk</div>
+            </div>
+            <div class="trail chev"></div>
+          </div>
+        </div>
+      `;
+    })();
+
     // Credit cards entry — opens the recommendations sheet with the user's
     // estimated spend pre-filled.
     const cardsEntry = `
@@ -2580,6 +2603,7 @@ function renderMoney() {
       ${milestonesCard}
       ${pyramidSummary}
       ${projectionsSection}
+      ${allocationEntry}
       ${taxSummary}
       ${cardsEntry}
       ${learnEntry}
@@ -5679,6 +5703,134 @@ function wealthHealthSheet() {
   `);
 }
 
+/* ================ ASSET ALLOCATION (3-FUND PORTFOLIO) ================
+   The canonical "boring index" portfolio framework: a stock/bond split
+   driven by age and risk tolerance, with stocks further split between
+   US and international. Educational — not a recommendation to buy any
+   specific security.
+
+   Formulas:
+     stockPct = clamp(N - age, 30, 95) where N varies by risk tolerance
+       - Conservative: N = 110
+       - Moderate:     N = 120
+       - Aggressive:   N = 130
+     bondPct = 100 - stockPct
+     Of stocks: 60% US (VTI), 40% international (VXUS) — Bogleheads default
+
+   Range bounded to keep extremes sane (no 100% bonds at 80, no 100%
+   stocks for a 22-year-old, etc.).
+*/
+
+const RISK_LEVELS = {
+  conservative: { N: 110, label: "Conservative", note: "Smoother ride, lower returns. Good if 5-10 years from needing the money." },
+  moderate:     { N: 120, label: "Moderate",     note: "Bogleheads default. Balances growth and volatility for long horizons." },
+  aggressive:   { N: 130, label: "Aggressive",   note: "Higher long-term growth, deeper drawdowns. Best for 20+ year horizons." },
+};
+
+function computeTargetAllocation(age, risk) {
+  const r = RISK_LEVELS[risk] || RISK_LEVELS.moderate;
+  const stockPct = Math.max(30, Math.min(95, r.N - (age || 30)));
+  const bondPct = 100 - stockPct;
+  const usStockPct  = Math.round(stockPct * 0.6);
+  const intlStockPct = stockPct - usStockPct;
+  return { stockPct, bondPct, usStockPct, intlStockPct, riskInfo: r };
+}
+
+function investingPlanSheet() {
+  const profile = DB.profile || {};
+  const investing = DB.investing || {};
+  const age = +profile.age || 30;
+  let risk = investing.riskTolerance || "moderate";
+  const invested = currentInvested();
+
+  const renderPlan = (currentRisk) => {
+    const t = computeTargetAllocation(age, currentRisk);
+    const dollarFor = (pct) => invested * (pct / 100);
+    const COLOR = { usStock: "#34C759", intlStock: "#5AC8FA", bonds: "#5856D6" };
+    return `
+      <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Target allocation${profile.age ? "" : " (default age 30)"}</div>
+        <div style="font-size:14px;color:var(--t2);margin-top:4px">${esc(t.riskInfo.label)} · ${t.stockPct}% stocks / ${t.bondPct}% bonds</div>
+
+        <div style="display:flex;height:28px;border-radius:6px;overflow:hidden;background:var(--bg-elev);margin-top:14px">
+          ${t.usStockPct > 0  ? `<div style="width:${t.usStockPct}%;background:${COLOR.usStock}"></div>` : ""}
+          ${t.intlStockPct > 0 ? `<div style="width:${t.intlStockPct}%;background:${COLOR.intlStock}"></div>` : ""}
+          ${t.bondPct > 0     ? `<div style="width:${t.bondPct}%;background:${COLOR.bonds}"></div>` : ""}
+        </div>
+
+        <div style="display:flex;flex-direction:column;gap:8px;margin-top:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+            <span style="display:inline-flex;align-items:center;gap:8px"><span style="width:11px;height:11px;background:${COLOR.usStock};border-radius:2px"></span>US Stocks <span class="muted">(VTI)</span></span>
+            <span style="text-align:right"><b>${t.usStockPct}%</b>${invested > 0 ? ` · <span data-priv="amount">${fmt$0(dollarFor(t.usStockPct))}</span>` : ""}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+            <span style="display:inline-flex;align-items:center;gap:8px"><span style="width:11px;height:11px;background:${COLOR.intlStock};border-radius:2px"></span>Intl. Stocks <span class="muted">(VXUS)</span></span>
+            <span style="text-align:right"><b>${t.intlStockPct}%</b>${invested > 0 ? ` · <span data-priv="amount">${fmt$0(dollarFor(t.intlStockPct))}</span>` : ""}</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+            <span style="display:inline-flex;align-items:center;gap:8px"><span style="width:11px;height:11px;background:${COLOR.bonds};border-radius:2px"></span>Bonds <span class="muted">(BND)</span></span>
+            <span style="text-align:right"><b>${t.bondPct}%</b>${invested > 0 ? ` · <span data-priv="amount">${fmt$0(dollarFor(t.bondPct))}</span>` : ""}</span>
+          </div>
+        </div>
+
+        <div style="font-size:12px;color:var(--t3);margin-top:14px;line-height:1.5;padding-top:12px;border-top:1px solid var(--sep)">${esc(t.riskInfo.note)}</div>
+      </div>
+    `;
+  };
+
+  openSheet(`
+    <h2>📊 Asset Allocation</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">The canonical 3-fund index portfolio, adapted to your age and risk tolerance. Boring. Effective. Not a recommendation for any specific security — examples only.</p>
+    <div id="alloc-output">${renderPlan(risk)}</div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Risk tolerance</div>
+      ${["conservative","moderate","aggressive"].map(r => `
+        <div class="row tappable" style="border:1px solid ${risk===r?"var(--blue)":"var(--sep)"};border-radius:var(--r);padding:10px 12px;margin-bottom:6px;background:${risk===r?"rgba(0,122,255,0.08)":"transparent"}" onclick="window.__setAllocRisk(${jsAttr(r)})">
+          <div style="font-size:18px;width:24px">${r==="conservative"?"🛟":r==="moderate"?"⚖️":"🚀"}</div>
+          <div class="body">
+            <div class="t1">${esc(RISK_LEVELS[r].label)}</div>
+            <div class="t2">${esc(RISK_LEVELS[r].note)}</div>
+          </div>
+          ${risk===r?`<div style="color:var(--blue);font-size:18px">✓</div>`:""}
+        </div>
+      `).join("")}
+    </div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">How to use this</div>
+      <div style="font-size:13px;color:var(--t2);line-height:1.6">
+        Pick low-cost index funds for each bucket. Common choices:<br>
+        <b>US stocks:</b> VTI, FZROX, SCHB · <b>Intl:</b> VXUS, FZILX, IXUS · <b>Bonds:</b> BND, FXNAX, AGG<br><br>
+        Rebalance ~once a year. Set up auto-investing so you don't think about it.
+      </div>
+    </div>
+
+    <p class="muted" style="font-size:11px;line-height:1.5">
+      <b>Educational only.</b> This isn't an investment recommendation. Specific securities mentioned are common examples — choose based on your own research and your brokerage's offerings. Risk tolerance is subjective; the labels are simplifications.
+    </p>
+
+    <div class="actions">
+      <button class="btn secondary" onclick="closeSheet()">Close</button>
+      <button class="btn" id="alloc-save">Save risk preference</button>
+    </div>
+  `);
+
+  window.__setAllocRisk = (r) => {
+    risk = r;
+    $("#alloc-output").innerHTML = renderPlan(risk);
+    closeSheet(); // re-open the sheet to refresh the risk-level highlight
+    DB.investing = DB.investing || {};
+    DB.investing.riskTolerance = r;
+    investingPlanSheet();
+  };
+  $("#alloc-save").addEventListener("click", async () => {
+    DB.investing = DB.investing || {};
+    DB.investing.riskTolerance = risk;
+    await save(); closeSheet(); render(); toast("Risk preference saved");
+  });
+}
+
 /* ================ NET WORTH MILESTONES ================
    Gamification of the wealth-building journey. Crossing each milestone
    should feel like an achievement — the app celebrates with confetti +
@@ -7725,6 +7877,7 @@ function init() {
     CURATED_CARDS, CARD_CATEGORIES, estimatedMonthlySpendByCategory,
     computeCardRewards, recommendCards, cardRecommendationsSheet,
     NW_MILESTONES, computeNetWorthMilestones, checkNetWorthMilestones, milestonesSheet,
+    RISK_LEVELS, computeTargetAllocation, investingPlanSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
