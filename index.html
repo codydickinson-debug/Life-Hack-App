@@ -1159,6 +1159,7 @@ const DEFAULT_DB = {
   },
   sinkingFunds: [],          // [{ id, name, emoji, annual, current, lastReset, notes }] — buckets for irregular recurring expenses
   estateCheckProgress: {},   // { taskId: { done: true, doneAt: timestamp } } — estate-planning checklist progress
+  setupChecklistDismissed: false, // when true, hide the setup banner on Today even if incomplete
 
   spendSearch: "",
   holdings: [],              // [{account_id, ticker, name, type, quantity, institution_value, cost_basis}]
@@ -1971,6 +1972,25 @@ function renderToday() {
     <div class="muted" style="margin:-12px 0 18px;font-size:14px">${dateLabel()}</div>
 
     ${wrBanner}
+
+    ${(() => {
+      // Setup checklist banner — surface for new users with incomplete setup.
+      // Auto-hides when complete or when user dismisses.
+      if (DB.setupChecklistDismissed) return "";
+      const r = computeSetupChecklist();
+      if (r.complete) return "";
+      return `
+        <div class="row tappable" onclick="setupChecklistSheet()" role="button" tabindex="0" style="background:linear-gradient(135deg, #007AFF, #5856D6);color:#fff;border-radius:var(--r);padding:14px;margin-bottom:14px;border:none">
+          <div style="font-size:24px;width:40px;text-align:center">🚀</div>
+          <div class="body">
+            <div class="t1" style="color:#fff;margin:0">Setup checklist · ${r.doneCount}/${r.total}</div>
+            <div class="t2" style="color:rgba(255,255,255,0.85)">Finish setup so Smart Plays, Pyramid, and projections light up</div>
+            <div style="height:4px;background:rgba(255,255,255,0.25);border-radius:2px;overflow:hidden;margin-top:8px"><div style="height:100%;width:${(r.doneCount/r.total)*100}%;background:#fff"></div></div>
+          </div>
+          <div style="color:rgba(255,255,255,0.7);font-size:18px">›</div>
+        </div>
+      `;
+    })()}
     ${stsHtml}
 
     ${(() => {
@@ -5833,6 +5853,122 @@ function wealthHealthSheet() {
   `);
 }
 
+/* ================ FIRST-RUN SETUP CHECKLIST ================
+   A meta-feature that helps new users actually configure the app so all
+   the planning tools (Smart Plays, Health Score, Pyramid, Projections)
+   have something to compute against. Status of each step is derived from
+   data — no manual checkbox needed.
+*/
+
+function computeSetupChecklist() {
+  const profile = DB.profile || {};
+  const steps = [
+    {
+      id: "profile",
+      emoji: "👤",
+      title: "Fill in your profile",
+      hint: "Age, filing status, 401k match — sharpens all recommendations",
+      done: !!profile.age && profile.age > 0,
+      action: "profileSheet()",
+    },
+    {
+      id: "income",
+      emoji: "💰",
+      title: "Set your monthly income",
+      hint: "Drives savings rate, FI math, tax planning",
+      done: (+(DB.budget?.income) || 0) > 0 || (DB.recurring || []).some(r => r.kind === "income"),
+      action: "showTab('settings')",
+    },
+    {
+      id: "recurring",
+      emoji: "📅",
+      title: "Add at least one recurring bill",
+      hint: "Rent, gym, subscription — used for Safe-to-spend",
+      done: (DB.recurring || []).length > 0,
+      action: "addRecurringSheet()",
+    },
+    {
+      id: "savings-goal",
+      emoji: "🎯",
+      title: "Create a savings goal",
+      hint: "Pick something specific — emergency fund, vacation, down payment",
+      done: (DB.savings || []).length > 0,
+      action: "addSavingSheet()",
+    },
+    {
+      id: "habit",
+      emoji: "💪",
+      title: "Add a habit you want to track",
+      hint: "Daily habits compound. Pick one keystone habit to start.",
+      done: (DB.habits || []).length > 0,
+      action: "addHabitSheet()",
+    },
+    {
+      id: "snapshot",
+      emoji: "📈",
+      title: "Take your first net worth snapshot",
+      hint: "Start the wealth chart and unlock milestone tracking",
+      done: (DB.netWorthHistory || []).length > 0,
+      action: "snapshotNetWorth();render();toast('First snapshot saved 🎉')",
+    },
+    {
+      id: "passphrase",
+      emoji: "🔒",
+      title: "Set a passphrase",
+      hint: "Encrypts all data on this device — biggest single security win",
+      done: !!DB.settings.encrypted,
+      action: "setupPassphraseSheet()",
+    },
+    {
+      id: "smart-plays",
+      emoji: "💡",
+      title: "Review your Smart Plays",
+      hint: "Personalized recommendations based on your data",
+      done: Object.keys(DB.dismissedPlays || {}).length > 0,
+      action: "smartPlaysSheet()",
+    },
+  ];
+  const doneCount = steps.filter(s => s.done).length;
+  return { steps, doneCount, total: steps.length, complete: doneCount === steps.length };
+}
+
+function setupChecklistSheet() {
+  const r = computeSetupChecklist();
+
+  const stepRow = (s) => `
+    <div class="row tappable" style="opacity:${s.done?"0.7":"1"};padding:12px" onclick="closeSheet();${s.action}">
+      <div style="font-size:24px;width:34px;text-align:center">${s.done ? "✓" : s.emoji}</div>
+      <div class="body">
+        <div class="t1" style="${s.done?"text-decoration:line-through":""}">${esc(s.title)}</div>
+        <div class="t2">${esc(s.hint)}</div>
+      </div>
+      ${s.done ? `<div style="color:var(--green);font-size:18px">✓</div>` : `<div class="trail chev"></div>`}
+    </div>
+  `;
+
+  openSheet(`
+    <h2>🚀 Setup checklist</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:6px">Configure the basics so everything else (Smart Plays, Health Score, Pyramid, Projections) has something to compute on. <b>${r.doneCount}</b> of ${r.total} complete.</p>
+    <div style="height:6px;background:var(--bg-elev);border-radius:3px;overflow:hidden;margin-bottom:14px">
+      <div style="height:100%;width:${(r.doneCount/r.total)*100}%;background:var(--green);transition:width .3s"></div>
+    </div>
+    <div class="list">
+      ${r.steps.map(stepRow).join("")}
+    </div>
+    ${r.complete ? `
+      <div style="background:var(--card);border-radius:var(--r);padding:18px;text-align:center;margin-top:14px">
+        <div style="font-size:40px">🎉</div>
+        <div style="font-weight:600;margin-top:6px">All set up!</div>
+        <div style="font-size:13px;color:var(--t3);margin-top:4px">The app is fully configured for you. Check the Wealth dashboard to see everything come alive.</div>
+      </div>
+    ` : ""}
+    <div class="actions" style="margin-top:14px">
+      ${!r.complete ? `<button class="btn secondary" onclick="DB.setupChecklistDismissed=true;save();closeSheet();render();toast('Hidden — open from Today anytime')">Hide for now</button>` : ""}
+      <button class="btn ${r.complete?"secondary":""}" style="${r.complete?"width:100%":""}" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
 /* ================ ESTATE PLANNING CHECKLIST ================
    The last piece of comprehensive financial planning — what happens to
    your assets and dependents if you die or become incapacitated.
@@ -9587,6 +9723,7 @@ function init() {
     INCOME_STRATEGIES, incomeStrategiesSheet, incomeStrategySheet,
     INSURANCE_TYPES, insuranceChecklistSheet, insuranceDetailSheet,
     ESTATE_TASKS, estatePlanningSheet, _markEstateTask,
+    computeSetupChecklist, setupChecklistSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
