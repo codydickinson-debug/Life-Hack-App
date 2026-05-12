@@ -1160,6 +1160,7 @@ const DEFAULT_DB = {
   sinkingFunds: [],          // [{ id, name, emoji, annual, current, lastReset, notes }] — buckets for irregular recurring expenses
   estateCheckProgress: {},   // { taskId: { done: true, doneAt: timestamp } } — estate-planning checklist progress
   booksRead: {},             // { bookId: { read: true, at: timestamp } } — wealth-building reading list progress
+  subscriptionUsage: {},     // { recurringId: { lastUsed: ts, decision: "keep"|"cancel"|"negotiate" } } — subscription audit answers
   setupChecklistDismissed: false, // when true, hide the setup banner on Today even if incomplete
 
   spendSearch: "",
@@ -2728,6 +2729,14 @@ function renderMoney() {
             <div class="body">
               <div class="t1">Reading list</div>
               <div class="t2">${(() => { const r = DB.booksRead || {}; return READING_LIST.filter(b => r[b.id]?.read).length; })()} of ${READING_LIST.length} read · curated wealth-building books</div>
+            </div>
+            <div class="trail chev"></div>
+          </div>
+          <div class="row tappable" onclick="subscriptionAuditSheet()" role="button" tabindex="0">
+            <div class="lead">🔍</div>
+            <div class="body">
+              <div class="t1">Subscription audit</div>
+              <div class="t2">Keep / negotiate / cancel each recurring expense · surface savings</div>
             </div>
             <div class="trail chev"></div>
           </div>
@@ -5908,6 +5917,126 @@ function wealthHealthSheet() {
       </div>
     ` : ""}
     <div class="actions">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+/* ================ 30-DAY SUBSCRIPTION AUDIT ================
+   Walk through every recurring expense and ask: did I use this in the
+   last 30 days? Did I get my money's worth? Surfaces savings opportunities
+   from things you already pay for but don't use.
+
+   Most people cancel 15-30% of recurring spend after a serious audit.
+*/
+
+function subscriptionAuditSheet() {
+  // Pull from BOTH user-managed recurring expenses AND Plaid-detected subs.
+  const recurring = (DB.recurring || []).filter(r => r.kind === "expense");
+  const usage = DB.subscriptionUsage || {};
+
+  const totalMonthly = recurring.reduce((s,r) => {
+    const monthlyAmount = (+r.amount || 0) * (RECURRING_PER_MONTH[r.cadence] || 1);
+    return s + monthlyAmount;
+  }, 0);
+  const totalAnnual = totalMonthly * 12;
+
+  // Compute potential annual savings from items marked for cancel/negotiate
+  let potentialSavings = 0;
+  let cancelCount = 0, negotiateCount = 0, keepCount = 0;
+  for (const r of recurring) {
+    const monthlyAmount = (+r.amount || 0) * (RECURRING_PER_MONTH[r.cadence] || 1);
+    const decision = usage[r.id]?.decision;
+    if (decision === "cancel") {
+      potentialSavings += monthlyAmount * 12;
+      cancelCount++;
+    } else if (decision === "negotiate") {
+      potentialSavings += monthlyAmount * 12 * 0.2; // assume 20% reduction
+      negotiateCount++;
+    } else if (decision === "keep") {
+      keepCount++;
+    }
+  }
+
+  const setDecision = (id, decision) => {
+    DB.subscriptionUsage = DB.subscriptionUsage || {};
+    DB.subscriptionUsage[id] = Object.assign({}, DB.subscriptionUsage[id] || {}, {
+      decision, lastUsed: decision === "keep" ? Date.now() : (DB.subscriptionUsage[id]?.lastUsed || 0),
+    });
+    save();
+  };
+  // Expose for the inline onclick handlers
+  window.__setSubAuditDecision = (id, decision) => {
+    setDecision(id, decision);
+    closeSheet(); subscriptionAuditSheet();
+  };
+
+  const rowFor = (r) => {
+    const monthlyAmount = (+r.amount || 0) * (RECURRING_PER_MONTH[r.cadence] || 1);
+    const annualAmount = monthlyAmount * 12;
+    const decision = usage[r.id]?.decision || "";
+    const decisionPill = {
+      keep:      { label: "✓ Keep",     color: "var(--green)" },
+      negotiate: { label: "↗ Negotiate", color: "var(--orange)" },
+      cancel:    { label: "✗ Cancel",   color: "var(--red)" },
+      "":        null,
+    }[decision];
+    return `
+      <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:8px;border:1px solid var(--sep)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:14px">${esc(r.name)}</div>
+            <div style="font-size:11px;color:var(--t3);margin-top:2px">${esc(r.category||"")} · ${r.cadence}${r.dayOfMonth ? " · day "+r.dayOfMonth : ""}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-weight:600" data-priv="amount">${fmt$0(monthlyAmount)}/mo</div>
+            <div style="font-size:11px;color:var(--t3)" data-priv="amount">${fmt$0(annualAmount)}/yr</div>
+          </div>
+        </div>
+        ${decisionPill ? `<div style="font-size:11px;color:${decisionPill.color};font-weight:600;margin-bottom:8px">${esc(decisionPill.label)}</div>` : ""}
+        <div style="display:flex;gap:6px">
+          <button class="btn sm ${decision==='keep'?'':'secondary'}" style="flex:1;font-size:11px;padding:6px;${decision==='keep'?'background:var(--green);color:white':''}" onclick="__setSubAuditDecision(${jsAttr(r.id)},'keep')">✓ Keep</button>
+          <button class="btn sm ${decision==='negotiate'?'':'secondary'}" style="flex:1;font-size:11px;padding:6px;${decision==='negotiate'?'background:var(--orange);color:white':''}" onclick="__setSubAuditDecision(${jsAttr(r.id)},'negotiate')">↗ Negotiate</button>
+          <button class="btn sm ${decision==='cancel'?'':'secondary'}" style="flex:1;font-size:11px;padding:6px;${decision==='cancel'?'background:var(--red);color:white':''}" onclick="__setSubAuditDecision(${jsAttr(r.id)},'cancel')">✗ Cancel</button>
+        </div>
+      </div>
+    `;
+  };
+
+  const body = recurring.length
+    ? recurring.map(rowFor).join("")
+    : `<div class="empty"><div class="e-emoji">🔍</div><div class="e-title">Nothing to audit yet</div><div class="e-sub">Add recurring expenses in Settings → Recurring transactions first.</div></div>`;
+
+  openSheet(`
+    <h2>🔍 Subscription audit</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">For each recurring expense, decide: <b>keep</b> (worth it), <b>negotiate</b> (call to lower), or <b>cancel</b> (not used). Most people save 15-30% after a serious audit.</p>
+
+    <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px">
+        <div>
+          <div style="color:var(--t3);text-transform:uppercase;font-weight:600;font-size:10px">Current spend</div>
+          <div style="font-size:18px;font-weight:700" data-priv="amount">${fmt$0(totalMonthly)}/mo</div>
+          <div style="color:var(--t3)" data-priv="amount">${fmt$0(totalAnnual)}/yr</div>
+        </div>
+        <div>
+          <div style="color:var(--t3);text-transform:uppercase;font-weight:600;font-size:10px">Potential savings</div>
+          <div style="font-size:18px;font-weight:700;color:var(--green)" data-priv="amount">${fmt$0(potentialSavings)}/yr</div>
+          <div style="color:var(--t3)">${cancelCount + negotiateCount} flagged</div>
+        </div>
+      </div>
+      ${cancelCount > 0 || negotiateCount > 0 ? `
+        <div style="margin-top:12px;padding-top:12px;border-top:1px solid var(--sep);font-size:12px;color:var(--t2);line-height:1.5">
+          Acting on these: <b style="color:var(--green)" data-priv="amount">${fmt$0(potentialSavings)}</b>/yr back in your pocket = <b data-priv="amount">${fmt$0(potentialSavings * Math.pow(1.07, 30))}</b> in 30 years invested at 7%.
+        </div>
+      ` : ""}
+    </div>
+
+    ${body}
+
+    <p class="muted" style="font-size:11px;margin-top:14px;line-height:1.5">
+      <b>For "negotiate" items:</b> open the Bill Negotiation Toolkit (Learn section) for scripts. Typical call takes 15-20 min and saves 15-25% on cable / cell / insurance.
+    </p>
+    <div class="actions" style="margin-top:14px">
       <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
     </div>
   `);
@@ -10188,6 +10317,7 @@ function init() {
     COLLEGE_PRESETS, computeCollegePlan, collegePlannerSheet,
     READING_LIST, READING_CATEGORIES, readingListSheet, bookDetailSheet,
     _markBookRead, _unmarkBookRead,
+    subscriptionAuditSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
