@@ -2540,6 +2540,21 @@ function renderMoney() {
       `;
     })();
 
+    // Real estate / home affordability entry
+    const realEstateEntry = `
+      <div class="section-h"><span class="lbl">🏠 Real estate</span></div>
+      <div class="list">
+        <div class="row tappable" onclick="realEstateSheet()" role="button" tabindex="0">
+          <div class="lead">🔑</div>
+          <div class="body">
+            <div class="t1">Home affordability calculator</div>
+            <div class="t2">Max home price under the 28/36 rule · monthly PITI breakdown</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      </div>
+    `;
+
     // Asset allocation entry — opens the investing plan sheet.
     const allocationEntry = (() => {
       const profile = DB.profile || {};
@@ -2605,6 +2620,7 @@ function renderMoney() {
       ${projectionsSection}
       ${allocationEntry}
       ${taxSummary}
+      ${realEstateEntry}
       ${cardsEntry}
       ${learnEntry}
 
@@ -5703,6 +5719,190 @@ function wealthHealthSheet() {
   `);
 }
 
+/* ================ REAL ESTATE CALCULATOR ================
+   Home affordability + mortgage payment math. Two views:
+
+   1. Affordability: given income, debt, down payment, rate, term, and
+      assumed property tax + insurance + HOA → max home price under the
+      28% rule (housing ≤ 28% of gross monthly income).
+
+   2. Payment breakdown: given a specific home price + loan terms,
+      shows P&I, property tax, insurance, HOA, total monthly PITI, and
+      total interest paid over the life of the loan.
+
+   Educational, not a recommendation. Doesn't model PMI for sub-20% down,
+   doesn't include maintenance reserve (general guidance: 1% of price/yr).
+*/
+
+// Monthly principal & interest payment for a fixed-rate mortgage
+function monthlyPI(loanAmount, annualRatePct, termYears) {
+  if (loanAmount <= 0) return 0;
+  const r = (annualRatePct / 100) / 12;
+  const n = termYears * 12;
+  if (r === 0) return loanAmount / n;
+  return loanAmount * (r * Math.pow(1+r, n)) / (Math.pow(1+r, n) - 1);
+}
+
+function realEstateSheet() {
+  const profile = DB.profile || {};
+  const monthlyIncome = _playsMonthlyIncome();
+  const annualIncome = monthlyIncome * 12;
+  // Default state
+  let income = annualIncome > 0 ? annualIncome : 75000;
+  let downPayment = 50000;
+  let rate = 6.75;       // average 30yr fixed (varies)
+  let term = 30;
+  let propTaxPct = 1.2;  // US average
+  let insurance = 1500;  // annual
+  let hoa = 0;
+  let monthlyDebt = 0;   // other monthly debts (car, student loan minimums)
+
+  const compute = (vals) => {
+    const annInc = +vals.income || 0;
+    const monthInc = annInc / 12;
+    const maxHousing28 = monthInc * 0.28;
+    const maxTotal36 = monthInc * 0.36;
+    const propTaxMonthly = (annInc > 0 ? 0 : 0); // computed below per price
+    const insMonthly = (+vals.insurance || 0) / 12;
+    const hoaMonthly = +vals.hoa || 0;
+    // The constraint binds whichever is tighter:
+    //   28% rule: P&I + taxes + insurance + HOA ≤ 28% of income
+    //   36% rule: above + other debts ≤ 36% of income
+    const maxPiti28 = maxHousing28;
+    const maxPiti36 = maxTotal36 - (+vals.monthlyDebt || 0);
+    const maxPiti = Math.min(maxPiti28, maxPiti36);
+    // Iteratively solve for max home price (since taxes scale with price)
+    // Start with rough estimate, refine.
+    let homePrice = Math.max(0, (+vals.downPayment || 0));
+    for (let i = 0; i < 60; i++) {
+      const loan = Math.max(0, homePrice - (+vals.downPayment || 0));
+      const pi = monthlyPI(loan, +vals.rate || 0, +vals.term || 30);
+      const taxes = (homePrice * (+vals.propTaxPct || 0) / 100) / 12;
+      const piti = pi + taxes + insMonthly + hoaMonthly;
+      // If we're under, raise price; if over, lower. Bisection-like step.
+      const diff = maxPiti - piti;
+      if (Math.abs(diff) < 1) break;
+      // Estimate price sensitivity: each $1 in home price adds ~$1 of loan
+      // plus small tax delta. Use a damped step.
+      const step = diff * 100; // empirical
+      homePrice = Math.max(0, homePrice + step);
+      if (homePrice > 50_000_000) break; // sanity guard
+    }
+    homePrice = Math.round(homePrice);
+    const loan = Math.max(0, homePrice - (+vals.downPayment || 0));
+    const pi = monthlyPI(loan, +vals.rate || 0, +vals.term || 30);
+    const taxes = (homePrice * (+vals.propTaxPct || 0) / 100) / 12;
+    const piti = pi + taxes + insMonthly + hoaMonthly;
+    const totalInterest = pi * (+vals.term || 30) * 12 - loan;
+    return {
+      homePrice, loan, pi, taxes, insMonthly, hoaMonthly, piti,
+      totalInterest, monthInc, maxHousing28, maxTotal36,
+      pctOfIncome: monthInc > 0 ? (piti / monthInc) * 100 : 0,
+    };
+  };
+
+  const render = (vals) => {
+    const r = compute(vals);
+    return `
+      <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Max home price (28% rule)</div>
+        <div style="font-size:30px;font-weight:700;letter-spacing:-.5px;margin:6px 0" data-priv="amount">${fmt$0(r.homePrice)}</div>
+        <div style="font-size:13px;color:var(--t2)">${fmt$0(r.loan)} loan · ${fmt$0(r.pi)}/mo P&I</div>
+
+        <div style="border-top:1px solid var(--sep);margin-top:14px;padding-top:12px">
+          <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Monthly breakdown (PITI + HOA)</div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span>Principal &amp; interest</span><span data-priv="amount">${fmt$0(r.pi)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span>Property tax</span><span data-priv="amount">${fmt$0(r.taxes)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span>Insurance</span><span data-priv="amount">${fmt$0(r.insMonthly)}</span></div>
+          ${r.hoaMonthly > 0 ? `<div style="display:flex;justify-content:space-between;font-size:13px;padding:4px 0"><span>HOA</span><span data-priv="amount">${fmt$0(r.hoaMonthly)}</span></div>` : ""}
+          <div style="display:flex;justify-content:space-between;font-size:14px;padding:8px 0 4px;border-top:1px solid var(--sep);margin-top:6px;font-weight:600"><span>Total monthly</span><span data-priv="amount">${fmt$0(r.piti)}</span></div>
+          <div style="font-size:11px;color:var(--t3);margin-top:4px;text-align:right">${r.pctOfIncome.toFixed(0)}% of gross income</div>
+        </div>
+
+        <div style="border-top:1px solid var(--sep);margin-top:14px;padding-top:12px">
+          <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Loan totals over ${vals.term||30} years</div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:2px 0"><span>Total interest paid</span><span style="color:var(--red)" data-priv="amount">${fmt$0(r.totalInterest)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:2px 0"><span>Total of all payments</span><span data-priv="amount">${fmt$0(r.pi * (+vals.term||30) * 12)}</span></div>
+        </div>
+      </div>
+    `;
+  };
+
+  const initial = { income, downPayment, rate, term, propTaxPct, insurance, hoa, monthlyDebt };
+
+  openSheet(`
+    <h2>🏠 Home affordability</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Max home price under the 28/36 rule (housing ≤ 28% of income, total debt ≤ 36%). Educational — your bank may approve more, but the rule keeps you from being house-poor.</p>
+    <div id="re-output">${render(initial)}</div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Your inputs</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="re-income">Annual income</label>
+        <input id="re-income" type="number" min="0" step="1000" value="${initial.income}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:110px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="re-down">Down payment</label>
+        <input id="re-down" type="number" min="0" step="1000" value="${initial.downPayment}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:110px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="re-debt">Other monthly debt</label>
+        <input id="re-debt" type="number" min="0" step="50" value="${initial.monthlyDebt}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:90px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="re-rate">Interest rate (%)</label>
+        <input id="re-rate" type="number" min="0" max="20" step="0.125" value="${initial.rate}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="re-term">Term (years)</label>
+        <select id="re-term" style="background:var(--card);padding:6px 10px;border-radius:6px">
+          <option value="15" ${initial.term===15?"selected":""}>15</option>
+          <option value="20" ${initial.term===20?"selected":""}>20</option>
+          <option value="30" ${initial.term===30?"selected":""}>30</option>
+        </select>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="re-tax">Property tax (%/yr)</label>
+        <input id="re-tax" type="number" min="0" max="5" step="0.1" value="${initial.propTaxPct}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:70px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="re-ins">Insurance ($/yr)</label>
+        <input id="re-ins" type="number" min="0" step="100" value="${initial.insurance}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:90px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+        <label for="re-hoa">HOA ($/mo)</label>
+        <input id="re-hoa" type="number" min="0" step="25" value="${initial.hoa}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+    </div>
+
+    <p class="muted" style="font-size:11px;line-height:1.5">
+      <b>Doesn't include:</b> PMI (required if down payment &lt; 20%), maintenance reserve (~1% of home price/yr), closing costs (~2-5%), or opportunity cost of the down payment vs investing. Run rent-vs-buy separately for the full picture.
+    </p>
+
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+
+  const refresh = () => {
+    const vals = {
+      income: +$("#re-income").value || 0,
+      downPayment: +$("#re-down").value || 0,
+      monthlyDebt: +$("#re-debt").value || 0,
+      rate: +$("#re-rate").value || 0,
+      term: +$("#re-term").value || 30,
+      propTaxPct: +$("#re-tax").value || 0,
+      insurance: +$("#re-ins").value || 0,
+      hoa: +$("#re-hoa").value || 0,
+    };
+    $("#re-output").innerHTML = render(vals);
+  };
+  ["#re-income","#re-down","#re-debt","#re-rate","#re-term","#re-tax","#re-ins","#re-hoa"].forEach(sel => {
+    $(sel).addEventListener("input", refresh);
+    $(sel).addEventListener("change", refresh);
+  });
+}
+
 /* ================ ASSET ALLOCATION (3-FUND PORTFOLIO) ================
    The canonical "boring index" portfolio framework: a stock/bond split
    driven by age and risk tolerance, with stocks further split between
@@ -7878,6 +8078,7 @@ function init() {
     computeCardRewards, recommendCards, cardRecommendationsSheet,
     NW_MILESTONES, computeNetWorthMilestones, checkNetWorthMilestones, milestonesSheet,
     RISK_LEVELS, computeTargetAllocation, investingPlanSheet,
+    monthlyPI, realEstateSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
