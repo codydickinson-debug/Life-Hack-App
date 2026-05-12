@@ -1137,6 +1137,12 @@ const DEFAULT_DB = {
     hsaEligible: false,      // true if on a high-deductible health plan — flags HSA play
     state: "",               // 2-letter postal code (e.g. "FL") — informational only in v1
   },
+  retirement: {              // assumptions for the retirement projector
+    targetAge: 65,           // age at which the projection ends
+    monthlyContribution: 0,  // 0 = use settings.monthlySavingsTarget as default
+    annualReturn: 7,         // real (post-inflation) annual return %
+    withdrawalRate: 4,       // safe withdrawal % at retirement (Trinity Study default)
+  },
 
   spendSearch: "",
   holdings: [],              // [{account_id, ticker, name, type, quantity, institution_value, cost_basis}]
@@ -2325,9 +2331,39 @@ function renderMoney() {
       `;
     })();
 
+    // Retirement projection summary — tappable row that opens the full projector.
+    const retireSummary = (() => {
+      const profile = DB.profile || {};
+      const retire = DB.retirement || {};
+      const currentAge = +profile.age || 30;
+      let targetAge = +retire.targetAge || 65;
+      if (targetAge <= currentAge) targetAge = currentAge + 1;
+      const invested = currentInvested();
+      const monthly = +retire.monthlyContribution || +DB.settings.monthlySavingsTarget || 500;
+      const annualReturn = +retire.annualReturn || 7;
+      const withdrawalRate = +retire.withdrawalRate || 4;
+      const points = projectRetirement({ currentAge, targetAge, currentBalance: invested, monthlyContribution: monthly, annualReturn });
+      const final = points[points.length-1].balance;
+      const monthlyWd = (final * (withdrawalRate / 100)) / 12;
+      return `
+        <div class="section-h"><span class="lbl">Retirement projection</span></div>
+        <div class="list">
+          <div class="row tappable" onclick="retirementSheet()" role="button" tabindex="0">
+            <div class="lead">🏖️</div>
+            <div class="body">
+              <div class="t1" data-priv="amount">${fmt$0(final)} at age ${targetAge}</div>
+              <div class="t2">${fmt$0(monthlyWd)}/mo safe withdrawal · ${profile.age ? `age ${currentAge}` : "default age 30"} · ${fmt$0(monthly)}/mo · ${annualReturn}% return</div>
+            </div>
+            <div class="trail chev"></div>
+          </div>
+        </div>
+      `;
+    })();
+
     body = `
       ${chartCard}
       ${compBar}
+      ${retireSummary}
 
       <div class="section-h"><span class="lbl">Manual assets</span><button class="act" onclick="assetSheet()">+ Add</button></div>
       <div class="list">
@@ -5118,6 +5154,160 @@ function profileSheet() {
   });
 }
 
+/* ================ RETIREMENT PROJECTION ================
+   Compound-interest projection of invested balance + monthly contributions
+   growing at a real (post-inflation) annual return, to a target age, then a
+   safe-withdrawal estimate at retirement. Educational, not advice.
+
+   Math: balance_{m+1} = balance_m * (1 + r/12) + monthly_contribution
+   (contributions assumed at end of month).
+*/
+
+// Sum of investment-type assets across Plaid + manual.
+function currentInvested() {
+  let total = 0;
+  for (const a of (DB.accounts || [])) {
+    if (a.type === "investment" || a.type === "brokerage") total += +a.balance_current || 0;
+  }
+  for (const a of (DB.assets || [])) {
+    if (a.type === "investment" || a.type === "crypto") total += +a.value || 0;
+  }
+  return total;
+}
+
+function projectRetirement({ currentAge, targetAge, currentBalance, monthlyContribution, annualReturn }) {
+  const monthlyR = (annualReturn / 100) / 12;
+  const points = [];
+  let balance = currentBalance;
+  // Cap projection at 50 years so a misclick (e.g. currentAge=20, target=200) doesn't loop forever.
+  const span = Math.min(50, Math.max(0, targetAge - currentAge));
+  for (let i = 0; i <= span; i++) {
+    points.push({ age: currentAge + i, balance: Math.round(balance) });
+    for (let m = 0; m < 12; m++) {
+      balance = balance * (1 + monthlyR) + monthlyContribution;
+    }
+  }
+  return points;
+}
+
+// SVG line/area chart for the projection. Same visual style as netWorthSparkline
+// but uses absolute 0 as the y-axis floor (so growth feels "right").
+function retirementChart(points, w=300, h=120) {
+  if (!points.length) return "";
+  const vals = points.map(p => p.balance);
+  const max = Math.max(1, ...vals);
+  const stepX = points.length > 1 ? w / (points.length - 1) : 0;
+  const pts = vals.map((v,i) => `${(i*stepX).toFixed(1)},${(h - (v / max) * h).toFixed(1)}`).join(" ");
+  return `
+    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:${h}px;display:block;margin-top:10px">
+      <defs>
+        <linearGradient id="ret-fill" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#34C759" stop-opacity="0.35"/>
+          <stop offset="100%" stop-color="#34C759" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <polygon fill="url(#ret-fill)" points="0,${h} ${pts} ${w},${h}"/>
+      <polyline fill="none" stroke="#34C759" stroke-width="2" points="${pts}"/>
+    </svg>
+  `;
+}
+
+function retirementSheet() {
+  const profile = DB.profile || {};
+  const retire = DB.retirement || {};
+  const currentAge = +profile.age || 30;
+  const invested = currentInvested();
+  let target = +retire.targetAge || 65;
+  if (target <= currentAge) target = currentAge + 1;
+  const initialMonthly = +retire.monthlyContribution || +DB.settings.monthlySavingsTarget || 500;
+  const initialReturn = +retire.annualReturn || 7;
+  const initialWithdrawal = +retire.withdrawalRate || 4;
+
+  const renderProjection = (t, m, r, w) => {
+    const safeT = Math.max(currentAge + 1, Math.min(100, +t || 65));
+    const points = projectRetirement({
+      currentAge, targetAge: safeT,
+      currentBalance: invested,
+      monthlyContribution: Math.max(0, +m || 0),
+      annualReturn: Math.max(0, +r || 0),
+    });
+    const final = points[points.length-1].balance;
+    const annualWd = final * ((+w || 4) / 100);
+    return `
+      <div style="background:var(--card);border-radius:var(--r);padding:16px;border:1px solid var(--sep)">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Projected at age ${safeT}</div>
+        <div style="font-size:30px;font-weight:700;letter-spacing:-.5px;margin:6px 0" data-priv="amount">${fmt$0(final)}</div>
+        <div style="font-size:13px;color:var(--t2)" data-priv="amount">${fmt$0(annualWd / 12)}/mo safe withdrawal · ${fmt$0(annualWd)}/yr</div>
+        ${retirementChart(points, 300, 110)}
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-top:6px">
+          <span>Age ${currentAge}</span><span>Age ${safeT}</span>
+        </div>
+      </div>
+    `;
+  };
+
+  openSheet(`
+    <h2>🏖️ Retirement projection</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Compound-interest math on your invested balance. Educational — real returns vary. Adjust the assumptions to see how the picture changes.</p>
+    <div id="ret-output">${renderProjection(target, initialMonthly, initialReturn, initialWithdrawal)}</div>
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-top:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Assumptions</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <span>Current age</span>
+        <span style="font-weight:600">${currentAge}${profile.age ? "" : ' <span class="muted" style="font-weight:400;font-size:11px">(default — set in profile)</span>'}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <span>Current invested</span>
+        <span style="font-weight:600" data-priv="amount">${fmt$0(invested)}</span>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="ret-target">Target age</label>
+        <input id="ret-target" type="number" min="${currentAge+1}" max="100" value="${target}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="ret-monthly">Monthly contribution ($)</label>
+        <input id="ret-monthly" type="number" min="0" step="50" value="${initialMonthly}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:90px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="ret-return">Annual return (%)</label>
+        <input id="ret-return" type="number" min="0" max="20" step="0.5" value="${initialReturn}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+        <label for="ret-withdrawal">Safe withdrawal (%)</label>
+        <input id="ret-withdrawal" type="number" min="2" max="8" step="0.25" value="${initialWithdrawal}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <p class="muted" style="font-size:11px;margin-top:10px;line-height:1.5">7% is the long-term real (post-inflation) return for a diversified US stock portfolio. The 4% rule comes from the Trinity Study — withdrawing 4% annually has historically lasted 30+ years.</p>
+    </div>
+    <div class="actions">
+      <button class="btn secondary" onclick="closeSheet()">Close</button>
+      <button class="btn" id="ret-save">Save assumptions</button>
+    </div>
+  `);
+
+  // Live refresh on any input change
+  const refresh = () => {
+    $("#ret-output").innerHTML = renderProjection(
+      $("#ret-target").value,
+      $("#ret-monthly").value,
+      $("#ret-return").value,
+      $("#ret-withdrawal").value,
+    );
+  };
+  ["#ret-target","#ret-monthly","#ret-return","#ret-withdrawal"].forEach(sel => {
+    $(sel).addEventListener("input", refresh);
+  });
+
+  $("#ret-save").addEventListener("click", async () => {
+    DB.retirement = {
+      targetAge: Math.max(currentAge+1, Math.min(100, +$("#ret-target").value || 65)),
+      monthlyContribution: Math.max(0, +$("#ret-monthly").value || 0),
+      annualReturn: Math.max(0, Math.min(20, +$("#ret-return").value || 7)),
+      withdrawalRate: Math.max(2, Math.min(8, +$("#ret-withdrawal").value || 4)),
+    };
+    await save(); closeSheet(); render(); toast("Saved");
+  });
+}
+
 /* Confetti celebration */
 function celebrate(intensity) {
   if (intensity == null) intensity = 1;
@@ -5741,6 +5931,7 @@ function init() {
     upcomingBills, dismissBill,
     computeSmartPlays, smartPlaysSheet, dismissPlay, resetDismissedPlays, profileSheet,
     wealthComposition, setWealthRange, filteredNwHistory,
+    currentInvested, projectRetirement, retirementChart, retirementSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
