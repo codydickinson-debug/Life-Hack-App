@@ -2516,6 +2516,22 @@ function renderMoney() {
       `;
     })();
 
+    // Credit cards entry — opens the recommendations sheet with the user's
+    // estimated spend pre-filled.
+    const cardsEntry = `
+      <div class="section-h"><span class="lbl">💳 Credit cards</span></div>
+      <div class="list">
+        <div class="row tappable" onclick="cardRecommendationsSheet()" role="button" tabindex="0">
+          <div class="lead">🏆</div>
+          <div class="body">
+            <div class="t1">Find your best card</div>
+            <div class="t2">Matched to your spending · ${CURATED_CARDS.length} curated cards · no affiliate links</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      </div>
+    `;
+
     // Wealth Lessons entry — a tappable row to the curated educational library.
     const learnEntry = (() => {
       const read = DB.lessonsRead || {};
@@ -2543,6 +2559,7 @@ function renderMoney() {
       ${pyramidSummary}
       ${projectionsSection}
       ${taxSummary}
+      ${cardsEntry}
       ${learnEntry}
 
       <div class="section-h"><span class="lbl">Manual assets</span><button class="act" onclick="assetSheet()">+ Add</button></div>
@@ -5636,6 +5653,261 @@ function wealthHealthSheet() {
   `);
 }
 
+/* ================ CREDIT CARD RECOMMENDATIONS ================
+   Match the user's spending to popular credit cards. Curated list, no
+   affiliate links, no kickbacks. Educational — verify current terms with
+   the issuer before applying. Terms change frequently.
+
+   Card schema:
+     id, name, issuer, annualFee, signupBonus { value, requirement },
+     rewards { categoryKey: rate }, perks[], whyConsider, asOf (date)
+
+   Reward rates are estimates of typical ongoing earn rates. Many cards
+   have rotating categories or caps — flagged in 'whyConsider' where notable.
+*/
+
+const CARD_CATEGORIES = [
+  { id: "dining",      label: "Dining",        emoji: "🍽️" },
+  { id: "groceries",   label: "Groceries",     emoji: "🛒" },
+  { id: "gas",         label: "Gas",           emoji: "⛽" },
+  { id: "travel",      label: "Travel",        emoji: "✈️" },
+  { id: "streaming",   label: "Streaming",     emoji: "📺" },
+  { id: "online",      label: "Online shopping",emoji: "📦" },
+  { id: "other",       label: "Everything else",emoji: "🏷️" },
+];
+
+const CURATED_CARDS = [
+  {
+    id: "chase-sapphire-preferred",
+    name: "Chase Sapphire Preferred",
+    issuer: "Chase",
+    annualFee: 95,
+    signupBonus: { value: 750, requirement: "Spend $4,000 in 3 mo" },
+    rewards: { travel: 0.05, dining: 0.03, streaming: 0.03, online: 0.03, other: 0.01 },
+    perks: ["Travel insurance", "Points transferable to airline/hotel partners", "No foreign transaction fees"],
+    whyConsider: "Best mid-tier travel card under $100 fee. Points worth ~1.25¢ each via Chase Travel.",
+    asOf: "2024",
+  },
+  {
+    id: "citi-double-cash",
+    name: "Citi Double Cash",
+    issuer: "Citi",
+    annualFee: 0,
+    signupBonus: { value: 200, requirement: "Spend $1,500 in 6 mo" },
+    rewards: { dining: 0.02, groceries: 0.02, gas: 0.02, travel: 0.02, streaming: 0.02, online: 0.02, other: 0.02 },
+    perks: ["No annual fee", "Simple flat 2% everywhere"],
+    whyConsider: "Best 'set and forget' flat-rate card. No categories to track. 1% when you buy + 1% when you pay.",
+    asOf: "2024",
+  },
+  {
+    id: "amex-gold",
+    name: "Amex Gold",
+    issuer: "American Express",
+    annualFee: 325,
+    signupBonus: { value: 1000, requirement: "Spend $6,000 in 6 mo" },
+    rewards: { dining: 0.04, groceries: 0.04, travel: 0.03, other: 0.01 },
+    perks: ["$120 dining credit/yr ($10/mo at select)", "$120 Uber Cash/yr", "Points transferable to airline partners"],
+    whyConsider: "Best dining + grocery earn rate. Effective fee after credits: ~$85. Heavy diners/grocery buyers come out ahead.",
+    asOf: "2024",
+  },
+  {
+    id: "wells-active-cash",
+    name: "Wells Fargo Active Cash",
+    issuer: "Wells Fargo",
+    annualFee: 0,
+    signupBonus: { value: 200, requirement: "Spend $500 in 3 mo" },
+    rewards: { dining: 0.02, groceries: 0.02, gas: 0.02, travel: 0.02, streaming: 0.02, online: 0.02, other: 0.02 },
+    perks: ["No annual fee", "0% intro APR for 12 mo", "Cell phone protection"],
+    whyConsider: "Simple flat 2%, lower spend requirement than Citi Double Cash for the signup bonus. Good first card.",
+    asOf: "2024",
+  },
+  {
+    id: "capital-one-venture",
+    name: "Capital One Venture",
+    issuer: "Capital One",
+    annualFee: 95,
+    signupBonus: { value: 750, requirement: "Spend $4,000 in 3 mo" },
+    rewards: { dining: 0.02, groceries: 0.02, gas: 0.02, travel: 0.05, streaming: 0.02, online: 0.02, other: 0.02 },
+    perks: ["Transfer to airline partners", "No foreign transaction fees", "Global Entry/TSA Pre credit"],
+    whyConsider: "Flat 2x miles everywhere + 5x on hotels/rental cars booked through Capital One Travel. Travel-focused but earns on everything.",
+    asOf: "2024",
+  },
+  {
+    id: "chase-freedom-unlimited",
+    name: "Chase Freedom Unlimited",
+    issuer: "Chase",
+    annualFee: 0,
+    signupBonus: { value: 200, requirement: "Spend $500 in 3 mo" },
+    rewards: { dining: 0.03, travel: 0.05, streaming: 0.015, online: 0.015, other: 0.015 },
+    perks: ["No annual fee", "0% intro APR for 15 mo"],
+    whyConsider: "Best no-fee Chase card. Pairs powerfully with Sapphire Preferred — points pool and transfer to airlines.",
+    asOf: "2024",
+  },
+  {
+    id: "amex-blue-cash-preferred",
+    name: "Amex Blue Cash Preferred",
+    issuer: "American Express",
+    annualFee: 95,
+    signupBonus: { value: 350, requirement: "Spend $3,000 in 6 mo" },
+    rewards: { groceries: 0.06, streaming: 0.06, gas: 0.03, other: 0.01 },
+    perks: ["6% on US supermarkets (cap $6k/yr → $360 max)", "6% on streaming"],
+    whyConsider: "Highest grocery earn rate available. Heavy grocery buyer? You'll beat the $95 fee easily.",
+    asOf: "2024",
+  },
+  {
+    id: "discover-it",
+    name: "Discover It Cash Back",
+    issuer: "Discover",
+    annualFee: 0,
+    signupBonus: { value: 0, requirement: "Cashback Match: Discover matches all cash back in first year" },
+    rewards: { dining: 0.05, groceries: 0.05, gas: 0.05, online: 0.05, other: 0.01 },
+    perks: ["Rotating 5% categories (gas, groceries, dining, Amazon — quarterly)", "No annual fee", "Cashback Match doubles first-year rewards"],
+    whyConsider: "Rotating 5% capped at $1,500/quarter spend. Best for low-medium spenders in featured categories. Watch the activation requirement each quarter.",
+    asOf: "2024",
+  },
+  {
+    id: "bilt",
+    name: "Bilt Mastercard",
+    issuer: "Wells Fargo",
+    annualFee: 0,
+    signupBonus: { value: 0, requirement: "None" },
+    rewards: { dining: 0.03, travel: 0.02, other: 0.01 },
+    perks: ["Pay rent with no transaction fee (1x points on rent)", "Transfer to 15+ airline/hotel partners", "Trip protection"],
+    whyConsider: "The only card that earns points on rent fee-free. If rent is $1,500/mo, that's 18,000 points/yr ≈ $250 in airline value. Use 5+ times/mo to earn rewards.",
+    asOf: "2024",
+  },
+];
+
+// Estimate monthly spend by category from existing data.
+// Plaid transactions (when present) are the best source; falls back to budget.
+function estimatedMonthlySpendByCategory() {
+  const out = {};
+  CARD_CATEGORIES.forEach(c => { out[c.id] = 0; });
+  // From Plaid transactions: average per month over the last 90 days.
+  const txs = (DB.spend || []).filter(t => t.source === "plaid" && +t.amount > 0);
+  if (txs.length > 0) {
+    const cutoff = Date.now() - 90 * 86400000;
+    const recent = txs.filter(t => new Date(t.date).getTime() >= cutoff);
+    if (recent.length > 0) {
+      const map = {};
+      for (const t of recent) {
+        const c = (t.category || "").toLowerCase();
+        let key = "other";
+        if (/dining|restaurant|food|coffee/.test(c)) key = "dining";
+        else if (/grocer|publix|sprouts|trader|whole foods|wal.?mart|target|costco/.test(c)) key = "groceries";
+        else if (/gas|fuel|shell|chevron|exxon|bp\b/.test(c)) key = "gas";
+        else if (/travel|hotel|airline|flight|airbnb/.test(c)) key = "travel";
+        else if (/netflix|spotify|hulu|disney|streaming/.test(c)) key = "streaming";
+        else if (/amazon|amzn|online|ebay/.test(c)) key = "online";
+        map[key] = (map[key] || 0) + (+t.amount || 0);
+      }
+      Object.keys(out).forEach(k => { out[k] = (map[k] || 0) / 3; });
+      return out;
+    }
+  }
+  // Fallback: derive from budget.expenses by name (rough)
+  for (const e of (DB.budget?.expenses || [])) {
+    const name = (e.c || "").toLowerCase();
+    let key = "other";
+    if (/dining|restaurant|food/.test(name)) key = "dining";
+    else if (/grocer/.test(name)) key = "groceries";
+    else if (/gas|fuel/.test(name)) key = "gas";
+    else if (/travel|trip/.test(name)) key = "travel";
+    else if (/stream|netflix|spotify/.test(name)) key = "streaming";
+    else if (/amazon|online|shop/.test(name)) key = "online";
+    out[key] += (+e.amount || 0);
+  }
+  return out;
+}
+
+function computeCardRewards(card, monthlyByCategory) {
+  let annualReward = 0;
+  for (const c of CARD_CATEGORIES) {
+    const monthly = monthlyByCategory[c.id] || 0;
+    const rate = card.rewards[c.id] || card.rewards.other || 0;
+    annualReward += monthly * 12 * rate;
+  }
+  const net = annualReward - card.annualFee;
+  return { annualReward, net, fee: card.annualFee };
+}
+
+function recommendCards(monthlyByCategory) {
+  return CURATED_CARDS
+    .map(card => ({ card, ...computeCardRewards(card, monthlyByCategory) }))
+    .sort((a,b) => b.net - a.net);
+}
+
+function cardRecommendationsSheet() {
+  const spend = estimatedMonthlySpendByCategory();
+  const totalSpend = Object.values(spend).reduce((s,v) => s + v, 0);
+  const recs = recommendCards(spend);
+  const top = recs.slice(0, 5);
+
+  // Editable category inputs so user can override the estimates
+  const categoriesHtml = CARD_CATEGORIES.map(c => `
+    <div style="display:flex;align-items:center;gap:10px;font-size:13px;padding:6px 0">
+      <div style="font-size:18px">${c.emoji}</div>
+      <div style="flex:1">${c.label}</div>
+      <input type="number" min="0" step="25" value="${Math.round(spend[c.id])}"
+        oninput="window.__cardSpendOverride = window.__cardSpendOverride || {}; window.__cardSpendOverride[${jsAttr(c.id)}] = +this.value || 0; window.__refreshCardRecs && window.__refreshCardRecs();"
+        style="background:var(--card);padding:6px 8px;border-radius:6px;width:80px;text-align:right" />
+    </div>
+  `).join("");
+
+  const renderRecs = () => {
+    const merged = Object.assign({}, spend, window.__cardSpendOverride || {});
+    const recs2 = recommendCards(merged).slice(0, 5);
+    return recs2.map((r, i) => `
+      <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:8px;border:1px solid var(--sep)">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:11px;color:var(--t3);font-weight:600">#${i+1} match</div>
+            <div style="font-weight:600;font-size:15px;margin:2px 0">${esc(r.card.name)}</div>
+            <div style="font-size:11px;color:var(--t3)">${esc(r.card.issuer)} · ${r.card.annualFee === 0 ? "No annual fee" : fmt$0(r.card.annualFee) + " / yr"}${r.card.signupBonus.value ? ` · ${fmt$0(r.card.signupBonus.value)} signup` : ""}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:11px;color:var(--t3)">Net est. / yr</div>
+            <div style="font-size:18px;font-weight:700;color:${r.net > 0 ? "var(--green)" : "var(--red)"}" data-priv="amount">${r.net >= 0 ? "+" : ""}${fmt$0(r.net)}</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--t2);margin-top:10px;line-height:1.5">${esc(r.card.whyConsider)}</div>
+        <details style="margin-top:8px;font-size:11px">
+          <summary style="cursor:pointer;color:var(--t3)">Details + perks</summary>
+          <div style="margin-top:6px;color:var(--t3);line-height:1.6">
+            <div><b>Earning:</b> ${fmt$0(r.annualReward)}/yr est. before fee</div>
+            <div><b>Signup:</b> ${esc(r.card.signupBonus.requirement)}${r.card.signupBonus.value ? " for " + fmt$0(r.card.signupBonus.value) : ""}</div>
+            <div style="margin-top:4px"><b>Perks:</b></div>
+            <ul style="margin:2px 0 0 16px;padding:0">${r.card.perks.map(p => `<li>${esc(p)}</li>`).join("")}</ul>
+            <div style="margin-top:6px;font-style:italic">Terms as of ${esc(r.card.asOf)}. Verify current terms before applying.</div>
+          </div>
+        </details>
+      </div>
+    `).join("");
+  };
+
+  openSheet(`
+    <h2>💳 Credit card recommendations</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Curated cards matched to your spending. ${totalSpend > 0 ? `Estimated $${Math.round(totalSpend)}/mo total spend.` : "Enter your typical monthly spend below."} Educational — terms change; verify before applying.</p>
+    <div id="card-recs">${renderRecs()}</div>
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-top:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Your monthly spend ($)</div>
+      ${categoriesHtml}
+      <p class="muted" style="font-size:11px;margin-top:10px;line-height:1.5">Auto-estimated from Plaid transactions when connected, else from budget. Override here to project a future spend pattern.</p>
+    </div>
+    <p class="muted" style="font-size:11px;margin-top:14px;line-height:1.5">
+      <b>Reality checks:</b> Always pay in full each month — interest erases all rewards. Rewards math only matters if you don't overspend to chase them. Credit checks impact score short-term. Annual fees only pay off if you actually use the card's category bonuses.
+    </p>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+
+  window.__refreshCardRecs = () => {
+    const el = document.getElementById("card-recs");
+    if (el) el.innerHTML = renderRecs();
+  };
+}
+
 /* ================ FIRE CALCULATOR ================
    Financial Independence / Retire Early math: when does the user's
    invested balance reach a multiple of their annual expenses such that
@@ -7331,6 +7603,8 @@ function init() {
     WEALTH_LESSONS, LESSON_CATEGORIES, learnSheet, lessonSheet, markLessonRead,
     computeCashFlow, cashFlowCardHtml,
     computeFire, fireChart, fireSheet,
+    CURATED_CARDS, CARD_CATEGORIES, estimatedMonthlySpendByCategory,
+    computeCardRewards, recommendCards, cardRecommendationsSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
