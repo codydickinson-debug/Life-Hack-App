@@ -2501,6 +2501,7 @@ function renderMoney() {
       ${healthCard}
       ${chartCard}
       ${compBar}
+      ${cashFlowCardHtml()}
       ${pyramidSummary}
       ${retireSummary}
       ${taxSummary}
@@ -5597,6 +5598,71 @@ function wealthHealthSheet() {
   `);
 }
 
+/* ================ CASH FLOW VISUALIZATION ================
+   Where does each monthly dollar actually go? Renders income as a 100% bar
+   split into Fixed expenses / Savings target / Discretionary, with a deficit
+   warning if fixed + target exceed income.
+*/
+
+function computeCashFlow() {
+  const income = _playsMonthlyIncome();
+  const fixedRecurring = recurringMonthlyTotal("expense");
+  const fixedBudget = (DB.budget?.expenses || []).reduce((s,e) => s + (+e.amount || 0), 0);
+  const fixed = Math.max(fixedRecurring, fixedBudget);
+  const savingsTarget = +DB.settings.monthlySavingsTarget || 0;
+  const used = fixed + savingsTarget;
+  const discretionary = Math.max(0, income - used);
+  const deficit = used > income ? used - income : 0;
+  // What % of income each piece represents (when income > 0)
+  const pct = (v) => income > 0 ? (v / income) * 100 : 0;
+  return {
+    income, fixed, savingsTarget, discretionary, deficit, used,
+    fixedPct: pct(fixed),
+    savingsPct: pct(savingsTarget),
+    discretionaryPct: pct(discretionary),
+    savingsRate: income > 0 ? (savingsTarget + discretionary) / income : 0,
+  };
+}
+
+function cashFlowCardHtml() {
+  const cf = computeCashFlow();
+  if (cf.income <= 0) return "";
+  const ROW = (label, value, pct, color) => `
+    <div style="display:flex;align-items:center;gap:10px;padding:8px 0;border-top:1px solid var(--sep)">
+      <div style="width:10px;height:10px;background:${color};border-radius:2px;flex-shrink:0"></div>
+      <div style="flex:1;font-size:13px">${label}</div>
+      <div style="font-size:11px;color:var(--t3);min-width:38px;text-align:right">${pct.toFixed(0)}%</div>
+      <div style="font-weight:600;min-width:80px;text-align:right" data-priv="amount">${fmt$0(value)}</div>
+    </div>
+  `;
+  return `
+    <div style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Monthly cash flow</div>
+        <div style="font-size:12px;color:var(--t3)" data-priv="amount">${fmt$0(cf.income)}/mo in</div>
+      </div>
+      <div style="display:flex;height:22px;border-radius:6px;overflow:hidden;background:var(--bg-elev);margin-bottom:6px">
+        ${cf.fixedPct > 0 ? `<div style="width:${Math.min(100, cf.fixedPct)}%;background:#FF9500" title="Fixed expenses"></div>` : ""}
+        ${cf.savingsPct > 0 ? `<div style="width:${Math.min(100, cf.savingsPct)}%;background:#34C759" title="Savings target"></div>` : ""}
+        ${cf.discretionaryPct > 0 ? `<div style="width:${Math.min(100, cf.discretionaryPct)}%;background:#007AFF" title="Discretionary"></div>` : ""}
+      </div>
+      ${ROW("Fixed (rent, bills, etc.)", cf.fixed, cf.fixedPct, "#FF9500")}
+      ${cf.savingsTarget > 0 ? ROW("Savings target", cf.savingsTarget, cf.savingsPct, "#34C759") : ""}
+      ${ROW("Discretionary", cf.discretionary, cf.discretionaryPct, "#007AFF")}
+      ${cf.deficit > 0 ? `
+        <div style="margin-top:10px;padding:8px 10px;background:rgba(255,59,48,0.1);border-radius:8px;font-size:12px;color:var(--red);line-height:1.4">
+          ⚠️ Fixed expenses + savings target exceed income by ${fmt$0(cf.deficit)}/mo. Reduce one or grow income to close the gap.
+        </div>
+      ` : ""}
+      ${cf.deficit === 0 && cf.income > 0 ? `
+        <div style="margin-top:8px;font-size:11px;color:var(--t3);text-align:right">
+          Savings rate: <b style="color:${cf.savingsRate >= 0.2 ? "var(--green)" : cf.savingsRate >= 0.1 ? "var(--orange)" : "var(--t2)"}">${(cf.savingsRate*100).toFixed(0)}%</b> of income survives fixed bills
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
 /* ================ WEALTH LESSONS ================
    Curated short-form lessons covering the foundational concepts an
    educated investor / financial-independence-aware adult should know.
@@ -7068,6 +7134,7 @@ function init() {
     accountPriorityPyramid, priorityPyramidSheet, togglePyramidFlag,
     computeFederalTax, taxPlanningSheet, TAX_DATA_2024,
     WEALTH_LESSONS, LESSON_CATEGORIES, learnSheet, lessonSheet, markLessonRead,
+    computeCashFlow, cashFlowCardHtml,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
