@@ -2657,6 +2657,14 @@ function renderMoney() {
           </div>
           <div class="trail chev"></div>
         </div>
+        <div class="row tappable" onclick="refinanceSheet()" role="button" tabindex="0">
+          <div class="lead">🔄</div>
+          <div class="body">
+            <div class="t1">Refinance calculator</div>
+            <div class="t2">Monthly savings · break-even · lifetime interest comparison</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
       </div>
     `;
 
@@ -5964,6 +5972,172 @@ function wealthHealthSheet() {
       <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
     </div>
   `);
+}
+
+/* ================ MORTGAGE REFINANCE CALCULATOR ================
+   Should you refinance? Compares your current loan to a hypothetical new
+   loan and tells you (a) monthly savings, (b) total interest savings,
+   (c) break-even months. Educational — get actual quotes from lenders.
+*/
+
+function computeRefi(p) {
+  // Current loan
+  const curBalance = +p.curBalance || 0;
+  const curRate = +p.curRate || 0;
+  const curRemainingYears = +p.curRemainingYears || 0;
+
+  // New loan
+  const newRate = +p.newRate || 0;
+  const newTerm = +p.newTerm || 30;
+  const closingCosts = +p.closingCosts || 0;
+  const rolledIn = !!p.rolledIn; // closing costs added to loan?
+
+  const curMonthlyPmt = monthlyPI(curBalance, curRate, curRemainingYears);
+  const newLoanAmount = curBalance + (rolledIn ? closingCosts : 0);
+  const newMonthlyPmt = monthlyPI(newLoanAmount, newRate, newTerm);
+
+  const monthlySavings = curMonthlyPmt - newMonthlyPmt;
+
+  // Total interest paid on the remaining current loan
+  const curTotalInterest = curMonthlyPmt * curRemainingYears * 12 - curBalance;
+  // Total interest on the new loan
+  const newTotalInterest = newMonthlyPmt * newTerm * 12 - newLoanAmount;
+  // Account for closing costs as part of the new cost (if paid out of pocket)
+  const newTotalCost = newTotalInterest + (rolledIn ? 0 : closingCosts);
+  const interestDelta = curTotalInterest - newTotalCost;
+
+  // Break-even months: time for monthly savings to cover closing costs
+  let breakEvenMonths = null;
+  if (monthlySavings > 0 && closingCosts > 0) {
+    breakEvenMonths = Math.ceil(closingCosts / monthlySavings);
+  } else if (monthlySavings > 0 && closingCosts === 0) {
+    breakEvenMonths = 0;
+  }
+
+  return {
+    curMonthlyPmt, newMonthlyPmt, monthlySavings,
+    curTotalInterest, newTotalInterest, newTotalCost, interestDelta,
+    breakEvenMonths, newLoanAmount,
+  };
+}
+
+function refinanceSheet() {
+  let s = {
+    curBalance: 300000,
+    curRate: 6.875,
+    curRemainingYears: 28,
+    newRate: 5.5,
+    newTerm: 30,
+    closingCosts: 6000,
+    rolledIn: false,
+  };
+
+  const render = (vals) => {
+    const r = computeRefi(vals);
+    const savings = r.monthlySavings;
+    const savingsColor = savings >= 100 ? "var(--green)" : savings >= 0 ? "var(--blue)" : "var(--red)";
+    const breakEven = r.breakEvenMonths;
+    const breakEvenLabel = breakEven === null ? "Not worth it — payment increases"
+      : breakEven === 0 ? "Immediately (no closing costs)"
+      : breakEven <= 24 ? `${breakEven} months` + (breakEven <= 12 ? " — fast" : "")
+      : breakEven <= 60 ? `${breakEven} months — moderate`
+      : `${breakEven} months — long`;
+
+    const verdictColor = breakEven === null ? "var(--red)"
+      : breakEven <= 24 && r.interestDelta > 0 ? "var(--green)"
+      : breakEven <= 48 ? "var(--blue)"
+      : "var(--orange)";
+
+    return `
+      <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+          <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Monthly savings</div>
+          <div style="font-size:11px;color:var(--t3)">Break-even: ${esc(breakEvenLabel)}</div>
+        </div>
+        <div style="font-size:30px;font-weight:700;color:${savingsColor};margin:6px 0" data-priv="amount">${savings >= 0 ? "+" : ""}${fmt$0(Math.abs(savings))}/mo</div>
+        <div style="font-size:13px;color:var(--t2)">${fmt$0(r.curMonthlyPmt)} → ${fmt$0(r.newMonthlyPmt)}</div>
+      </div>
+
+      <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px;border-left:3px solid ${verdictColor}">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Lifetime interest comparison</div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0"><span>Current loan (${vals.curRemainingYears}yr remaining @ ${vals.curRate}%)</span><span data-priv="amount">${fmt$0(r.curTotalInterest)}</span></div>
+        <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0"><span>New loan (${vals.newTerm}yr @ ${vals.newRate}%)</span><span data-priv="amount">${fmt$0(r.newTotalInterest)}</span></div>
+        ${!vals.rolledIn && vals.closingCosts > 0 ? `<div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0"><span>+ Closing costs out of pocket</span><span data-priv="amount">${fmt$0(vals.closingCosts)}</span></div>` : ""}
+        <div style="display:flex;justify-content:space-between;font-size:14px;padding:8px 0 4px;border-top:1px solid var(--sep);margin-top:6px;font-weight:600;color:${r.interestDelta>=0?"var(--green)":"var(--red)"}"><span>Net savings over loan life</span><span data-priv="amount">${r.interestDelta>=0?"+":""}${fmt$0(r.interestDelta)}</span></div>
+      </div>
+    `;
+  };
+
+  openSheet(`
+    <h2>🔄 Refinance calculator</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Should you refinance? Compares your current loan to a hypothetical new loan. Educational — get actual quotes from 3+ lenders before committing. Refi rules of thumb: rate drop of 0.75%+ usually justifies it; break-even under 24 months is great.</p>
+    <div id="rf-output">${render(s)}</div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Current loan</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rf-bal">Remaining balance</label>
+        <input id="rf-bal" type="number" min="0" step="5000" value="${s.curBalance}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:110px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rf-rate">Current rate (%)</label>
+        <input id="rf-rate" type="number" min="0" max="20" step="0.125" value="${s.curRate}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+        <label for="rf-years">Years remaining</label>
+        <input id="rf-years" type="number" min="1" max="40" step="1" value="${s.curRemainingYears}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+    </div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">New loan offer</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rf-newrate">New rate (%)</label>
+        <input id="rf-newrate" type="number" min="0" max="20" step="0.125" value="${s.newRate}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rf-newterm">New term (years)</label>
+        <select id="rf-newterm" style="background:var(--card);padding:6px 10px;border-radius:6px">
+          <option value="15" ${s.newTerm===15?"selected":""}>15</option>
+          <option value="20" ${s.newTerm===20?"selected":""}>20</option>
+          <option value="30" ${s.newTerm===30?"selected":""}>30</option>
+        </select>
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;font-size:13px">
+        <label for="rf-cc">Closing costs</label>
+        <input id="rf-cc" type="number" min="0" step="500" value="${s.closingCosts}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:100px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+        <label for="rf-rolled">Roll closing costs into loan?</label>
+        <input id="rf-rolled" type="checkbox" ${s.rolledIn?"checked":""} style="width:50px;height:30px" />
+      </div>
+    </div>
+
+    <p class="muted" style="font-size:11px;line-height:1.5">
+      <b>Refi rules of thumb:</b> Aim for a rate drop of at least 0.75 percentage points. Break-even under 2 years is great. Watch out for extending term — going from 25 years remaining to 30 years new can lower payment but raise total interest. Strongest case: rate drop + similar or shorter remaining term.
+    </p>
+
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+
+  const refresh = () => {
+    const vals = {
+      curBalance: +$("#rf-bal").value || 0,
+      curRate: +$("#rf-rate").value || 0,
+      curRemainingYears: +$("#rf-years").value || 0,
+      newRate: +$("#rf-newrate").value || 0,
+      newTerm: +$("#rf-newterm").value || 30,
+      closingCosts: +$("#rf-cc").value || 0,
+      rolledIn: !!$("#rf-rolled").checked,
+    };
+    $("#rf-output").innerHTML = render(vals);
+  };
+  ["#rf-bal","#rf-rate","#rf-years","#rf-newrate","#rf-newterm","#rf-cc","#rf-rolled"].forEach(sel => {
+    $(sel).addEventListener("input", refresh);
+    $(sel).addEventListener("change", refresh);
+  });
 }
 
 /* ================ CHARITABLE GIVING STRATEGIES ================
@@ -11063,6 +11237,7 @@ function init() {
     MONEY_TYPES, MONEY_QUIZ, scoreMoneyPersonality,
     moneyPersonalityIntroSheet, moneyPersonalityQuizSheet, moneyPersonalityResultSheet,
     GIVING_STRATEGIES, charitableGivingSheet, charitableStrategySheet,
+    computeRefi, refinanceSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
