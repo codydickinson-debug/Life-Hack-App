@@ -2767,6 +2767,14 @@ function renderMoney() {
             </div>
             <div class="trail chev"></div>
           </div>
+          <div class="row tappable" onclick="charitableGivingSheet()" role="button" tabindex="0">
+            <div class="lead">❤️</div>
+            <div class="body">
+              <div class="t1">Charitable giving strategies</div>
+              <div class="t2">${GIVING_STRATEGIES.length} tax-efficient ways to give · DAF, bunching, QCDs &amp; more</div>
+            </div>
+            <div class="trail chev"></div>
+          </div>
         </div>
       `;
     })();
@@ -5954,6 +5962,149 @@ function wealthHealthSheet() {
     ` : ""}
     <div class="actions">
       <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+/* ================ CHARITABLE GIVING STRATEGIES ================
+   Tax-efficient ways to give. For wealth-builders with both the means
+   and the motivation, the right structure can multiply impact while
+   reducing tax. Educational — talk to a CPA for your specifics.
+*/
+
+const GIVING_STRATEGIES = [
+  {
+    id: "daf",
+    emoji: "🏦",
+    title: "Donor-Advised Fund (DAF)",
+    when: "Best when itemizing + you want flexibility on WHEN to give",
+    benefit: "Deduct now, grant out over time",
+    summary: "Contribute to a DAF (Fidelity Charitable, Schwab Charitable, Vanguard, etc.). Get the full tax deduction this year. Recommend grants to qualifying charities whenever you want — months or years later. Investments inside grow tax-free.",
+    body: `**The mechanics:**\nA DAF is essentially a personal charitable foundation without the legal overhead. You contribute cash, stock, real estate, or other assets. You get a tax deduction in the year of the contribution. The money sits in the DAF, invested in your choice of funds, growing tax-free. You then "recommend grants" to any qualifying 501(c)(3) — could be tomorrow or 20 years from now.\n\n**Why it's powerful:**\n- Lets you front-load deductions in a high-income year (sale of company, big bonus, exercising options)\n- Investments grow tax-free until granted out — more goes to charity\n- Simplifies record-keeping — one contribution receipt, many grants\n- Often anonymous granting if you want\n\n**Common DAF providers + minimums:**\n- Fidelity Charitable: \$0 minimum\n- Schwab Charitable: \$0 minimum\n- Vanguard Charitable: \$25,000 minimum\n- Most have annual fees ~0.6% on assets\n\n**The downside:**\nMoney is locked into giving — can't get it back. Pick an amount you're sure you'll give away eventually.`,
+    tips: [
+      "Stack DAF contribution with bunching (combine 2-3 years of giving in one tax year)",
+      "Contribute appreciated stock — double benefit (deduction + skip cap gains)",
+      "If you're giving \$5k+/yr already, a DAF probably saves you tax",
+      "Don't let DAF balance grow indefinitely — give it out within reasonable years",
+    ],
+  },
+  {
+    id: "bunching",
+    emoji: "📅",
+    title: "Bunching donations",
+    when: "When your annual giving is below the standard deduction threshold",
+    benefit: "Get the itemized deduction every other year vs none every year",
+    summary: "Combine 2-3 years of charitable giving into one tax year to exceed the standard deduction, then take the standard deduction in off years. Same total giving, materially better tax treatment.",
+    body: `**The problem this solves:**\nStandard deduction in 2024 is \$14,600 single / \$29,200 married. If you give \$10k/yr to charity, you take the standard deduction — and your giving gets NO tax benefit.\n\n**The fix:**\nIn Year 1, give \$20k (2 years worth). Plus mortgage interest + state taxes = potentially \$30k+ deductions, beats standard.\nIn Year 2, give \$0 to charity. Take the standard deduction.\nNet: you gave \$20k over 2 years, same as before, but got real tax savings.\n\n**With a DAF:**\nBunching + DAF is the canonical combo. You contribute 2 years worth to a DAF in Year 1 (full deduction now). You make individual charity grants in BOTH years from the DAF balance. The receiving charities don't know the difference.\n\n**When this matters:**\nWorks best when your itemizable expenses (mortgage interest, state/local tax, charity, medical) are close to the standard deduction threshold. Doesn't help much if you're way under (giving + everything else < \$20k for single, < \$40k married) or way over.`,
+    tips: [
+      "Run the math: standard deduction vs itemized in normal year vs bunched year",
+      "SALT cap (\$10k) limits state/local tax deduction — affects bunching math in high-tax states",
+      "Pair with a DAF so charities receive smooth annual grants",
+      "Plan the bunching cycle — every-other-year is most common",
+    ],
+  },
+  {
+    id: "appreciated-stock",
+    emoji: "📈",
+    title: "Donate appreciated stock, not cash",
+    when: "When you have long-term appreciated investments",
+    benefit: "Skip capital gains tax + get full FMV deduction",
+    summary: "Donate stock you've held >1 year that has appreciated. You skip the capital gains tax you'd owe if you sold it AND deduct its full market value. The charity sells tax-free.",
+    body: `**The math:**\nSay you have \$10,000 of VTI you bought for \$5,000 ten years ago. You want to give \$10k to charity.\n\n**Path A: Sell, give cash**\n- Sell VTI: triggers \$5,000 capital gain → \$1,000 in cap gains tax (at 20%)\n- Net to charity: \$9,000\n- You're out: \$9,000 + the \$1,000 tax = \$10,000\n- Tax deduction: \$9,000\n\n**Path B: Donate the stock directly**\n- Charity (or DAF) sells the stock tax-free\n- Charity receives: \$10,000\n- You're out: \$10,000\n- Tax deduction: \$10,000\n\n**Net difference:** Path B = \$1,000 more to charity AND \$1,000 more in deductions. Total benefit: ~\$1,200 to \$2,000 better, depending on bracket.\n\n**Pre-requisites:**\n- Stock must be held >1 year (long-term capital gains treatment)\n- Stock must have appreciated (donate the most-appreciated lots)\n- The charity must accept stock (most do; DAFs especially love it)\n\n**Even more powerful with concentrated positions:**\nIf you have \$50k of a single stock with \$40k of gains, donating it eliminates \$40k of future tax liability. Diversify out of the position AND give in one move.`,
+    tips: [
+      "Always donate the HIGHEST-gain lots — track lot-level basis in your brokerage",
+      "Don't donate losing positions — sell, take the tax loss, then donate cash",
+      "DAFs are ideal recipient for stock — they handle the conversion + cash out",
+      "Year-end timing: brokerages slow at year-end; start the transfer by mid-December",
+    ],
+  },
+  {
+    id: "qcd",
+    emoji: "👴",
+    title: "Qualified Charitable Distribution (QCD)",
+    when: "Age 70½+ and have an IRA",
+    benefit: "Reduces taxable income AND satisfies RMDs",
+    summary: "If you're 70½+, you can transfer up to \$105,000/yr (2024) directly from a traditional IRA to charity. The distribution isn't counted as income (better than a deduction).",
+    body: `**Why this beats withdrawing then donating:**\n\nNormal path:\n- Withdraw \$50k from IRA → counts as ordinary income\n- Donate \$50k to charity → itemized deduction (only if you itemize)\n- Net: income tax on the \$50k, partially offset by deduction if itemizing\n\nQCD path:\n- \$50k transfers IRA-to-charity directly\n- NO income recognized\n- No deduction needed — you didn't have income to deduct from\n- Better in almost every case for 70½+ filers\n\n**Why it's especially valuable:**\n- Reduces AGI (adjusted gross income), which can lower:\n  - Medicare premiums (IRMAA)\n  - Taxes on Social Security benefits\n  - Net investment income tax\n  - Phase-out thresholds for other deductions\n- Satisfies Required Minimum Distributions (RMDs), which start at 73\n- Works even if you take the standard deduction\n\n**Rules:**\n- Must be 70½ or older on the date of transfer\n- Transfer must go directly from IRA custodian to qualifying charity\n- \$105,000/yr cap (per individual, 2024)\n- Doesn't apply to 401k, 403b, or Roth IRAs\n- One-time \$53k limit for QCD to certain charitable gift annuities (new rule)\n\n**Setup:**\nMost IRA custodians have a "QCD form." Or you can write a check directly from your IRA's checkwriting feature (if available).`,
+    tips: [
+      "If you're approaching 70½ and plan to give in retirement, this becomes major",
+      "Use QCDs to satisfy RMDs you don't need for living expenses",
+      "Coordinate with Social Security taxation — QCDs lower AGI, may keep SS untaxed",
+      "Roth IRA distributions are already tax-free — QCD is for Traditional only",
+    ],
+  },
+  {
+    id: "employer-match",
+    emoji: "🤝",
+    title: "Employer matching gifts",
+    when: "Almost always — most employers offer this, most employees never claim it",
+    benefit: "1:1 to 3:1 match on your charitable donations, up to annual cap",
+    summary: "Many employers will match employee charitable donations 1:1 (some up to 3:1) up to a per-employee annual cap ($1k-$25k). It's free money for charities. Most employees never submit the paperwork.",
+    body: `**The stats:**\nDouble the Donation estimates that \$4-7 BILLION in matching gift funds goes unclaimed every year. The benefit exists; people don't ask.\n\n**Who offers it:**\nMost Fortune 500 companies, many mid-sized employers, and some non-profits. Check your benefits portal or ask HR. Common providers handling the match: Benevity, Bright Funds, YourCause.\n\n**Typical match ratios:**\n- 1:1 — most common (you give \$100, employer gives \$100)\n- 2:1 or 3:1 — financial services + tech sometimes match higher\n- Caps usually \$1,000-\$25,000 per employee per year\n\n**Process:**\n1. Make your donation as usual\n2. Submit a matching gift request through your employer's portal (usually within 12 months)\n3. Employer verifies, sends match to charity\n4. Total impact: your donation × match ratio\n\n**Bonus opportunities:**\n- Volunteer hours often match too (employer donates per hour you volunteer)\n- Board service often gets cash matched\n- Disaster relief frequently has special enhanced match windows\n\n**Easiest tools:**\nDouble the Donation has a free lookup tool that shows your employer's match policy in 30 seconds.`,
+    tips: [
+      "Submit matching requests within 12 months — most employers won't honor older",
+      "Tax deduction is on YOUR \$100, not the match (the match is the employer's gift, not yours)",
+      "Stack with appreciated stock + DAF for major leverage",
+      "Most underutilized perk in corporate benefits — set a calendar reminder Q4",
+    ],
+  },
+];
+
+function charitableGivingSheet() {
+  const html = GIVING_STRATEGIES.map(s => `
+    <div class="row tappable" onclick="charitableStrategySheet(${jsAttr(s.id)})" role="button" tabindex="0">
+      <div class="lead">${s.emoji}</div>
+      <div class="body">
+        <div class="t1">${esc(s.title)}</div>
+        <div class="t2">${esc(s.benefit)}</div>
+      </div>
+      <div class="trail chev"></div>
+    </div>
+  `).join("");
+  openSheet(`
+    <h2>❤️ Charitable giving strategies</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Tax-efficient structures for giving. The right approach can multiply your impact while reducing tax — same charity gets more, you keep more.</p>
+    <div class="list">${html}</div>
+    <p class="muted" style="font-size:11px;margin-top:14px;line-height:1.5">
+      <b>The frame:</b> If you're giving anyway, give in the most efficient structure. The amount going to charity stays the same or grows — only the tax efficiency improves. Talk to a CPA for your specific situation. Anything above \$5,000-\$10,000/yr in giving probably justifies dedicated planning.
+    </p>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+function charitableStrategySheet(id) {
+  const s = GIVING_STRATEGIES.find(x => x.id === id);
+  if (!s) { charitableGivingSheet(); return; }
+  const paragraphs = s.body.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+  const bodyHtml = paragraphs.map(p => {
+    const formatted = esc(p).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
+    return `<p style="margin:0 0 12px;line-height:1.6;font-size:14px">${formatted}</p>`;
+  }).join("");
+  openSheet(`
+    <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:14px">
+      <div style="font-size:36px;line-height:1">${s.emoji}</div>
+      <div style="flex:1;min-width:0">
+        <h2 style="margin:0">${esc(s.title)}</h2>
+        <div style="font-size:12px;color:var(--t3);margin-top:4px">${esc(s.benefit)}</div>
+      </div>
+    </div>
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:4px">When to use</div>
+      <div style="font-size:13px;line-height:1.5">${esc(s.when)}</div>
+    </div>
+    <p class="muted" style="font-size:13px;margin-bottom:14px;font-style:italic">${esc(s.summary)}</p>
+    <div>${bodyHtml}</div>
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-top:14px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Tips</div>
+      <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7">
+        ${s.tips.map(t => `<li>${esc(t)}</li>`).join("")}
+      </ul>
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" onclick="closeSheet();charitableGivingSheet()">← All strategies</button>
+      <button class="btn" onclick="closeSheet()">Got it</button>
     </div>
   `);
 }
@@ -10911,6 +11062,7 @@ function init() {
     computeSpendingByCategory, spendingBreakdownSheet, CATEGORY_COLORS,
     MONEY_TYPES, MONEY_QUIZ, scoreMoneyPersonality,
     moneyPersonalityIntroSheet, moneyPersonalityQuizSheet, moneyPersonalityResultSheet,
+    GIVING_STRATEGIES, charitableGivingSheet, charitableStrategySheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
