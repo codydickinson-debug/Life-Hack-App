@@ -1128,6 +1128,8 @@ const DEFAULT_DB = {
   allocations: [],
   dismissedBills: {},
   pendingDeposits: [],
+  dismissedDeposits: [],     // plaid_ids of deposits the user explicitly Skipped — prevents re-surfacing on next sync
+
   spendSearch: "",
   holdings: [],              // [{account_id, ticker, name, type, quantity, institution_value, cost_basis}]
   debtMeta: {},              // { account_id: { apr, minPayment } }
@@ -1182,6 +1184,10 @@ const greet = () => {
 };
 const clamp = (n,a,b)=>Math.max(a,Math.min(b,n));
 const esc = (s) => String(s||"").replace(/[&<>"']/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" })[c]);
+// jsAttr: safely embed an untrusted value as a JS string literal inside an HTML attribute.
+// Use as:  onclick="foo(${jsAttr(value)})"  — no surrounding quotes; jsAttr provides them.
+// JSON.stringify produces a valid JS string literal; esc() then makes it safe inside the attribute.
+const jsAttr = (s) => esc(JSON.stringify(String(s == null ? "" : s)));
 
 const COLORS = ["#34C759","#007AFF","#5856D6","#AF52DE","#FF9500","#FFCC00","#FF2D55","#5AC8FA"];
 const HABIT_EMOJIS = ["💪","🧘","📖","💧","🥗","🏃","💤","📵","🙏","💰","💸","📚","✍️","🎯","☀️","🌙","🧠","⏰","🚿","🦷"];
@@ -1313,12 +1319,17 @@ async function _apiRaw(path, opts = {}) {
   const text = await r.text();
   let body; try { body = JSON.parse(text); } catch { body = { raw: text }; }
   if (!r.ok) {
-    // If our cached secret was rejected, drop it so the next call re-enrolls.
-    if (r.status === 401 && DB.user.clientSecret) {
+    // If our cached secret was rejected by the worker, drop it so the next call re-enrolls.
+    // BUT: the /anthropic/* endpoint passes Anthropic's status code through verbatim, so a
+    // bad Anthropic key also returns 401 — we must NOT clear our clientSecret in that case.
+    // Worker auth errors return body.error as a string; Anthropic passthroughs are objects.
+    const isWorkerAuthFailure = r.status === 401
+      && !path.startsWith("/anthropic")
+      && typeof body.error === "string";
+    if (isWorkerAuthFailure && DB.user.clientSecret) {
       DB.user.clientSecret = "";
       try { await save(); } catch {}
     }
-    // body.error can be a string (our worker) or {type, message} (Anthropic passthrough).
     const errMsg = (typeof body.error === "string"
       ? body.error
       : body.error && body.error.message) || `HTTP ${r.status}`;
@@ -1664,7 +1675,7 @@ function addGoalSheet(existing) {
     </select>
     ${isEdit ? `
       <div style="margin-top:6px">
-        <button class="btn secondary" style="width:100%;font-size:13px" onclick="closeSheet();pickGoalParentSheet('${esc(g.id)}')">${g.parentId ? "🔗 Linked to a bigger goal" : "🔗 Link to a bigger goal"}</button>
+        <button class="btn secondary" style="width:100%;font-size:13px" onclick="closeSheet();pickGoalParentSheet(${jsAttr(g.id)})">${g.parentId ? "🔗 Linked to a bigger goal" : "🔗 Link to a bigger goal"}</button>
       </div>` : ""}
     <div class="actions">
       ${isEdit ? `<button class="btn danger" onclick="if(confirm('Delete goal?')){deleteGoal('${g.id}');closeSheet();}">Delete</button>` : ""}
@@ -1932,7 +1943,7 @@ function renderToday() {
                   <div class="t1">${esc(b.merchant)} <span class="muted" style="font-weight:400" data-priv="amount">${fmt$0(b.avg_amount)}</span></div>
                   <div class="t2" style="color:${color}">${label} · ${b.next_predicted}</div>
                 </div>
-                <button class="btn sm secondary" style="font-size:11px;padding:4px 8px" onclick="dismissBill('${esc(b.key)}','${esc(b.next_predicted)}')">Dismiss</button>
+                <button class="btn sm secondary" style="font-size:11px;padding:4px 8px" onclick="dismissBill(${jsAttr(b.key)},${jsAttr(b.next_predicted)})">Dismiss</button>
               </div>
             `;
           }).join("")}
@@ -2316,7 +2327,7 @@ function renderMoney() {
                   <div class="t1">${esc(s.merchant)} <span class="muted" style="font-weight:400">${fmt$0(s.avg_amount)}/${s.frequency==="monthly"?"mo":s.frequency==="yearly"?"yr":s.frequency==="weekly"?"wk":s.frequency.slice(0,2)}</span></div>
                   <div class="t2">${s.occurrences}× · last ${s.last_charge_date} · next ~${s.next_predicted}${s.frequency!=="monthly"?` · ${fmt$0(s.monthly_cost)}/mo`:""}</div>
                 </div>
-                <button class="btn sm secondary" style="font-size:11px;padding:4px 8px" onclick="setSubscriptionStatus('${esc(s.key)}','ignored')">Hide</button>
+                <button class="btn sm secondary" style="font-size:11px;padding:4px 8px" onclick="setSubscriptionStatus(${jsAttr(s.key)},'ignored')">Hide</button>
               </div>
             `).join("")}
           </div>
@@ -2343,7 +2354,7 @@ function renderMoney() {
               <div class="t1">${esc(t.category)} <span class="amt" style="${(+t.amount)<0?'color:var(--green)':''}">${(+t.amount)<0?'+':''}${fmt$0(Math.abs(+t.amount||0))}</span>${t.pending ? ` <span class="muted" style="font-size:11px">pending</span>` : ""}${t._ruleId ? ` <span class="muted" style="font-size:10px;background:var(--bg-elev);padding:2px 6px;border-radius:6px">rule</span>` : ""}</div>
               <div class="t2">${t.date}${t.note?' · '+esc(t.note):''}</div>
             </div>
-            ${t.source === "plaid" ? `<button class="del-x" style="font-size:14px" onclick="quickRuleFromTx('${t.id}')" title="Recategorize">↻</button>` : `<button class="del-x" onclick="deleteSpend('${t.id}')">×</button>`}
+            ${t.source === "plaid" ? `<button class="del-x" style="font-size:14px" onclick="quickRuleFromTx(${jsAttr(t.id)})" title="Recategorize">↻</button>` : `<button class="del-x" onclick="deleteSpend(${jsAttr(t.id)})">×</button>`}
           </div>
         `).join("") : `<div class="row"><div class="body"><div class="t2 muted">${(DB.spendSearch||"").trim() ? "No matches." : "No transactions yet."}</div></div></div>`}
       </div>
@@ -2651,7 +2662,7 @@ function renderSettings() {
           <div class="row">
             <div class="lead">🏦</div>
             <div class="body"><div class="t1">${esc(it.institution_name)}</div><div class="t2">Last sync: ${it.last_sync_at ? new Date(it.last_sync_at).toLocaleString() : "—"}</div></div>
-            <button class="del-x" onclick="if(confirm('Disconnect ${esc(it.institution_name)}?')) disconnectItem('${esc(it.item_id)}')">×</button>
+            <button class="del-x" onclick="if(confirm('Disconnect '+${jsAttr(it.institution_name)}+'?')) disconnectItem(${jsAttr(it.item_id)})">×</button>
           </div>
         `).join("")}
       </div>
@@ -2768,13 +2779,13 @@ function renderSettings() {
     <div class="section-h"><span class="lbl">Recurring transactions</span><button class="act" onclick="addRecurringSheet()">+ Add</button></div>
     <div class="list">
       ${(DB.recurring||[]).length ? DB.recurring.map(r => `
-        <div class="row tappable recurring-row" onclick="addRecurringSheet(DB.recurring.find(x=>x.id==='${esc(r.id)}'))">
+        <div class="row tappable recurring-row" onclick="addRecurringSheet(DB.recurring.find(x=>x.id===${jsAttr(r.id)}))">
           <div class="lead">${r.kind === 'income' ? '💵' : '🔁'}</div>
           <div class="body">
             <div class="t1">${esc(r.name)} <span class="muted" style="font-weight:400" data-priv="amount">${fmt$0(r.amount)}</span></div>
             <div class="t2">${r.cadence} · ${esc(r.category)} · day ${r.dayOfMonth}</div>
           </div>
-          <button class="del-x" onclick="event.stopPropagation();if(confirm('Delete?'))deleteRecurring('${esc(r.id)}')">×</button>
+          <button class="del-x" onclick="event.stopPropagation();if(confirm('Delete?'))deleteRecurring(${jsAttr(r.id)})">×</button>
         </div>
       `).join("") : `<div class="row"><div class="body"><div class="t2 muted">Add rent, subscriptions, paycheck, etc. — used to compute Safe-to-spend.</div></div></div>`}
     </div>
@@ -2828,8 +2839,8 @@ function renderSettings() {
           <div class="rf-date">${esc(r.date)}</div>
           <div class="rf-text">${esc(r.text.length>180?r.text.slice(0,180)+'…':r.text)}</div>
           <div class="rf-actions">
-            <button onclick="addReflectionSheet(DB.reflections.find(x=>x.id==='${esc(r.id)}'))">Edit</button>
-            <button onclick="if(confirm('Delete reflection?'))deleteReflection('${esc(r.id)}')">Delete</button>
+            <button onclick="addReflectionSheet(DB.reflections.find(x=>x.id===${jsAttr(r.id)}))">Edit</button>
+            <button onclick="if(confirm('Delete reflection?'))deleteReflection(${jsAttr(r.id)})">Delete</button>
           </div>
         </div>
       `).join("") || `<div class="row"><div class="body"><div class="t2 muted">A short note each day. They compound. Encrypted with the rest of your data.</div></div></div>`}
@@ -2951,8 +2962,28 @@ function importData() {
       const txt = await f.text();
       const obj = JSON.parse(txt);
       if (!obj || typeof obj !== "object") throw new Error("bad file");
-      DB = Object.assign(clone(DEFAULT_DB), obj);
-      save(); applyTheme(); render(); toast("Imported");
+      // Confirm before clobbering — this overwrites the entire DB.
+      if (!confirm("This will REPLACE all your current data with the contents of '" + f.name + "'.\n\nA backup of your current data will download first. Continue?")) {
+        return;
+      }
+      // Auto-download a backup of current state before replacing.
+      try {
+        const cur = JSON.stringify(DB, null, 2);
+        const url = URL.createObjectURL(new Blob([cur], { type: "application/json" }));
+        const a = document.createElement("a");
+        a.href = url; a.download = `ascend-pre-import-${todayKey()}.json`;
+        document.body.appendChild(a); a.click(); a.remove();
+        URL.revokeObjectURL(url);
+      } catch (e) { /* don't block import on backup failure */ }
+      // Build merged DB: start from DEFAULT_DB, then deep-merge settings/user/budget so
+      // partial imports don't wipe sibling fields. Top-level arrays/objects are replaced wholesale.
+      const fresh = clone(DEFAULT_DB);
+      const merged = Object.assign(fresh, obj);
+      if (obj.settings && typeof obj.settings === "object") merged.settings = Object.assign({}, fresh.settings, obj.settings);
+      if (obj.user     && typeof obj.user     === "object") merged.user     = Object.assign({}, fresh.user, obj.user);
+      if (obj.budget   && typeof obj.budget   === "object") merged.budget   = Object.assign({}, fresh.budget, obj.budget);
+      DB = merged;
+      await save(); applyTheme(); render(); toast("Imported");
     } catch (e) { alert("Could not import: "+e.message); }
   };
   inp.click();
@@ -3141,14 +3172,14 @@ function reviewIncomeSheet(deposit) {
         <div class="row"><div class="lead">💵</div><div class="body"><div class="t1">Stays in checking</div><div class="t2">After allocations</div></div><div class="trail" style="font-weight:600">${fmt$0(remaining)}</div></div>
       </div>
       <div class="actions">
-        <button class="btn secondary" onclick="dismissPendingDeposit('${esc(deposit.plaid_id)}');closeSheet()">Skip</button>
+        <button class="btn secondary" onclick="dismissPendingDeposit(${jsAttr(deposit.plaid_id)});closeSheet()">Skip</button>
         <button class="btn" id="dep-confirm">Apply allocations</button>
       </div>
     ` : `
       <p class="muted" style="font-size:13px">No allocation rules yet. Set them in Settings → Paycheck allocations.</p>
       <div class="actions">
-        <button class="btn secondary" onclick="dismissPendingDeposit('${esc(deposit.plaid_id)}');closeSheet()">Got it</button>
-        <button class="btn" onclick="dismissPendingDeposit('${esc(deposit.plaid_id)}');closeSheet();showTab('settings')">Set up rules</button>
+        <button class="btn secondary" onclick="dismissPendingDeposit(${jsAttr(deposit.plaid_id)});closeSheet()">Got it</button>
+        <button class="btn" onclick="dismissPendingDeposit(${jsAttr(deposit.plaid_id)});closeSheet();showTab('settings')">Set up rules</button>
       </div>
     `}
   `);
@@ -3170,6 +3201,12 @@ function reviewIncomeSheet(deposit) {
 }
 function dismissPendingDeposit(plaidId) {
   DB.pendingDeposits = (DB.pendingDeposits||[]).filter(d => d.plaid_id !== plaidId);
+  // Persist the dismissal so the next sync doesn't re-surface the same paycheck.
+  // processSyncedDeposits() reads this set to skip already-handled deposits.
+  DB.dismissedDeposits = DB.dismissedDeposits || [];
+  if (!DB.dismissedDeposits.includes(plaidId)) DB.dismissedDeposits.push(plaidId);
+  // Cap the list so it doesn't grow forever — keep the most recent 500 dismissals.
+  if (DB.dismissedDeposits.length > 500) DB.dismissedDeposits = DB.dismissedDeposits.slice(-500);
   save(); render();
 }
 function processSyncedDeposits() {
@@ -3923,9 +3960,10 @@ function setupPassphraseSheet() {
     <h2>Set a passphrase</h2>
     <p class="muted" style="margin-bottom:14px;font-size:13px">Encrypts all data on this phone. If you forget it, your data is unrecoverable — there's no reset link. Make it memorable.</p>
     <label>Passphrase</label>
-    <input id="pp-1" type="password" placeholder="At least 4 characters" autofocus />
+    <input id="pp-1" type="password" placeholder="At least 10 characters" autofocus />
     <label>Confirm</label>
     <input id="pp-2" type="password" placeholder="Type it again" />
+    <p class="muted" style="font-size:12px;margin-top:6px">Tip: 4 random words is stronger and easier to remember than a short complex one.</p>
     <div class="actions">
       <button class="btn secondary" onclick="closeSheet()">Cancel</button>
       <button class="btn" id="pp-save">Enable</button>
@@ -3933,7 +3971,7 @@ function setupPassphraseSheet() {
   `);
   $("#pp-save").addEventListener("click", async () => {
     const a = $("#pp-1").value, b = $("#pp-2").value;
-    if (!a || a.length < 4) { toast("Min 4 chars"); return; }
+    if (!a || a.length < 10) { toast("Min 10 characters"); return; }
     if (a !== b) { toast("Passphrases don't match"); return; }
     try { await setPassphrase(a); closeSheet(); render(); toast("Encryption on"); }
     catch (e) { toast(e.message); }
@@ -3964,7 +4002,8 @@ function changePassphraseSheet() {
   `);
   $("#pp-save").addEventListener("click", async () => {
     const a = $("#pp-1").value, b = $("#pp-2").value;
-    if (!a || a.length < 4 || a !== b) { toast("Invalid"); return; }
+    if (!a || a.length < 10) { toast("Min 10 characters"); return; }
+    if (a !== b) { toast("Passphrases don't match"); return; }
     try { await setPassphrase(a); closeSheet(); toast("Updated"); }
     catch (e) { toast(e.message); }
   });
