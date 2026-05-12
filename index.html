@@ -5962,6 +5962,88 @@ function topStreaks(n) {
    and 2-3 daily goals (linked to short-term). All saved in one tap.
 */
 const GOAL_TEMPLATES = [
+  // === Wealth-building (priority for the Ascend audience) ===
+  {
+    emoji: "\u{1F4B0}", title: "Build emergency fund",
+    sub: "Safety net → monthly contribution → daily action",
+    tree: {
+      life:  { title: "Hold 3-6 months of expenses in cash", note: "True financial peace of mind. Layoffs feel inconvenient, not catastrophic." },
+      short: { title: "Add $500 to emergency fund this month", note: "Auto-transfer on payday — out of sight, out of mind." },
+      daily: [
+        { title: "Move spare change/cash to savings", note: "" },
+        { title: "Log every dollar I spent today", note: "Awareness first, change second." },
+      ],
+    }
+  },
+  {
+    emoji: "\u{1F3AF}", title: "Max your Roth IRA this year",
+    sub: "Annual cap → monthly contribution → daily habit",
+    tree: {
+      life:  { title: "Build tax-free retirement wealth", note: "Roth IRA grows tax-free forever — best account in personal finance." },
+      short: { title: "Contribute $583/month this year", note: "$583 × 12 = $7,000 = full 2026 IRA cap. Auto-transfer." },
+      daily: [
+        { title: "Skip one impulse buy today", note: "$10-30 saved compounds for 30+ years." },
+      ],
+    }
+  },
+  {
+    emoji: "\u{1F3DB}\u{FE0F}", title: "Save my first $10,000",
+    sub: "Wealth foundation → monthly target → daily habit",
+    tree: {
+      life:  { title: "Hit my first $10k saved", note: "The hardest $10k. Where compound growth starts mattering." },
+      short: { title: "Save $834 this month", note: "$10k over 12 months. Auto-transfer the day after payday." },
+      daily: [
+        { title: "Log all spending today", note: "Can't optimize what you don't measure." },
+        { title: "Skip one optional purchase", note: "Redirect that money to savings." },
+      ],
+    }
+  },
+  {
+    emoji: "\u{1F4B8}", title: "Reach $100k net worth",
+    sub: "Compound's tipping point → quarterly milestone → daily action",
+    tree: {
+      life:  { title: "Hit $100k net worth", note: "Charlie Munger: 'The first $100k is a bitch — after that, money compounds for you.'" },
+      short: { title: "Grow net worth $2,000 this month", note: "Mix of saving + investing + debt paydown. Track via the Wealth dashboard." },
+      daily: [
+        { title: "No new debt today", note: "Don't add to the wrong side of the ledger." },
+        { title: "Move spare cash to savings or investing", note: "" },
+      ],
+    }
+  },
+  {
+    emoji: "\u{1F3E0}", title: "Save for house down payment",
+    sub: "Long-term goal → quarterly milestone → daily habit",
+    tree: {
+      life:  { title: "Buy a home with 20% down", note: "Avoids PMI, lowers payment, better mortgage rate. Worth the wait." },
+      short: { title: "Save $2,500 this month toward down payment", note: "Separate HYSA so it's untouchable." },
+      daily: [
+        { title: "Cook at home (no dining out)", note: "$30-50 saved daily compounds into the down payment." },
+      ],
+    }
+  },
+  {
+    emoji: "\u{1F4DA}", title: "Pay off student loans",
+    sub: "Debt-free → monthly payoff → daily mindset",
+    tree: {
+      life:  { title: "Become student-loan-free", note: "Choose avalanche (highest APR first) or snowball (smallest first). Pick one and commit." },
+      short: { title: "Extra $300 to highest-APR loan this month", note: "On top of minimums. Every extra dollar saves interest." },
+      daily: [
+        { title: "Track today's spending", note: "Find $10 to redirect to the loan." },
+      ],
+    }
+  },
+  {
+    emoji: "\u{1F4C8}", title: "Start investing",
+    sub: "Long-term wealth → monthly habit → daily learning",
+    tree: {
+      life:  { title: "Become a consistent index investor", note: "Time in market beats timing the market. Boring index funds win." },
+      short: { title: "Open a brokerage and auto-invest $200/mo", note: "Fidelity, Schwab, or Vanguard. VTI or VOO. Set, forget, keep adding." },
+      daily: [
+        { title: "Read about investing for 15 minutes", note: "Bogleheads, JL Collins, or any low-cost-index resource." },
+      ],
+    }
+  },
+  // === Lifestyle & habit ===
   {
     emoji: "\u{1F69B}", title: "Save for a vehicle",
     sub: "Big save → monthly milestones → daily habit",
@@ -6007,17 +6089,6 @@ const GOAL_TEMPLATES = [
       daily: [
         { title: "No new credit card spend today", note: "" },
         { title: "Log spend so I can’t hide", note: "" },
-      ],
-    }
-  },
-  {
-    emoji: "\u{1F4B0}", title: "Build emergency fund",
-    sub: "Safety net → monthly contribution → daily action",
-    tree: {
-      life:  { title: "Hold 6 months of expenses in cash", note: "True financial peace of mind." },
-      short: { title: "Add $500 to emergency fund this month", note: "Auto-transfer on payday." },
-      daily: [
-        { title: "Move spare change to savings", note: "" },
       ],
     }
   },
