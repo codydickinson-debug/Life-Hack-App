@@ -2456,12 +2456,34 @@ function renderMoney() {
       `;
     })();
 
+    // Tax planning summary — quick read on marginal/effective rate.
+    const taxSummary = (() => {
+      const profile = DB.profile || {};
+      const annualInc = _playsMonthlyIncome() * 12;
+      if (annualInc <= 0) return "";
+      const r = computeFederalTax(annualInc, profile.filingStatus || "single");
+      return `
+        <div class="section-h"><span class="lbl">🧾 Taxes</span></div>
+        <div class="list">
+          <div class="row tappable" onclick="taxPlanningSheet()" role="button" tabindex="0">
+            <div class="lead">📊</div>
+            <div class="body">
+              <div class="t1" data-priv="amount">${fmt$0(r.tax)} federal tax estimate</div>
+              <div class="t2">${(r.marginalRate*100).toFixed(0)}% marginal · ${(r.effectiveRate*100).toFixed(1)}% effective · ${fmt$0(annualInc)} gross</div>
+            </div>
+            <div class="trail chev"></div>
+          </div>
+        </div>
+      `;
+    })();
+
     body = `
       ${healthCard}
       ${chartCard}
       ${compBar}
       ${pyramidSummary}
       ${retireSummary}
+      ${taxSummary}
 
       <div class="section-h"><span class="lbl">Manual assets</span><button class="act" onclick="assetSheet()">+ Add</button></div>
       <div class="list">
@@ -5554,6 +5576,159 @@ function wealthHealthSheet() {
   `);
 }
 
+/* ================ TAX PLANNING ================
+   Federal income tax bracket calculator + contribution-savings projector.
+   Educational, not advice. State taxes vary widely and aren't modeled in v1.
+
+   Brackets and standard deductions are 2024 IRS numbers — close enough for
+   2025-2026 planning given typical year-over-year inflation adjustments
+   (~2-3%). Update annually for accuracy.
+*/
+const TAX_DATA_2024 = {
+  brackets: {
+    // [top of bracket, marginal rate]. Last bracket has Infinity as top.
+    single: [
+      [11600, 0.10], [47150, 0.12], [100525, 0.22], [191950, 0.24],
+      [243725, 0.32], [609350, 0.35], [Infinity, 0.37],
+    ],
+    married: [
+      [23200, 0.10], [94300, 0.12], [201050, 0.22], [383900, 0.24],
+      [487450, 0.32], [731200, 0.35], [Infinity, 0.37],
+    ],
+    hoh: [
+      [16550, 0.10], [63100, 0.12], [100500, 0.22], [191950, 0.24],
+      [243700, 0.32], [609350, 0.35], [Infinity, 0.37],
+    ],
+  },
+  stdDeduction: {
+    single: 14600,
+    married: 29200,
+    hoh: 21900,
+  },
+};
+
+function computeFederalTax(grossIncome, filingStatus) {
+  const fs = (filingStatus === "married" || filingStatus === "hoh") ? filingStatus : "single";
+  const brackets = TAX_DATA_2024.brackets[fs];
+  const stdDed = TAX_DATA_2024.stdDeduction[fs];
+  const taxable = Math.max(0, grossIncome - stdDed);
+  let tax = 0;
+  let lastTop = 0;
+  let marginalRate = brackets[0][1];
+  const breakdown = []; // for the bracket detail UI
+  for (const [top, rate] of brackets) {
+    if (taxable <= 0) break;
+    if (taxable > top) {
+      const slice = top - lastTop;
+      tax += slice * rate;
+      breakdown.push({ top, rate, slice, taxOwed: slice * rate });
+      lastTop = top;
+      marginalRate = rate;
+    } else {
+      const slice = taxable - lastTop;
+      if (slice > 0) {
+        tax += slice * rate;
+        breakdown.push({ top: taxable, rate, slice, taxOwed: slice * rate });
+      }
+      marginalRate = rate;
+      break;
+    }
+  }
+  const effectiveRate = grossIncome > 0 ? tax / grossIncome : 0;
+  return { tax, taxable, stdDed, marginalRate, effectiveRate, breakdown, filingStatus: fs };
+}
+
+function taxPlanningSheet() {
+  const profile = DB.profile || {};
+  const monthlyIncome = _playsMonthlyIncome();
+  const annualFromMonthly = monthlyIncome * 12;
+  // Seed with annual income from monthly budget if available; user can override.
+  let income = annualFromMonthly > 0 ? annualFromMonthly : 60000;
+  let filing = profile.filingStatus || "single";
+
+  const renderBody = (inc, fs) => {
+    const r = computeFederalTax(inc, fs);
+    const bracketsHtml = r.breakdown.map(b => {
+      const topLabel = b.top === Infinity ? "+" : fmt$0(b.top);
+      return `
+        <div style="display:flex;justify-content:space-between;font-size:12px;padding:4px 0">
+          <span>${(b.rate*100).toFixed(0)}% up to ${topLabel}</span>
+          <span style="color:var(--t3)">${fmt$0(b.slice)} × ${(b.rate*100).toFixed(0)}% = ${fmt$0(b.taxOwed)}</span>
+        </div>
+      `;
+    }).join("");
+    // Tax savings from common contributions at this marginal rate
+    const examples = [
+      { label: "Contribute $7,000 to 401k", amount: 7000 },
+      { label: "Max Roth IRA ($7,000)", amount: 7000, note: "Roth is post-tax — no current-year deduction, but tax-free growth" },
+      { label: "Max HSA ($4,150 single / $8,300 family)", amount: 4150 },
+      { label: "Contribute $1,000 to 401k", amount: 1000 },
+    ];
+    return `
+      <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Estimated federal tax</div>
+        <div style="font-size:32px;font-weight:700;letter-spacing:-.5px;margin:6px 0" data-priv="amount">${fmt$0(r.tax)}</div>
+        <div style="font-size:12px;color:var(--t2);line-height:1.6">
+          Marginal rate: <b>${(r.marginalRate*100).toFixed(0)}%</b> · Effective rate: <b>${(r.effectiveRate*100).toFixed(1)}%</b><br>
+          Std deduction: ${fmt$0(r.stdDed)} · Taxable income: ${fmt$0(r.taxable)}
+        </div>
+      </div>
+      <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Bracket breakdown</div>
+        ${bracketsHtml || `<div style="font-size:13px;color:var(--t3)">No taxable income at this level</div>`}
+      </div>
+      <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Contribution tax savings (at ${(r.marginalRate*100).toFixed(0)}% marginal)</div>
+        ${examples.filter(e => !e.note || e.note.indexOf("Roth") === -1 || true).map(e => {
+          const saved = e.amount * r.marginalRate;
+          return `
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;font-size:13px;padding:6px 0;border-top:1px solid var(--sep)">
+              <div style="flex:1;padding-right:8px">
+                <div>${esc(e.label)}</div>
+                ${e.note ? `<div style="font-size:11px;color:var(--t3);margin-top:2px">${esc(e.note)}</div>` : `<div style="font-size:11px;color:var(--t3);margin-top:2px">Saves ${fmt$0(saved)} in federal tax this year</div>`}
+              </div>
+              <div style="font-weight:600;color:${e.note ? "var(--t3)" : "var(--green)"}" data-priv="amount">${e.note ? "$0" : "-" + fmt$0(saved)}</div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  };
+
+  openSheet(`
+    <h2>🧾 Tax planning</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Federal income tax estimate with marginal vs effective rate and tax-saving impact of contributions. 2024 brackets — close enough for ${new Date().getFullYear()} planning. State taxes not included.</p>
+    <div id="tax-output">${renderBody(income, filing)}</div>
+    <div style="background:var(--card);border-radius:var(--r);padding:14px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Inputs</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="tax-income">Annual gross income</label>
+        <input id="tax-income" type="number" min="0" step="1000" value="${Math.round(income)}" style="background:var(--bg-elev);padding:6px 10px;border-radius:6px;width:110px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+        <label for="tax-filing">Filing status</label>
+        <select id="tax-filing" style="background:var(--bg-elev);padding:6px 10px;border-radius:6px">
+          <option value="single"  ${filing==="single" ?"selected":""}>Single</option>
+          <option value="married" ${filing==="married"?"selected":""}>Married jointly</option>
+          <option value="hoh"     ${filing==="hoh"    ?"selected":""}>Head of household</option>
+        </select>
+      </div>
+      ${monthlyIncome > 0 ? `<p class="muted" style="font-size:11px;margin-top:10px">Seeded from your budget income (${fmt$0(monthlyIncome)}/mo × 12 = ${fmt$0(annualFromMonthly)}). Override here to project a raise or side income.</p>` : ""}
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+
+  const refresh = () => {
+    const inc = +$("#tax-income").value || 0;
+    const fs = $("#tax-filing").value;
+    $("#tax-output").innerHTML = renderBody(inc, fs);
+  };
+  $("#tax-income").addEventListener("input", refresh);
+  $("#tax-filing").addEventListener("change", refresh);
+}
+
 /* ================ ACCOUNT-PRIORITY PYRAMID ================
    The canonical FI-community priority order for where each dollar should
    go. Computed against DB + DB.profile; surfaces the next step the user
@@ -6717,6 +6892,7 @@ function init() {
     daysUntil, dayLabel,
     computeWealthHealth, wealthHealthLabel, wealthHealthSheet,
     accountPriorityPyramid, priorityPyramidSheet, togglePyramidFlag,
+    computeFederalTax, taxPlanningSheet, TAX_DATA_2024,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
