@@ -1355,10 +1355,21 @@ async function _enrollDevice() {
   return secret;
 }
 
+// Coalesce concurrent enrollment attempts so two simultaneous api() calls
+// (e.g. auto-sync on open + user-tapped Connect bank) share the same enrollment
+// instead of each minting their own secret and racing on the server.
+let _enrollInFlight = null;
+function _ensureEnrolled() {
+  if (DB.user.clientSecret) return Promise.resolve();
+  if (_enrollInFlight) return _enrollInFlight;
+  _enrollInFlight = _enrollDevice().finally(() => { _enrollInFlight = null; });
+  return _enrollInFlight;
+}
+
 async function api(path, opts = {}) {
   if (!DB.settings.backendUrl) throw new Error("Backend URL not configured");
   ensureUserId();
-  if (!DB.user.clientSecret) await _enrollDevice();
+  if (!DB.user.clientSecret) await _ensureEnrolled();
   const headers = Object.assign({
     "Authorization": "Bearer " + DB.user.userId + ":" + DB.user.clientSecret,
     "Content-Type": "application/json",
@@ -1368,7 +1379,7 @@ async function api(path, opts = {}) {
   } catch (e) {
     // _apiRaw clears clientSecret on 401; retry once to silently re-enroll.
     if (!DB.user.clientSecret && DB.settings.apiKey) {
-      await _enrollDevice();
+      await _ensureEnrolled();
       const headers2 = Object.assign({
         "Authorization": "Bearer " + DB.user.userId + ":" + DB.user.clientSecret,
         "Content-Type": "application/json",
@@ -1598,7 +1609,7 @@ function addHabitSheet(existing) {
     $$(".emoji-pick", $("#h-emoji")).forEach(x => x.classList.remove("sel"));
     b.classList.add("sel");
   });
-  $("#h-save").addEventListener("click", () => {
+  $("#h-save").addEventListener("click", async () => {
     const name = $("#h-name").value.trim();
     if (!name) { toast("Add a name"); return; }
     const emoji = $$(".emoji-pick.sel", $("#h-emoji"))[0]?.dataset.e || "💪";
@@ -1611,7 +1622,7 @@ function addHabitSheet(existing) {
     } else {
       DB.habits.push({ id: uid(), name, emoji, type, target, unit, group, color: COLORS[DB.habits.length % COLORS.length], createdAt: Date.now(), log: {} });
     }
-    save(); closeSheet(); render();
+    await save(); closeSheet(); render();
   });
 }
 
@@ -1683,7 +1694,7 @@ function addGoalSheet(existing) {
       <button class="btn" id="g-save">${isEdit?'Save':'Add'}</button>
     </div>
   `);
-  $("#g-save").addEventListener("click", () => {
+  $("#g-save").addEventListener("click", async () => {
     const title = $("#g-title").value.trim();
     if (!title) { toast("Add a title"); return; }
     const note = $("#g-note").value.trim();
@@ -1694,7 +1705,7 @@ function addGoalSheet(existing) {
       DB.goals.push({ id: uid(), title, note, tier, steps: [], done: false, createdAt: Date.now() });
       activeTier = tier;
     }
-    save(); closeSheet(); render();
+    await save(); closeSheet(); render();
   });
 }
 
@@ -1740,7 +1751,7 @@ function addSavingSheet(existing) {
     $$(".color-pick", $("#s-color")).forEach(x => x.classList.remove("sel"));
     b.classList.add("sel");
   });
-  $("#s-save").addEventListener("click", () => {
+  $("#s-save").addEventListener("click", async () => {
     const name = $("#s-name").value.trim();
     if (!name) { toast("Add a name"); return; }
     const emoji = $$(".emoji-pick.sel", $("#s-emoji"))[0]?.dataset.e || "💰";
@@ -1752,7 +1763,7 @@ function addSavingSheet(existing) {
     } else {
       DB.savings.push({ id: uid(), name, emoji, color, current, target, log: [] });
     }
-    save(); closeSheet(); render();
+    await save(); closeSheet(); render();
   });
 }
 function logSavingSheet(id) {
@@ -1769,12 +1780,12 @@ function logSavingSheet(id) {
     </div>
     <p class="muted" style="margin-top:14px;font-size:13px">Current: <b>${fmt$0(s.current)}</b> of ${fmt$0(s.target)}</p>
   `);
-  $("#ls-save").addEventListener("click", () => {
+  $("#ls-save").addEventListener("click", async () => {
     const a = Number($("#ls-amt").value);
     if (!a) { toast("Enter amount"); return; }
     s.current = Math.max(0, (+s.current||0) + a);
     s.log.push({ date: todayKey(), amount: a, note: $("#ls-note").value.trim() });
-    save(); closeSheet(); render(); toast((a>0?"+":"")+fmt$0(a));
+    await save(); closeSheet(); render(); toast((a>0?"+":"")+fmt$0(a));
   });
 }
 
@@ -3108,19 +3119,76 @@ function quickRuleFromTx(spendId) {
 }
 
 /* ================ UPCOMING BILLS ================ */
-function upcomingBills(daysAhead = 7) {
-  const subs = detectSubscriptions().filter(s => s.status === "active");
+// Compute the next occurrence of a user-managed recurring item.
+// - monthly: next dayOfMonth (clamped to 28 to dodge Feb edge cases)
+// - yearly:  same month/day as createdAt, next year if past
+// - weekly/biweekly: step forward from createdAt by 7/14d until >= today
+function nextRecurringDate(r) {
   const today = new Date();
-  const todayK = todayKey();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
+  if (r.cadence === "monthly") {
+    const day = Math.max(1, Math.min(28, +r.dayOfMonth || 1));
+    const d = new Date(today.getFullYear(), today.getMonth(), day);
+    if (d < todayStart) d.setMonth(d.getMonth() + 1);
+    return d;
+  }
+  if (r.cadence === "yearly") {
+    const ref = new Date(r.createdAt || Date.now());
+    const d = new Date(today.getFullYear(), ref.getMonth(), ref.getDate());
+    if (d < todayStart) d.setFullYear(d.getFullYear() + 1);
+    return d;
+  }
+  // weekly / biweekly: step from createdAt
+  const interval = r.cadence === "biweekly" ? 14 : 7;
+  let d = new Date(r.createdAt || Date.now());
+  d = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  while (d < todayStart) d.setDate(d.getDate() + interval);
+  return d;
+}
+
+function upcomingBills(daysAhead = 7) {
+  const today = new Date();
+  const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const out = [];
+
+  // 1) Plaid-detected subscriptions (active only)
+  const subs = detectSubscriptions().filter(s => s.status === "active");
   for (const s of subs) {
     const next = new Date(s.next_predicted + "T00:00:00");
     const days = Math.round((next - today) / 86400000);
     if (days < -1 || days > daysAhead) continue;
-    const dismissed = (DB.dismissedBills || {})[`${s.key}:${s.next_predicted}`];
-    if (dismissed) continue;
-    out.push({ ...s, days });
+    if ((DB.dismissedBills || {})[`${s.key}:${s.next_predicted}`]) continue;
+    out.push({
+      source: "plaid",
+      key: s.key,
+      merchant: s.merchant,
+      amount: s.avg_amount,
+      next_predicted: s.next_predicted,
+      days,
+    });
   }
+
+  // 2) User-managed recurring expenses (income excluded — "Coming up" is bills).
+  // Dismissal key shape mirrors Plaid's: dismissBill(key, date) writes `${key}:${date}`.
+  // We prefix recurring keys with "r:<id>" to avoid colliding with Plaid merchant keys.
+  for (const r of (DB.recurring || [])) {
+    if (r.kind === "income") continue;
+    const nextDate = nextRecurringDate(r);
+    const days = Math.round((nextDate - todayStart) / 86400000);
+    if (days < 0 || days > daysAhead) continue;
+    const iso = todayKey(nextDate);
+    const recKey = `r:${r.id}`;
+    if ((DB.dismissedBills || {})[`${recKey}:${iso}`]) continue;
+    out.push({
+      source: "recurring",
+      key: recKey,
+      merchant: r.name,
+      amount: +r.amount || 0,
+      next_predicted: iso,
+      days,
+    });
+  }
+
   return out.sort((a,b) => a.days - b.days);
 }
 function dismissBill(key, date) {
@@ -4666,7 +4734,7 @@ function addRecurringSheet(existing) {
       '<button class="btn" id="rc-save">' + (isEdit ? 'Save' : 'Add') + '</button>' +
     '</div>'
   );
-  $("#rc-save").addEventListener("click", () => {
+  $("#rc-save").addEventListener("click", async () => {
     const name = $("#rc-name").value.trim(); if (!name) { toast("Add a name"); return; }
     const amount = Number($("#rc-amt").value) || 0;
     const cadence = $("#rc-cad").value;
@@ -4675,7 +4743,7 @@ function addRecurringSheet(existing) {
     const category = $("#rc-cat").value.trim() || "Other";
     if (isEdit) Object.assign(r, { name, amount, cadence, kind, dayOfMonth, category });
     else (DB.recurring = DB.recurring || []).push({ id: uid(), name, amount, cadence, kind, dayOfMonth, category, createdAt: Date.now() });
-    save(); closeSheet(); render();
+    await save(); closeSheet(); render();
   });
 }
 function deleteRecurring(id) {
@@ -4693,17 +4761,17 @@ function addReflectionSheet(existing) {
     '<label>What\'s on your mind?</label>' +
     '<textarea id="rf-text" rows="6" placeholder="Wins, lessons, what you noticed today...">' + esc(r.text) + '</textarea>' +
     '<div class="actions">' +
-      (isEdit ? '<button class="btn danger" onclick="if(confirm(\'Delete?\')){deleteReflection(\'' + esc(r.id) + '\');closeSheet();}">Delete</button>' : '') +
+      (isEdit ? '<button class="btn danger" onclick="if(confirm(\'Delete?\')){deleteReflection(' + jsAttr(r.id) + ');closeSheet();}">Delete</button>' : '') +
       '<button class="btn secondary" onclick="closeSheet()">Cancel</button>' +
       '<button class="btn" id="rf-save">' + (isEdit ? 'Save' : 'Save reflection') + '</button>' +
     '</div>'
   );
-  $("#rf-save").addEventListener("click", () => {
+  $("#rf-save").addEventListener("click", async () => {
     const text = $("#rf-text").value.trim();
     if (!text) { toast("Write something first"); return; }
     if (isEdit) Object.assign(r, { text });
     else (DB.reflections = DB.reflections || []).unshift({ id: uid(), text, date: todayKey(), createdAt: Date.now() });
-    save(); closeSheet(); render();
+    await save(); closeSheet(); render();
   });
 }
 function deleteReflection(id) {
@@ -4779,14 +4847,14 @@ function quickAddSpendSheet() {
     '</div>'
   );
   setTimeout(() => { var el = document.getElementById("qs-amt"); if (el) el.focus(); }, 50);
-  $("#qs-save").addEventListener("click", () => {
+  $("#qs-save").addEventListener("click", async () => {
     const amt = Number($("#qs-amt").value);
     if (!amt || amt <= 0) { toast("Enter an amount"); return; }
     const cat = $("#qs-cat").value;
     const note = $("#qs-note").value.trim();
     const date = $("#qs-date").value || todayKey();
     DB.spend.unshift({ id: uid(), date, category: cat, amount: amt, note, source: "manual" });
-    save(); closeSheet(); render(); toast("✓ " + fmt$0(amt) + " logged");
+    await save(); closeSheet(); render(); toast("✓ " + fmt$0(amt) + " logged");
   });
 }
 
@@ -5001,7 +5069,7 @@ function goalTemplatesSheet() {
     '<div class="actions"><button class="btn secondary" onclick="closeSheet()">Close</button></div>'
   );
 }
-function applyGoalTemplate(idx) {
+async function applyGoalTemplate(idx) {
   const t = GOAL_TEMPLATES[idx]; if (!t) return;
   const now = Date.now();
   const lifeId = uid();
@@ -5012,7 +5080,7 @@ function applyGoalTemplate(idx) {
     const d = t.tree.daily[i];
     DB.goals.push({ id: uid(), title: d.title, note: d.note || "", tier: "daily", steps: [], done: false, createdAt: now + 2 + i, parentId: shortId });
   }
-  save(); closeSheet(); showTab("goals"); toast("✓ Template added");
+  await save(); closeSheet(); showTab("goals"); toast("✓ Template added");
   setTimeout(() => celebrate(0.6), 250);
 }
 

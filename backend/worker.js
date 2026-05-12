@@ -373,7 +373,11 @@ async function handleAnthropic(request, env, userId, origin) {
     return json({ error: "AI insights not configured on this backend" }, 503, origin);
   }
 
-  // Per-user daily rate limit
+  // Per-user daily rate limit.
+  // Note: Cloudflare KV has no compare-and-swap, so this can over-count under
+  // perfectly-concurrent reads — but by writing the increment BEFORE the upstream
+  // call we bound the window to the few ms between read and write, which caps
+  // worst-case overage at "small burst" instead of "unlimited."
   const cap = parseInt(env.ANTHROPIC_DAILY_CAP || `${DEFAULT_LLM_CAP}`, 10) || DEFAULT_LLM_CAP;
   const day = new Date().toISOString().slice(0, 10);
   const counterKey = `u:${userId}:llm:${day}`;
@@ -396,6 +400,11 @@ async function handleAnthropic(request, env, userId, origin) {
     }
   }
 
+  // Reserve the slot BEFORE calling Anthropic to narrow the race window.
+  // We don't refund on failure — abusive clients that always error out would
+  // otherwise bypass the cap entirely.
+  await env.ASCEND_KV.put(counterKey, String(cur + 1), { expirationTtl: 60 * 60 * 36 });
+
   const r = await fetch(ANTHROPIC_API, {
     method: "POST",
     headers: {
@@ -406,8 +415,6 @@ async function handleAnthropic(request, env, userId, origin) {
     body: JSON.stringify({ model, max_tokens: maxTokens, messages }),
   });
 
-  // Increment counter only on attempt (success or upstream-billed failure)
-  await env.ASCEND_KV.put(counterKey, String(cur + 1), { expirationTtl: 60 * 60 * 36 });
   await appendAudit(env, userId, r.ok ? "anthropic" : "anthropic_error");
 
   const text = await r.text();
