@@ -2540,15 +2540,23 @@ function renderMoney() {
       `;
     })();
 
-    // Real estate / home affordability entry
-    const realEstateEntry = `
-      <div class="section-h"><span class="lbl">🏠 Real estate</span></div>
+    // Decision tools section — Real estate + Big purchase grouped
+    const decisionTools = `
+      <div class="section-h"><span class="lbl">🧮 Decision tools</span></div>
       <div class="list">
         <div class="row tappable" onclick="realEstateSheet()" role="button" tabindex="0">
-          <div class="lead">🔑</div>
+          <div class="lead">🏠</div>
           <div class="body">
-            <div class="t1">Home affordability calculator</div>
-            <div class="t2">Max home price under the 28/36 rule · monthly PITI breakdown</div>
+            <div class="t1">Home affordability</div>
+            <div class="t2">Max price under 28/36 rule · monthly PITI · total interest</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+        <div class="row tappable" onclick="purchaseDecisionSheet()" role="button" tabindex="0">
+          <div class="lead">🛒</div>
+          <div class="body">
+            <div class="t1">Big purchase decision</div>
+            <div class="t2">True cost per year · opportunity cost of investing instead</div>
           </div>
           <div class="trail chev"></div>
         </div>
@@ -2620,7 +2628,7 @@ function renderMoney() {
       ${projectionsSection}
       ${allocationEntry}
       ${taxSummary}
-      ${realEstateEntry}
+      ${decisionTools}
       ${cardsEntry}
       ${learnEntry}
 
@@ -5719,6 +5727,148 @@ function wealthHealthSheet() {
   `);
 }
 
+/* ================ BIG PURCHASE DECISION TOOL ================
+   Frames any major purchase against the alternative of investing the
+   same money. Educational, not advice — but the math is sobering and
+   useful for impulse buys above a certain threshold.
+
+   Outputs three lenses on a purchase:
+     1. True cost per year (price / useful life)
+     2. Opportunity cost — what the money becomes invested for the same
+        period at the assumed return
+     3. 10-year compound impact — what it'd be in a decade
+*/
+
+function computePurchaseDecision({ price, usefulLife, returnRate, financedMonths, financedAPR }) {
+  const p = Math.max(0, +price || 0);
+  const life = Math.max(0.1, +usefulLife || 1);
+  const r = Math.max(0, +returnRate || 7) / 100;
+
+  const costPerYear = p / life;
+  // Opportunity cost: invest the money for `life` years instead of buying.
+  const invForLife = p * Math.pow(1 + r, life);
+  const lifeOppCost = invForLife - p;
+  // 10-year reference frame
+  const inv10 = p * Math.pow(1 + r, 10);
+
+  // If financed, total cost including interest
+  let financeTotal = p;
+  if (financedMonths && financedAPR != null) {
+    const months = Math.max(0, +financedMonths || 0);
+    const apr = Math.max(0, +financedAPR || 0) / 100;
+    if (months > 0 && apr > 0) {
+      const mr = apr / 12;
+      const monthlyPmt = p * (mr * Math.pow(1+mr, months)) / (Math.pow(1+mr, months) - 1);
+      financeTotal = monthlyPmt * months;
+    }
+  }
+  const financingInterest = Math.max(0, financeTotal - p);
+
+  return { price: p, usefulLife: life, costPerYear, invForLife, lifeOppCost, inv10, financeTotal, financingInterest };
+}
+
+function purchaseDecisionSheet() {
+  let price = 1000;
+  let usefulLife = 5;
+  let returnRate = 7;
+  let financedMonths = 0;
+  let financedAPR = 0;
+
+  const render = (vals) => {
+    const r = computePurchaseDecision(vals);
+    return `
+      <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">True cost per year</div>
+        <div style="font-size:28px;font-weight:700;letter-spacing:-.5px;margin:6px 0" data-priv="amount">${fmt$0(r.costPerYear)}</div>
+        <div style="font-size:12px;color:var(--t2)">${fmt$0(r.price)} over ${r.usefulLife} year${r.usefulLife===1?"":"s"} of useful life</div>
+      </div>
+
+      <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Opportunity cost (invested instead)</div>
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:8px">
+          <div>
+            <div style="font-size:11px;color:var(--t3)">In ${r.usefulLife} years at ${vals.returnRate}%</div>
+            <div style="font-size:18px;font-weight:600" data-priv="amount">${fmt$0(r.invForLife)}</div>
+            <div style="font-size:11px;color:var(--green)">+${fmt$0(r.lifeOppCost)} vs spending now</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:11px;color:var(--t3)">In 10 years at ${vals.returnRate}%</div>
+            <div style="font-size:18px;font-weight:600" data-priv="amount">${fmt$0(r.inv10)}</div>
+            <div style="font-size:11px;color:var(--green)">+${fmt$0(r.inv10 - r.price)} on top of price</div>
+          </div>
+        </div>
+        <div style="font-size:12px;color:var(--t3);margin-top:12px;line-height:1.5;border-top:1px solid var(--sep);padding-top:10px">
+          Investing this money instead of buying compounds quietly while the item depreciates. The two columns show the same dollars on two timeframes.
+        </div>
+      </div>
+
+      ${r.financingInterest > 0 ? `
+        <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px;border-left:3px solid var(--orange)">
+          <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">If financed</div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0"><span>Total paid</span><span data-priv="amount">${fmt$0(r.financeTotal)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0"><span>Interest cost</span><span style="color:var(--red)" data-priv="amount">${fmt$0(r.financingInterest)}</span></div>
+          <div style="display:flex;justify-content:space-between;font-size:13px;padding:6px 0"><span>True cost per year (financed)</span><span data-priv="amount">${fmt$0(r.financeTotal / r.usefulLife)}</span></div>
+        </div>
+      ` : ""}
+    `;
+  };
+
+  openSheet(`
+    <h2>🛒 Big purchase decision</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Frames any major buy against the alternative of investing the money. Useful for impulse purchases above your "automatic yes" threshold. Educational.</p>
+    <div id="purchase-output">${render({ price, usefulLife, returnRate, financedMonths, financedAPR })}</div>
+
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Inputs</div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="pd-price">Price ($)</label>
+        <input id="pd-price" type="number" min="0" step="50" value="${price}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:110px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="pd-life">Useful life (years)</label>
+        <input id="pd-life" type="number" min="0.5" max="50" step="0.5" value="${usefulLife}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+        <label for="pd-return">Expected return (%)</label>
+        <input id="pd-return" type="number" min="0" max="20" step="0.5" value="${returnRate}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+      </div>
+      <div style="border-top:1px solid var(--sep);margin-top:6px;padding-top:10px">
+        <div style="font-size:11px;color:var(--t3);margin-bottom:8px">If financing (leave at 0 for cash):</div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
+          <label for="pd-fmo">Financed term (months)</label>
+          <input id="pd-fmo" type="number" min="0" max="360" step="6" value="${financedMonths}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;font-size:13px">
+          <label for="pd-apr">APR (%)</label>
+          <input id="pd-apr" type="number" min="0" max="40" step="0.25" value="${financedAPR}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
+        </div>
+      </div>
+    </div>
+
+    <p class="muted" style="font-size:11px;line-height:1.5">
+      <b>The point isn't to never buy nice things.</b> It's to make the cost of buying visible against the cost of not buying. Sometimes the item is worth it; sometimes the invested alternative is. Run the math, then decide consciously.
+    </p>
+
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+
+  const refresh = () => {
+    const vals = {
+      price: +$("#pd-price").value || 0,
+      usefulLife: +$("#pd-life").value || 1,
+      returnRate: +$("#pd-return").value || 0,
+      financedMonths: +$("#pd-fmo").value || 0,
+      financedAPR: +$("#pd-apr").value || 0,
+    };
+    $("#purchase-output").innerHTML = render(vals);
+  };
+  ["#pd-price","#pd-life","#pd-return","#pd-fmo","#pd-apr"].forEach(sel => {
+    $(sel).addEventListener("input", refresh);
+  });
+}
+
 /* ================ REAL ESTATE CALCULATOR ================
    Home affordability + mortgage payment math. Two views:
 
@@ -8079,6 +8229,7 @@ function init() {
     NW_MILESTONES, computeNetWorthMilestones, checkNetWorthMilestones, milestonesSheet,
     RISK_LEVELS, computeTargetAllocation, investingPlanSheet,
     monthlyPI, realEstateSheet,
+    computePurchaseDecision, purchaseDecisionSheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
