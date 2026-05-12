@@ -2660,6 +2660,14 @@ function renderMoney() {
             </div>
             <div class="trail chev"></div>
           </div>
+          <div class="row tappable" onclick="incomeStrategiesSheet()" role="button" tabindex="0">
+            <div class="lead">💼</div>
+            <div class="body">
+              <div class="t1">Income strategies</div>
+              <div class="t2">${INCOME_STRATEGIES.length} ways to grow earnings — the other half of wealth</div>
+            </div>
+            <div class="trail chev"></div>
+          </div>
         </div>
       `;
     })();
@@ -5804,6 +5812,205 @@ function wealthHealthSheet() {
     ` : ""}
     <div class="actions">
       <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+/* ================ INCOME STRATEGIES ================
+   The other half of the wealth equation. Most personal-finance content
+   focuses on cutting expenses because it feels controllable. But income
+   growth has uncapped upside and compounds with everything else.
+
+   8 actionable strategies for growing income, ranked by typical impact.
+   Each includes effort/timeline/expected range and the actual "what to do."
+*/
+
+const INCOME_STRATEGIES = [
+  {
+    id: "negotiate-raise",
+    emoji: "📈",
+    title: "Negotiate your next raise",
+    effort: "Low (2-4 hours prep)",
+    timeline: "1-3 months",
+    impact: "5-15% salary bump = $3-15k/yr typical",
+    summary: "Most people accept the annual 'merit' raise of 2-3%. A real negotiation usually yields 5-15%. The biggest single ROI hour you can spend at work.",
+    body: `**The frame:** You're not asking for a favor. You're presenting evidence that your market value exceeds your current compensation.\n\n**Prep (do this 1-2 weeks before the conversation):**\n1. Compile your wins: list specific accomplishments with measurable impact (revenue, time saved, projects shipped).\n2. Research market rate: levels.fyi, Glassdoor, Blind, salary surveys for your role + region. Get 3 data points.\n3. Pick your number: typical raise ask is 10-15% above current. Be ready to anchor higher than your target.\n4. Practice the conversation: write out 3 likely objections and your responses.\n\n**The conversation:**\n"Thanks for taking the time. I want to discuss my compensation. Over the past year I've [specific wins]. Looking at market rate for the role and the value I'm contributing, I'm asking for a raise to [\$X]."\n\nThen: shut up. The pause is your friend. Don't fill it with more justification.\n\n**Common pushback:** "We have a budget process for this." Response: "I understand. When does the budget process start, and what do I need to demonstrate between now and then?"\n\n**If they say no:** Get specific milestones in writing for a 6-month review. Then prep again.`,
+    tips: [
+      "Never negotiate the same day you ask — schedule a follow-up",
+      "Promotion is often easier to get than raise — ask for level + comp together",
+      "Job-hopping typically yields 15-30% raises vs 2-5% internal",
+      "Don't share your current salary if asked — pivot to your expectations",
+    ],
+  },
+  {
+    id: "job-hop",
+    emoji: "🚀",
+    title: "Job-hop every 2-3 years",
+    effort: "Medium (job search ongoing)",
+    timeline: "3-9 months per move",
+    impact: "15-30% salary jump per move",
+    summary: "Internal raises rarely keep up with market rate. The fastest path to high income is moving between companies every 2-3 years, especially in your first 10 years.",
+    body: `**The math:** If internal raises are 3%/year and external moves are 20%, over a decade you have:\n- Stayer: \$60k → \$80k (+33%)\n- Hopper (3 moves): \$60k → \$155k (+158%)\n\n**Why it works:** Companies pay market rate to attract talent, not to retain it. Existing employees subsidize new hires.\n\n**The cadence:**\nYears 0-2: Learn deeply, build wins.\nYears 2-3: Start interviewing. Even if you don't move, you get data on your market value.\nYear 3: Move if external offer > internal counter.\n\n**Counter-offer trap:** Companies that counter-offer often see you as a flight risk afterward. Use counters as data, not goals.\n\n**Exception:** Stay if (a) you're learning a lot, (b) equity is vesting meaningfully, (c) you have unique upside others don't. Pure salary stayers usually lose.`,
+    tips: [
+      "Update resume + LinkedIn every 6 months whether you're looking or not",
+      "Build a relationship with 2-3 recruiters in your space",
+      "Always negotiate the offer — they expect it",
+      "Don't job-hop too fast (<18 months) — looks like a red flag",
+    ],
+  },
+  {
+    id: "high-value-skill",
+    emoji: "🛠️",
+    title: "Build a high-margin skill",
+    effort: "High (6-24 months to skill)",
+    timeline: "1-3 years to monetize",
+    impact: "$50-300/hr freelance rates",
+    summary: "Skills that produce work outside your day job are rocket fuel for income. The best are remote-deliverable, high-margin, and have unlimited demand.",
+    body: `**High-margin skills to consider** (deliverable remotely, billable >\$75/hr):\n- Software development (especially specialized: ML, security, full-stack web)\n- Design (UX, brand identity, motion)\n- Copywriting (especially sales copy, technical writing)\n- Marketing (paid ads, SEO, email funnels)\n- Data analysis / visualization\n- Video editing\n- Coaching/consulting in your day-job domain\n\n**The path:**\n1. Pick ONE. Don't dabble.\n2. Spend 6-12 months getting genuinely good (build a portfolio of 5-10 real projects).\n3. Start with free or cheap work to build samples. Then \$25/hr. Then \$50. Then \$100.\n4. Specialize as you grow — generalists charge less than specialists.\n\n**The math:** 10 hours/week at \$75/hr = \$3,000/mo = \$36k/yr of side income.\n\n**Common mistakes:**\n- Starting too many skills at once (none get to mastery)\n- Underpricing forever (charge what good people charge)\n- Not productizing eventually (services don't scale — productize your top service into a course/template)`,
+    tips: [
+      "Highest-leverage skills: ones your current employer would also pay you more for",
+      "Build in public — Twitter/LinkedIn following becomes lead generation",
+      "Track hours-to-revenue ratio — drop work that ratio gets bad on",
+      "After 1 year, consider raising your rate ~25% per quarter until you start losing leads",
+    ],
+  },
+  {
+    id: "rent-what-you-own",
+    emoji: "🏘️",
+    title: "Monetize what you already own",
+    effort: "Low",
+    timeline: "Days to weeks",
+    impact: "$200-2,000/mo per asset",
+    summary: "Spare room, parking spot, garage, car, tools — assets you've already paid for can generate income with little ongoing work.",
+    body: `**Common monetizable assets:**\n\n- **Spare bedroom on Airbnb** (\$50-200/night × weekends only = \$400-1,600/mo): biggest opportunity for most homeowners.\n- **Long-term roommate** (\$500-1,500/mo): less freedom but more stability.\n- **Parking spot** in a dense city (\$100-400/mo via SpotHero/JustPark).\n- **Storage space** in basement/garage (\$100-300/mo via Neighbor.com).\n- **Car** via Turo (\$200-800/mo if rarely used): wear-and-tear cost real.\n- **Tools, equipment, instruments** for occasional rentals (\$50-300/mo on Sharetown, Fat Llama).\n\n**Tax note:** rental income is taxable, but you can deduct expenses + depreciation. Talk to a CPA if you're netting >\$5k/yr.\n\n**Insurance note:** check your homeowner's/auto policy. Most short-term rentals need separate coverage (Airbnb provides some; Turo includes basic).\n\n**The math:** at \$500/mo of passive-ish income invested at 7% for 20 years → \$260,000. Most spare rooms produce more than that.`,
+    tips: [
+      "Start with one asset. See how it actually feels to manage before adding more.",
+      "Airbnb cleaning fees + management eat ~20-30% of gross — model the net",
+      "Long-term roommate is highest-stability, lowest-management",
+      "Don't list anything you can't replace if it gets damaged",
+    ],
+  },
+  {
+    id: "side-business",
+    emoji: "🏗️",
+    title: "Start a productized service",
+    effort: "Very high (1-3 years)",
+    timeline: "12-24 months to meaningful income",
+    impact: "$5-50k/mo at scale (long tail)",
+    summary: "Take a service you can deliver well and turn it into a repeatable product. Higher ceiling than freelance, more leverage than employment.",
+    body: `**The framework:** identify a service you can already deliver. Standardize it. Sell it as a flat-rate package. Build systems so others can deliver it.\n\n**Examples of productized services:**\n- Designjoy: unlimited graphic design subscription (\$5k/mo per client)\n- Tiny Marketing: monthly retainer for fractional marketing\n- DesignedFor: landing page reskins, flat \$1,500 each\n- Lots of "agency-in-a-box" plays in legal, accounting, recruiting\n\n**The path:**\n1. Niche down hard: industry + service. "Marketing for B2B SaaS" not "marketing for everyone."\n2. Start with 1:1 services. Notice patterns. Document playbooks.\n3. Productize once you've done it 5+ times: fixed scope, fixed price, fixed timeline.\n4. Hire to deliver — first contractor, then employee. You become the salesperson.\n\n**Realistic expectations:**\n- Year 1: \$0-30k while you find product/market fit\n- Year 2: \$50-150k if you've nailed niche + offer\n- Year 3+: \$150-500k or pivot to next thing\n\nMost businesses fail. Treat it as betting 10-20% of your time, not your full life. Keep the day job until the business is unambiguous.`,
+    tips: [
+      "Charge by value (project) not time (hourly) — better margins + better clients",
+      "Pick a niche big enough to support 100 clients but specific enough to dominate",
+      "Document everything in SOPs from day 1 — even before you have employees",
+      "Highest-leverage clients are the ones who'll refer you to 10 more",
+    ],
+  },
+  {
+    id: "equity-comp",
+    emoji: "📊",
+    title: "Get paid in equity, not just cash",
+    effort: "Medium (one-time research)",
+    timeline: "Vests over 4 years typically",
+    impact: "10-100× your salary at exit (or zero)",
+    summary: "Equity compensation can dwarf cash comp at high-growth companies. Most people underweight it because the upside is uncertain and the downside is real.",
+    body: `**Types of equity comp:**\n- **RSUs** (Restricted Stock Units): straightforward shares that vest over time. Taxed as income at vest.\n- **Stock options** (ISOs / NSOs): right to buy shares at a strike price. Upside if the company grows; worth nothing if it doesn't.\n- **ESPP**: employee stock purchase plan — buy company stock at 10-15% discount through payroll.\n\n**The negotiation:**\nAt offer stage, equity is more negotiable than salary. Ask:\n- "How much room do you have on the equity side?"\n- "Can we look at a higher equity package with lower base?"\n\nMost recruiters have flexibility to shift 10-30% of comp between cash and equity.\n\n**The diversification problem:**\nIf 50%+ of your net worth is in your employer's stock, you have concentrated risk. Strategy: sell vested shares immediately into index funds unless you have very strong conviction the stock will outperform.\n\n**The tax trap:**\nISOs can trigger AMT (alternative minimum tax) if you exercise without selling. Talk to a tax pro before doing anything fancy with options.\n\n**Honest framing:** equity comp is a lottery ticket where the company is the issuer. Bet appropriately — important slice of comp, not the whole thing.`,
+    tips: [
+      "Always sell RSUs the day they vest unless you have strong conviction",
+      "ESPP is usually a no-brainer — sell at end of period for the discount",
+      "Negotiate refresh grants — they're often forgotten in retention",
+      "Read the cap table before joining a startup — pre-money valuation matters",
+    ],
+  },
+  {
+    id: "dividend-investing",
+    emoji: "💵",
+    title: "Build dividend income",
+    effort: "Low (after initial research)",
+    timeline: "10-20 years for meaningful income",
+    impact: "3-5% of portfolio annually",
+    summary: "Reliable cash flow from broad-market dividend funds. Less exciting than total-return investing but useful for retirement income streams.",
+    body: `**The simple version:** invest in broad dividend index funds. They distribute ~2-4% of portfolio value annually as cash, while still appreciating over time.\n\n**Common dividend-focused funds:**\n- VYM (Vanguard High Dividend Yield) — yield ~3%\n- SCHD (Schwab US Dividend) — yield ~3.5%, dividend-grower focused\n- VIG (Vanguard Dividend Appreciation) — yield ~2%, but consistent growers\n\n**The math:** \$500k in VYM at 3% yield = \$15k/yr in cash flow. Not enough to live on, but a meaningful supplement.\n\n**Why this is a long game:**\nDividend income scales with portfolio size, which takes time. Most "passive dividend income" stories you see online include 10-30 years of accumulation. The income comes from the portfolio, not the dividend rate.\n\n**Don't chase yield:** companies paying >7% yields often have something wrong (dying business, dividend trap). Stick with 2-5% yield from broad-market funds.\n\n**Total return matters more than yield:** a stock paying 5% but flat in price gives 5% total return. An S&P 500 fund paying 2% but growing 8% gives 10% total return. Don't optimize for the smaller number.`,
+    tips: [
+      "Dividends are taxed as income (or qualified dividends at 15-20%) — taxable accounts only ideal in retirement",
+      "Keep dividend funds in tax-advantaged accounts when possible",
+      "Don't fixate on 'dividend aristocrats' — total return is what matters",
+      "Real estate (REITs) also produce dividend-like income with different tax treatment",
+    ],
+  },
+  {
+    id: "raise-rates",
+    emoji: "💰",
+    title: "Raise your prices / rates",
+    effort: "Very low",
+    timeline: "Immediate",
+    impact: "10-50% revenue lift if you can hold",
+    summary: "Underpricing is the #1 mistake of freelancers, consultants, and small business owners. Most can raise prices 25-50% with minimal client loss.",
+    body: `**The brutal truth:** if you've been at the same rate for 2+ years, you're effectively losing money to inflation (3%/yr compounds). And you're underpricing.\n\n**The pricing test:** if NONE of your prospects push back on price, you're charging too little. The sweet spot is 30-40% saying no — those who say yes are good clients.\n\n**How to raise rates on existing clients:**\n"Hi [Client], starting [X months out], my rates are moving from [\$Y] to [\$Z]. This reflects the deeper work I'm doing for clients now. I wanted to give you plenty of notice — happy to discuss any questions."\n\nGive them runway. Most stay. Some leave. Net revenue almost always goes up.\n\n**How to raise rates on new clients:**\nJust quote the new rate. They don't have a benchmark.\n\n**The Selma test:**\nWould a brand-new client today, with no relationship, pay your current rate? If yes, you might be priced right. If they'd pay 50% more, raise immediately.\n\n**The pricing paradox:** higher prices often attract better clients. Cheap clients are demanding, slow to pay, and treat you as a vendor. Expensive clients are decisive, pay on time, and treat you as a partner.`,
+    tips: [
+      "Raise rates every 6-12 months as a habit",
+      "Mid-engagement: harder to raise. End-of-contract: natural moment.",
+      "Offer 'grandfather' rate to top clients for 6 more months as goodwill",
+      "If raising the rate loses ALL clients, you raised too far. If it loses NONE, raise more.",
+    ],
+  },
+];
+
+function incomeStrategiesSheet() {
+  const html = INCOME_STRATEGIES.map(s => `
+    <div class="row tappable" onclick="incomeStrategySheet(${jsAttr(s.id)})" role="button" tabindex="0">
+      <div class="lead">${s.emoji}</div>
+      <div class="body">
+        <div class="t1">${esc(s.title)}</div>
+        <div class="t2">${esc(s.impact)}</div>
+      </div>
+      <div class="trail chev"></div>
+    </div>
+  `).join("");
+  openSheet(`
+    <h2>💼 Income strategies</h2>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Cutting expenses has a floor. Income has no ceiling. ${INCOME_STRATEGIES.length} strategies for growing income, ranked by typical impact.</p>
+    <div class="list">${html}</div>
+    <p class="muted" style="font-size:11px;margin-top:14px;line-height:1.5">
+      <b>The framing:</b> Most wealth-builders over-focus on saving and under-focus on earning. A 20% raise compounds for 40+ years of career. A \$50/mo subscription cut compounds for ~1 year of attention. Both matter — but earnings have far larger upside.
+    </p>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
+function incomeStrategySheet(id) {
+  const s = INCOME_STRATEGIES.find(x => x.id === id);
+  if (!s) { incomeStrategiesSheet(); return; }
+  const paragraphs = s.body.split(/\n\n+/).map(p => p.trim()).filter(Boolean);
+  const bodyHtml = paragraphs.map(p => {
+    const formatted = esc(p).replace(/\*\*(.+?)\*\*/g, "<b>$1</b>").replace(/\n/g, "<br>");
+    return `<p style="margin:0 0 12px;line-height:1.6;font-size:14px">${formatted}</p>`;
+  }).join("");
+  openSheet(`
+    <div style="display:flex;align-items:flex-start;gap:12px;margin-bottom:14px">
+      <div style="font-size:36px;line-height:1">${s.emoji}</div>
+      <div style="flex:1;min-width:0">
+        <h2 style="margin:0">${esc(s.title)}</h2>
+        <div style="font-size:12px;color:var(--t3);margin-top:4px">${esc(s.impact)}</div>
+      </div>
+    </div>
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:12px;margin-bottom:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px">
+      <div><div style="color:var(--t3);text-transform:uppercase;font-weight:600;font-size:10px">Effort</div><div>${esc(s.effort)}</div></div>
+      <div><div style="color:var(--t3);text-transform:uppercase;font-weight:600;font-size:10px">Timeline</div><div>${esc(s.timeline)}</div></div>
+    </div>
+    <p class="muted" style="font-size:13px;margin-bottom:14px;font-style:italic">${esc(s.summary)}</p>
+    <div>${bodyHtml}</div>
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-top:14px">
+      <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Quick tips</div>
+      <ul style="margin:0;padding-left:18px;font-size:13px;line-height:1.7">
+        ${s.tips.map(t => `<li>${esc(t)}</li>`).join("")}
+      </ul>
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" onclick="closeSheet();incomeStrategiesSheet()">← All strategies</button>
+      <button class="btn" onclick="closeSheet()">Got it</button>
     </div>
   `);
 }
@@ -9045,6 +9252,7 @@ function init() {
     NW_BENCHMARKS, benchmarkForAge, benchmarksSheet,
     computeRental, rentalPropertySheet,
     NEGOTIATION_TEMPLATES, negotiationToolkitSheet, negotiationScriptSheet,
+    INCOME_STRATEGIES, incomeStrategiesSheet, incomeStrategySheet,
     detectIncomeFor, suggestSplitFor, reviewIncomeSheet, processSyncedDeposits, dismissPendingDeposit,
     addAllocationRule, deleteAllocationRule, allocationSheet,
     filteredSpend, lastMonthSpend, surfacePendingDeposits, loadDemoData,
