@@ -2240,6 +2240,15 @@ function wealthComposition() {
 
 function setWealthRange(r) { wealthRange = r; renderMoney(); }
 
+// Smooth-scroll the Wealth dashboard to a section anchor (used by nav pills).
+// Falls back to a window scroll if scrollIntoView isn't available.
+function scrollToWealthSection(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  try { el.scrollIntoView({ behavior: "smooth", block: "start" }); }
+  catch { el.scrollIntoView(); }
+}
+
 function filteredNwHistory() {
   const days = wealthRange === "30" ? 30 : wealthRange === "90" ? 90 : wealthRange === "365" ? 365 : Infinity;
   const hist = DB.netWorthHistory || [];
@@ -2726,11 +2735,37 @@ function renderMoney() {
       `;
     })();
 
+    // Navigation pills — the dashboard has 20+ sections. Pills scroll to anchors.
+    const navPills = `
+      <div style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:8px 0;margin:-4px -2px 12px;border-bottom:1px solid var(--sep);scrollbar-width:none" id="wealth-nav">
+        ${[
+          { id: "wh-score",       label: "Health" },
+          { id: "wh-chart",       label: "Net worth" },
+          { id: "wh-flow",        label: "Cash flow" },
+          { id: "wh-milestones",  label: "Milestones" },
+          { id: "wh-pyramid",     label: "Pyramid" },
+          { id: "wh-projections", label: "Projections" },
+          { id: "wh-investing",   label: "Investing" },
+          { id: "wh-tax",         label: "Tax" },
+          { id: "wh-tools",       label: "Tools" },
+          { id: "wh-cards",       label: "Cards" },
+          { id: "wh-learn",       label: "Learn" },
+          { id: "wh-assets",      label: "Assets" },
+        ].map(p => `<button class="btn sm secondary" style="flex-shrink:0;font-size:11px;padding:6px 12px;white-space:nowrap" onclick="scrollToWealthSection(${jsAttr(p.id)})">${esc(p.label)}</button>`).join("")}
+      </div>
+      <style>#wealth-nav::-webkit-scrollbar{display:none}</style>
+    `;
+
     body = `
+      ${navPills}
+      <div id="wh-score"></div>
       ${healthCard}
+      <div id="wh-chart"></div>
       ${chartCard}
       ${compBar}
+      <div id="wh-flow"></div>
       ${cashFlowCardHtml()}
+      <div id="wh-milestones"></div>
       ${milestonesCard}
       ${benchmarksCard}
       ${(() => {
@@ -2767,14 +2802,22 @@ function renderMoney() {
           </div>
         `;
       })()}
+      <div id="wh-pyramid"></div>
       ${pyramidSummary}
+      <div id="wh-projections"></div>
       ${projectionsSection}
+      <div id="wh-investing"></div>
       ${allocationEntry}
+      <div id="wh-tax"></div>
       ${taxSummary}
+      <div id="wh-tools"></div>
       ${decisionTools}
+      <div id="wh-cards"></div>
       ${cardsEntry}
+      <div id="wh-learn"></div>
       ${learnEntry}
 
+      <div id="wh-assets"></div>
       <div class="section-h"><span class="lbl">Manual assets</span><button class="act" onclick="assetSheet()">+ Add</button></div>
       <div class="list">
         ${(DB.assets||[]).length ? DB.assets.slice().sort((a,b)=>(+b.value||0)-(+a.value||0)).map(a => {
@@ -10115,7 +10158,7 @@ function init() {
     applyRules, applyRulesToAll, addCategoryRule, deleteCategoryRule, ruleSheet, quickRuleFromTx,
     upcomingBills, dismissBill,
     computeSmartPlays, smartPlaysSheet, dismissPlay, resetDismissedPlays, profileSheet,
-    wealthComposition, setWealthRange, filteredNwHistory,
+    wealthComposition, setWealthRange, filteredNwHistory, scrollToWealthSection,
     currentInvested, projectRetirement, retirementChart, retirementSheet,
     computeFinancialCalendar, financialCalendarSheet, addCalendarDateSheet,
     deleteCalendarDate, hideBuiltinCalendarEvent, resetCalendarBuiltins,
