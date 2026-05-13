@@ -1117,7 +1117,8 @@ const DEFAULT_DB = {
     autoSyncOnOpen: true,
     encrypted: false,
     paycheckMin: 500,        // min deposit to count as a paycheck (Plaid amount < -500)
-    anthropicKey: "",        // optional Claude API key for AI insights (sk-ant-...)
+    // anthropicKey removed — the real key now lives only on the backend Worker.
+    // Init() actively scrubs any legacy value that may still be in localStorage.
     anthropicModel: "claude-haiku-4-5-20251001",
     debtPayoffStrategy: "avalanche", // avalanche (highest APR first) | snowball (smallest balance first)
     debtExtraPayment: 0,     // extra $/month above minimums for payoff plan
@@ -1295,7 +1296,8 @@ save = async function() {
     } else {
       _origSave();
     }
-  } catch (e) { console.error("save failed", e); }
+  } catch { /* swallow — surfacing save errors via console would leak DB
+                serialization details to anything reading the console. */ }
 };
 
 // Sync wrapper for inline handlers; fire-and-forget.
@@ -5124,7 +5126,6 @@ function loadDemoData() {
   fresh.settings = Object.assign({}, fresh.settings, {
     backendUrl: DB.settings.backendUrl || "",
     apiKey: DB.settings.apiKey || "",
-    anthropicKey: DB.settings.anthropicKey || "",
     anthropicModel: DB.settings.anthropicModel || fresh.settings.anthropicModel,
     theme: DB.settings.theme || "auto",
     privacyMode: !!DB.settings.privacyMode,
@@ -11307,12 +11308,17 @@ function init() {
     showLockScreen();
     return;
   }
+  // Scrub the legacy Anthropic key field. Old builds let the user paste
+  // sk-ant-... directly into the browser; the AI proxy now keeps the real
+  // key on the Worker, so any value still sitting here is stale and
+  // sensitive — wipe it.
+  if (DB.settings.anthropicKey) { DB.settings.anthropicKey = ""; save(); }
   if (!DB.user.onboardedAt) {
     const hasData = DB.user.name || DB.habits.length || DB.goals.length || (DB.savings||[]).length || (DB.spend||[]).length;
     if (hasData) { DB.user.onboardedAt = Date.now(); save(); }
   }
   if (DB.user.onboardedAt && !DB.settings.advancedFeaturesEnabled &&
-      (DB.settings.backendUrl || DB.settings.apiKey || DB.settings.anthropicKey)) {
+      (DB.settings.backendUrl || DB.settings.apiKey)) {
     DB.settings.advancedFeaturesEnabled = true;
     save();
   }
