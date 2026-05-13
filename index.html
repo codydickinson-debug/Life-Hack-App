@@ -3628,7 +3628,7 @@ function renderSettings() {
             style="background:var(--bg-elev);padding:8px;border-radius:8px;width:80px;text-align:right" />
         </div>
         ${debtAccounts().map(d => `
-          <div class="row tappable" onclick="debtMetaSheet('${d.account_id}')">
+          <div class="row tappable" onclick="debtMetaSheet(${jsAttr(d.account_id)})">
             <div class="lead">${d.type==='credit'?'💳':'🧾'}</div>
             <div class="body"><div class="t1">${esc(d.name)}</div><div class="t2">APR ${d.apr||'?'}% · min ${fmt$0(d.minPayment)}</div></div>
             <div class="trail chev"></div>
@@ -5077,7 +5077,7 @@ function debtMetaSheet(accountId) {
     <input id="dm-min" type="number" inputmode="decimal" value="${meta.minPayment||""}" placeholder="e.g. 35" />
     <div class="actions">
       <button class="btn secondary" onclick="closeSheet()">Cancel</button>
-      <button class="btn" onclick="setDebtMeta('${accountId}', $('#dm-apr').value, $('#dm-min').value); closeSheet()">Save</button>
+      <button class="btn" onclick="setDebtMeta(${jsAttr(accountId)}, $('#dm-apr').value, $('#dm-min').value); closeSheet()">Save</button>
     </div>
   `);
 }
