@@ -1167,12 +1167,212 @@ input:focus, select:focus {
 .hidden { display: none !important; }
 
 @media (max-width: 900px) {
+  /* ===== Document-level: kill horizontal overflow on phones ===== */
+  html, body {
+    overflow-x: hidden;
+    max-width: 100vw;
+    font-size: 13.5px;
+  }
   body { grid-template-columns: 1fr; }
-  .sidebar { position: static; height: auto; flex-direction: row; padding: 14px; gap: 16px; }
+
+  /* ===== Main content fills the viewport ===== */
+  .main {
+    padding: 14px 12px 36px;
+    max-width: 100vw;
+    width: 100%;
+  }
+
+  /* ===== Sidebar collapses to a compact top header ===== */
+  .sidebar {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    flex-direction: column;
+    gap: 8px;
+    padding: 10px 12px 8px;
+    height: auto;
+    width: 100%;
+    border-right: none;
+    border-bottom: 1px solid var(--border-soft);
+    background: var(--bg-2);
+  }
   .sidebar-foot { display: none; }
-  .nav { flex-direction: row; }
+  .brand { gap: 8px; }
+  .brand .logo { font-size: 20px; }
+  .brand h1 { font-size: 14px; }
+  .brand .tag { display: none; }
+
+  .nav {
+    flex-direction: row;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overflow-y: hidden;
+    gap: 6px;
+    margin: 0 -12px;
+    padding: 2px 12px 4px;
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .nav::-webkit-scrollbar { display: none; }
+  .nav-section { display: none; }
+  .nav-btn {
+    flex: 0 0 auto;
+    padding: 7px 12px;
+    font-size: 12.5px;
+    white-space: nowrap;
+    border-radius: 999px;
+    border: 1px solid var(--border-soft);
+    min-height: 32px;
+  }
+  .nav-btn .count { display: none; }
+  .nav-btn.active {
+    box-shadow: none;
+    background: color-mix(in srgb, var(--market-accent, var(--accent)) 14%, transparent);
+    border-color: color-mix(in srgb, var(--market-accent, var(--accent)) 45%, transparent);
+    color: var(--text);
+  }
+
+  /* ===== Hero ===== */
+  .hero { padding: 4px 0 16px; margin-bottom: 18px; }
+  .hero-eyebrow { font-size: 10.5px; margin-bottom: 10px; }
+  .hero-title {
+    font-size: 26px;
+    line-height: 1.15;
+    letter-spacing: -0.7px;
+    margin-bottom: 10px;
+  }
+  .hero-sub { font-size: 14px; line-height: 1.5; }
+
+  /* ===== Card grids — single or 2-col on phones ===== */
+  .stats-strip {
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 18px;
+  }
+  .stat-tile { padding: 12px 14px; }
+  .stat-tile .stat-label { font-size: 10px; margin-bottom: 4px; }
+  .stat-tile .stat-value { font-size: 18px; }
+
+  .feature-grid { grid-template-columns: 1fr; gap: 12px; }
+  .feature-card { padding: 18px; }
+  .feature-card h3 { font-size: 17px; }
+  .feature-card p { font-size: 13px; }
+  .hiw-grid { grid-template-columns: 1fr 1fr; }
+
+  /* ===== View headings ===== */
+  .view-head { margin-bottom: 16px; }
+  .view-head h2 { font-size: 22px; letter-spacing: -0.4px; }
+  .view-head .lede { font-size: 13.5px; }
+  .view-head .market-note { font-size: 12px; }
+
+  /* ===== Form controls — full-width, 16px to kill iOS zoom ===== */
+  .scan-controls,
+  .lookup-controls form {
+    padding: 12px;
+    gap: 10px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .field.grow { min-width: 0; }
+  input, select, .field input, .field select {
+    font-size: 16px;
+    width: 100%;
+    padding: 11px 12px;
+    box-sizing: border-box;
+  }
+  .primary-btn {
+    width: 100%;
+    padding: 12px;
+    font-size: 14px;
+    min-height: 44px;
+  }
+
+  /* ===== Summary / verdict tiles ===== */
+  .summary {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .sum-card { padding: 12px 14px; }
+  .sum-num { font-size: 22px; }
+  .sum-label { font-size: 10px; }
+
+  /* ===== Pillars / reasons single column ===== */
+  .reasons, .pillars { grid-template-columns: 1fr; }
   .row-body { grid-template-columns: 1fr; gap: 12px; }
-  .reasons, .pillars, .summary { grid-template-columns: repeat(2, 1fr); }
+
+  /* ===== Filters ===== */
+  .filters {
+    padding: 10px 12px;
+    gap: 10px;
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .filter-group { flex-wrap: wrap; gap: 6px; }
+  .chip { padding: 6px 12px; font-size: 12px; min-height: 32px; }
+
+  /* ===== Leaderboard rows stack vertically ===== */
+  .row { flex-direction: column; }
+  .row-rank {
+    width: 100%;
+    padding: 6px 0;
+    font-size: 14px;
+  }
+  .row-main { padding: 12px 14px; min-width: 0; }
+  .row-head { gap: 8px; flex-wrap: wrap; }
+  .row-ticker { font-size: 15px; }
+  .row-stats { gap: 14px; flex-wrap: wrap; }
+
+  /* ===== Card head padding ===== */
+  .card-head { padding: 16px 18px; flex-wrap: wrap; gap: 10px; }
+
+  /* ===== Housing ===== */
+  .housing-grid { grid-template-columns: 1fr; gap: 12px; }
+  .housing-card { padding: 14px 16px; }
+  .snap-head {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+  }
+  .snap-metrics { grid-template-columns: 1fr 1fr; gap: 8px; }
+  .zip-form { flex-direction: column; }
+  #zip-input { width: 100%; font-size: 16px; letter-spacing: 1.5px; }
+  .metro-row { grid-template-columns: 1fr; gap: 6px; }
+
+  /* ===== Mortgage ===== */
+  .rate-strip {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 8px;
+  }
+  .rate-cell { padding: 12px 14px; }
+  .rate-cell .rate-value { font-size: 19px; }
+  .mortgage-grid { grid-template-columns: 1fr; gap: 12px; }
+  .mortgage-form { gap: 12px; }
+  .lifetime-grid { grid-template-columns: 1fr; }
+  .mfield-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .adj-bps { min-width: 50px; }
+
+  /* ===== Section dividers ===== */
+  .section-divider {
+    font-size: 10px;
+    margin: 18px 0 12px;
+    letter-spacing: 0.5px;
+  }
+
+  /* ===== News ===== */
+  .news-thumb { display: none; }
+  .news-controls { flex-direction: column; align-items: stretch; gap: 10px; }
+
+  /* ===== Empty state ===== */
+  .empty { padding: 44px 16px; }
+  .empty-icon { font-size: 34px; }
+  .empty h3 { font-size: 16px; }
+  .empty p { font-size: 13px; }
+
+  /* ===== Safety: keep any rogue child from forcing horizontal scroll ===== */
+  img, svg, video, canvas, table { max-width: 100%; height: auto; }
+  .chart-container, .rate-chart-container { max-width: 100%; overflow-x: auto; }
+  pre { white-space: pre-wrap; word-break: break-word; }
 }
 
 /* ============ Housing market view ============ */
@@ -2279,199 +2479,4 @@ input:focus, select:focus {
   line-height: 1.55;
 }
 
-@media (max-width: 720px) {
-  .news-thumb { display: none; }
-  .news-controls { flex-direction: column; align-items: stretch; }
-}
-
-/* ============ Phone layout (<= 640px) ============
-   Tuned for the StockAnalyzer iframe inside the Ascend PWA Stocks tab.
-   Goals: full-width content, no horizontal scroll bleed, 16px inputs
-   (kills iOS zoom-on-focus), horizontally scrollable nav chips, single-
-   column grids everywhere, tap targets >= 38px. */
-@media (max-width: 640px) {
-  html, body { font-size: 13.5px; }
-  body { grid-template-columns: 1fr; }
-  .main {
-    padding: 14px 12px 36px;
-    max-width: 100%;
-  }
-
-  /* Sidebar collapses to a compact top bar: brand row + scrollable nav row */
-  .sidebar {
-    position: sticky;
-    top: 0;
-    z-index: 10;
-    flex-direction: column;
-    gap: 8px;
-    padding: 10px 12px 8px;
-    height: auto;
-    border-right: none;
-    border-bottom: 1px solid var(--border-soft);
-    background: var(--bg-2);
-  }
-  .sidebar-foot { display: none; }
-  .brand { gap: 8px; }
-  .brand .logo { font-size: 20px; }
-  .brand h1 { font-size: 14px; }
-  .brand .tag { display: none; }
-
-  .nav {
-    flex-direction: row;
-    flex-wrap: nowrap;
-    overflow-x: auto;
-    overflow-y: hidden;
-    gap: 6px;
-    margin: 0 -12px;
-    padding: 2px 12px 4px;
-    scrollbar-width: none;
-    -ms-overflow-style: none;
-    -webkit-overflow-scrolling: touch;
-  }
-  .nav::-webkit-scrollbar { display: none; }
-  .nav-section { display: none; }
-  .nav-btn {
-    flex: 0 0 auto;
-    padding: 7px 12px;
-    font-size: 12.5px;
-    white-space: nowrap;
-    border-radius: 999px;
-    border: 1px solid var(--border-soft);
-    min-height: 32px;
-  }
-  .nav-btn .count { display: none; }
-  .nav-btn.active {
-    box-shadow: none;
-    background: color-mix(in srgb, var(--market-accent, var(--accent)) 14%, transparent);
-    border-color: color-mix(in srgb, var(--market-accent, var(--accent)) 45%, transparent);
-    color: var(--text);
-  }
-
-  /* Hero */
-  .hero { padding: 4px 0 16px; margin-bottom: 18px; }
-  .hero-eyebrow { font-size: 10.5px; margin-bottom: 10px; }
-  .hero-title {
-    font-size: 26px;
-    line-height: 1.15;
-    letter-spacing: -0.7px;
-    margin-bottom: 10px;
-  }
-  .hero-sub { font-size: 14px; line-height: 1.5; }
-
-  /* Stats / cards */
-  .stats-strip {
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-    margin-bottom: 18px;
-  }
-  .stat-tile { padding: 12px 14px; }
-  .stat-tile .stat-label { font-size: 10px; margin-bottom: 4px; }
-  .stat-tile .stat-value { font-size: 18px; }
-
-  /* Feature cards: already 1fr at 1100px — just tighten */
-  .feature-card { padding: 18px; }
-  .feature-card h3 { font-size: 17px; }
-  .feature-card p { font-size: 13px; }
-
-  /* View headings */
-  .view-head { margin-bottom: 16px; }
-  .view-head h2 { font-size: 22px; letter-spacing: -0.4px; }
-  .view-head .lede { font-size: 13.5px; }
-  .view-head .market-note { font-size: 12px; }
-
-  /* Form controls: full-width, 16px font to kill iOS zoom */
-  .scan-controls,
-  .lookup-controls form {
-    padding: 12px;
-    gap: 10px;
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .field.grow { min-width: 0; }
-  input, select, .field input, .field select {
-    font-size: 16px;
-    width: 100%;
-    padding: 11px 12px;
-  }
-  .primary-btn {
-    width: 100%;
-    padding: 12px;
-    font-size: 14px;
-    min-height: 44px;
-  }
-
-  /* Summary tiles */
-  .summary {
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-  .sum-card { padding: 12px 14px; }
-  .sum-num { font-size: 22px; }
-  .sum-label { font-size: 10px; }
-
-  /* Pillars / reasons inside detail rows: single column */
-  .reasons, .pillars { grid-template-columns: 1fr !important; }
-
-  /* Filters bar */
-  .filters {
-    padding: 10px 12px;
-    gap: 10px;
-    flex-direction: column;
-    align-items: stretch;
-  }
-  .filter-group { flex-wrap: wrap; gap: 6px; }
-  .chip { padding: 6px 12px; font-size: 12px; min-height: 32px; }
-
-  /* Leaderboard rows: stack rank above body */
-  .row { flex-direction: column; }
-  .row-rank {
-    width: 100%;
-    padding: 6px 0;
-    font-size: 14px;
-  }
-  .row-main { padding: 12px 14px; }
-  .row-head { gap: 8px; }
-  .row-ticker { font-size: 15px; }
-  .row-stats { gap: 14px; flex-wrap: wrap; }
-
-  /* Card head padding */
-  .card-head { padding: 16px 18px; }
-
-  /* Housing */
-  .housing-card { padding: 14px 16px; }
-  .snap-head {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 8px;
-  }
-  .snap-metrics { grid-template-columns: 1fr 1fr !important; gap: 8px; }
-  .zip-form { flex-direction: column; }
-  #zip-input { width: 100%; font-size: 16px; letter-spacing: 1.5px; }
-  .metro-row { gap: 6px; }
-
-  /* Mortgage */
-  .rate-strip {
-    grid-template-columns: 1fr 1fr;
-    gap: 8px;
-  }
-  .rate-cell { padding: 12px 14px; }
-  .rate-cell .rate-value { font-size: 19px; }
-  .mortgage-form { gap: 12px; }
-  .lifetime-grid { grid-template-columns: 1fr; }
-
-  /* Section dividers */
-  .section-divider {
-    font-size: 10px;
-    margin: 18px 0 12px;
-    letter-spacing: 0.5px;
-  }
-
-  /* News (already partially mobile-friendly via 720px block) */
-  .news-controls { gap: 10px; }
-
-  /* Empty state: lighter padding */
-  .empty { padding: 44px 16px; }
-  .empty-icon { font-size: 34px; }
-  .empty h3 { font-size: 16px; }
-  .empty p { font-size: 13px; }
-}
+/* (720/640px blocks consolidated into the 900px block above for broader phone coverage.) */
