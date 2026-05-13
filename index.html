@@ -1059,6 +1059,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
     <div class="tb-greet">
       <div class="tb-hello" id="tb-hello">Good morning</div>
       <div class="tb-name"  id="tb-title">Ascend</div>
+      <div id="tb-tagline" style="font-size:11px;color:var(--t3);font-style:italic;margin-top:1px;display:none"></div>
     </div>
     <div style="display:flex;align-items:center">
       <button class="tb-priv" id="tb-priv" title="Privacy mode" onclick="togglePrivacyMode()" aria-label="Privacy mode">👁</button>
@@ -1559,6 +1560,12 @@ function renderHeader() {
   const name = (DB.user.name || "").trim();
   $("#tb-hello").textContent = greet() + (name ? "," : "");
   $("#tb-title").textContent = name || "Ascend";
+  const tagline = (DB.user.tagline || "").trim();
+  const tlEl = $("#tb-tagline");
+  if (tlEl) {
+    if (tagline) { tlEl.textContent = '"' + tagline + '"'; tlEl.style.display = ""; }
+    else { tlEl.style.display = "none"; }
+  }
 }
 
 /* ================ HABITS ================ */
@@ -3765,6 +3772,11 @@ function renderSettings() {
 
     <div class="section-h"><span class="lbl">Data</span></div>
     <div class="list">
+      <div class="row tappable" onclick="aiOnboardingStart()">
+        <div class="lead">✨</div>
+        <div class="body"><div class="t1">Retake AI setup</div><div class="t2">Talk to Ascend AI to refresh your habits, goals, and tagline</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="exportData()">
         <div class="lead">⬇︎</div>
         <div class="body"><div class="t1">Export data</div><div class="t2">Download a JSON backup</div></div>
@@ -5481,7 +5493,8 @@ function onboardingStep1() {
     <label style="font-size:12px;color:var(--t3);font-weight:600;margin-bottom:6px;display:block">What should we call you?</label>
     <input id="onb-name" placeholder="Your first name" autofocus value="${esc(_onbState.name)}" />
   `, `
-    <button class="btn" style="width:100%" onclick="(()=>{_onbState.name=$('#onb-name').value.trim();onboardingStep2();})()">Continue</button>
+    <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="(()=>{const n=$('#onb-name').value.trim();_onbState.name=n;closeSheet();aiOnboardingStart({name:n,fromOnboarding:true});})()">✨ Talk to Ascend AI (~3 min)</button>
+    <button class="btn secondary" style="width:100%;margin-top:8px" onclick="(()=>{_onbState.name=$('#onb-name').value.trim();onboardingStep2();})()">Quick setup instead</button>
   `);
 }
 
@@ -5563,6 +5576,403 @@ function finishOnboarding() {
   closeSheet();
   applyTheme();
   render();
+}
+
+/* ================ AI ONBOARDING ================
+   Conversational setup. The AI asks 4-6 short questions, then proposes
+   a tailored starter plan (habits + goals + tagline) the user can edit
+   and accept. Runs through the existing Cloudflare Worker proxy so the
+   Anthropic key never touches the browser. Falls back gracefully when
+   the backend isn't configured. */
+
+const AI_ONBOARDING_SYSTEM = `You are Ascend AI, the warm onboarding coach for the Ascend app (a personal-development tool that tracks habits, goals, and money). Tagline: "Goals made easy".
+
+Your job is a short 3-7 turn conversation to learn the user, then propose a tailored starter plan. Be warm, casual, brief (1-2 sentences per reply, no preamble, no "as an AI" disclaimers).
+
+Conversation arc (skip topics they say they don't care about):
+1. Name (skip if already provided)
+2. The ONE area they most want to improve right now (Money, Health, Mind/Learning, Career, Relationships, Faith)
+3. What "winning" looks like for them in ~5 years
+4. Their smallest realistic move this week
+5. Time/day they can realistically commit (5 min? 30 min? 1 hour?)
+
+After 4-6 user turns, generate the plan. Don't drag it out.
+
+Output: respond with STRICT JSON only. No markdown fences, no commentary outside the JSON.
+
+WHILE CONVERSING:
+{
+  "say": "your 1-2 sentence reply",
+  "quickReplies": ["chip A", "chip B"],
+  "done": false,
+  "plan": null
+}
+
+WHEN DONE:
+{
+  "say": "warm closing line like 'Here's what I'm thinking…'",
+  "quickReplies": [],
+  "done": true,
+  "plan": {
+    "habits": [
+      {"name": "Workout", "emoji": "💪", "type": "check", "group": "health"},
+      {"name": "Drink water", "emoji": "💧", "type": "count", "target": 64, "unit": "oz", "group": "health"}
+    ],
+    "shortGoal": {"title": "Save $500 this month", "note": "Auto-transfer on payday"},
+    "longGoal": {"title": "Be financially free by 40", "note": "$1M invested"},
+    "todayTagline": "Discipline > motivation"
+  }
+}
+
+Plan rules:
+- 3-5 habits, anchored to what they said matters most
+- Emojis from this set: 💪 💧 📖 🚶 🧘 ✍️ 🌙 🙏 💰 🎯 🛌 📝 🎨 🎵 💼 🍎 ☀️ 🏃 🧠 ☕
+- type "check" for yes/no, "count" for measurable (requires target and unit)
+- group: one of "health", "mind", "money", "faith", "misc"
+- shortGoal: actionable in 1-8 weeks, concrete
+- longGoal: their 5-year vision as a concrete goal
+- todayTagline: 3-8 word motto matching their vibe
+
+Never invent specific numbers (dollars, weights) unless they told you. Never ask two questions in one turn. Never break the JSON format.`;
+
+let _aiOnb = null;
+
+function aiOnboardingStart(opts = {}) {
+  if (!_backendReady()) {
+    openSheet(`
+      <h2 style="margin-bottom:8px">✨ Talk to Ascend AI</h2>
+      <p style="font-size:14px;color:var(--t2);line-height:1.5;margin-bottom:14px">
+        The AI setup uses your private backend, which has to be configured first. Once you add the Worker URL + Enrollment Key in <b>Settings → Backend</b>, you can come back here.
+      </p>
+      <button class="btn" style="width:100%;margin-bottom:8px" onclick="closeSheet();showTab('settings')">Open Settings</button>
+      <button class="btn secondary" style="width:100%" onclick="closeSheet();${opts.fromOnboarding ? 'runOnboarding()' : ''}">${opts.fromOnboarding ? 'Use the quick setup instead' : 'Close'}</button>
+    `);
+    return;
+  }
+  _lockSheet = true;
+  _aiOnb = {
+    messages: [],
+    asking: false,
+    plan: null,
+    selected: null,
+    knownName: (opts.name || DB.user.name || "").trim(),
+    fromOnboarding: !!opts.fromOnboarding,
+  };
+
+  // Seed first message — no API call needed for the opener.
+  const opener = _aiOnb.knownName
+    ? `Hey ${_aiOnb.knownName}! I'm Ascend AI. I'll ask a few quick questions to set things up the way that fits you — about 3 minutes. Which area of life matters most to you right now?`
+    : `Hey! I'm Ascend AI. I'll ask a few quick questions to set things up the way that fits you — about 3 minutes. What should I call you?`;
+  const openerChips = _aiOnb.knownName
+    ? ["💰 Money", "💪 Health", "🧠 Mind", "💼 Career", "❤️ Relationships", "🙏 Faith"]
+    : [];
+  _aiOnb.messages.push({
+    role: "assistant",
+    parsed: { say: opener, quickReplies: openerChips, done: false, plan: null },
+    content: opener,
+  });
+  aiOnboardingRender();
+}
+
+function aiOnboardingRender() {
+  const o = _aiOnb;
+  if (!o) return;
+
+  const bubbles = o.messages.map(m => {
+    if (m.role === "assistant") {
+      const text = m.parsed?.say || m.content || "";
+      return `
+        <div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-start">
+          <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✨</div>
+          <div style="background:var(--bg-elev);padding:10px 14px;border-radius:16px;border-top-left-radius:4px;max-width:80%;font-size:14px;line-height:1.45">${esc(text)}</div>
+        </div>`;
+    }
+    return `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
+        <div style="background:var(--blue,#007AFF);color:#fff;padding:10px 14px;border-radius:16px;border-top-right-radius:4px;max-width:80%;font-size:14px;line-height:1.45">${esc(m.content)}</div>
+      </div>`;
+  }).join("");
+
+  const last = o.messages[o.messages.length - 1];
+  const lastParsed = (last && last.role === "assistant") ? last.parsed : null;
+  const showInput = !o.asking && !o.plan && last?.role === "assistant";
+  const chips = (lastParsed?.quickReplies || []).map(r =>
+    `<button class="btn secondary" style="font-size:13px;padding:6px 12px;height:auto;width:auto" onclick="aiOnbSend(${jsAttr(r)})">${esc(r)}</button>`
+  ).join("");
+
+  let footer = "";
+  if (o.asking) {
+    footer = `<div style="text-align:center;color:var(--t3);font-size:13px;padding:10px">Thinking…</div>`;
+  } else if (o.plan) {
+    footer = `
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin:14px 0 6px">Your starter plan</div>
+      <div style="font-size:12px;color:var(--t3);margin-bottom:10px">Tap any item to include or exclude it.</div>
+      ${aiOnbPlanReviewHtml(o.plan)}
+      <button class="btn" style="width:100%;margin-top:14px" onclick="aiOnbAcceptPlan()">Add to my app</button>
+      <button class="btn secondary" style="width:100%;margin-top:8px" onclick="aiOnbRestart()">Start over</button>
+    `;
+  } else if (showInput) {
+    footer = `
+      ${chips ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${chips}</div>` : ""}
+      <div style="display:flex;gap:8px;align-items:center">
+        <input id="ai-onb-input" placeholder="Type your answer…"
+          style="flex:1;background:var(--bg-elev);padding:11px 14px;border-radius:24px;font-size:16px;border:none;outline:none;color:var(--t1)"
+          onkeydown="if(event.key==='Enter'){event.preventDefault();aiOnbSend(this.value);this.value='';}" />
+        <button class="btn" style="border-radius:50%;width:44px;height:44px;padding:0;flex-shrink:0;font-size:18px"
+          onclick="(()=>{const v=$('#ai-onb-input').value;$('#ai-onb-input').value='';aiOnbSend(v);})()">→</button>
+      </div>
+    `;
+  }
+
+  openSheet(`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+      <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px">✨</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:15px">Ascend AI</div>
+        <div style="font-size:11px;color:var(--t3)">${o.plan ? "Plan ready" : o.asking ? "Thinking…" : "Setting things up · ~3 min"}</div>
+      </div>
+      <button class="del-x" style="background:none;border:none;font-size:22px;color:var(--t3);cursor:pointer" onclick="aiOnbClose()">×</button>
+    </div>
+    <div id="ai-onb-scroll" style="max-height:50vh;overflow-y:auto;padding-right:4px;margin-bottom:12px">${bubbles}</div>
+    ${footer}
+  `);
+
+  // Auto-scroll to bottom + focus input
+  setTimeout(() => {
+    const scroll = document.getElementById("ai-onb-scroll");
+    if (scroll) scroll.scrollTop = scroll.scrollHeight;
+    const inp = document.getElementById("ai-onb-input");
+    if (inp && !o.asking) inp.focus();
+  }, 30);
+}
+
+async function aiOnbSend(text) {
+  text = (text || "").toString().trim();
+  if (!text || !_aiOnb || _aiOnb.asking) return;
+
+  _aiOnb.messages.push({ role: "user", content: text });
+  _aiOnb.asking = true;
+  aiOnboardingRender();
+
+  try {
+    // Build the messages array for Anthropic — assistants send their JSON parsed object
+    // back as their literal output so the model sees consistent format on continuation.
+    const history = _aiOnb.messages.map(m => ({
+      role: m.role,
+      content: m.role === "assistant"
+        ? (m.parsed ? JSON.stringify(m.parsed) : (m.content || ""))
+        : m.content,
+    }));
+
+    const namePrefix = _aiOnb.knownName ? `(User's name is already known: ${_aiOnb.knownName}.) ` : "";
+    const sys = namePrefix + AI_ONBOARDING_SYSTEM;
+
+    const txt = await aiOnbCall(history, sys);
+
+    // Parse JSON. Tolerate light markdown fencing if model slips.
+    let parsed;
+    try {
+      const cleaned = txt.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+      parsed = JSON.parse(cleaned);
+    } catch (e) {
+      parsed = { say: txt, quickReplies: [], done: false, plan: null };
+    }
+    if (!parsed || typeof parsed !== "object") {
+      parsed = { say: String(txt || ""), quickReplies: [], done: false, plan: null };
+    }
+
+    _aiOnb.messages.push({ role: "assistant", parsed, content: parsed.say || "" });
+    _aiOnb.asking = false;
+
+    if (parsed.done && parsed.plan) {
+      _aiOnb.plan = parsed.plan;
+      _aiOnb.selected = {
+        habits: (parsed.plan.habits || []).map((_, i) => i),
+        shortGoal: !!parsed.plan.shortGoal,
+        longGoal: !!parsed.plan.longGoal,
+      };
+    }
+    aiOnboardingRender();
+  } catch (e) {
+    _aiOnb.asking = false;
+    _aiOnb.messages.push({
+      role: "assistant",
+      parsed: {
+        say: "Hmm, I hit a snag talking to the backend: " + (e.message || "unknown error") + ". Try again, or close this and I'll fall back to the quick setup.",
+        quickReplies: ["Try again", "Close and use quick setup"],
+        done: false,
+      },
+      content: "",
+    });
+    aiOnboardingRender();
+  }
+}
+
+async function aiOnbCall(history, systemPrompt) {
+  const model = DB.settings.anthropicModel || "claude-haiku-4-5-20251001";
+  const data = await api("/anthropic/messages", {
+    method: "POST",
+    body: JSON.stringify({
+      model,
+      max_tokens: 700,
+      system: systemPrompt,
+      messages: history,
+    }),
+  });
+  if (data && data.error) throw new Error(data.error.message || data.error);
+  return data.content?.map(c => c.text).join("\n") || "";
+}
+
+function aiOnbPlanReviewHtml(plan) {
+  if (!plan) return "";
+  const sel = _aiOnb.selected;
+
+  const habitsHtml = (plan.habits || []).map((h, i) => {
+    const on = sel.habits.includes(i);
+    return `
+      <div onclick="aiOnbToggleHabit(${i})" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-elev);border-radius:10px;margin-bottom:6px;cursor:pointer;opacity:${on?1:0.45};transition:opacity .15s">
+        <div style="width:20px;height:20px;border:2px solid ${on?'var(--blue,#007AFF)':'var(--sep,#444)'};border-radius:5px;background:${on?'var(--blue,#007AFF)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">${on?'✓':''}</div>
+        <div style="font-size:20px">${esc(h.emoji || '•')}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600">${esc(h.name || 'Habit')}</div>
+          <div style="font-size:11px;color:var(--t3)">${h.type==='count'?`${h.target||1} ${esc(h.unit||'')}`:'daily check'} · ${esc(h.group||'misc')}</div>
+        </div>
+      </div>`;
+  }).join("");
+
+  let goalsHtml = "";
+  if (plan.shortGoal) {
+    const on = sel.shortGoal;
+    goalsHtml += `
+      <div onclick="aiOnbToggleGoal('shortGoal')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-elev);border-radius:10px;margin-bottom:6px;cursor:pointer;opacity:${on?1:0.45}">
+        <div style="width:20px;height:20px;border:2px solid ${on?'var(--blue,#007AFF)':'var(--sep,#444)'};border-radius:5px;background:${on?'var(--blue,#007AFF)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">${on?'✓':''}</div>
+        <div style="font-size:20px">🎯</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600">${esc(plan.shortGoal.title || 'Short-term goal')}</div>
+          <div style="font-size:11px;color:var(--t3)">Short-term · ${esc(plan.shortGoal.note || '')}</div>
+        </div>
+      </div>`;
+  }
+  if (plan.longGoal) {
+    const on = sel.longGoal;
+    goalsHtml += `
+      <div onclick="aiOnbToggleGoal('longGoal')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-elev);border-radius:10px;margin-bottom:6px;cursor:pointer;opacity:${on?1:0.45}">
+        <div style="width:20px;height:20px;border:2px solid ${on?'var(--blue,#007AFF)':'var(--sep,#444)'};border-radius:5px;background:${on?'var(--blue,#007AFF)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">${on?'✓':''}</div>
+        <div style="font-size:20px">🌟</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600">${esc(plan.longGoal.title || 'Long-term goal')}</div>
+          <div style="font-size:11px;color:var(--t3)">Long-term · ${esc(plan.longGoal.note || '')}</div>
+        </div>
+      </div>`;
+  }
+
+  const taglineHtml = plan.todayTagline
+    ? `<div style="margin-top:14px;padding:12px;background:var(--bg-elev);border-radius:10px;border-left:3px solid #7c3aed">
+         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin-bottom:4px">Your tagline</div>
+         <div style="font-size:14px;font-style:italic">"${esc(plan.todayTagline)}"</div>
+       </div>`
+    : "";
+
+  return `
+    ${habitsHtml ? `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin:10px 0 6px">Habits</div>${habitsHtml}` : ""}
+    ${goalsHtml ? `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin:14px 0 6px">Goals</div>${goalsHtml}` : ""}
+    ${taglineHtml}
+  `;
+}
+
+function aiOnbToggleHabit(i) {
+  if (!_aiOnb?.selected) return;
+  const arr = _aiOnb.selected.habits;
+  const ix = arr.indexOf(i);
+  if (ix >= 0) arr.splice(ix, 1); else arr.push(i);
+  aiOnboardingRender();
+}
+function aiOnbToggleGoal(key) {
+  if (!_aiOnb?.selected) return;
+  _aiOnb.selected[key] = !_aiOnb.selected[key];
+  aiOnboardingRender();
+}
+
+async function aiOnbAcceptPlan() {
+  const o = _aiOnb;
+  if (!o || !o.plan || !o.selected) return;
+  const p = o.plan;
+  const sel = o.selected;
+  const COLORS = ["#34C759", "#5856D6", "#5AC8FA", "#AF52DE", "#FF9500", "#FF3B30", "#FFCC00", "#007AFF"];
+
+  // If the AI captured a name we didn't have yet, infer it from the first user message
+  // (best-effort — only used as a default if DB.user.name is empty).
+  if (!DB.user.name && o.knownName) DB.user.name = o.knownName;
+  if (!DB.user.name) {
+    const firstUser = o.messages.find(m => m.role === "user");
+    if (firstUser && firstUser.content && firstUser.content.length < 40 && !/[.!?]/.test(firstUser.content)) {
+      DB.user.name = firstUser.content.trim().split(/\s+/)[0];
+    }
+  }
+
+  for (const i of sel.habits) {
+    const h = p.habits?.[i];
+    if (!h || !h.name) continue;
+    DB.habits.push({
+      id: uid(),
+      name: String(h.name).slice(0, 40),
+      emoji: h.emoji || "✓",
+      type: h.type === "count" ? "count" : "check",
+      target: h.type === "count" ? (+h.target || 1) : null,
+      unit: h.type === "count" ? String(h.unit || "").slice(0, 12) : "",
+      group: ["health","mind","money","faith","misc"].includes(h.group) ? h.group : "misc",
+      color: COLORS[DB.habits.length % COLORS.length],
+      createdAt: Date.now(),
+      log: {},
+    });
+  }
+  if (sel.shortGoal && p.shortGoal?.title) {
+    DB.goals.push({
+      id: uid(),
+      title: String(p.shortGoal.title).slice(0, 80),
+      note: String(p.shortGoal.note || "").slice(0, 140),
+      tier: "short",
+      steps: [],
+      done: false,
+      createdAt: Date.now(),
+    });
+  }
+  if (sel.longGoal && p.longGoal?.title) {
+    DB.goals.push({
+      id: uid(),
+      title: String(p.longGoal.title).slice(0, 80),
+      note: String(p.longGoal.note || "").slice(0, 140),
+      tier: "life",
+      steps: [],
+      done: false,
+      createdAt: Date.now() + 1,
+    });
+  }
+  if (p.todayTagline) DB.user.tagline = String(p.todayTagline).slice(0, 60);
+  DB.user.onboardedAt = Date.now();
+  DB.user.onboardedVia = "ai";
+
+  await save();
+  _aiOnb = null;
+  _lockSheet = false;
+  closeSheet();
+  toast("Plan added — welcome to Ascend!");
+  applyTheme();
+  render();
+}
+
+function aiOnbRestart() {
+  if (!confirm("Restart the AI setup? This clears the current conversation.")) return;
+  const wasOnboarding = _aiOnb?.fromOnboarding;
+  _aiOnb = null;
+  aiOnboardingStart({ fromOnboarding: wasOnboarding });
+}
+
+function aiOnbClose() {
+  if (!confirm(_aiOnb?.plan ? "Close without adding the plan?" : "Close the AI setup?")) return;
+  _aiOnb = null;
+  _lockSheet = false;
+  closeSheet();
 }
 
 
@@ -11544,6 +11954,8 @@ function init() {
     yearReview, yearReviewSheet, shareCardSvg, downloadShareCard, shareStreakCard,
     backendHoldings, syncHoldings,
     runOnboarding, onboardingStep1, onboardingStep2, onboardingStep3, onboardingStep4, finishOnboarding,
+    aiOnboardingStart, aiOnboardingRender, aiOnbSend, aiOnbToggleHabit, aiOnbToggleGoal,
+    aiOnbAcceptPlan, aiOnbRestart, aiOnbClose,
     safeToSpend, recurringMonthlyTotal,
     applyPrivacyMode, togglePrivacyMode,
     autoLockSetup, celebrate, STREAK_MILESTONES,
