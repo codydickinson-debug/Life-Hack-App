@@ -3632,6 +3632,11 @@ function renderSettings() {
             <div class="trail chev"></div>
           </div>
         `).join("")}
+        <div class="row tappable" onclick="debtConsolidationSheet()" role="button" tabindex="0">
+          <div class="lead">🧮</div>
+          <div class="body"><div class="t1">Try consolidation</div><div class="t2">Compare one loan vs. your current debts — monthly + total interest</div></div>
+          <div class="trail chev"></div>
+        </div>
       </div>
     ` : ""}
 
@@ -3779,7 +3784,7 @@ function renderSettings() {
 
     <div class="section-h"><span class="lbl">About</span></div>
     <div class="list">
-      <div class="row"><div class="lead">★</div><div class="body"><div class="t1">Ascend</div><div class="t2">v3.0 · ${DB.items?.length ? `${DB.items.length} bank${DB.items.length===1?"":"s"} connected` : "saved on this device"}</div></div></div>
+      <div class="row"><div class="lead">★</div><div class="body"><div class="t1">Ascend · Goals made easy</div><div class="t2">v3.0 · ${DB.items?.length ? `${DB.items.length} bank${DB.items.length===1?"":"s"} connected` : "saved on this device"}</div></div></div>
     </div>
     <div style="height:30px"></div>
   `;
@@ -4428,6 +4433,149 @@ function payoffSchedule(strategy = "avalanche", extra = 0) {
     }
   }
   return { months, years: (months/12).toFixed(1), totalInterest, totalMin };
+}
+
+/* ================ DEBT CONSOLIDATION CALCULATOR ================
+   "Should I take one loan to pay off my credit cards / other debts?"
+   Compares the current minimum-payment trajectory (via payoffSchedule)
+   against a hypothetical single fixed-term installment loan. State for
+   the form inputs lives on DB._consol so the user's last values stick. */
+function debtConsolidationSheet() {
+  const debts = debtAccounts();
+  if (!debts.length) {
+    openSheet(`
+      <h2>Debt consolidation</h2>
+      <p class="muted" style="margin:14px 0;font-size:14px">No debts on file yet. Add credit cards or loans in <b>Settings → Liabilities</b> or connect a bank, then come back to compare consolidation scenarios.</p>
+      <button class="btn" style="width:100%" onclick="closeSheet()">Close</button>
+    `);
+    return;
+  }
+
+  const totalBalance = debts.reduce((s,d) => s + (+d.balance_current||0), 0);
+  const blendedAPR = totalBalance > 0
+    ? debts.reduce((s,d) => s + (+d.balance_current||0) * (+d.apr||0), 0) / totalBalance
+    : 0;
+  const totalMin = debts.reduce((s,d) => s + (+d.minPayment||0), 0);
+
+  if (!DB._consol) {
+    DB._consol = {
+      apr: Math.max(7, Math.round(blendedAPR - 5)),
+      termMonths: 60,
+      origPct: 0,
+    };
+  }
+  const c = DB._consol;
+
+  const current = payoffSchedule(DB.settings.debtPayoffStrategy || "avalanche", 0);
+
+  // Standard amortization: M = P · r·(1+r)^n / ((1+r)^n − 1)
+  const principal = totalBalance + totalBalance * (c.origPct / 100);
+  const r = (c.apr / 100) / 12;
+  const n = Math.max(1, +c.termMonths || 60);
+  const newMonthly = r > 0
+    ? principal * (r * Math.pow(1+r, n)) / (Math.pow(1+r, n) - 1)
+    : principal / n;
+  const newTotalCost = newMonthly * n;
+  const newTotalInterest = newTotalCost - totalBalance;
+
+  const monthlyDiff = totalMin - newMonthly;
+  const interestDiff = (current?.totalInterest || 0) - newTotalInterest;
+
+  let verdict, verdictTone, verdictReason;
+  if (monthlyDiff > 0 && interestDiff > 0) {
+    verdict = "Consolidation looks worth considering";
+    verdictTone = "green";
+    verdictReason = `You'd save about ${fmt$0(monthlyDiff)}/mo and ${fmt$0(interestDiff)} in total interest. Verify the offer's fees and don't run the cards back up.`;
+  } else if (monthlyDiff > 0 && interestDiff <= 0) {
+    verdict = "Lower monthly, but more total interest";
+    verdictTone = "yellow";
+    verdictReason = `Saves ${fmt$0(monthlyDiff)}/mo for cash-flow breathing room, but you'd pay ${fmt$0(Math.abs(interestDiff))} more overall because the term is longer. Useful when the priority is monthly cash flow, not minimizing interest.`;
+  } else if (monthlyDiff <= 0 && interestDiff > 0) {
+    verdict = "Cheaper overall, but higher monthly";
+    verdictTone = "yellow";
+    verdictReason = `Saves ${fmt$0(interestDiff)} in total interest but the monthly payment goes up by ${fmt$0(Math.abs(monthlyDiff))}. Worth it if you can comfortably afford the higher payment.`;
+  } else {
+    verdict = "Not a clear win at these terms";
+    verdictTone = "red";
+    verdictReason = `Both monthly and total interest go up vs. your current trajectory. Try a lower APR, a shorter term, or skip consolidation and use the avalanche payoff plan instead.`;
+  }
+
+  const termOptions = [24,36,48,60,72,84,120]
+    .map(m => `<option value="${m}" ${c.termMonths===m?'selected':''}>${m/12} years (${m} mo)</option>`)
+    .join("");
+
+  openSheet(`
+    <h2 style="margin-bottom:4px">Debt consolidation</h2>
+    <p class="muted" style="font-size:13px;margin-bottom:16px;line-height:1.5">
+      One loan to pay off all your debts at once — and then pay that loan back over a fixed term. Compare it to your current minimum-payment path below.
+    </p>
+
+    <div class="section-h"><span class="lbl">Your current debts</span></div>
+    <div class="list" style="margin-bottom:14px">
+      <div class="row"><div class="lead">💳</div><div class="body"><div class="t1">${debts.length} ${debts.length===1?'debt':'debts'} · ${fmt$0(totalBalance)} balance</div><div class="t2">Weighted APR ${blendedAPR.toFixed(1)}% · min total ${fmt$0(totalMin)}/mo</div></div></div>
+      ${current ? `
+      <div class="row"><div class="lead">📅</div><div class="body"><div class="t1">~${current.years} years if you only pay minimums</div><div class="t2">≈ ${fmt$0(current.totalInterest)} interest paid over that time</div></div></div>
+      ` : ""}
+    </div>
+
+    <div class="section-h"><span class="lbl">Hypothetical consolidation loan</span></div>
+    <div class="list" style="margin-bottom:14px">
+      <div class="row">
+        <div class="lead">%</div>
+        <div class="body"><div class="t1">APR</div><div class="t2">Personal loans: roughly 7–18% by FICO</div></div>
+        <input type="number" step="0.1" min="0" value="${c.apr}"
+          onchange="DB._consol.apr=Number(this.value)||0;save();debtConsolidationSheet()"
+          style="background:var(--bg-elev);padding:8px;border-radius:8px;width:80px;text-align:right;font-size:16px" />
+      </div>
+      <div class="row">
+        <div class="lead">📅</div>
+        <div class="body"><div class="t1">Term</div><div class="t2">Longer term = lower monthly, more total interest</div></div>
+        <select onchange="DB._consol.termMonths=Number(this.value);save();debtConsolidationSheet()"
+          style="background:var(--bg-elev);padding:8px;border-radius:8px;font-size:14px">
+          ${termOptions}
+        </select>
+      </div>
+      <div class="row">
+        <div class="lead">+</div>
+        <div class="body"><div class="t1">Origination fee (%)</div><div class="t2">Typical: 0–8%, added to the loan balance</div></div>
+        <input type="number" step="0.5" min="0" value="${c.origPct}"
+          onchange="DB._consol.origPct=Number(this.value)||0;save();debtConsolidationSheet()"
+          style="background:var(--bg-elev);padding:8px;border-radius:8px;width:80px;text-align:right;font-size:16px" />
+      </div>
+    </div>
+
+    <div class="section-h"><span class="lbl">Side-by-side</span></div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px">
+      <div style="background:var(--bg-elev);padding:14px;border-radius:12px">
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:6px">Current path</div>
+        <div style="font-size:20px;font-weight:700">${fmt$0(totalMin)}/mo</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:4px">${current?current.years:'?'} yrs · ${fmt$0(current?.totalInterest||0)} interest</div>
+      </div>
+      <div style="background:var(--bg-elev);padding:14px;border-radius:12px">
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:.5px;font-weight:700;margin-bottom:6px">Consolidated</div>
+        <div style="font-size:20px;font-weight:700">${fmt$0(newMonthly)}/mo</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:4px">${(n/12).toFixed(1)} yrs · ${fmt$0(newTotalInterest)} interest</div>
+      </div>
+    </div>
+
+    <div style="background:var(--bg-elev);border-left:4px solid var(--${verdictTone});padding:14px;border-radius:8px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:14px;margin-bottom:6px">${verdict}</div>
+      <div style="font-size:13px;color:var(--t2);line-height:1.5">${verdictReason}</div>
+    </div>
+
+    <div style="font-size:12px;color:var(--t3);line-height:1.6;margin-bottom:14px;padding:12px;background:var(--bg-elev);border-radius:8px">
+      <b>Before signing:</b>
+      <ul style="margin:6px 0 0 16px;padding:0">
+        <li>Confirm the APR is <b>fixed</b>, not an introductory teaser rate</li>
+        <li>Check for prepayment penalties — paying early should be free</li>
+        <li>Don't run the cards back up after the consolidation hits (the #1 trap)</li>
+        <li>Origination fees are baked into the math above — make sure your real offer matches</li>
+      </ul>
+      <div style="margin-top:8px">Educational tool, not financial advice. Compare a few real offers and read the fine print.</div>
+    </div>
+
+    <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+  `);
 }
 
 /* ================ AI INSIGHTS (Anthropic via backend proxy) ================
@@ -5327,8 +5475,9 @@ function _onbShell(stepNum, body, footer) {
 function onboardingStep1() {
   _onbState.step = 1;
   _onbShell(1, `
-    <h2 style="text-align:center;margin-bottom:6px">Ascend</h2>
-    <p class="muted" style="text-align:center;margin-bottom:18px;font-size:14px">Track your habits. Set goals. Watch your money.</p>
+    <h2 style="text-align:center;margin-bottom:4px">Ascend</h2>
+    <div style="text-align:center;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;font-weight:700;color:var(--t3);margin-bottom:6px">Goals made easy · Life Hack</div>
+    <p class="muted" style="text-align:center;margin-bottom:18px;font-size:14px">Track your habits, plan your money, and build a life you actually want.</p>
     <label style="font-size:12px;color:var(--t3);font-weight:600;margin-bottom:6px;display:block">What should we call you?</label>
     <input id="onb-name" placeholder="Your first name" autofocus value="${esc(_onbState.name)}" />
   `, `
@@ -11389,6 +11538,7 @@ function init() {
     HABIT_GROUPS, habitsByGroup, groupProgress,
     netWorthBreakdown, donutSvg, cashFlowMonths, cashFlowSvg, timeToGoal,
     debtAccounts, setDebtMeta, payoffSchedule, debtMetaSheet, debtSettingsSheet,
+    debtConsolidationSheet,
     fetchInsight, getMonthlyInsight, runAiInsight,
     billsToIcs, exportBillsIcs,
     yearReview, yearReviewSheet, shareCardSvg, downloadShareCard, shareStreakCard,
