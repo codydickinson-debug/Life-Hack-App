@@ -548,6 +548,76 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 /* ================ GOALS ================ */
 .tier-pills { display: flex; gap: 6px; overflow-x: auto; margin: 4px 0 14px; padding-bottom: 4px; }
 .tier-pills::-webkit-scrollbar { display: none; }
+
+/* Insights pill row — collapses Wealth Health, Smart Plays, Important Dates,
+   Upcoming Bills, and Money Reflection into one horizontally-scrolling row
+   so the Today tab doesn't stack 5 cards before reaching habits.
+   Pills only render when their underlying surface has content. */
+.insights-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 0 0 16px;
+  padding: 2px 2px 6px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+.insights-row::-webkit-scrollbar { display: none; }
+.insight-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-radius: var(--r-pill);
+  background: var(--card);
+  border: 0.5px solid var(--sep-2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--t1);
+  cursor: pointer;
+  scroll-snap-align: start;
+  white-space: nowrap;
+  transition: transform 0.1s ease, background 0.1s ease;
+}
+.insight-pill:active { transform: scale(0.97); background: var(--bg-elev); }
+.insight-pill .ip-emoji { font-size: 15px; line-height: 1; }
+.insight-pill .ip-label { font-size: 13px; }
+.insight-pill .ip-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 7px;
+  background: var(--bg-elev);
+  color: var(--t2);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Compact inline "spent today" line that used to be a full card */
+.today-spent {
+  font-size: 12px;
+  color: var(--t3);
+  margin: -8px 0 14px;
+  padding-left: 2px;
+  font-weight: 500;
+}
+
+/* Slim footer quote that used to be a "Reminder" section with a row */
+.today-quote {
+  margin: 22px 0 8px;
+  padding: 14px 4px 0;
+  text-align: center;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--t3);
+  line-height: 1.5;
+  border-top: 0.5px solid var(--sep);
+}
 .tier-pill {
   flex-shrink: 0;
   padding: 8px 16px;
@@ -2249,6 +2319,70 @@ function renderToday() {
     </div>
   ` : "";
 
+  // ---- Build the Insights pill row -------------------------------------
+  // Collapses what used to be five separate stacked cards (Wealth Health,
+  // Money Reflection, Smart Plays, Important Dates, Coming Up bills) into
+  // a single horizontally-scrolling pill row. Each pill is only emitted if
+  // that surface has content — empty insights stay hidden. Tapping a pill
+  // opens the same sheet/tab the old card opened, so no feature is lost.
+  const insightPills = [];
+  {
+    // Smart plays — count-only pill
+    const plays = computeSmartPlays();
+    if (plays.length) {
+      insightPills.push(`<button class="insight-pill" onclick="smartPlaysSheet()" aria-label="Smart plays">
+        <span class="ip-emoji">💡</span><span class="ip-label">Smart plays</span><span class="ip-count">${plays.length}</span>
+      </button>`);
+    }
+    // Wealth Health — show score in the pill so it earns its spot
+    const hasMoneyContext = (+(DB.budget?.income) || 0) > 0
+      || (DB.savings || []).length > 0
+      || (DB.liabilities || []).length > 0
+      || (DB.recurring || []).length > 0;
+    if (hasMoneyContext) {
+      const wh = computeWealthHealth();
+      const lbl = wealthHealthLabel(wh.total);
+      insightPills.push(`<button class="insight-pill" onclick="wealthHealthSheet()" aria-label="Wealth health">
+        <span class="ip-emoji">🩺</span><span class="ip-label">Wealth</span><span class="ip-count" style="background:${lbl.color};color:#fff">${wh.total}</span>
+      </button>`);
+    }
+    // Upcoming bills — only when there's something to flag
+    const bills = upcomingBills();
+    if (bills.length) {
+      const urgent = bills.filter(b => b.days <= 2).length;
+      insightPills.push(`<button class="insight-pill" onclick="showTab('money')" aria-label="Upcoming bills">
+        <span class="ip-emoji">📅</span><span class="ip-label">Bills</span><span class="ip-count" ${urgent ? 'style="background:var(--orange);color:#fff"' : ""}>${bills.length}</span>
+      </button>`);
+    }
+    // Important dates within 60d
+    const events = computeFinancialCalendar({ horizonMonths: 12 })
+      .filter(e => daysUntil(e.date) <= 60);
+    if (events.length) {
+      insightPills.push(`<button class="insight-pill" onclick="financialCalendarSheet()" aria-label="Important dates">
+        <span class="ip-emoji">🗓</span><span class="ip-label">Dates</span><span class="ip-count">${events.length}</span>
+      </button>`);
+    }
+    // Money reflection — daily prompt
+    if ((DB.profile||{}).age) {
+      insightPills.push(`<button class="insight-pill" onclick="moneyPromptSheet()" aria-label="Today's money reflection">
+        <span class="ip-emoji">💭</span><span class="ip-label">Reflect</span>
+      </button>`);
+    }
+  }
+  const insightsRow = insightPills.length
+    ? `<div class="insights-row" role="navigation" aria-label="Insights">${insightPills.join("")}</div>`
+    : "";
+
+  // ---- Today spending micro-line ---------------------------------------
+  // Previously its own card; now folded as a small inline below safe-to-spend
+  const todayKeyStr = todayKey();
+  const todaySpentToday = (DB.spend||[])
+    .filter(t => t.date === todayKeyStr && (+t.amount) > 0)
+    .reduce((a,t)=>a+(+t.amount||0), 0);
+  const spentLine = todaySpentToday ? `
+    <div class="today-spent" data-priv="amount">💸 ${fmt$0(todaySpentToday)} spent today · ${(DB.spend||[]).filter(t=>t.date===todayKeyStr).length} tx</div>
+  ` : "";
+
   $("#page-today").innerHTML = `
     <div class="lg-title">Today</div>
     <div class="muted" style="margin:-12px 0 18px;font-size:14px">${dateLabel()}</div>
@@ -2274,119 +2408,9 @@ function renderToday() {
       `;
     })()}
     ${stsHtml}
+    ${spentLine}
 
-    ${(() => {
-      // Wealth Health score — only show when there's meaningful financial data,
-      // otherwise the score is artificially 0 and demotivating for new users.
-      const hasMoneyContext = (+(DB.budget?.income) || 0) > 0
-        || (DB.savings || []).length > 0
-        || (DB.liabilities || []).length > 0
-        || (DB.recurring || []).length > 0;
-      if (!hasMoneyContext) return "";
-      const r = computeWealthHealth();
-      const lbl = wealthHealthLabel(r.total);
-      return `
-        <div class="row tappable" onclick="wealthHealthSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:center">
-          <div style="font-size:30px;font-weight:700;color:${lbl.color};line-height:1;margin-right:14px;min-width:60px;text-align:center">${r.total}</div>
-          <div class="body">
-            <div class="t1" style="margin:0">🩺 Wealth Health · <span style="color:${lbl.color}">${lbl.word}</span></div>
-            <div class="t2">${r.topGap ? esc(r.topGap.suggest) : "Strong across all dimensions — keep compounding"}</div>
-          </div>
-          <div class="trail chev"></div>
-        </div>
-      `;
-    })()}
-
-    ${(() => {
-      // Money reflection prompt — small card with today's question. Tap to journal.
-      // Only show if user has profile filled in (signal they're engaged with the app).
-      const profile = DB.profile || {};
-      if (!profile.age) return "";
-      const prompt = todaysMoneyPrompt();
-      return `
-        <div class="row tappable" onclick="moneyPromptSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-left:3px solid var(--blue);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:flex-start">
-          <div style="font-size:20px;width:32px;text-align:center;line-height:1.4">💭</div>
-          <div class="body">
-            <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:4px">Today's money reflection</div>
-            <div class="t1" style="margin:0;font-size:14px;line-height:1.4">${esc(prompt)}</div>
-          </div>
-          <div class="trail chev"></div>
-        </div>
-      `;
-    })()}
-
-    ${(() => {
-      const plays = computeSmartPlays();
-      if (!plays.length) return "";
-      const top = plays.slice(0, 2);
-      const moreCount = plays.length - top.length;
-      return `
-        <div class="section-h"><span class="lbl">💡 Smart plays</span><button class="act" onclick="smartPlaysSheet()">${moreCount > 0 ? `View all ${plays.length}` : "Details"}</button></div>
-        <div class="list">
-          ${top.map(p => `
-            <div class="row tappable" onclick="smartPlaysSheet()" role="button" tabindex="0">
-              <div class="lead">${p.emoji}</div>
-              <div class="body">
-                <div class="t1">${esc(p.title)}</div>
-                <div class="t2">${esc(p.body)}</div>
-              </div>
-              <div class="trail chev"></div>
-            </div>
-          `).join("")}
-        </div>
-      `;
-    })()}
-
-    ${(() => {
-      const events = computeFinancialCalendar({ horizonMonths: 12 });
-      // Surface only events within the next 60 days here — Coming Up + Important Dates
-      // overlap less when this section focuses on a tighter window.
-      const soon = events.filter(e => daysUntil(e.date) <= 60).slice(0, 3);
-      if (!soon.length) return "";
-      return `
-        <div class="section-h"><span class="lbl">📅 Important dates</span><button class="act" onclick="financialCalendarSheet()">View all</button></div>
-        <div class="list">
-          ${soon.map(e => {
-            const days = daysUntil(e.date);
-            const color = days <= 7 ? "var(--orange)" : days <= 30 ? "var(--blue)" : "var(--t3)";
-            return `
-              <div class="row tappable" onclick="financialCalendarSheet()" role="button" tabindex="0">
-                <div class="lead">${e.icon}</div>
-                <div class="body">
-                  <div class="t1">${esc(e.title)}</div>
-                  <div class="t2"><span style="color:${color};font-weight:600">${dayLabel(e.date)}</span> · ${e.date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
-                </div>
-                <div class="trail chev"></div>
-              </div>
-            `;
-          }).join("")}
-        </div>
-      `;
-    })()}
-
-    ${(() => {
-      const bills = upcomingBills();
-      if (!bills.length) return "";
-      return `
-        <div class="section-h"><span class="lbl">Coming up</span></div>
-        <div class="list">
-          ${bills.map(b => {
-            const label = b.days <= 0 ? (b.days === 0 ? "Due today" : `${Math.abs(b.days)}d overdue`) : b.days === 1 ? "Tomorrow" : `In ${b.days} days`;
-            const color = b.days <= 0 ? "var(--red)" : b.days <= 2 ? "var(--orange)" : "var(--t3)";
-            return `
-              <div class="row">
-                <div class="lead">📅</div>
-                <div class="body">
-                  <div class="t1">${esc(b.merchant)} <span class="muted" style="font-weight:400" data-priv="amount">${fmt$0(b.avg_amount)}</span></div>
-                  <div class="t2" style="color:${color}">${label} · ${b.next_predicted}</div>
-                </div>
-                <button class="btn sm secondary" style="font-size:11px;padding:4px 8px" onclick="dismissBill(${jsAttr(b.key)},${jsAttr(b.next_predicted)})">Dismiss</button>
-              </div>
-            `;
-          }).join("")}
-        </div>
-      `;
-    })()}
+    ${insightsRow}
 
     <div class="hero">
       <div class="h-eyebrow">Today's progress</div>
@@ -2394,16 +2418,6 @@ function renderToday() {
       <div class="h-sub">${p.total ? (p.pct===100 ? "All done — keep the streak alive 🔥" : "You've got this.") : "Add a habit to get started."}</div>
       <div class="h-bar"><div class="h-fill" style="width:${p.pct}%"></div></div>
     </div>
-
-    ${(() => {
-      const today = todayKey();
-      const todaySpent = (DB.spend||[]).filter(t => t.date === today && (+t.amount) > 0).reduce((a,t)=>a+(+t.amount||0), 0);
-      if (!todaySpent) return "";
-      return `<div class="row" style="background:var(--card);border-radius:var(--r);margin-bottom:10px;border:none">
-        <div class="lead">💸</div>
-        <div class="body"><div class="t1" data-priv="amount">${fmt$0(todaySpent)} spent today</div><div class="t2">${(DB.spend||[]).filter(t=>t.date===today).length} transactions</div></div>
-      </div>`;
-    })()}
 
     <div class="daychips">
       ${days.map(d=>{
@@ -2429,15 +2443,7 @@ function renderToday() {
     <div class="section-h"><span class="lbl">Wins today</span><button class="act" onclick="(()=>{const t=prompt('Win:');if(t)addWin(t);})()">+ Add</button></div>
     <div class="list">${winsHtml}</div>
 
-    <div class="section-h"><span class="lbl">Reminder</span></div>
-    <div class="list">
-      <div class="row">
-        <div class="lead">💭</div>
-        <div class="body">
-          <div class="t1" style="font-style:italic;font-weight:400">${esc(todaysQuote())}</div>
-        </div>
-      </div>
-    </div>
+    <div class="today-quote">"${esc(todaysQuote())}"</div>
   `;
 }
 
