@@ -4086,17 +4086,74 @@ function scheduleReminder() {
   }, next - now);
 }
 
-function exportData() {
-  const blob = new Blob([JSON.stringify(DB, null, 2)], { type: "application/json" });
-  const url = URL.createObjectURL(blob);
+/* Export: defaults to encrypted. The Downloads folder is typically synced
+   to cloud storage (iCloud, OneDrive, Dropbox) and the backup file then
+   persists for years on third-party servers. A plaintext financial dump
+   sitting there is the worst-case data-at-rest exposure for this app, so
+   we make the encrypted path the default and require an explicit opt-in
+   for plaintext. */
+function _downloadBlob(text, filename, mime) {
+  const url = URL.createObjectURL(new Blob([text], { type: mime || "application/json" }));
   const a = document.createElement("a");
-  a.href = url; a.download = `ascend-backup-${todayKey()}.json`;
+  a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
-  toast("Backup downloaded");
+}
+async function exportData() {
+  // If the app is currently encrypted-at-rest with a passphrase, default
+  // path is also encrypted export — same passphrase, same envelope format,
+  // can be re-imported without re-typing it.
+  const encryptedByDefault = !!DB.settings.encrypted && !!APP_KEY;
+  const choice = prompt(
+    "Export format:\n\n" +
+    "  1 — Encrypted (recommended; requires passphrase to restore)\n" +
+    "  2 — Plaintext JSON (anyone with the file can read everything)\n\n" +
+    "Type 1 or 2:",
+    encryptedByDefault ? "1" : "1"
+  );
+  if (choice == null) return; // cancelled
+  if (choice.trim() === "2") {
+    if (!confirm("Plaintext export will include every financial figure, account, bill, " +
+                 "name, and note in clear text. Files in Downloads are often synced to " +
+                 "cloud storage. Continue with plaintext?")) return;
+    _downloadBlob(JSON.stringify(DB, null, 2), `ascend-backup-${todayKey()}.json`, "application/json");
+    toast("Plaintext backup downloaded");
+    return;
+  }
+  // Encrypted path
+  let pass;
+  if (encryptedByDefault) {
+    // Re-prompt for the passphrase rather than reusing APP_KEY directly —
+    // the export should be portable across devices/installs, which means
+    // a fresh PBKDF2 derive against a new salt so the export file isn't
+    // bound to this device's stored salt.
+    pass = prompt("Enter a passphrase to encrypt this backup. You will need to re-enter it to import the file. Cannot be recovered if lost.");
+  } else {
+    pass = prompt("Set a passphrase for this encrypted backup. You will need it to import the file. Cannot be recovered if lost.");
+  }
+  if (pass == null) return;
+  pass = String(pass);
+  if (pass.length < 4) { alert("Passphrase too short (min 4 chars)."); return; }
+  try {
+    const salt = newSalt();
+    const key = await deriveKey(pass, salt, CRYPTO_V_CURRENT);
+    const env = await encryptObject(DB, key);
+    const blob = {
+      v: CRYPTO_V_CURRENT,
+      app: "ascend-export",
+      exported: new Date().toISOString(),
+      salt, iv: env.iv, ct: env.ct,
+    };
+    _downloadBlob(JSON.stringify(blob, null, 2), `ascend-backup-${todayKey()}.ascend`, "application/octet-stream");
+    toast("Encrypted backup downloaded");
+  } catch (e) {
+    alert("Export failed. Try again.");
+  }
 }
 function importData() {
-  const inp = document.createElement("input"); inp.type = "file"; inp.accept = "application/json";
+  const inp = document.createElement("input");
+  inp.type = "file";
+  inp.accept = "application/json,.json,.ascend";
   inp.onchange = async () => {
     const f = inp.files[0]; if (!f) return;
     try {
@@ -4104,21 +4161,41 @@ function importData() {
       // safeJsonParse strips __proto__/constructor/prototype own-property keys
       // from the imported tree before any Object.assign reaches it, so a
       // malicious JSON file cannot pollute Object.prototype.
-      const obj = safeJsonParse(txt);
+      let obj = safeJsonParse(txt);
       if (!obj || typeof obj !== "object" || Array.isArray(obj)) throw new Error("bad file");
+      // Detect an encrypted-export envelope. The same shape as the
+      // localStorage envelope; in encrypted exports we also set
+      // obj.app === "ascend-export" as a small sanity tag.
+      if (isEnvelope(obj)) {
+        const pass = prompt("This backup is encrypted. Enter its passphrase:");
+        if (pass == null) return;
+        try {
+          const key = await deriveKey(String(pass), obj.salt, obj.v);
+          obj = await decryptObject({ iv: obj.iv, ct: obj.ct }, key);
+        } catch {
+          alert("Couldn't decrypt — wrong passphrase or corrupt file.");
+          return;
+        }
+        if (!obj || typeof obj !== "object" || Array.isArray(obj)) throw new Error("bad file");
+      }
       // Confirm before clobbering — this overwrites the entire DB.
       if (!confirm("This will REPLACE all your current data with the contents of '" + f.name + "'.\n\nA backup of your current data will download first. Continue?")) {
         return;
       }
-      // Auto-download a backup of current state before replacing.
+      // Auto-download a backup of current state before replacing. Use the
+      // existing encrypted-by-default path if encryption is on, otherwise
+      // a plain JSON dump — same trade-off as exportData but without a
+      // prompt (the user is already mid-flow).
       try {
-        const cur = JSON.stringify(DB, null, 2);
-        const url = URL.createObjectURL(new Blob([cur], { type: "application/json" }));
-        const a = document.createElement("a");
-        a.href = url; a.download = `ascend-pre-import-${todayKey()}.json`;
-        document.body.appendChild(a); a.click(); a.remove();
-        URL.revokeObjectURL(url);
-      } catch (e) { /* don't block import on backup failure */ }
+        if (DB.settings.encrypted && APP_KEY) {
+          const salt = DB.__salt || newSalt();
+          const env = await encryptObject(DB, APP_KEY);
+          const blob = { v: APP_KEY_V || CRYPTO_V_CURRENT, app: "ascend-pre-import", exported: new Date().toISOString(), salt, iv: env.iv, ct: env.ct };
+          _downloadBlob(JSON.stringify(blob, null, 2), `ascend-pre-import-${todayKey()}.ascend`, "application/octet-stream");
+        } else {
+          _downloadBlob(JSON.stringify(DB, null, 2), `ascend-pre-import-${todayKey()}.json`, "application/json");
+        }
+      } catch { /* don't block import on backup failure */ }
       // Build merged DB: start from DEFAULT_DB, then deep-merge settings/user/budget so
       // partial imports don't wipe sibling fields. Top-level arrays/objects are replaced wholesale.
       const fresh = clone(DEFAULT_DB);
@@ -4128,7 +4205,11 @@ function importData() {
       if (obj.budget   && typeof obj.budget   === "object") merged.budget   = Object.assign({}, fresh.budget, obj.budget);
       DB = merged;
       await save(); applyTheme(); render(); toast("Imported");
-    } catch (e) { alert("Could not import: "+e.message); }
+    } catch (e) {
+      // Don't leak parse error specifics into the alert — the message can
+      // include excerpts of the source file. A generic message is enough.
+      alert("Could not import that file.");
+    }
   };
   inp.click();
 }
