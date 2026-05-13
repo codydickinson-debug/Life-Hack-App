@@ -5695,25 +5695,58 @@ function togglePrivacyMode() {
   toast(DB.settings.privacyMode ? "Privacy mode on" : "Privacy mode off");
 }
 
-/* Auto-lock — clears APP_KEY after N min hidden when encrypted */
+/* Auto-lock — proactively wipes APP_KEY + DB from memory after N min hidden
+   when encryption is enabled.
+
+   Previous behavior only checked on return-to-visible: an unlocked tab on a
+   stolen device could sit with APP_KEY in RAM for hours so long as the
+   attacker never foregrounded it. Now we set a timer the moment we go
+   hidden, so the lock fires even if the tab is never visited again.
+
+   We also actively overwrite DB with a stub before reload — between
+   APP_KEY=null and location.reload() there was a ~600ms window where
+   plaintext DB lived in heap with no key gate. */
 let _hiddenAt = 0;
+let _lockTimer = null;
+function _doAutoLock() {
+  if (!APP_KEY) return; // already locked
+  _hiddenAt = 0;
+  if (_lockTimer) { clearTimeout(_lockTimer); _lockTimer = null; }
+  flushPendingSave(); // persist any debounced keystrokes before we drop the key
+  APP_KEY = null;
+  // Overwrite the in-memory DB. We can't truly wipe heap, but we can drop
+  // every reference so the next GC sweeps the plaintext. Anything reading
+  // window.DB after this point sees __locked instead of financial data.
+  try {
+    for (const k of Object.keys(DB)) delete DB[k];
+    DB.__locked = true;
+  } catch {}
+  try { toast("Locked"); } catch {}
+  setTimeout(() => { try { location.reload(); } catch {} }, 200);
+}
 function autoLockSetup() {
   document.addEventListener("visibilitychange", () => {
-    const m = +(DB.settings && DB.settings.autoLockMinutes) || 0;
-    if (!(DB.settings && DB.settings.encrypted) || m <= 0) return;
+    const m = +(DB && DB.settings && DB.settings.autoLockMinutes) || 0;
+    if (!(DB && DB.settings && DB.settings.encrypted) || m <= 0) return;
     if (document.hidden) {
       _hiddenAt = Date.now();
-    } else if (_hiddenAt) {
-      const elapsedMin = (Date.now() - _hiddenAt) / 60000;
-      _hiddenAt = 0;
-      if (elapsedMin >= m && APP_KEY) {
-        APP_KEY = null;
-        toast("Locked - re-enter passphrase");
-        setTimeout(() => location.reload(), 600);
+      if (_lockTimer) clearTimeout(_lockTimer);
+      // Proactive timer — fires whether or not the user ever returns.
+      _lockTimer = setTimeout(_doAutoLock, m * 60000);
+    } else {
+      if (_lockTimer) { clearTimeout(_lockTimer); _lockTimer = null; }
+      if (_hiddenAt) {
+        const elapsedMin = (Date.now() - _hiddenAt) / 60000;
+        _hiddenAt = 0;
+        if (elapsedMin >= m) _doAutoLock();
       }
     }
   });
 }
+/* Manually lock the app now. Exposed for a future "Lock" button; also
+   called by the auto-lock path. Safe to call when encryption is off
+   (no-op). */
+function lockNow() { if (DB && DB.settings && DB.settings.encrypted && APP_KEY) _doAutoLock(); }
 
 /* ================ SMART MONEY PLAYS ================
    Rule-based "what should I do next?" recommendations. Each rule reads
@@ -11624,7 +11657,7 @@ function init() {
     runOnboarding, onboardingStep1, onboardingStep2, onboardingStep3, onboardingStep4, finishOnboarding,
     safeToSpend, recurringMonthlyTotal,
     applyPrivacyMode, togglePrivacyMode,
-    autoLockSetup, celebrate, STREAK_MILESTONES,
+    autoLockSetup, lockNow, celebrate, STREAK_MILESTONES,
     goalChildren, goalParent, goalChain, setGoalParent, pickGoalParentSheet,
     addRecurringSheet, deleteRecurring,
     addReflectionSheet, deleteReflection,
