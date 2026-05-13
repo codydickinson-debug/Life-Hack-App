@@ -1258,6 +1258,7 @@ function _rotateBackup() {
 }
 function save() {
   try {
+    sanitizeDb();
     _rotateBackup();
     localStorage.setItem(SK, JSON.stringify(DB));
   } catch {}
@@ -1286,6 +1287,122 @@ const greet = () => {
 };
 const clamp = (n,a,b)=>Math.max(a,Math.min(b,n));
 const esc = (s) => String(s||"").replace(/[&<>"']/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" })[c]);
+
+/* sanitizeText — apply at WRITE time (where user input enters DB), not at
+   render time. esc() defends against HTML/JS injection at render; this
+   defends against:
+     - unbounded growth (paste-bomb a 100MB string into a name field and you
+       fill localStorage, hit quota, and brick the app),
+     - C0 control chars and DEL (\x00-\x1F, \x7F) that corrupt display,
+     - bidi override chars (‪-‮, ⁦-⁩) that can make
+       "salary" render as "yralas" or hide trailing text — a real spoofing
+       concern for line items the user reviews visually,
+     - zero-width chars (​-‍, ﻿) that make names look
+       identical but compare different — same spoofing risk,
+     - leading/trailing whitespace (silent duplicates: "Coffee" vs "Coffee ").
+   Defaults: cap at 200 chars (plenty for any name/label); notes have their
+   own cap below. */
+const TEXT_MAX = 200;
+const NOTE_MAX = 2000;
+const URL_MAX = 500;
+// Per-array string field cap and per-array element cap. Even legitimate users
+// shouldn't have 100k habits or 100k spend rows; these bounds keep the DB
+// from growing unboundedly if a sync bug or paste-bomb fires repeatedly.
+const ARRAY_MAX = { habits: 500, goals: 1000, savings: 200, spend: 50000,
+                    wins: 5000, recurring: 500, calendarDates: 1000,
+                    assets: 500, liabilities: 500, reflections: 5000,
+                    pendingDeposits: 500, holdings: 5000, accounts: 200,
+                    items: 50, sinkingFunds: 200, categoryRules: 500,
+                    allocationRules: 100, dismissedPlays: 500 };
+function sanitizeText(s, maxLen) {
+  if (s == null) return "";
+  let out = String(s);
+  // Strip C0 controls + DEL except \t and \n. Strip C1 controls.
+  out = out.replace(/[\x00-\x08\x0B\x0C\x0E-\x1F\x7F-\x9F]/g, "");
+  // Strip bidi overrides and zero-width chars (spoofing).
+  out = out.replace(/[​-‍‪-‮⁦-⁩﻿]/g, "");
+  // Collapse multiple whitespace runs but preserve single spaces / newlines.
+  out = out.replace(/[ \t]{2,}/g, " ");
+  out = out.trim();
+  const cap = (typeof maxLen === "number" && maxLen > 0) ? maxLen : TEXT_MAX;
+  if (out.length > cap) out = out.slice(0, cap);
+  return out;
+}
+
+/* sanitizeDb — defense-in-depth pass run from save(). Walks the known
+   user-text fields and applies sanitizeText + caps array lengths. This is
+   the safety net for any handler that doesn't sanitize at write time, and
+   it neutralizes any pre-existing tainted data already sitting in
+   localStorage (e.g. from before this hardening, or from an imported
+   backup). It is intentionally narrow — only well-known fields — so it
+   can't accidentally corrupt structured data.
+
+   Cost: O(N) over array sizes; runs once per save() and only touches
+   strings. Field caps mirror the input maxlength attrs.
+
+   Errors are swallowed because a save() that aborts on a sanitization
+   bug would be worse than a save() that writes slightly-too-long data. */
+function _cap(arr, max) {
+  if (Array.isArray(arr) && arr.length > max) arr.length = max;
+}
+function sanitizeDb() {
+  try {
+    if (!DB || typeof DB !== "object") return;
+    // settings — only the free-text ones
+    if (DB.settings) {
+      if (typeof DB.settings.backendUrl === "string")
+        DB.settings.backendUrl = sanitizeText(DB.settings.backendUrl, URL_MAX);
+      // apiKey is a credential — strip control chars only, keep length.
+      if (typeof DB.settings.apiKey === "string")
+        DB.settings.apiKey = DB.settings.apiKey.replace(/[\x00-\x1F\x7F]/g, "");
+      if (typeof DB.settings.anthropicModel === "string")
+        DB.settings.anthropicModel = sanitizeText(DB.settings.anthropicModel, 100);
+    }
+    if (DB.user && typeof DB.user.name === "string")
+      DB.user.name = sanitizeText(DB.user.name, TEXT_MAX);
+    if (typeof DB.spendSearch === "string")
+      DB.spendSearch = sanitizeText(DB.spendSearch, TEXT_MAX);
+    // arrays: cap length, then sanitize known text fields per element
+    for (const k of Object.keys(ARRAY_MAX)) _cap(DB[k], ARRAY_MAX[k]);
+    const cleanNamed = (arr, fields) => {
+      if (!Array.isArray(arr)) return;
+      for (const it of arr) {
+        if (!it || typeof it !== "object") continue;
+        for (const f of fields) {
+          if (typeof it[f] === "string") {
+            const cap = (f === "note" || f === "notes" || f === "description") ? NOTE_MAX : TEXT_MAX;
+            it[f] = sanitizeText(it[f], cap);
+          }
+        }
+      }
+    };
+    cleanNamed(DB.habits, ["name", "unit", "group"]);
+    cleanNamed(DB.goals, ["title", "note"]);
+    if (Array.isArray(DB.goals)) {
+      for (const g of DB.goals) {
+        if (Array.isArray(g.steps)) {
+          if (g.steps.length > 200) g.steps.length = 200;
+          for (const s of g.steps) if (s && typeof s.text === "string") s.text = sanitizeText(s.text, TEXT_MAX);
+        }
+      }
+    }
+    cleanNamed(DB.savings, ["name"]);
+    cleanNamed(DB.spend, ["note", "category", "merchant_name"]);
+    cleanNamed(DB.wins, ["text"]);
+    cleanNamed(DB.recurring, ["name", "category", "note"]);
+    cleanNamed(DB.assets, ["name", "note", "type"]);
+    cleanNamed(DB.liabilities, ["name", "note", "type"]);
+    cleanNamed(DB.reflections, ["text", "good", "bad", "next"]);
+    cleanNamed(DB.calendarDates, ["title", "note", "icon"]);
+    cleanNamed(DB.sinkingFunds, ["name", "emoji", "notes"]);
+    cleanNamed(DB.categoryRules, ["pattern", "category"]);
+    cleanNamed(DB.allocationRules, ["label"]);
+    if (Array.isArray(DB.budget?.expenses)) {
+      if (DB.budget.expenses.length > 200) DB.budget.expenses.length = 200;
+      for (const e of DB.budget.expenses) if (e && typeof e.name === "string") e.name = sanitizeText(e.name, TEXT_MAX);
+    }
+  } catch { /* never let sanitization failure block a save */ }
+}
 // jsAttr: safely embed an untrusted value as a JS string literal inside an HTML attribute.
 // Use as:  onclick="foo(${jsAttr(value)})"  — no surrounding quotes; jsAttr provides them.
 // JSON.stringify produces a valid JS string literal; esc() then makes it safe inside the attribute.
@@ -1355,6 +1472,7 @@ function isEnvelope(o) { return o && typeof o === "object" && o.v === 1 && o.ct 
 const _origSave = save;
 save = async function() {
   try {
+    sanitizeDb();
     if (APP_KEY && DB.settings.encrypted) {
       const salt = DB.__salt || newSalt();
       DB.__salt = salt;
@@ -1363,7 +1481,8 @@ save = async function() {
       _rotateBackup();
       localStorage.setItem(SK, JSON.stringify(blob));
     } else {
-      _origSave(); // _origSave rotates the backup itself
+      _origSave(); // _origSave rotates the backup itself; sanitization
+                   // already ran here so _origSave's redundant call is a no-op.
     }
   } catch { /* swallow — surfacing save errors via console would leak DB
                 serialization details to anything reading the console. */ }
@@ -2431,7 +2550,7 @@ function renderMoney() {
         ${DB.budget.expenses.length ? DB.budget.expenses.map(e => `
           <div class="row">
             <div class="lead" style="font-size:14px">•</div>
-            <input class="bcat-name" style="background:transparent;flex:1;font-size:15px" value="${esc(e.name)}" oninput="DB.budget.expenses.find(x=>x.id==='${e.id}').name=this.value;save();" />
+            <input class="bcat-name" maxlength="${TEXT_MAX}" style="background:transparent;flex:1;font-size:15px" value="${esc(e.name)}" oninput="DB.budget.expenses.find(x=>x.id==='${e.id}').name=sanitizeText(this.value);save();" />
             <input class="bcat-amt" type="number" inputmode="decimal" value="${e.amount||""}" placeholder="0" oninput="DB.budget.expenses.find(x=>x.id==='${e.id}').amount=Number(this.value)||0;save();" onblur="render()" />
             <button class="del-x" onclick="if(confirm('Delete?'))deleteExpense('${e.id}')">×</button>
           </div>
@@ -3128,9 +3247,9 @@ function renderMoney() {
         <button class="btn" onclick="(()=>{const a=Number($('#sp-amt').value);if(!a){toast('Amount?');return;}addSpend(a,$('#sp-cat').value,$('#sp-note').value);renderMoney();toast('Logged '+fmt$0(a));})()">Log expense</button>
       </div>
       <div class="section-h"><span class="lbl">Recent</span><span class="muted" style="font-size:12px">${filteredSpend().length}${(DB.spendSearch||"").trim()?` of ${DB.spend.length}`:""} total</span></div>
-      <input placeholder="Search transactions" value="${esc(DB.spendSearch||"")}"
+      <input placeholder="Search transactions" maxlength="${TEXT_MAX}" value="${esc(DB.spendSearch||"")}"
         style="background:var(--card);padding:12px 14px;border-radius:var(--r3);font-size:14px;width:100%;margin-bottom:8px;border:1px solid var(--sep);box-sizing:border-box"
-        oninput="DB.spendSearch=this.value;save();" onchange="renderMoney()" onblur="renderMoney()" />
+        oninput="DB.spendSearch=sanitizeText(this.value);save();" onchange="renderMoney()" onblur="renderMoney()" />
       <div class="list">
         ${filteredSpend().length ? filteredSpend().slice(0,40).map(t=>`
           <div class="row">
@@ -3510,8 +3629,8 @@ function renderSettings() {
           <div class="t2">Shown on the home screen greeting</div>
         </div>
         <input style="background:var(--bg-elev);padding:8px 10px;border-radius:8px;width:120px;text-align:right"
-          value="${esc(DB.user.name||"")}" placeholder="Name"
-          oninput="DB.user.name=this.value;save();renderHeader()" />
+          value="${esc(DB.user.name||"")}" placeholder="Name" maxlength="${TEXT_MAX}"
+          oninput="DB.user.name=sanitizeText(this.value);save();renderHeader()" />
       </div>
     </div>
 
