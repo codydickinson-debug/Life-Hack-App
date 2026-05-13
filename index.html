@@ -3,15 +3,65 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
-<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+
+<!-- Theme color matches the manifest background so PWA browser chrome blends
+     into the app surface, no flash on launch. -->
+<meta name="theme-color" content="#F7F7F5" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0A0A0A" media="(prefers-color-scheme: dark)" />
+
+<!-- SEO + App Store / social-share preview metadata. The description shows up
+     in App Store Connect search-result previews when the App Store fetches
+     the canonical URL, and in iMessage / WhatsApp / Twitter / Slack link
+     previews when the live URL is shared. -->
+<meta name="description" content="Personal-finance on easy mode. Track spending, set savings goals, build money habits, plan retirement — all encrypted locally, no ads, no data sales." />
+<meta name="application-name" content="Life Hack" />
+<meta name="author" content="Life Hack" />
+<meta name="generator" content="Life Hack" />
+<link rel="canonical" href="https://life-hack-app.vercel.app/" />
+
+<!-- Prevent iOS Safari from auto-converting phone numbers, dates, and
+     addresses into tappable links inside the app — they collide with our
+     own inline handlers and create visual artifacts in rendered amounts. -->
+<meta name="format-detection" content="telephone=no, date=no, address=no, email=no" />
+
+<!-- Open Graph (Facebook, LinkedIn, iMessage, Slack, Discord). Image is a
+     square 512px PNG that already exists in the repo; replace with a
+     dedicated 1200x630 OG image when designed. -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Life Hack" />
+<meta property="og:title" content="Life Hack — Money, Habits & Goals" />
+<meta property="og:description" content="Personal-finance on easy mode. Track spending, set savings goals, build money habits, plan retirement — all encrypted locally, no ads, no data sales." />
+<meta property="og:url" content="https://life-hack-app.vercel.app/" />
+<meta property="og:image" content="https://life-hack-app.vercel.app/icon-512.png" />
+<meta property="og:image:width" content="512" />
+<meta property="og:image:height" content="512" />
+<meta property="og:locale" content="en_US" />
+
+<!-- Twitter / X card -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Life Hack — Money, Habits & Goals" />
+<meta name="twitter:description" content="Personal-finance on easy mode. Track spending, set savings goals, build money habits, plan retirement — all encrypted locally, no ads, no data sales." />
+<meta name="twitter:image" content="https://life-hack-app.vercel.app/icon-512.png" />
 
 <!-- iOS PWA meta -->
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="default" />
-<meta name="apple-mobile-web-app-title" content="Ascend" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Life Hack" />
+
+<!-- Apple Touch Icons. iOS uses the same 180x180 PNG for every home-screen
+     size and scales as needed; we serve one definitive file. Other sizes
+     can be added later if a dedicated icon set is generated. -->
 <link rel="apple-touch-icon" href="icon-180.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png" />
+
+<!-- Favicons. PNG favicons are supported by every modern browser; no need
+     for a separate .ico. Sized variants help browser-tab rendering on
+     high-DPI displays. -->
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png" />
+<link rel="shortcut icon" href="icon-192.png" />
+
 <link rel="manifest" href="manifest.json" />
 
 <!--
@@ -51,7 +101,7 @@
      would break the app whenever they push a fix. CSP above restricts script origin. -->
 <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js" defer></script>
 
-<title>Ascend</title>
+<title>Life Hack — Money, Habits & Goals</title>
 
 <style>
 /* ================ DESIGN TOKENS ================ */
