@@ -4065,6 +4065,13 @@ function renderSettings() {
     <div class="section-h"><span class="lbl">About</span></div>
     <div class="list">
       <div class="row"><div class="lead">★</div><div class="body"><div class="t1">Ascend · Goals made easy</div><div class="t2">v3.0 · ${DB.items?.length ? `${DB.items.length} bank${DB.items.length===1?"":"s"} connected` : "saved on this device"}</div></div></div>
+      <div class="row" style="align-items:flex-start">
+        <div class="lead">ⓘ</div>
+        <div class="body">
+          <div class="t1">Educational tool — not financial advice</div>
+          <div class="t2" style="line-height:1.5">This app is a personal-finance tracking and education tool. It is not a registered investment advisor, broker-dealer, or licensed financial planner. Calculators, AI insights, Smart Plays, and lessons are educational illustrations only and should not be relied on as personalized investment, tax, legal, or financial advice. Before making any significant financial decision, consult a qualified professional. Past results in any example do not guarantee future outcomes.</div>
+        </div>
+      </div>
     </div>
     <div style="height:30px"></div>
   `;
@@ -4992,7 +4999,9 @@ async function getMonthlyInsight() {
     open_goals: goals,
   };
 
-  const prompt = `You are a sharp, candid personal-finance and life coach helping the user (named ${esc(DB.user.name||"the user")}). Read their data below and give them 3-5 specific, actionable observations and 1-2 concrete next steps. Be warm but direct. Skip generic advice. Reference actual numbers and merchants from the data. Keep it under 250 words. No bullet points unless truly useful — prefer short paragraphs. End with a single sentence of encouragement.`;
+  const prompt = `You are a sharp, candid personal-finance and life coach helping the user (named ${esc(DB.user.name||"the user")}). Read their data below and give them 3-5 specific, actionable observations and 1-2 concrete next steps. Be warm but direct. Skip generic advice. Reference actual numbers and merchants from the data. Keep it under 250 words. No bullet points unless truly useful — prefer short paragraphs. End with a single sentence of encouragement.
+
+IMPORTANT: You are an educational tool, not a registered investment advisor. Frame observations as general financial education and behavior coaching (saving more, reducing specific spending categories, paying down high-interest debt, building emergency funds, increasing retirement contributions). Do NOT recommend buying or selling specific securities, stocks, ETFs, cryptocurrencies, or other investments. Do NOT make personalized investment-allocation recommendations. If the user clearly needs specific investment advice for their situation, suggest they consult a licensed financial professional.`;
   const txt = await fetchInsight(prompt, ctx);
   // Cache
   if (!DB.insights) DB.insights = [];
@@ -6501,8 +6510,8 @@ function computeSmartPlays() {
       priority: 95,
       emoji: "🔥",
       title: `Prioritize ${debt.name}`,
-      body: `${(+debt.apr).toFixed(1)}% APR on ${fmt$0(debt.balance)}. Paying this off is a guaranteed return — beats any reasonable market expectation.`,
-      why: "Debt with APR above ~7% mathematically dominates investing: it's a guaranteed return at that rate. Stocks average 7-10% historically but with risk. Crush the high-APR debt first, then invest.",
+      body: `${(+debt.apr).toFixed(1)}% APR on ${fmt$0(debt.balance)}. Paying it off effectively locks in that rate as savings, with no market exposure.`,
+      why: "Debt at ~7%+ APR is typically expensive to carry: paying it down avoids the interest cost at that rate, with no market volatility. Historical stock returns average 7-10% but vary year to year. Many people find it psychologically and mathematically helpful to clear high-APR debt before scaling investments. Educational — not advice.",
       actionLabel: "Open debts",
       actionFn: "showTab('money')",
     });
