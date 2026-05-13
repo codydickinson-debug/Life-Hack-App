@@ -55,20 +55,24 @@
 
 <style>
 /* ================ DESIGN TOKENS ================ */
+/* Visual refresh v1 — dark-first premium feel.
+   Light theme is now a crisp cool-neutral instead of warm beige; the
+   signature accent gradient (violet → magenta → orange) is reserved
+   for hero moments only so it stays special. */
 :root {
-  /* Surfaces — refined neutrals with the slightest warmth */
-  --bg:        #F7F7F5;
-  --bg-elev:   #EFEFEC;
-  --bg-elev2:  #E5E5E1;
+  /* Surfaces — crisp cool-neutrals (cooler than the prior beige) */
+  --bg:        #FBFBFD;
+  --bg-elev:   #F2F2F5;
+  --bg-elev2:  #E8E8EE;
   --card:      #FFFFFF;
-  --sep:       rgba(17,17,19,.06);
-  --sep-2:     rgba(17,17,19,.10);
+  --sep:       rgba(17,17,21,.06);
+  --sep-2:     rgba(17,17,21,.10);
 
   /* Text — refined hierarchy */
   --t1:        #0A0A0B;
-  --t2:        #46464D;
-  --t3:        #86868D;
-  --t4:        #B8B8BD;
+  --t2:        #43434B;
+  --t3:        #7A7A85;
+  --t4:        #B0B0BA;
 
   /* Accents — calibrated system colors */
   --blue:      #2F6FEB;
@@ -81,11 +85,20 @@
   --indigo:    #4F4ED1;
   --teal:      #36B0CC;
 
+  /* Signature accent gradients — used sparingly on hero moments
+     (the safe-to-spend block, milestone celebrations, share cards,
+     primary CTAs). NOT for backgrounds, never for body text. */
+  --grad-hero: linear-gradient(135deg, #6366F1 0%, #A855F7 35%, #EC4899 65%, #F97316 100%);
+  --grad-cool: linear-gradient(135deg, #0EA5E9 0%, #6366F1 100%);
+  --grad-warm: linear-gradient(135deg, #F97316 0%, #DB2777 100%);
+  --accent:    #7C3AED;  /* solo color picked from the hero gradient — for focus rings, links */
+
   /* Elevation — for the App-Store-grade card feel */
   --sh-1:      0 1px 2px rgba(15,17,21,0.04), 0 1px 3px rgba(15,17,21,0.04);
   --sh-2:      0 2px 4px rgba(15,17,21,0.04), 0 6px 20px rgba(15,17,21,0.06);
   --sh-pop:    0 4px 12px rgba(15,17,21,0.06), 0 16px 40px rgba(15,17,21,0.10);
-  --sh-hero:   0 1px 2px rgba(0,0,0,0.10), 0 12px 32px rgba(0,0,0,0.18);
+  --sh-hero:   0 2px 4px rgba(0,0,0,0.08), 0 24px 56px rgba(124,58,237,0.18);
+  --sh-glow:   0 0 0 1px rgba(124,58,237,0.12), 0 12px 32px rgba(124,58,237,0.15);
 
   /* Geometry — generous corners, Apple-modern */
   --r:         16px;
@@ -104,37 +117,48 @@
   --tab-h:     calc(64px + var(--sa-bot));
 }
 
+/* Dark theme — deliberately designed, not inverted.
+   - Base is a deep blue-black (#08080C) rather than neutral charcoal;
+     reads as "premium fintech" instead of "OLED black."
+   - Card surfaces have a slight cool tint so they read as separate
+     planes on top of the base, not the same color.
+   - Text contrast hits WCAG AA on all tiers.
+   - Shadows are stronger + bluer in dark for depth. */
 @media (prefers-color-scheme: dark) {
   :root.theme-auto {
-    --bg:        #0A0A0C;
-    --bg-elev:   #16161A;
-    --bg-elev2:  #22222A;
-    --card:      #16161A;
-    --sep:       rgba(255,255,255,.06);
-    --sep-2:     rgba(255,255,255,.10);
+    --bg:        #08080C;
+    --bg-elev:   #14141B;
+    --bg-elev2:  #1F1F28;
+    --card:      #14141B;
+    --sep:       rgba(255,255,255,.07);
+    --sep-2:     rgba(255,255,255,.12);
     --t1:        #F5F5F7;
-    --t2:        #B5B5BA;
-    --t3:        #7A7A82;
-    --t4:        #4A4A52;
-    --sh-1:      0 1px 2px rgba(0,0,0,0.30), 0 1px 3px rgba(0,0,0,0.20);
-    --sh-2:      0 2px 4px rgba(0,0,0,0.30), 0 6px 20px rgba(0,0,0,0.30);
-    --sh-pop:    0 4px 12px rgba(0,0,0,0.40), 0 16px 40px rgba(0,0,0,0.45);
+    --t2:        #B8B8C0;
+    --t3:        #7A7A86;
+    --t4:        #4A4A55;
+    --sh-1:      0 1px 2px rgba(0,0,0,0.40), 0 1px 3px rgba(0,0,0,0.30);
+    --sh-2:      0 2px 4px rgba(0,0,0,0.45), 0 8px 24px rgba(0,0,0,0.50);
+    --sh-pop:    0 4px 12px rgba(0,0,0,0.55), 0 24px 56px rgba(0,0,0,0.65);
+    --sh-hero:   0 2px 4px rgba(0,0,0,0.40), 0 32px 72px rgba(124,58,237,0.25);
+    --sh-glow:   0 0 0 1px rgba(168,85,247,0.20), 0 16px 48px rgba(168,85,247,0.25);
   }
 }
 :root.theme-dark {
-  --bg:        #0A0A0C;
-  --bg-elev:   #16161A;
-  --bg-elev2:  #22222A;
-  --card:      #16161A;
-  --sep:       rgba(255,255,255,.06);
-  --sep-2:     rgba(255,255,255,.10);
+  --bg:        #08080C;
+  --bg-elev:   #14141B;
+  --bg-elev2:  #1F1F28;
+  --card:      #14141B;
+  --sep:       rgba(255,255,255,.07);
+  --sep-2:     rgba(255,255,255,.12);
   --t1:        #F5F5F7;
-  --t2:        #B5B5BA;
-  --t3:        #7A7A82;
-  --t4:        #4A4A52;
-  --sh-1:      0 1px 2px rgba(0,0,0,0.30), 0 1px 3px rgba(0,0,0,0.20);
-  --sh-2:      0 2px 4px rgba(0,0,0,0.30), 0 6px 20px rgba(0,0,0,0.30);
-  --sh-pop:    0 4px 12px rgba(0,0,0,0.40), 0 16px 40px rgba(0,0,0,0.45);
+  --t2:        #B8B8C0;
+  --t3:        #7A7A86;
+  --t4:        #4A4A55;
+  --sh-1:      0 1px 2px rgba(0,0,0,0.40), 0 1px 3px rgba(0,0,0,0.30);
+  --sh-2:      0 2px 4px rgba(0,0,0,0.45), 0 8px 24px rgba(0,0,0,0.50);
+  --sh-pop:    0 4px 12px rgba(0,0,0,0.55), 0 24px 56px rgba(0,0,0,0.65);
+  --sh-hero:   0 2px 4px rgba(0,0,0,0.40), 0 32px 72px rgba(124,58,237,0.25);
+  --sh-glow:   0 0 0 1px rgba(168,85,247,0.20), 0 16px 48px rgba(168,85,247,0.25);
 }
 
 /* ================ BASE ================ */
@@ -202,11 +226,11 @@ input::placeholder, textarea::placeholder { color: var(--t4); }
 
 .tb-title { font-size: 17px; font-weight: 600; letter-spacing: -.2px; }
 .tb-btn {
-  width: 38px; height: 38px;
+  width: 40px; height: 40px;
   border-radius: 50%;
   background: var(--bg-elev);
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 15px; color: var(--t2);
+  color: var(--t2);
   border: 0.5px solid var(--sep);
   transition: transform .15s ease, background .15s ease, color .15s ease;
 }
@@ -268,27 +292,41 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: var(--t3);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   transition: color .15s ease, transform .15s ease;
   position: relative;
 }
 .tab .ic {
-  font-size: 18px;
-  line-height: 1;
-  opacity: 0.7;
+  width: 22px;
+  height: 22px;
+  opacity: 0.70;
   transition: opacity .15s ease, transform .2s cubic-bezier(.34,1.56,.64,1), color .15s ease;
+  color: var(--t3);
 }
 .tab.active { color: var(--t1); }
-.tab.active .ic { opacity: 1; transform: translateY(-1px); }
+.tab.active .ic { opacity: 1; transform: translateY(-1px); color: var(--t1); }
 .tab:active .ic { transform: scale(.88); }
+
+/* Active tab gets a small accent dot above the icon — like iOS Maps tab,
+   distinctive premium signal that doesn't rely on color saturation. */
+.tab.active::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(124,58,237,0.7);
+}
 
 /* ================ TYPOGRAPHY / SECTIONS ================ */
 .lg-title {
-  font-size: 34px;
-  font-weight: 700;
-  letter-spacing: -0.028em;
-  margin: 8px 0 20px;
-  line-height: 1.1;
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  margin: 4px 0 4px;
+  line-height: 1.0;
   color: var(--t1);
 }
 .section-h {
@@ -358,20 +396,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .btn {
   display: inline-flex; align-items: center; justify-content: center;
   gap: 6px;
-  padding: 14px 20px;
-  border-radius: var(--r2);
+  padding: 15px 22px;
+  border-radius: 14px;
   font-size: 15px;
-  font-weight: 600;
-  background: var(--t1);
-  color: var(--bg);
-  transition: opacity .15s ease, transform .15s ease, background .15s ease;
+  font-weight: 700;
+  background: var(--grad-hero);
+  color: #fff;
+  transition: opacity .15s ease, transform .15s ease, box-shadow .15s ease;
   width: 100%;
   letter-spacing: -0.01em;
   border: none;
   -webkit-user-select: none;
   user-select: none;
+  position: relative;
+  box-shadow: var(--sh-1);
 }
-.btn:hover { opacity: .92; }
+.btn:hover { box-shadow: var(--sh-glow); }
 .btn:active { opacity: .85; transform: scale(.985); }
 .btn.secondary {
   background: var(--bg-elev);
@@ -453,15 +493,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 /* ================ HERO / TODAY FOCUS ================ */
 .hero {
   background:
-    radial-gradient(120% 80% at 100% 0%, rgba(94,224,160,0.12) 0%, rgba(94,224,160,0) 50%),
-    linear-gradient(180deg, #18181C 0%, #0F0F12 100%);
+    radial-gradient(120% 90% at 100% 0%, rgba(168,85,247,0.20) 0%, rgba(168,85,247,0) 55%),
+    radial-gradient(100% 70% at 0% 100%, rgba(99,102,241,0.18) 0%, rgba(99,102,241,0) 55%),
+    linear-gradient(180deg, #18181F 0%, #0C0C12 100%);
   color: #F5F5F7;
-  border-radius: var(--r);
-  padding: 24px 22px 26px;
+  border-radius: 22px;
+  padding: 28px 24px 30px;
   margin-bottom: 14px;
   position: relative;
   overflow: hidden;
-  border: 0.5px solid rgba(255,255,255,0.06);
+  border: 0.5px solid rgba(255,255,255,0.10);
   box-shadow: var(--sh-hero);
 }
 .hero::before {
@@ -469,43 +510,44 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent);
+  background: linear-gradient(90deg, transparent 0%, rgba(168,85,247,0.40) 50%, transparent 100%);
   pointer-events: none;
 }
-.hero .h-eyebrow { font-size: 11px; font-weight: 600; color: rgba(245,245,247,0.55); letter-spacing: 0.08em; text-transform: uppercase; }
+.hero .h-eyebrow { font-size: 11px; font-weight: 700; color: rgba(245,245,247,0.60); letter-spacing: 0.16em; text-transform: uppercase; }
 .hero .h-big {
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.028em;
-  margin-top: 8px;
-  line-height: 1.12;
+  font-size: 52px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  margin-top: 10px;
+  line-height: 1.0;
   color: #F5F5F7;
+  font-variant-numeric: tabular-nums;
 }
-.hero .h-sub { font-size: 13.5px; color: rgba(245,245,247,0.66); margin-top: 6px; line-height: 1.4; }
-.hero .h-bar { height: 5px; background: rgba(255,255,255,.10); border-radius: 4px; margin-top: 18px; overflow: hidden; }
-.hero .h-fill { height: 100%; background: linear-gradient(90deg, #2EB875, #5EE0A0); border-radius: 4px; transition: width .7s cubic-bezier(.34,1.56,.64,1); box-shadow: 0 0 12px rgba(94,224,160,0.45); }
+.hero .h-sub { font-size: 14px; color: rgba(245,245,247,0.70); margin-top: 10px; line-height: 1.4; }
+.hero .h-bar { height: 6px; background: rgba(255,255,255,.08); border-radius: 6px; margin-top: 22px; overflow: hidden; }
+.hero .h-fill { height: 100%; background: var(--grad-hero); border-radius: 6px; transition: width .7s cubic-bezier(.34,1.56,.64,1); box-shadow: 0 0 16px rgba(168,85,247,0.55); }
 .hero::after { display: none; }
 
 /* ================ STATS / GRID ================ */
 .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
 .kpi {
   background: var(--card);
-  border-radius: var(--r);
-  padding: 16px 16px 14px;
+  border-radius: 18px;
+  padding: 18px 18px 16px;
   border: 0.5px solid var(--sep);
   box-shadow: var(--sh-1);
-  transition: transform .15s ease;
+  transition: transform .15s ease, box-shadow .15s ease;
 }
 .kpi:active { transform: scale(.99); }
 .kpi .v {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.028em;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
   color: var(--t1);
   font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  line-height: 1.05;
 }
-.kpi .l { font-size: 11.5px; color: var(--t3); margin-top: 4px; font-weight: 600; letter-spacing: 0.01em; }
+.kpi .l { font-size: 11px; color: var(--t3); margin-top: 6px; font-weight: 700; letter-spacing: 0.10em; text-transform: uppercase; }
 .kpi .ic { font-size: 14px; opacity: 0.6; }
 .kpi .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; color: var(--t3); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 
@@ -910,35 +952,53 @@ body.priv-on [data-priv="amount"]:active { filter: blur(0); }
   position: fixed; inset: 0; pointer-events: none; z-index: 200;
 }
 
-/* Safe-to-spend hero card */
+/* Safe-to-spend hero card.
+   Uses the signature accent gradient so the most important number
+   on the home screen earns visual real estate. The 'over' variant
+   stays warm/red so the user immediately reads "danger."
+   Decorative blurred orbs add depth without an image asset. */
 .sts {
-  background: linear-gradient(135deg, var(--green) 0%, color-mix(in srgb, var(--green) 65%, var(--blue)) 100%);
+  background: var(--grad-hero);
   color: #fff;
-  border-radius: var(--r);
-  padding: 18px 18px 16px;
-  margin-bottom: 14px;
-  box-shadow: var(--sh-2);
+  border-radius: 22px;
+  padding: 24px 22px 22px;
+  margin-bottom: 16px;
+  box-shadow: var(--sh-hero);
   position: relative;
   overflow: hidden;
+  isolation: isolate;
 }
-.sts.over { background: linear-gradient(135deg, var(--orange) 0%, var(--red) 100%); }
+.sts::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60% 50% at 20% 10%, rgba(255,255,255,0.22) 0%, transparent 60%),
+    radial-gradient(50% 40% at 95% 90%, rgba(0,0,0,0.18) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: -1;
+}
+.sts.over {
+  background: linear-gradient(135deg, #F97316 0%, #DC2626 100%);
+}
 .sts .sts-eyebrow {
-  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
-  opacity: 0.85; margin-bottom: 4px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
+  opacity: 0.92; margin-bottom: 6px;
 }
 .sts .sts-big {
-  font-family: var(--font-num); font-size: 38px; font-weight: 700;
-  letter-spacing: -0.025em; line-height: 1.1; margin-bottom: 4px;
+  font-family: var(--font-num); font-size: 56px; font-weight: 800;
+  letter-spacing: -0.035em; line-height: 1.0; margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
 }
 .sts .sts-sub {
-  font-size: 13px; opacity: 0.92; line-height: 1.4;
+  font-size: 13px; opacity: 0.92; line-height: 1.45;
 }
 .sts .sts-meta {
-  margin-top: 12px; padding-top: 12px;
-  border-top: 0.5px solid rgba(255,255,255,0.22);
-  display: flex; gap: 18px; font-size: 11px; opacity: 0.92; font-weight: 600;
+  margin-top: 14px; padding-top: 14px;
+  border-top: 0.5px solid rgba(255,255,255,0.25);
+  display: flex; gap: 18px; font-size: 11px; opacity: 0.92; font-weight: 600; letter-spacing: 0.04em;
 }
-.sts .sts-meta div span { opacity: 0.7; font-weight: 500; }
+.sts .sts-meta div span { opacity: 0.65; font-weight: 500; }
 
 /* Goal hierarchy chain */
 .goal-chain {
@@ -973,31 +1033,35 @@ body.priv-on [data-priv="amount"]:active { filter: blur(0); }
 
 /* Privacy chip in topbar */
 .tb-priv {
-  width: 38px; height: 38px; border-radius: 50%;
+  width: 40px; height: 40px; border-radius: 50%;
   background: var(--bg-elev); display: inline-flex; align-items: center; justify-content: center;
-  font-size: 16px; color: var(--t2); border: 0.5px solid var(--sep); margin-right: 6px;
-  transition: transform .15s ease, color .15s ease;
+  color: var(--t2); border: 0.5px solid var(--sep);
+  transition: transform .15s ease, color .15s ease, background .15s ease;
 }
-.tb-priv:active { transform: scale(.92); }
-body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(--blue) 14%, var(--bg-elev)); }
+.tb-priv:active, .tb-btn:active { transform: scale(.92); background: var(--bg-elev2); }
+body.priv-on .tb-priv {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-elev));
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
 
 /* Floating action button (Quick Add Spend) */
 #fab {
   position: fixed;
   right: max(20px, env(safe-area-inset-right));
   bottom: calc(var(--tab-h) + 14px);
-  width: 56px; height: 56px;
+  width: 60px; height: 60px;
   border-radius: 50%;
-  background: var(--t1);
-  color: var(--bg);
-  font-size: 28px; font-weight: 300; line-height: 1;
-  box-shadow: var(--sh-pop);
+  background: var(--grad-hero);
+  color: #fff;
+  font-size: 30px; font-weight: 300; line-height: 1;
+  box-shadow: var(--sh-hero);
   z-index: 6;
   display: flex; align-items: center; justify-content: center;
-  transition: transform .12s ease, background .15s ease;
+  transition: transform .12s ease, box-shadow .15s ease;
 }
 #fab:active { transform: scale(.92); }
-#fab:hover { background: var(--blue); color: #fff; }
+#fab:hover { box-shadow: var(--sh-glow), var(--sh-hero); }
 
 /* Cashflow chart card */
 .cf-card { background: var(--card); border-radius: var(--r); border: 0.5px solid var(--sep); padding: 16px; margin-bottom: 14px; box-shadow: var(--sh-1); }
@@ -1064,9 +1128,19 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
       <div class="tb-name"  id="tb-title">Ascend</div>
       <div id="tb-tagline" style="font-size:11px;color:var(--t3);font-style:italic;margin-top:1px;display:none"></div>
     </div>
-    <div style="display:flex;align-items:center">
-      <button class="tb-priv" id="tb-priv" title="Privacy mode" onclick="togglePrivacyMode()" aria-label="Privacy mode">👁</button>
-      <button class="tb-btn" id="tb-action" title="Settings" onclick="openSettings()">⚙︎</button>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button class="tb-priv" id="tb-priv" title="Privacy mode" onclick="togglePrivacyMode()" aria-label="Privacy mode">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+      <button class="tb-btn" id="tb-action" title="Settings" onclick="openSettings()" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
+        </svg>
+      </button>
     </div>
   </div>
 
@@ -1080,11 +1154,43 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   </div>
 
   <nav id="tabbar">
-    <button class="tab active" data-tab="today"><span class="ic">☀︎</span><span>Today</span></button>
-    <button class="tab" data-tab="goals"><span class="ic">◎</span><span>Goals</span></button>
-    <button class="tab" data-tab="money"><span class="ic">$</span><span>Money</span></button>
-    <button class="tab" data-tab="stocks"><span class="ic">↗</span><span>Stocks</span></button>
-    <button class="tab" data-tab="stats"><span class="ic">▦</span><span>Stats</span></button>
+    <button class="tab active" data-tab="today" aria-label="Today">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3v2M12 19v2M5 12H3M21 12h-2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/>
+        <circle cx="12" cy="12" r="4"/>
+      </svg>
+      <span>Today</span>
+    </button>
+    <button class="tab" data-tab="goals" aria-label="Goals">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/>
+        <circle cx="12" cy="12" r="5"/>
+        <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+      </svg>
+      <span>Goals</span>
+    </button>
+    <button class="tab" data-tab="money" aria-label="Money">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 2v20"/>
+        <path d="M17 6.5a4 4 0 0 0-4-2.5h-2.5A3 3 0 0 0 10.5 10h3.5a3 3 0 0 1 0 6H10a4 4 0 0 1-4-2.5"/>
+      </svg>
+      <span>Money</span>
+    </button>
+    <button class="tab" data-tab="stocks" aria-label="Stocks">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 17l5-5 3.5 3.5L20 7"/>
+        <path d="M14 7h6v6"/>
+      </svg>
+      <span>Stocks</span>
+    </button>
+    <button class="tab" data-tab="stats" aria-label="Stats">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="13" width="4" height="8" rx="1"/>
+        <rect x="10" y="9" width="4" height="12" rx="1"/>
+        <rect x="17" y="5" width="4" height="16" rx="1"/>
+      </svg>
+      <span>Stats</span>
+    </button>
   </nav>
 
   <button id="fab" aria-label="Quick add spend" onclick="quickAddSpendSheet()">+</button>
