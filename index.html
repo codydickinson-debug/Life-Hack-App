@@ -1206,7 +1206,16 @@ function stripProtoKeys(node) {
 function safeJsonParse(text) { return stripProtoKeys(JSON.parse(text)); }
 
 var DB;  // var so it's reachable on window (helps testing + debug)
-function isLockedEnvelope(p) { return p && typeof p === "object" && p.v === 1 && p.iv && p.ct && p.salt; }
+// isLockedEnvelope intentionally accepts any known envelope version (v:1
+// legacy 250k, v:2 current 600k) so old blobs still get recognized as
+// "locked" rather than silently treated as corrupt and overwritten with
+// DEFAULT_DB. The version list is duplicated here as a literal so this
+// runs at load time, before the PBKDF2_ITERATIONS const enters scope.
+function isLockedEnvelope(p) {
+  return p && typeof p === "object"
+    && (p.v === 1 || p.v === 2)
+    && p.iv && p.ct && p.salt;
+}
 let _loadedFromBackup = false; // surfaced by init() so the user knows recovery happened
 function _parseDb(raw) {
   if (!raw) return null;
@@ -1429,20 +1438,29 @@ const todaysQuote = () => {
 };
 
 /* ================ CRYPTO (passphrase encryption) ================
-   Envelope shape: { v:1, salt:base64, iv:base64, ct:base64 }
-   Key derivation: PBKDF2(passphrase, salt, 250000, SHA-256) → AES-GCM 256
-   Without an in-memory key, save() falls back to plaintext (until user sets a passphrase).
-*/
+   Envelope shape: { v, salt:base64, iv:base64, ct:base64 }
+   PBKDF2-SHA256, key derivation iterations per envelope version:
+     v:1 — 250,000  (legacy; OWASP 2020 recommendation)
+     v:2 — 600,000  (OWASP 2023 recommendation, current default)
+   The version is recorded in the envelope so existing v:1 blobs decrypt
+   with their original iteration count; new saves always write v:2.
+   Without an in-memory key, save() falls back to plaintext (until user
+   sets a passphrase). */
+const CRYPTO_V_CURRENT = 2;
+const PBKDF2_ITERATIONS = { 1: 250000, 2: 600000 };
 let APP_KEY = null;  // CryptoKey held in memory after unlock
+let APP_KEY_V = CRYPTO_V_CURRENT; // version of the key currently in memory; used to detect old envelopes that need rederive on save
 
 const _b64bytes = (b64) => { const b = atob(b64); const a = new Uint8Array(b.length); for (let i=0;i<b.length;i++) a[i] = b.charCodeAt(i); return a; };
 const _bytes64 = (bytes) => { let s = ""; for (let i=0;i<bytes.length;i++) s += String.fromCharCode(bytes[i]); return btoa(s); };
 
-async function deriveKey(passphrase, saltB64) {
+async function deriveKey(passphrase, saltB64, version) {
+  const v = version || CRYPTO_V_CURRENT;
+  const iterations = PBKDF2_ITERATIONS[v] || PBKDF2_ITERATIONS[CRYPTO_V_CURRENT];
   const salt = _b64bytes(saltB64);
   const baseKey = await crypto.subtle.importKey("raw", new TextEncoder().encode(passphrase), { name: "PBKDF2" }, false, ["deriveKey"]);
   return crypto.subtle.deriveKey(
-    { name: "PBKDF2", salt, iterations: 250000, hash: "SHA-256" },
+    { name: "PBKDF2", salt, iterations, hash: "SHA-256" },
     baseKey,
     { name: "AES-GCM", length: 256 },
     false,
@@ -1466,7 +1484,11 @@ async function decryptObject(envelope, key) {
   return safeJsonParse(new TextDecoder().decode(pt));
 }
 function newSalt() { return _bytes64(crypto.getRandomValues(new Uint8Array(16))); }
-function isEnvelope(o) { return o && typeof o === "object" && o.v === 1 && o.ct && o.iv && o.salt; }
+function isEnvelope(o) {
+  return o && typeof o === "object"
+    && typeof o.v === "number" && PBKDF2_ITERATIONS[o.v]
+    && o.ct && o.iv && o.salt;
+}
 
 // Wrap save: encrypt if APP_KEY is loaded.
 const _origSave = save;
@@ -1474,10 +1496,23 @@ save = async function() {
   try {
     sanitizeDb();
     if (APP_KEY && DB.settings.encrypted) {
+      // If the in-memory key was derived against an older envelope version,
+      // upgrade it before encrypting so the next blob is written at the
+      // current (stronger) iteration count.
+      if (APP_KEY_V < CRYPTO_V_CURRENT && _pendingRewrap) {
+        try {
+          const salt = DB.__salt || newSalt();
+          DB.__salt = salt;
+          APP_KEY = await deriveKey(_pendingRewrap, salt, CRYPTO_V_CURRENT);
+          APP_KEY_V = CRYPTO_V_CURRENT;
+        } finally {
+          _pendingRewrap = null; // wipe regardless of success
+        }
+      }
       const salt = DB.__salt || newSalt();
       DB.__salt = salt;
       const env = await encryptObject(DB, APP_KEY);
-      const blob = { v: 1, salt, iv: env.iv, ct: env.ct };
+      const blob = { v: APP_KEY_V || CRYPTO_V_CURRENT, salt, iv: env.iv, ct: env.ct };
       _rotateBackup();
       localStorage.setItem(SK, JSON.stringify(blob));
     } else {
@@ -1526,7 +1561,9 @@ async function setPassphrase(pass) {
   if (!pass || pass.length < 4) throw new Error("Passphrase too short (min 4)");
   const salt = DB.__salt || newSalt();
   DB.__salt = salt;
-  APP_KEY = await deriveKey(pass, salt);
+  APP_KEY = await deriveKey(pass, salt, CRYPTO_V_CURRENT);
+  APP_KEY_V = CRYPTO_V_CURRENT;
+  _pendingRewrap = null;
   DB.settings.encrypted = true;
   await save();
 }
@@ -1535,15 +1572,25 @@ async function unlockWithPassphrase(pass) {
   if (!raw) throw new Error("No data");
   const blob = safeJsonParse(raw);
   if (!isEnvelope(blob)) throw new Error("Data is not encrypted");
-  const key = await deriveKey(pass, blob.salt);
+  // Derive with the iteration count recorded in the envelope so legacy v:1
+  // blobs still decrypt. The next save() will write at CRYPTO_V_CURRENT,
+  // re-deriving the key under the higher iteration count.
+  const key = await deriveKey(pass, blob.salt, blob.v);
   // try decrypt
   const dec = await decryptObject({ iv: blob.iv, ct: blob.ct }, key); // throws if wrong pass
   APP_KEY = key;
+  APP_KEY_V = blob.v;
   DB = Object.assign(clone(DEFAULT_DB), dec, { __salt: blob.salt });
+  // If the user is unlocking a legacy envelope, we'll need to re-derive at
+  // the new iteration count. Stash the passphrase in memory only for the
+  // length of this turn so the next save() can rewrap; never persisted.
+  if (blob.v < CRYPTO_V_CURRENT) _pendingRewrap = pass;
   return true;
 }
+let _pendingRewrap = null; // passphrase held briefly for envelope upgrade — see unlockWithPassphrase
 async function disablePassphrase() {
   APP_KEY = null;
+  _pendingRewrap = null;
   DB.settings.encrypted = false;
   delete DB.__salt;
   _origSave();
@@ -5714,6 +5761,7 @@ function _doAutoLock() {
   if (_lockTimer) { clearTimeout(_lockTimer); _lockTimer = null; }
   flushPendingSave(); // persist any debounced keystrokes before we drop the key
   APP_KEY = null;
+  _pendingRewrap = null; // never let the unlock passphrase outlive the session
   // Overwrite the in-memory DB. We can't truly wipe heap, but we can drop
   // every reference so the next GC sweeps the plaintext. Anything reading
   // window.DB after this point sees __locked instead of financial data.
