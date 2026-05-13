@@ -5123,6 +5123,203 @@ async function shareStreakCard() {
   downloadShareCard();
 }
 
+/* ============== YEAR-IN-REVIEW SHAREABLE CARD ==============
+   1080x1920 SVG -> PNG card built from yearReview() data. Designed for
+   Instagram Stories / TikTok / Snap (9:16). Defaults to privacy-safe
+   content (habits, goals, streak, wins counts — no $). Toggle
+   includeMoney:true to opt in to spending/income figures.
+
+   Returns SVG string. Convert to PNG with yearReviewSharePng() so it
+   saves cleanly to a phone camera roll (iOS Photos rejects most SVGs). */
+function yearReviewShareSvg(opts) {
+  const cfg = Object.assign({ includeMoney: false }, opts || {});
+  const r = yearReview();
+  const W = 1080, H = 1920;
+  const name = (DB.user.name || "Your").trim();
+  const possessive = name === "Your" ? "Your" : esc(name) + "'s";
+  // Top three habits by count + top streak
+  const top3 = (r.perHabit || []).filter(x => x.count > 0).slice(0, 3);
+  const topStreak = (r.streaks || []).filter(x => x.streak > 0)[0];
+  // Build stat blocks. Order = visual importance descending.
+  const stats = [
+    { label: "Habit check-offs", value: r.totalChecks.toLocaleString() },
+    { label: "Goals completed",  value: String(r.goalsCompleted.length) },
+    { label: "Top streak",       value: topStreak ? `🔥 ${topStreak.streak}` : "—" },
+    { label: "Wins captured",    value: String(r.winsYear) },
+  ];
+  if (cfg.includeMoney) {
+    stats.push({ label: "Spent this year",  value: fmt$0(r.yearOut) });
+    stats.push({ label: "Income this year", value: fmt$0(r.yearIn) });
+  }
+  // 2-column grid for stats; we lay them out manually for SVG.
+  const cols = 2, statH = 180, statGapY = 24, statGapX = 24;
+  const statBlockW = (W - 160 - statGapX) / cols; // 80px side padding each side
+  const statsX = 80, statsY = 720;
+  const statSvg = stats.map((s, i) => {
+    const c = i % cols, row = Math.floor(i / cols);
+    const x = statsX + c * (statBlockW + statGapX);
+    const y = statsY + row * (statH + statGapY);
+    return `
+      <g transform="translate(${x}, ${y})">
+        <rect width="${statBlockW}" height="${statH}" rx="32"
+              fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.18)" stroke-width="1"/>
+        <text x="36" y="78" fill="#ffffff" font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+              font-size="60" font-weight="700" letter-spacing="-1">${esc(s.value)}</text>
+        <text x="36" y="130" fill="rgba(255,255,255,0.75)"
+              font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+              font-size="26" font-weight="500" letter-spacing="0.5">${esc(s.label).toUpperCase()}</text>
+      </g>
+    `;
+  }).join("");
+  // Habits list block at bottom
+  const habitsY = statsY + Math.ceil(stats.length / cols) * (statH + statGapY) + 60;
+  const habitsSvg = top3.length ? `
+    <text x="${statsX}" y="${habitsY}" fill="rgba(255,255,255,0.85)"
+          font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+          font-size="24" font-weight="700" letter-spacing="3">MOST CONSISTENT</text>
+    ${top3.map((h, i) => `
+      <g transform="translate(${statsX}, ${habitsY + 36 + i * 84})">
+        <text x="0"   y="56" font-family="-apple-system, 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif" font-size="44">${esc(h.emoji || "✓")}</text>
+        <text x="76"  y="56" fill="#ffffff"
+              font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+              font-size="36" font-weight="600">${esc(h.name).slice(0, 24)}</text>
+        <text x="${W-statsX}" y="56" fill="rgba(255,255,255,0.85)"
+              font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+              font-size="36" font-weight="700" text-anchor="end">${h.count.toLocaleString()} days</text>
+      </g>
+    `).join("")}
+  ` : "";
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+  <defs>
+    <linearGradient id="yrBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#1a1a2e"/>
+      <stop offset="45%"  stop-color="#4338ca"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+    <radialGradient id="yrGlow" cx="0.5" cy="0.15" r="0.6">
+      <stop offset="0%"   stop-color="rgba(255,255,255,0.20)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </radialGradient>
+  </defs>
+  <rect width="${W}" height="${H}" fill="url(#yrBg)"/>
+  <rect width="${W}" height="${H}" fill="url(#yrGlow)"/>
+
+  <!-- Top eyebrow -->
+  <text x="${statsX}" y="160" fill="rgba(255,255,255,0.7)"
+        font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+        font-size="28" font-weight="700" letter-spacing="6">YEAR IN REVIEW</text>
+
+  <!-- Year (giant) -->
+  <text x="${statsX}" y="380" fill="#ffffff"
+        font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+        font-size="220" font-weight="800" letter-spacing="-6">${r.year}</text>
+
+  <!-- Subtitle -->
+  <text x="${statsX}" y="500" fill="rgba(255,255,255,0.92)"
+        font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+        font-size="56" font-weight="600" letter-spacing="-1">${possessive} year of</text>
+  <text x="${statsX}" y="580" fill="#ffffff"
+        font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+        font-size="64" font-weight="700" letter-spacing="-1">building habits ✨</text>
+
+  ${statSvg}
+  ${habitsSvg}
+
+  <!-- Footer brand -->
+  <text x="${W/2}" y="${H-90}" fill="rgba(255,255,255,0.60)"
+        font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+        font-size="26" font-weight="600" letter-spacing="4" text-anchor="middle">LIFE HACK</text>
+  <text x="${W/2}" y="${H-50}" fill="rgba(255,255,255,0.45)"
+        font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+        font-size="22" font-weight="500" text-anchor="middle">life-hack-app.vercel.app</text>
+</svg>`;
+}
+
+/* SVG -> PNG via Canvas. Returns a Promise<Blob> of a 1080x1920 PNG.
+   PNG (not SVG) because: iOS Photos rejects most SVG saves; Instagram
+   Story upload prefers raster; Web Share API works more reliably with
+   PNG MIME types. We rasterize at native 1080x1920 (no scaling) so the
+   exported file matches the source resolution exactly. */
+function _svgToPngBlob(svgText, width, height) {
+  return new Promise((resolve, reject) => {
+    const svgBlob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    // No crossOrigin — blob: URLs of same-origin content with cross-origin
+    // hint can taint the canvas and break toBlob(). The SVG has no
+    // external references so the canvas stays clean.
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(url);
+          if (blob) resolve(blob); else reject(new Error("toBlob returned null"));
+        }, "image/png", 0.95);
+      } catch (e) { URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = (e) => { URL.revokeObjectURL(url); reject(new Error("SVG load failed")); };
+    img.src = url;
+  });
+}
+
+async function downloadYearReviewCard(opts) {
+  const svg = yearReviewShareSvg(opts);
+  try {
+    const png = await _svgToPngBlob(svg, 1080, 1920);
+    const url = URL.createObjectURL(png);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `life-hack-${yearReview().year}-recap.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast("Recap saved");
+  } catch {
+    // PNG conversion can fail (CSP image-load issues on some browsers).
+    // Fallback to SVG so the user still gets something downloadable.
+    const svgBlob = new Blob([svg], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(svgBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `life-hack-${yearReview().year}-recap.svg`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast("Recap saved (SVG)");
+  }
+}
+
+async function shareYearReviewCard(opts) {
+  const svg = yearReviewShareSvg(opts);
+  // Try Web Share API with PNG file (best UX on mobile — opens the
+  // native share sheet so user picks Instagram, Messages, etc.).
+  try {
+    const png = await _svgToPngBlob(svg, 1080, 1920);
+    const file = new File([png], `life-hack-${yearReview().year}-recap.png`, { type: "image/png" });
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: "My year in review", text: "My year on Life Hack" });
+      return;
+    }
+  } catch { /* fall through to download */ }
+  // Fallback: download (desktop, or browser without file-share support)
+  await downloadYearReviewCard(opts);
+}
+
+/* Render a preview <img> of the year-review card directly in a sheet so
+   the user can see what they'll be sharing before tapping Share. */
+async function _yearReviewPreviewDataUrl(opts) {
+  const svg = yearReviewShareSvg(opts);
+  try {
+    const png = await _svgToPngBlob(svg, 540, 960); // half-res for preview
+    return await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(png); });
+  } catch {
+    return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+  }
+}
+
 /* ================ HOLDINGS (Plaid investments) ================ */
 async function backendHoldings() {
   return api("/holdings", { method: "POST", body: JSON.stringify({ userId: ensureUserId() }) });
@@ -5600,8 +5797,8 @@ function yearReviewSheet() {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
       <div class="kpi"><div class="v">${r.totalChecks}</div><div class="l">Habit check-offs</div></div>
       <div class="kpi"><div class="v">${r.goalsCompleted.length}</div><div class="l">Goals done</div></div>
-      <div class="kpi"><div class="v">${fmt$0(r.yearOut)}</div><div class="l">Spent</div></div>
-      <div class="kpi"><div class="v">${fmt$0(r.yearIn)}</div><div class="l">Income</div></div>
+      <div class="kpi" data-priv="amount"><div class="v">${fmt$0(r.yearOut)}</div><div class="l">Spent</div></div>
+      <div class="kpi" data-priv="amount"><div class="v">${fmt$0(r.yearIn)}</div><div class="l">Income</div></div>
     </div>
     <label>Most consistent habits</label>
     ${list(r.perHabit)}
@@ -5611,11 +5808,48 @@ function yearReviewSheet() {
     <hr class="sep">
     <label>Wins logged</label>
     <div style="font-size:13px;color:var(--t2)">${r.winsYear} small wins captured this year.</div>
+
+    <!-- Shareable card preview + share controls. PNG is generated lazily
+         after the sheet opens so users see the layout immediately, then
+         the image fades in once the canvas render is done. -->
+    <hr class="sep">
+    <label>Share your year</label>
+    <div id="yr-preview-wrap" style="position:relative;width:100%;max-width:280px;margin:8px auto 12px;border-radius:18px;overflow:hidden;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#4338ca,#f97316);box-shadow:0 8px 24px rgba(0,0,0,0.25)">
+      <div id="yr-preview-spinner" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.85);font-size:13px">Generating recap…</div>
+      <img id="yr-preview-img" alt="Year in review preview" style="width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 250ms ease" />
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t2);margin-bottom:10px">
+      <input type="checkbox" id="yr-include-money" style="width:18px;height:18px" />
+      <label for="yr-include-money" style="cursor:pointer">Include $ amounts (off by default for privacy)</label>
+    </div>
     <div class="actions">
       <button class="btn secondary" onclick="closeSheet()">Close</button>
-      <button class="btn" onclick="downloadShareCard()">Download streak card</button>
+      <button class="btn secondary" id="yr-download-btn">⬇ Save</button>
+      <button class="btn" id="yr-share-btn">↗ Share</button>
     </div>
   `);
+
+  // Lazy-render preview after sheet is in the DOM
+  const refreshPreview = async () => {
+    const includeMoney = !!$("#yr-include-money")?.checked;
+    const img = $("#yr-preview-img");
+    const spinner = $("#yr-preview-spinner");
+    if (img) img.style.opacity = "0";
+    if (spinner) spinner.style.display = "flex";
+    try {
+      const dataUrl = await _yearReviewPreviewDataUrl({ includeMoney });
+      if (img) {
+        img.src = dataUrl;
+        img.onload = () => { img.style.opacity = "1"; if (spinner) spinner.style.display = "none"; };
+      }
+    } catch {
+      if (spinner) spinner.textContent = "Preview unavailable — Save still works";
+    }
+  };
+  refreshPreview();
+  $("#yr-include-money")?.addEventListener("change", refreshPreview);
+  $("#yr-download-btn")?.addEventListener("click", () => downloadYearReviewCard({ includeMoney: !!$("#yr-include-money")?.checked }));
+  $("#yr-share-btn")?.addEventListener("click", () => shareYearReviewCard({ includeMoney: !!$("#yr-include-money")?.checked }));
 }
 
 
@@ -12342,6 +12576,7 @@ function init() {
     fetchInsight, getMonthlyInsight, runAiInsight,
     billsToIcs, exportBillsIcs,
     yearReview, yearReviewSheet, shareCardSvg, downloadShareCard, shareStreakCard,
+    yearReviewShareSvg, downloadYearReviewCard, shareYearReviewCard,
     backendHoldings, syncHoldings,
     runOnboarding, onboardingStep1, onboardingStep2, onboardingStep3, onboardingStep4, finishOnboarding,
     aiOnboardingStart, aiOnboardingRender, aiOnbSend, aiOnbToggleHabit, aiOnbToggleGoal,
