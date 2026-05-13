@@ -1184,13 +1184,32 @@ const DEFAULT_DB = {
 };
 
 const clone = (o) => (typeof structuredClone === "function") ? structuredClone(o) : JSON.parse(JSON.stringify(o));
+
+/* Recursively strip `__proto__` (and the rarely-legitimate `constructor` /
+   `prototype`) own properties from a parsed JSON tree. JSON.parse will happily
+   produce these as own data properties; if we then Object.assign them onto a
+   plain target, the engine invokes the prototype setter and pollutes the
+   global Object.prototype. We sanitize at every JSON.parse boundary that
+   feeds into DB merging. */
+function stripProtoKeys(node) {
+  if (node === null || typeof node !== "object") return node;
+  if (Array.isArray(node)) { for (let i = 0; i < node.length; i++) stripProtoKeys(node[i]); return node; }
+  // hasOwnProperty.call covers tampered values where node.hasOwnProperty was replaced.
+  if (Object.prototype.hasOwnProperty.call(node, "__proto__")) delete node.__proto__;
+  if (Object.prototype.hasOwnProperty.call(node, "constructor")) delete node.constructor;
+  if (Object.prototype.hasOwnProperty.call(node, "prototype")) delete node.prototype;
+  for (const k of Object.keys(node)) stripProtoKeys(node[k]);
+  return node;
+}
+function safeJsonParse(text) { return stripProtoKeys(JSON.parse(text)); }
+
 var DB;  // var so it's reachable on window (helps testing + debug)
 function isLockedEnvelope(p) { return p && typeof p === "object" && p.v === 1 && p.iv && p.ct && p.salt; }
 function load() {
   try {
     const raw = localStorage.getItem(SK);
     if (!raw) return clone(DEFAULT_DB);
-    const p = JSON.parse(raw);
+    const p = safeJsonParse(raw);
     // If data is encrypted, signal locked state — caller will prompt for passphrase
     if (isLockedEnvelope(p)) return { __locked: true, __salt: p.salt };
     return Object.assign(clone(DEFAULT_DB), p, {
@@ -1281,7 +1300,11 @@ async function decryptObject(envelope, key) {
   const iv = _b64bytes(envelope.iv);
   const ct = _b64bytes(envelope.ct);
   const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
-  return JSON.parse(new TextDecoder().decode(pt));
+  // safeJsonParse strips __proto__ — even our own encrypted blob is treated
+  // as untrusted at the JSON.parse boundary so a tampered cipher (which
+  // would normally fail GCM auth) plus a future bug can never escalate to
+  // prototype pollution.
+  return safeJsonParse(new TextDecoder().decode(pt));
 }
 function newSalt() { return _bytes64(crypto.getRandomValues(new Uint8Array(16))); }
 function isEnvelope(o) { return o && typeof o === "object" && o.v === 1 && o.ct && o.iv && o.salt; }
@@ -1317,7 +1340,7 @@ async function setPassphrase(pass) {
 async function unlockWithPassphrase(pass) {
   const raw = localStorage.getItem(SK);
   if (!raw) throw new Error("No data");
-  const blob = JSON.parse(raw);
+  const blob = safeJsonParse(raw);
   if (!isEnvelope(blob)) throw new Error("Data is not encrypted");
   const key = await deriveKey(pass, blob.salt);
   // try decrypt
@@ -3838,8 +3861,11 @@ function importData() {
     const f = inp.files[0]; if (!f) return;
     try {
       const txt = await f.text();
-      const obj = JSON.parse(txt);
-      if (!obj || typeof obj !== "object") throw new Error("bad file");
+      // safeJsonParse strips __proto__/constructor/prototype own-property keys
+      // from the imported tree before any Object.assign reaches it, so a
+      // malicious JSON file cannot pollute Object.prototype.
+      const obj = safeJsonParse(txt);
+      if (!obj || typeof obj !== "object" || Array.isArray(obj)) throw new Error("bad file");
       // Confirm before clobbering — this overwrites the entire DB.
       if (!confirm("This will REPLACE all your current data with the contents of '" + f.name + "'.\n\nA backup of your current data will download first. Continue?")) {
         return;
@@ -4961,7 +4987,7 @@ function changePassphraseSheet() {
    on a stolen unlocked phone, which is the realistic threat. */
 const LOCK_STATE_KEY = "ascend_lock_state";
 function _readLockState() {
-  try { return JSON.parse(localStorage.getItem(LOCK_STATE_KEY) || "{}"); } catch { return {}; }
+  try { return safeJsonParse(localStorage.getItem(LOCK_STATE_KEY) || "{}"); } catch { return {}; }
 }
 function _writeLockState(s) {
   try { localStorage.setItem(LOCK_STATE_KEY, JSON.stringify(s)); } catch {}
