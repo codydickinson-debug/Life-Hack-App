@@ -68,6 +68,11 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
+  // /api/* → never cache. Stock quotes go stale, SSE streams would break,
+  // and caching dynamic responses by URL bloats storage. Let the browser
+  // talk to the Python backend natively.
+  if (url.pathname.startsWith("/api/")) return;
+
   if (ICON_RE.test(url.pathname)) {
     e.respondWith(cacheFirst(req));
   } else {

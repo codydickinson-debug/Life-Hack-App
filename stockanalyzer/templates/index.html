@@ -1,0 +1,645 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>StockAnalyzer</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/stockanalyzer-static/style.css">
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="brand">
+    <span class="logo">📊</span>
+    <div>
+      <h1>StockAnalyzer</h1>
+      <span class="tag">Stocks · Housing · Mortgages</span>
+    </div>
+  </div>
+
+  <nav class="nav">
+    <button class="nav-btn active"
+            style="--market-accent: #3776e6"
+            data-view="home"
+            data-accent="#3776e6">
+      <span class="ico">🏠</span>
+      <span class="nav-label">Home</span>
+    </button>
+
+    <div class="nav-section">Markets</div>
+    {% for m in markets %}
+    <button class="nav-btn"
+            style="--market-accent: {{ m.accent }}"
+            data-view="scan"
+            data-universe="{{ m.id }}"
+            data-label="{{ m.label }}"
+            data-icon="{{ m.icon }}"
+            data-accent="{{ m.accent }}"
+            data-period="{{ m.default_period }}"
+            data-tagline="{{ m.tagline }}"
+            data-lede="{{ m.lede }}"
+            data-size="{{ m.size }}">
+      <span class="ico">{{ m.icon }}</span>
+      <span class="nav-label">{{ m.label }}</span>
+      <span class="count">{{ m.size }}</span>
+    </button>
+    {% endfor %}
+
+    <div class="nav-section">Housing</div>
+    <button class="nav-btn"
+            style="--market-accent: #ff7a59"
+            data-view="housing"
+            data-accent="#ff7a59">
+      <span class="ico">🏠</span>
+      <span class="nav-label">Housing Market</span>
+    </button>
+
+    <div class="nav-section">News</div>
+    <button class="nav-btn"
+            style="--market-accent: #d93f5c"
+            data-view="news"
+            data-accent="#d93f5c">
+      <span class="ico">📰</span>
+      <span class="nav-label">Headlines</span>
+    </button>
+
+    <div class="nav-section">Tools</div>
+    <button class="nav-btn" data-view="lookup">
+      <span class="ico">🔍</span>
+      <span class="nav-label">Manual Lookup</span>
+    </button>
+  </nav>
+
+  <div class="sidebar-foot">
+    <div class="muted-tiny">Engine</div>
+    <div class="engine">v3 · 4-pillar · ATR · MC · RF</div>
+  </div>
+</aside>
+
+<main class="main">
+
+<!-- ===== HOME VIEW ===== -->
+<section class="view view-home active">
+  <div class="hero">
+    <div class="hero-eyebrow">Your all-in-one financial tool</div>
+    <h1 class="hero-title">Decide with <span class="hero-accent">numbers</span>, not vibes.</h1>
+    <p class="hero-sub">From a single stock buy to whether your local housing market favors buyers — and what that move would cost you to finance. Honest math, real data sources, no upsells.</p>
+  </div>
+
+  <div class="stats-strip" id="stats-strip">
+    <div class="stat-tile" data-tile="spy" style="--tile-accent: #3776e6">
+      <div class="stat-label">S&amp;P 500 (SPY)</div>
+      <div class="stat-value">—</div>
+      <div class="stat-meta">Loading…</div>
+    </div>
+    <div class="stat-tile" data-tile="btc" style="--tile-accent: #f7931a">
+      <div class="stat-label">Bitcoin (BTC)</div>
+      <div class="stat-value">—</div>
+      <div class="stat-meta">Loading…</div>
+    </div>
+    <div class="stat-tile" data-tile="rate" style="--tile-accent: #ff7a59">
+      <div class="stat-label">30-Year Mortgage</div>
+      <div class="stat-value">—</div>
+      <div class="stat-meta">Loading…</div>
+    </div>
+    <div class="stat-tile" data-tile="housing" style="--tile-accent: #06b6a4">
+      <div class="stat-label">US Housing</div>
+      <div class="stat-value">—</div>
+      <div class="stat-meta">Loading…</div>
+    </div>
+  </div>
+
+  <div class="feature-grid">
+    <button class="feature-card" data-go-view="scan" data-go-universe="stocks" style="--feature-accent: #4f8dff">
+      <div class="fc-icon">📈</div>
+      <h3>Markets</h3>
+      <p>Scan stocks, REITs, crypto, international, ETFs, and bonds with the 4-pillar engine plus Monte Carlo P&amp;L projections.</p>
+      <div class="fc-arrow">Open Markets <span>→</span></div>
+    </button>
+
+    <button class="feature-card" data-go-view="housing" style="--feature-accent: #ff7a59">
+      <div class="fc-icon">🏘️</div>
+      <h3>Housing &amp; Mortgages</h3>
+      <p>National + ZIP-level reads on whether it's a buyer's or seller's market, plus a payment calculator with live rates from FRED.</p>
+      <div class="fc-arrow">Open Housing <span>→</span></div>
+    </button>
+
+    <button class="feature-card" data-go-view="lookup" style="--feature-accent: #9b6dff">
+      <div class="fc-icon">🔍</div>
+      <h3>Manual Lookup</h3>
+      <p>Run any ticker through the engine — your watchlist, off-universe names, ad-hoc analysis. Same output, your inputs.</p>
+      <div class="fc-arrow">Open Lookup <span>→</span></div>
+    </button>
+  </div>
+
+  <div class="how-it-works">
+    <h3>How the engine decides</h3>
+    <div class="hiw-grid">
+      <div class="hiw-card">
+        <span class="hiw-num">1</span>
+        <h4>Quality</h4>
+        <p>Margins, ROE, debt, growth, and free cash flow — does the business make money cleanly?</p>
+      </div>
+      <div class="hiw-card">
+        <span class="hiw-num">2</span>
+        <h4>Value</h4>
+        <p>Forward P/E, PEG, analyst targets, and price percentile vs. 5-year history.</p>
+      </div>
+      <div class="hiw-card">
+        <span class="hiw-num">3</span>
+        <h4>Trend</h4>
+        <p>200-day SMA regime, slope, and 3-month relative strength vs. SPY. Hard gate for buy signals.</p>
+      </div>
+      <div class="hiw-card">
+        <span class="hiw-num">4</span>
+        <h4>Momentum</h4>
+        <p>RSI, MACD crossovers, Bollinger stretch, and 5-day volume confirmation for entry timing.</p>
+      </div>
+    </div>
+  </div>
+
+  <p class="home-disclaimer">
+    Built on free public data — yfinance for securities, Realtor.com Research for housing, and FRED for mortgage rates.
+    Educational tool, not financial advice. Always cross-check before acting.
+  </p>
+</section>
+
+<!-- ===== SCAN VIEW ===== -->
+<section class="view view-scan">
+  <header class="view-head">
+    <div>
+      <div class="market-chip" id="market-chip" style="--market-accent: {{ markets[0].accent }}">
+        <span class="chip-icon" id="market-chip-icon">{{ markets[0].icon }}</span>
+        <span class="chip-label" id="market-chip-label">{{ markets[0].label }}</span>
+      </div>
+      <h2 id="scan-title">{{ markets[0].label }} Scan</h2>
+      <p class="lede" id="scan-lede">{{ markets[0].lede }}</p>
+      <p class="market-note" id="scan-note">{{ markets[0].tagline }}</p>
+    </div>
+  </header>
+
+  <div class="scan-controls">
+    <div class="field">
+      <label>Account ($)</label>
+      <input id="scan-account" type="number" value="10000" step="100" min="0">
+    </div>
+    <div class="field">
+      <label>Period</label>
+      <select id="scan-period">
+        <optgroup label="Short">
+          <option value="6mo">6 months</option>
+          <option value="ytd">Year to date</option>
+          <option value="1y">1 year</option>
+        </optgroup>
+        <optgroup label="Medium">
+          <option value="2y">2 years</option>
+          <option value="3y">3 years</option>
+          <option value="5y" selected>5 years</option>
+        </optgroup>
+        <optgroup label="Long">
+          <option value="10y">10 years</option>
+          <option value="max">Max history</option>
+        </optgroup>
+      </select>
+    </div>
+    <button id="scan-btn" class="primary-btn">
+      <span class="btn-label">Scan Market</span>
+    </button>
+  </div>
+
+  <div class="scan-progress hidden" id="scan-progress">
+    <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+    <div class="progress-text" id="progress-text">Starting…</div>
+  </div>
+
+  <div class="summary hidden" id="summary">
+    <div class="sum-card sum-strong-buy">
+      <div class="sum-num" id="sum-strong-buy">0</div>
+      <div class="sum-label">Strong Buy</div>
+    </div>
+    <div class="sum-card sum-buy">
+      <div class="sum-num" id="sum-buy">0</div>
+      <div class="sum-label">Buy</div>
+    </div>
+    <div class="sum-card sum-hold">
+      <div class="sum-num" id="sum-hold">0</div>
+      <div class="sum-label">Hold</div>
+    </div>
+    <div class="sum-card sum-sell">
+      <div class="sum-num" id="sum-sell">0</div>
+      <div class="sum-label">Sell</div>
+    </div>
+  </div>
+
+  <div class="filters hidden" id="filters">
+    <div class="filter-group">
+      <span class="filter-label">Show:</span>
+      <button class="chip active" data-filter="all">All</button>
+      <button class="chip" data-filter="buy">Buys only</button>
+      <button class="chip" data-filter="strong-buy">Strong Buy only</button>
+      <button class="chip" data-filter="sell">Sells only</button>
+    </div>
+    <div class="filter-group">
+      <span class="filter-label">Sort:</span>
+      <button class="chip active" data-sort="composite">Composite score</button>
+      <button class="chip" data-sort="rr">Reward:Risk</button>
+      <button class="chip" data-sort="sharpe">Sharpe</button>
+    </div>
+  </div>
+
+  <div class="leaderboard" id="leaderboard">
+    <div class="empty" id="empty-state">
+      <div class="empty-icon">📊</div>
+      <h3 id="empty-title">Ready to scan {{ markets[0].label.lower() }}</h3>
+      <p id="empty-body">Click <strong>Scan Market</strong> to evaluate {{ markets[0].size }} {{ markets[0].label.lower() }}. Results stream in live as each ticker completes — usually 30–60 seconds.</p>
+    </div>
+  </div>
+</section>
+
+<!-- ===== HOUSING VIEW ===== -->
+<section class="view view-housing">
+  <header class="view-head">
+    <div>
+      <div class="market-chip" style="--market-accent: #ff7a59">
+        <span class="chip-icon">🏠</span>
+        <span class="chip-label">Housing Market</span>
+      </div>
+      <h2>Housing Market</h2>
+      <p class="lede">Buyer's market or seller's market — by ZIP, by metro, or nationally. Scoring combines pending ratio, days on market, price reductions, and inventory shifts.</p>
+      <p class="market-note">Data from Realtor.com Research (monthly, MLS-listing based). Refreshed weekly to disk. Not all ZIPs have coverage; sparse listings get flagged with low-quality reads.</p>
+    </div>
+  </header>
+
+  <div class="housing-grid">
+
+    <!-- National card -->
+    <section class="housing-card" id="housing-national">
+      <div class="housing-card-head">
+        <span class="housing-eyebrow">National</span>
+        <span class="housing-asof" id="national-asof"></span>
+      </div>
+      <div class="housing-loading" id="national-loading">Loading national snapshot…</div>
+      <div class="housing-body" id="national-body" hidden></div>
+    </section>
+
+    <!-- ZIP search card -->
+    <section class="housing-card housing-zip-card">
+      <div class="housing-card-head">
+        <span class="housing-eyebrow">ZIP Code Lookup</span>
+      </div>
+      <form id="zip-form" class="zip-form">
+        <input id="zip-input" type="text" inputmode="numeric" maxlength="5"
+               pattern="[0-9]{5}" placeholder="11755" autocomplete="off" required>
+        <button type="submit" class="primary-btn">Analyze ZIP</button>
+      </form>
+      <div class="housing-loading" id="zip-status" hidden></div>
+      <div class="housing-body" id="zip-body" hidden></div>
+    </section>
+
+    <!-- Hot metros card -->
+    <section class="housing-card housing-metros">
+      <div class="housing-card-head">
+        <span class="housing-eyebrow">Top Metros</span>
+        <div class="metro-tabs">
+          <button class="metro-tab active" data-sort="hot">🔥 Hottest (sellers)</button>
+          <button class="metro-tab" data-sort="cold">❄️ Coolest (buyers)</button>
+        </div>
+      </div>
+      <div class="housing-loading" id="metros-loading">Loading metros…</div>
+      <div class="metro-list" id="metros-list" hidden></div>
+    </section>
+
+  </div>
+
+  <p class="housing-disclaimer">
+    Listing-based data — pending sales lag actual contract activity by ~30 days, and off-MLS deals are
+    excluded. The verdict is a snapshot, not a prediction. For owner-occupant decisions, also factor in
+    mortgage rates, your tax situation, and how long you plan to stay.
+  </p>
+
+  <!-- ============ Mortgage section ============ -->
+  <div class="mortgage-section">
+    <div class="section-divider">
+      <span>Mortgage Rates &amp; Calculator</span>
+    </div>
+
+    <div class="rate-strip" id="rate-strip">
+      <div class="rate-cell">
+        <label>30-year fixed</label>
+        <div class="rate-value" id="rate-30y">—</div>
+        <div class="rate-asof" id="rate-30y-date"></div>
+      </div>
+      <div class="rate-cell">
+        <label>15-year fixed</label>
+        <div class="rate-value" id="rate-15y">—</div>
+        <div class="rate-asof" id="rate-15y-date"></div>
+      </div>
+      <div class="rate-cell">
+        <label>Fed funds rate</label>
+        <div class="rate-value" id="rate-fed">—</div>
+        <div class="rate-asof" id="rate-fed-date"></div>
+      </div>
+      <div class="rate-cell rate-source">
+        <label>Source</label>
+        <div class="rate-source-name">Freddie Mac PMMS · FRED</div>
+        <div class="rate-asof">Refreshed weekly</div>
+      </div>
+    </div>
+
+    <div class="mortgage-grid">
+
+      <!-- Calculator -->
+      <section class="housing-card mortgage-calc">
+        <div class="housing-card-head">
+          <span class="housing-eyebrow">Payment Calculator</span>
+        </div>
+        <form id="mortgage-form" class="mortgage-form">
+          <div class="mfield">
+            <label for="m-price">Home price</label>
+            <div class="mfield-input">
+              <span class="prefix">$</span>
+              <input id="m-price" type="number" min="0" step="1000" value="500000" required>
+            </div>
+          </div>
+
+          <div class="mfield">
+            <label for="m-down">Down payment</label>
+            <div class="mfield-input">
+              <span class="prefix">$</span>
+              <input id="m-down" type="number" min="0" step="1000" value="100000" required>
+              <span class="suffix" id="m-down-pct">20%</span>
+            </div>
+            <div class="mfield-quicks">
+              <button type="button" class="quick" data-down-pct="3.5">3.5%</button>
+              <button type="button" class="quick" data-down-pct="5">5%</button>
+              <button type="button" class="quick" data-down-pct="10">10%</button>
+              <button type="button" class="quick active" data-down-pct="20">20%</button>
+              <button type="button" class="quick" data-down-pct="25">25%</button>
+            </div>
+          </div>
+
+          <div class="mfield">
+            <label for="m-fico">Credit score (FICO)</label>
+            <input id="m-fico" type="range" min="580" max="820" step="10" value="760">
+            <div class="mfield-quicks">
+              <span class="fico-readout" id="m-fico-readout">760</span>
+              <span class="fico-tier" id="m-fico-tier"></span>
+            </div>
+          </div>
+
+          <div class="mfield mfield-row">
+            <div>
+              <label for="m-term">Loan term</label>
+              <select id="m-term">
+                <option value="30" selected>30 years</option>
+                <option value="15">15 years</option>
+              </select>
+            </div>
+            <div>
+              <label for="m-tax">Property tax (%/yr)</label>
+              <input id="m-tax" type="number" step="0.05" value="1.10" min="0">
+            </div>
+          </div>
+
+          <div class="mfield mfield-row">
+            <div>
+              <label for="m-ins">Insurance (%/yr)</label>
+              <input id="m-ins" type="number" step="0.05" value="0.50" min="0">
+            </div>
+            <div>
+              <label for="m-hoa">HOA ($/mo)</label>
+              <input id="m-hoa" type="number" step="10" value="0" min="0">
+            </div>
+          </div>
+
+          <button type="submit" class="primary-btn mortgage-go">Calculate Payment</button>
+        </form>
+
+        <div class="mortgage-result" id="mortgage-result" hidden></div>
+      </section>
+
+      <!-- Rate history chart -->
+      <section class="housing-card mortgage-history">
+        <div class="housing-card-head">
+          <span class="housing-eyebrow">30-Year Rate History</span>
+          <div class="rate-tabs">
+            <button class="rate-tab" data-years="1">1Y</button>
+            <button class="rate-tab active" data-years="5">5Y</button>
+            <button class="rate-tab" data-years="10">10Y</button>
+            <button class="rate-tab" data-years="30">30Y</button>
+          </div>
+        </div>
+        <div class="rate-chart-meta" id="rate-chart-meta"></div>
+        <div class="rate-chart-container" id="rate-chart"></div>
+      </section>
+
+    </div>
+  </div>
+</section>
+
+<!-- ===== NEWS VIEW ===== -->
+<section class="view view-news">
+  <header class="view-head">
+    <div>
+      <div class="market-chip" style="--market-accent: #d93f5c">
+        <span class="chip-icon">📰</span>
+        <span class="chip-label">News</span>
+      </div>
+      <h2>Headlines</h2>
+      <p class="lede">Aggregated coverage from Yahoo Finance, WSJ, CNBC, NYT Business, and Bloomberg Markets — sorted by recency, dedup'd by source.</p>
+      <p class="market-note">Pulled directly from each publication's RSS feed. Cached for 5 minutes to keep things responsive.</p>
+    </div>
+  </header>
+
+  <div class="news-controls">
+    <div class="news-filters" id="news-filters">
+      <button class="news-chip active" data-source="all">All sources</button>
+      <!-- per-source chips injected by JS once loaded -->
+    </div>
+    <button class="news-refresh" id="news-refresh" title="Refresh now (bypass cache)">
+      <span class="ico">↻</span> Refresh
+    </button>
+  </div>
+
+  <div class="news-meta" id="news-meta"></div>
+  <div class="news-list" id="news-list">
+    <div class="housing-loading">Loading headlines…</div>
+  </div>
+</section>
+
+<!-- ===== LOOKUP VIEW ===== -->
+<section class="view view-lookup">
+  <header class="view-head">
+    <div>
+      <h2>Manual Lookup</h2>
+      <p class="lede">Run the same 4-pillar analysis on tickers you choose. Useful for stocks outside the scan universe.</p>
+    </div>
+  </header>
+
+  <div class="lookup-controls">
+    <form id="lookup-form">
+      <div class="field grow">
+        <label>Tickers</label>
+        <input id="tickers" type="text" value="AAPL MSFT NVDA" placeholder="AAPL MSFT NVDA" autocomplete="off">
+      </div>
+      <div class="field">
+        <label>Account ($)</label>
+        <input id="account" type="number" value="10000" step="100" min="0">
+      </div>
+      <div class="field">
+        <label>Period</label>
+        <select id="period">
+          <optgroup label="Short">
+            <option value="6mo">6 months</option>
+            <option value="ytd">Year to date</option>
+            <option value="1y">1 year</option>
+          </optgroup>
+          <optgroup label="Medium">
+            <option value="2y">2 years</option>
+            <option value="3y">3 years</option>
+            <option value="5y" selected>5 years</option>
+          </optgroup>
+          <optgroup label="Long">
+            <option value="10y">10 years</option>
+            <option value="max">Max history</option>
+          </optgroup>
+        </select>
+      </div>
+      <button id="go" type="submit" class="primary-btn">Analyze</button>
+    </form>
+    <div id="lookup-status" class="status">Ready.</div>
+  </div>
+
+  <div id="lookup-results" class="cards-detail"></div>
+</section>
+
+<footer class="footer">
+  <pre>{{ disclaimer }}</pre>
+</footer>
+
+</main>
+
+<!-- ===== TEMPLATES ===== -->
+
+<template id="row-tpl">
+  <article class="row">
+    <div class="row-rank"></div>
+    <div class="row-main">
+      <div class="row-head">
+        <div class="row-id">
+          <span class="row-ticker"></span>
+          <span class="row-sector"></span>
+        </div>
+        <span class="verdict"></span>
+      </div>
+      <div class="row-body">
+        <div class="row-pillars">
+          <div class="mini-bar" data-key="quality"><label>Q</label><div class="b"></div></div>
+          <div class="mini-bar" data-key="value"><label>V</label><div class="b"></div></div>
+          <div class="mini-bar" data-key="trend"><label>T</label><div class="b"></div></div>
+          <div class="mini-bar" data-key="momentum"><label>M</label><div class="b"></div></div>
+        </div>
+        <div class="row-stats">
+          <div class="stat"><label>Price</label><span class="row-price"></span></div>
+          <div class="stat"><label>Composite</label><span class="row-composite"></span></div>
+          <div class="stat"><label>R:R</label><span class="row-rr"></span></div>
+          <div class="stat"><label>Sharpe</label><span class="row-sharpe"></span></div>
+        </div>
+        <button class="expand-btn">Details ↓</button>
+      </div>
+      <div class="row-detail hidden"></div>
+    </div>
+  </article>
+</template>
+
+<template id="card-tpl">
+  <article class="card">
+    <header class="card-head">
+      <div>
+        <h2 class="ticker"></h2>
+        <span class="sector"></span>
+      </div>
+      <div class="price-block">
+        <div class="price"></div>
+        <div class="verdict"></div>
+      </div>
+    </header>
+
+    <section class="pillars">
+      <div class="pillar" data-key="quality"><label>Quality</label><div class="bar"></div><span class="num"></span></div>
+      <div class="pillar" data-key="value"><label>Value</label><div class="bar"></div><span class="num"></span></div>
+      <div class="pillar" data-key="trend"><label>Trend</label><div class="bar"></div><span class="num"></span></div>
+      <div class="pillar" data-key="momentum"><label>Momentum</label><div class="bar"></div><span class="num"></span></div>
+    </section>
+
+    <section class="reasons">
+      <div class="rgroup"><h3>Quality</h3><ul class="quality_notes"></ul></div>
+      <div class="rgroup"><h3>Value</h3><ul class="value_notes"></ul></div>
+      <div class="rgroup"><h3>Trend</h3><ul class="trend_notes"></ul></div>
+      <div class="rgroup"><h3>Momentum</h3><ul class="momentum_notes"></ul></div>
+    </section>
+
+    <section class="warnings hidden">
+      <h3>⚠ Warnings</h3>
+      <ul></ul>
+    </section>
+
+    <section class="action">
+      <h3>Action plan</h3>
+      <div class="action-body"></div>
+    </section>
+
+    <section class="projection-section">
+      <h3>Profit / Loss Projection</h3>
+      <div class="proj-investment"></div>
+      <div class="proj-tabs">
+        <button class="proj-tab active" data-h="30d">30 days</button>
+        <button class="proj-tab" data-h="60d">60 days</button>
+        <button class="proj-tab" data-h="90d">90 days</button>
+        <button class="proj-tab" data-h="180d">180 days</button>
+      </div>
+      <div class="proj-content"></div>
+      <div class="proj-disclaimer">
+        Based on the last 60 days' return distribution (geometric Brownian motion).
+        Probabilities use 3,000 Monte Carlo simulations. Honest math, not a guarantee.
+      </div>
+    </section>
+
+    <section class="chart-section">
+      <h3>Price · Indicators · 60-day projection</h3>
+      <div class="chart-meta"></div>
+      <div class="chart-container"></div>
+      <div class="chart-legend">
+        <span class="lg-item"><i class="lg-swatch close"></i> Price</span>
+        <span class="lg-item"><i class="lg-swatch sma20"></i> SMA 20</span>
+        <span class="lg-item"><i class="lg-swatch sma50"></i> SMA 50</span>
+        <span class="lg-item"><i class="lg-swatch sma200"></i> SMA 200</span>
+        <span class="lg-item"><i class="lg-swatch proj"></i> Projection median</span>
+        <span class="lg-item"><i class="lg-swatch cone80"></i> 80% range</span>
+        <span class="lg-item"><i class="lg-swatch cone50"></i> 50% range</span>
+        <span class="lg-item"><i class="lg-swatch tp"></i> Take profit</span>
+        <span class="lg-item"><i class="lg-swatch sl"></i> Stop loss</span>
+      </div>
+    </section>
+
+    <section class="position-section">
+      <h3>Position breakdown</h3>
+      <div class="position-bar-wrap">
+        <div class="position-bar" data-role="bar"></div>
+        <div class="position-stats" data-role="stats"></div>
+      </div>
+    </section>
+
+    <section class="backtest">
+      <h3>Backtest <span class="bt-period"></span></h3>
+      <div class="bt-grid"></div>
+    </section>
+  </article>
+</template>
+
+<script src="/stockanalyzer-static/app.js"></script>
+</body>
+</html>

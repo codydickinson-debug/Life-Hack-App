@@ -1070,6 +1070,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
     <div class="page active" id="page-today"></div>
     <div class="page" id="page-goals"></div>
     <div class="page" id="page-money"></div>
+    <div class="page" id="page-stocks"></div>
     <div class="page" id="page-stats"></div>
     <div class="page" id="page-settings"></div>
   </div>
@@ -1078,6 +1079,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
     <button class="tab active" data-tab="today"><span class="ic">☀︎</span><span>Today</span></button>
     <button class="tab" data-tab="goals"><span class="ic">◎</span><span>Goals</span></button>
     <button class="tab" data-tab="money"><span class="ic">$</span><span>Money</span></button>
+    <button class="tab" data-tab="stocks"><span class="ic">↗</span><span>Stocks</span></button>
     <button class="tab" data-tab="stats"><span class="ic">▦</span><span>Stats</span></button>
   </nav>
 
@@ -1100,6 +1102,7 @@ const DEFAULT_DB = {
   budget: { income: 0, expenses: [] },
   spend:  [],   // manual + auto-imported transactions: [{id, date, category, amount, note, source:'manual'|'plaid', plaid_id?, merchant_name?, pending?}]
   wins:   [],
+  stocks: { recentTickers: [], account: 10000 },
   // Plaid-connected items {item_id, institution_name, last_sync_at, created_at}
   items:  [],
   // Plaid accounts (balances) by account_id
@@ -1878,6 +1881,7 @@ function render() {
   if (tab === "today")    renderToday();
   if (tab === "goals")    renderGoals();
   if (tab === "money")    renderMoney();
+  if (tab === "stocks")   renderStocks();
   if (tab === "stats")    renderStats();
   if (tab === "settings") renderSettings();
 }
@@ -3273,6 +3277,143 @@ function renderStats() {
     </div>
   `;
 }
+
+/* ===== STOCKS =====
+   The Stocks tab embeds the full StockAnalyzer UI (Home + Markets + Housing +
+   News + Lookup) via an iframe pointing at /stockanalyzer. The iframe is built
+   once and preserved across tab switches so SPA state survives. All API calls
+   route through /api/* to the same Flask backend. */
+function renderStocks() {
+  const page = document.getElementById("page-stocks");
+  if (page.querySelector("#stk-iframe") || page.querySelector("#stk-local-msg")) return;
+  // When opened via file:// (double-clicked index.html), the iframe target
+  // /stockanalyzer doesn't resolve — there's no Python backend locally.
+  // Show a link to the deployed site instead.
+  if (location.protocol === "file:") {
+    page.innerHTML = `
+      <div id="stk-local-msg" class="lg-title">Stocks</div>
+      <div class="card" style="background:var(--card);border-radius:var(--r);padding:20px;margin-top:14px;text-align:center">
+        <div style="font-size:34px;margin-bottom:6px">📊</div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:4px">StockAnalyzer lives on the server</div>
+        <div style="font-size:13px;color:var(--t3);line-height:1.5;margin-bottom:14px">You're viewing this file locally, so there's no Python backend to talk to. Open the deployed version to use Stocks, Housing, Mortgages, and News.</div>
+        <a href="https://life-hack-app.vercel.app" target="_blank" rel="noopener" class="btn" style="display:inline-block;text-decoration:none;padding:10px 18px">Open life-hack-app.vercel.app ↗</a>
+      </div>
+    `;
+    return;
+  }
+  page.innerHTML = `
+    <div style="display:flex;flex-direction:column;height:calc(100dvh - 130px);margin:-16px -14px 0;background:#0b0d10">
+      <div style="padding:8px 14px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;background:var(--bg);border-bottom:1px solid var(--line)">
+        <div style="font-size:13px;font-weight:600;color:var(--t1)">📊 StockAnalyzer</div>
+        <a href="/stockanalyzer" target="_blank" rel="noopener" style="font-size:12px;color:var(--t3);text-decoration:none">Open full ↗</a>
+      </div>
+      <iframe id="stk-iframe" src="/stockanalyzer" loading="lazy"
+        style="border:0;flex:1;width:100%;-webkit-overflow-scrolling:touch;background:#0b0d10"
+        title="StockAnalyzer"></iframe>
+    </div>
+  `;
+}
+
+// Legacy helpers kept for backwards compatibility / window export — no longer
+// used by the rendered UI, but harmless and small.
+async function stocksApi(path, opts = {}) {
+  const r = await fetch(path, Object.assign({ cache: "no-store" }, opts, {
+    headers: Object.assign({ "Content-Type": "application/json" }, opts.headers || {}),
+  }));
+  const ct = r.headers.get("content-type") || "";
+  const data = ct.includes("application/json") ? await r.json() : await r.text();
+  if (!r.ok) {
+    const msg = (data && typeof data === "object" && data.error) || ("HTTP " + r.status);
+    throw new Error(msg);
+  }
+  return data;
+}
+
+async function stocksAnalyze() {
+  const inp = document.getElementById("stk-input");
+  const raw = ((inp && inp.value) || "").trim();
+  if (!raw) { toast("Enter tickers"); return; }
+  const tickers = raw.toUpperCase().split(/\s+/).filter(Boolean);
+  if (!tickers.length) { toast("Enter tickers"); return; }
+
+  DB.stocks = DB.stocks || { recentTickers: [], account: 10000 };
+  for (const t of tickers) {
+    DB.stocks.recentTickers = [t, ...DB.stocks.recentTickers.filter(x => x !== t)].slice(0, 12);
+  }
+  await save();
+
+  const out = document.getElementById("stk-results");
+  if (out) out.innerHTML = `<div class="card" style="background:var(--card);border-radius:var(--r);padding:18px;margin:12px 0;text-align:center;color:var(--t3)">Analyzing… (first call may take ~10s while the backend warms)</div>`;
+
+  try {
+    const account = (DB.stocks && DB.stocks.account) || 10000;
+    const r = await stocksApi("/api/analyze", {
+      method: "POST",
+      body: JSON.stringify({ tickers: tickers.join(" "), period: "5y", account }),
+    });
+    renderStocksResults(r.results || []);
+  } catch (e) {
+    if (out) out.innerHTML = `<div class="card" style="background:var(--card);border-radius:var(--r);padding:18px;margin:12px 0;color:var(--red)">${esc(e.message || "Failed")}</div>`;
+  }
+}
+
+function renderStocksResults(results) {
+  const out = document.getElementById("stk-results");
+  if (!out) return;
+  if (!results.length) { out.innerHTML = ""; return; }
+  out.innerHTML = results.map(r => {
+    if (r.error) {
+      return `<div class="card" style="background:var(--card);border-radius:var(--r);padding:14px;margin:10px 0">
+        <div style="display:flex;justify-content:space-between;align-items:baseline">
+          <b>${esc(r.ticker || "?")}</b>
+          <span style="color:var(--red);font-size:12px">${esc(r.error)}</span>
+        </div>
+      </div>`;
+    }
+    const d = r.decision || {};
+    const v = String(d.verdict || "").toUpperCase();
+    const vCol = v.startsWith("BUY") ? "var(--green)" :
+                 v.startsWith("SELL") ? "var(--red)" :
+                 v.startsWith("WATCH") ? "var(--orange, #f5a623)" : "var(--t2)";
+    const price = (typeof d.price === "number") ? fmt$(d.price) : "—";
+    const pills = d.pillars || {};
+    const pillarLine = `Q ${pills.quality ?? 0} · V ${pills.value ?? 0} · T ${pills.trend ?? 0} · M ${pills.momentum ?? 0}`;
+    const entry = Array.isArray(d.entry_zone) && d.entry_zone.length >= 2 ? d.entry_zone : null;
+    return `<div class="card" style="background:var(--card);border-radius:var(--r);padding:14px;margin:10px 0">
+      <div style="display:flex;justify-content:space-between;align-items:baseline">
+        <div><b style="font-size:18px">${esc(r.ticker)}</b><span style="color:var(--t3);font-size:13px;margin-left:8px">${price}</span></div>
+        <div style="color:${vCol};font-weight:700;font-size:13px">${esc(v || "—")}</div>
+      </div>
+      <div style="margin-top:6px;font-size:12px;color:var(--t3)">Composite ${d.composite ?? "—"} &nbsp;·&nbsp; ${pillarLine}</div>
+      ${d.why ? `<div style="margin-top:8px;font-size:13px;color:var(--t2);line-height:1.45">${esc(d.why)}</div>` : ""}
+      ${entry ? `<div style="margin-top:8px;font-size:12px;color:var(--t3)">Entry ${fmt$(entry[0])}–${fmt$(entry[1])} · Stop ${fmt$(d.stop_loss)} · Target ${fmt$(d.take_profit)} · R:R ${(d.risk_reward || 0).toFixed(2)}</div>` : ""}
+    </div>`;
+  }).join("");
+}
+
+async function stocksFetchNews() {
+  const box = document.getElementById("stk-news");
+  if (!box) return;
+  box.innerHTML = `<div style="color:var(--t3);font-size:13px">Loading headlines…</div>`;
+  try {
+    const r = await stocksApi("/api/news?limit=8");
+    const items = r.items || r.articles || r.headlines || [];
+    if (!items.length) { box.innerHTML = `<div style="color:var(--t3);font-size:13px">No headlines available.</div>`; return; }
+    box.innerHTML = items.slice(0, 8).map(n => {
+      const title = n.title || n.headline || "";
+      const link = n.link || n.url || "#";
+      const src = n.source || n.publisher || "";
+      const date = n.published || n.pubDate || n.date || "";
+      return `<a href="${esc(link)}" target="_blank" rel="noopener" style="display:block;padding:10px 0;border-bottom:1px solid var(--line);text-decoration:none;color:var(--t1)">
+        <div style="font-size:13px;font-weight:500">${esc(title)}</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:2px">${esc(src)}${date ? " · " + esc(String(date).slice(0, 10)) : ""}</div>
+      </a>`;
+    }).join("");
+  } catch (e) {
+    box.innerHTML = `<div style="color:var(--red);font-size:13px">${esc(e.message || "News unavailable")}</div>`;
+  }
+}
+
 
 /* ===== SETTINGS ===== */
 function renderSettings() {
@@ -11186,7 +11327,8 @@ function init() {
 
   Object.assign(window, {
     DB, save, load, clone, todayKey, fmt$, fmt$0, esc, uid,
-    showTab, render, renderToday, renderGoals, renderMoney, renderStats, renderSettings, renderHeader,
+    showTab, render, renderToday, renderGoals, renderMoney, renderStocks, renderStats, renderSettings, renderHeader,
+    stocksApi, stocksAnalyze, stocksFetchNews, renderStocksResults,
     toggleHabit, setHabitCount, addHabitSheet, deleteHabit, streakOf, habitDoneToday, todayHabitProgress,
     toggleGoal, toggleStep, addGoalSheet, deleteGoal, addStepInline, deleteStep, goalProgress,
     addSavingSheet, logSavingSheet, deleteSaving, totalSaved, totalTarget,
