@@ -23,6 +23,9 @@
   - connect-src 'self' https: lets the user-configured backend Worker work over HTTPS only.
     Plain http: backends are blocked (which is what we want).
   - frame-src restricted to Plaid (the only iframe surface in normal use).
+  - frame-ancestors 'none' — this app is never meant to be embedded; blocks clickjacking.
+  - form-action 'none' — there are no <form> elements; a future injected one cannot post
+    user data off-origin.
   - object-src 'none' + base-uri 'self' close the usual XSS escalation paths.
 -->
 <meta http-equiv="Content-Security-Policy" content="
@@ -33,10 +36,10 @@
   font-src 'self' data:;
   connect-src 'self' https:;
   frame-src 'self' https://*.plaid.com;
-  frame-ancestors 'self';
+  frame-ancestors 'none';
   base-uri 'self';
   object-src 'none';
-  form-action 'self';
+  form-action 'none';
   manifest-src 'self';
   worker-src 'self';
 " />
