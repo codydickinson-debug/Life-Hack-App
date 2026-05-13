@@ -1096,6 +1096,8 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 <script>
 /* ================ DATA ================ */
 const SK = "ascend_v2";
+const SK_BAK = "ascend_v2.bak";  // rolling backup of last known-good blob (same format)
+const SK_PREV = "ascend_v2.prev"; // one prior generation (3-tier recovery)
 
 const DEFAULT_DB = {
   user: { name: "", userId: "", clientSecret: "", onboardedAt: 0 },  // userId is generated once and persisted; identifies this device to the backend. clientSecret is a per-device random secret enrolled with the worker — never sent in plaintext after enrollment. onboardedAt = 0 → show first-run flow.
@@ -1205,21 +1207,61 @@ function safeJsonParse(text) { return stripProtoKeys(JSON.parse(text)); }
 
 var DB;  // var so it's reachable on window (helps testing + debug)
 function isLockedEnvelope(p) { return p && typeof p === "object" && p.v === 1 && p.iv && p.ct && p.salt; }
-function load() {
-  try {
-    const raw = localStorage.getItem(SK);
-    if (!raw) return clone(DEFAULT_DB);
-    const p = safeJsonParse(raw);
-    // If data is encrypted, signal locked state — caller will prompt for passphrase
-    if (isLockedEnvelope(p)) return { __locked: true, __salt: p.salt };
-    return Object.assign(clone(DEFAULT_DB), p, {
-      settings: Object.assign({}, DEFAULT_DB.settings, p.settings || {}),
-      budget: Object.assign({}, DEFAULT_DB.budget, p.budget || {}),
-      user: Object.assign({}, DEFAULT_DB.user, p.user || {}),
-    });
-  } catch { return clone(DEFAULT_DB); }
+let _loadedFromBackup = false; // surfaced by init() so the user knows recovery happened
+function _parseDb(raw) {
+  if (!raw) return null;
+  const p = safeJsonParse(raw); // throws on bad JSON
+  if (isLockedEnvelope(p)) return { __locked: true, __salt: p.salt };
+  if (!p || typeof p !== "object" || Array.isArray(p)) throw new Error("not an object");
+  return Object.assign(clone(DEFAULT_DB), p, {
+    settings: Object.assign({}, DEFAULT_DB.settings, p.settings || {}),
+    budget:   Object.assign({}, DEFAULT_DB.budget,   p.budget   || {}),
+    user:     Object.assign({}, DEFAULT_DB.user,     p.user     || {}),
+  });
 }
-function save() { try { localStorage.setItem(SK, JSON.stringify(DB)); } catch {} }
+function load() {
+  // Try primary, then rolling backups. localStorage writes are atomic per
+  // setItem but the *sequence* of "write new" + "rotate backup" isn't —
+  // a tab crash mid-rotation can leave SK truncated. Falling through to
+  // SK_BAK / SK_PREV recovers the last-known-good blob.
+  const sources = [SK, SK_BAK, SK_PREV];
+  for (let i = 0; i < sources.length; i++) {
+    try {
+      const parsed = _parseDb(localStorage.getItem(sources[i]));
+      if (parsed !== null) {
+        if (i > 0) _loadedFromBackup = true; // mark for user-visible toast
+        return parsed;
+      }
+    } catch { /* try next source */ }
+  }
+  return clone(DEFAULT_DB);
+}
+// Rotate SK -> SK_BAK -> SK_PREV before overwriting SK.
+// We only rotate when the current SK actually parses (no point preserving
+// already-corrupt bytes), and we never write a backup that's identical to
+// the one already there (saves quota on no-op saves).
+function _rotateBackup() {
+  try {
+    const cur = localStorage.getItem(SK);
+    if (!cur) return;
+    // sanity-check it parses, but encrypted envelopes are stored opaque
+    // so we accept either a valid envelope or a valid plain DB.
+    let ok = false;
+    try { const p = safeJsonParse(cur); ok = !!p && typeof p === "object"; } catch { ok = false; }
+    if (!ok) return;
+    const prevBak = localStorage.getItem(SK_BAK);
+    if (prevBak && prevBak !== localStorage.getItem(SK_PREV)) {
+      localStorage.setItem(SK_PREV, prevBak);
+    }
+    if (cur !== prevBak) localStorage.setItem(SK_BAK, cur);
+  } catch { /* quota or DOMException — primary save still proceeds */ }
+}
+function save() {
+  try {
+    _rotateBackup();
+    localStorage.setItem(SK, JSON.stringify(DB));
+  } catch {}
+}
 
 DB = load();
 
@@ -1318,9 +1360,10 @@ save = async function() {
       DB.__salt = salt;
       const env = await encryptObject(DB, APP_KEY);
       const blob = { v: 1, salt, iv: env.iv, ct: env.ct };
+      _rotateBackup();
       localStorage.setItem(SK, JSON.stringify(blob));
     } else {
-      _origSave();
+      _origSave(); // _origSave rotates the backup itself
     }
   } catch { /* swallow — surfacing save errors via console would leak DB
                 serialization details to anything reading the console. */ }
@@ -3798,7 +3841,7 @@ function renderSettings() {
         <div class="body"><div class="t1">Import data</div><div class="t2">Restore from a JSON backup</div></div>
         <div class="trail chev"></div>
       </div>
-      <div class="row tappable" onclick="if(confirm('This will erase EVERYTHING. Sure?')){localStorage.removeItem(SK);APP_KEY=null;DB=load();render();toast('Reset');}">
+      <div class="row tappable" onclick="if(confirm('This will erase EVERYTHING. Sure?')){localStorage.removeItem(SK);localStorage.removeItem(SK_BAK);localStorage.removeItem(SK_PREV);APP_KEY=null;DB=load();render();toast('Reset');}">
         <div class="lead" style="color:var(--red)">⚠︎</div>
         <div class="body"><div class="t1" style="color:var(--red)">Reset everything</div><div class="t2">Clears all data on this device</div></div>
         <div class="trail chev"></div>
@@ -11448,6 +11491,11 @@ function init() {
   autoLockSetup();
   render();
   maybeShowWhatsNew();
+  if (_loadedFromBackup) {
+    // Surface so the user knows recovery happened — silent recovery would
+    // hide a problem (e.g. a flaky storage backend) that they need to see.
+    setTimeout(() => toast("Recovered from backup — primary save was corrupt"), 1500);
+  }
 
   if (DB.settings.autoSyncOnOpen && _backendReady() && (DB.items||[]).length > 0) {
     setTimeout(() => { syncNow().then(() => { surfacePendingDeposits(); }).catch(()=>{}); }, 800);
