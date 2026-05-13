@@ -3303,9 +3303,8 @@ function renderStocks() {
   }
   page.innerHTML = `
     <div style="display:flex;flex-direction:column;height:calc(100dvh - 130px);margin:-16px -14px 0;background:#0b0d10">
-      <div style="padding:8px 14px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;background:var(--bg);border-bottom:1px solid var(--line)">
+      <div style="padding:8px 14px;display:flex;align-items:center;flex-shrink:0;background:var(--bg);border-bottom:1px solid var(--line)">
         <div style="font-size:13px;font-weight:600;color:var(--t1)">📊 StockAnalyzer</div>
-        <a href="/stockanalyzer" target="_blank" rel="noopener" style="font-size:12px;color:var(--t3);text-decoration:none">Open full ↗</a>
       </div>
       <iframe id="stk-iframe" src="/stockanalyzer?v=3" loading="lazy"
         style="border:0;flex:1;width:100%;-webkit-overflow-scrolling:touch;background:#0b0d10"
