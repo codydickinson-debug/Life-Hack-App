@@ -1491,6 +1491,37 @@ save = async function() {
 // Sync wrapper for inline handlers; fire-and-forget.
 function saveNow() { save(); }
 
+/* Debounced save for keystroke handlers. The encrypted save path does a
+   full AES-GCM encrypt on every call — at 5 keystrokes/sec that's an
+   encrypt per 200ms, dominated by JSON.stringify of the full DB. Debounce
+   coalesces those into a single save after the user stops typing. Critical
+   paths (sheet "Save" buttons, deletes, navigation) call save() directly
+   so they remain durable on close. */
+let _saveTimer = null;
+let _savePending = false;
+function saveDebounced(delayMs) {
+  _savePending = true;
+  if (_saveTimer) clearTimeout(_saveTimer);
+  _saveTimer = setTimeout(() => {
+    _saveTimer = null;
+    _savePending = false;
+    save();
+  }, typeof delayMs === "number" ? delayMs : 350);
+}
+/* Flush any pending debounced save synchronously. Call before navigation,
+   visibility-hide, lock, or any other moment where losing the last
+   keystroke would surprise the user. */
+function flushPendingSave() {
+  if (_saveTimer) { clearTimeout(_saveTimer); _saveTimer = null; }
+  if (_savePending) { _savePending = false; save(); }
+}
+// pagehide / beforeunload: best-effort flush of any pending keystroke save
+// before the tab unloads. Encrypted save is async; we kick it off and the
+// browser usually gives the encrypt enough time to complete before tear-down.
+window.addEventListener("pagehide", flushPendingSave);
+window.addEventListener("beforeunload", flushPendingSave);
+document.addEventListener("visibilitychange", () => { if (document.hidden) flushPendingSave(); });
+
 async function setPassphrase(pass) {
   if (!pass || pass.length < 4) throw new Error("Passphrase too short (min 4)");
   const salt = DB.__salt || newSalt();
@@ -2542,7 +2573,7 @@ function renderMoney() {
         <div class="row">
           <div class="lead">💵</div>
           <div class="body"><div class="t1">Monthly income</div><div class="t2">After-tax take-home</div></div>
-          <input class="bcat-amt" type="number" inputmode="decimal" value="${inc||""}" placeholder="0" oninput="DB.budget.income=Number(this.value)||0;save();" onblur="render()" />
+          <input class="bcat-amt" type="number" inputmode="decimal" value="${inc||""}" placeholder="0" oninput="DB.budget.income=Number(this.value)||0;saveDebounced();" onblur="flushPendingSave();render()" />
         </div>
       </div>
       <div class="section-h"><span class="lbl">Expenses</span><button class="act" onclick="addExpenseInline()">+ Add</button></div>
@@ -2550,8 +2581,8 @@ function renderMoney() {
         ${DB.budget.expenses.length ? DB.budget.expenses.map(e => `
           <div class="row">
             <div class="lead" style="font-size:14px">•</div>
-            <input class="bcat-name" maxlength="${TEXT_MAX}" style="background:transparent;flex:1;font-size:15px" value="${esc(e.name)}" oninput="DB.budget.expenses.find(x=>x.id==='${e.id}').name=sanitizeText(this.value);save();" />
-            <input class="bcat-amt" type="number" inputmode="decimal" value="${e.amount||""}" placeholder="0" oninput="DB.budget.expenses.find(x=>x.id==='${e.id}').amount=Number(this.value)||0;save();" onblur="render()" />
+            <input class="bcat-name" maxlength="${TEXT_MAX}" style="background:transparent;flex:1;font-size:15px" value="${esc(e.name)}" oninput="DB.budget.expenses.find(x=>x.id==='${e.id}').name=sanitizeText(this.value);saveDebounced();" onblur="flushPendingSave()" />
+            <input class="bcat-amt" type="number" inputmode="decimal" value="${e.amount||""}" placeholder="0" oninput="DB.budget.expenses.find(x=>x.id==='${e.id}').amount=Number(this.value)||0;saveDebounced();" onblur="flushPendingSave();render()" />
             <button class="del-x" onclick="if(confirm('Delete?'))deleteExpense('${e.id}')">×</button>
           </div>
         `).join("") : `<div class="row"><div class="body"><div class="t2 muted">No expense categories yet — tap +Add</div></div></div>`}
@@ -3249,7 +3280,7 @@ function renderMoney() {
       <div class="section-h"><span class="lbl">Recent</span><span class="muted" style="font-size:12px">${filteredSpend().length}${(DB.spendSearch||"").trim()?` of ${DB.spend.length}`:""} total</span></div>
       <input placeholder="Search transactions" maxlength="${TEXT_MAX}" value="${esc(DB.spendSearch||"")}"
         style="background:var(--card);padding:12px 14px;border-radius:var(--r3);font-size:14px;width:100%;margin-bottom:8px;border:1px solid var(--sep);box-sizing:border-box"
-        oninput="DB.spendSearch=sanitizeText(this.value);save();" onchange="renderMoney()" onblur="renderMoney()" />
+        oninput="DB.spendSearch=sanitizeText(this.value);saveDebounced();" onchange="renderMoney()" onblur="flushPendingSave();renderMoney()" />
       <div class="list">
         ${filteredSpend().length ? filteredSpend().slice(0,40).map(t=>`
           <div class="row">
@@ -3630,7 +3661,7 @@ function renderSettings() {
         </div>
         <input style="background:var(--bg-elev);padding:8px 10px;border-radius:8px;width:120px;text-align:right"
           value="${esc(DB.user.name||"")}" placeholder="Name" maxlength="${TEXT_MAX}"
-          oninput="DB.user.name=sanitizeText(this.value);save();renderHeader()" />
+          oninput="DB.user.name=sanitizeText(this.value);saveDebounced();renderHeader()" onblur="flushPendingSave()" />
       </div>
     </div>
 
@@ -3691,14 +3722,14 @@ function renderSettings() {
         <div class="body"><div class="t1">Backend URL</div><div class="t2">Your Cloudflare Worker URL</div></div>
         <input style="background:var(--bg-elev);padding:8px 10px;border-radius:8px;width:170px;text-align:right;font-size:11px"
           value="${esc(DB.settings.backendUrl||"")}" placeholder="https://...workers.dev"
-          oninput="DB.settings.backendUrl=this.value.trim();save()" />
+          oninput="DB.settings.backendUrl=sanitizeText(this.value, URL_MAX);saveDebounced()" onblur="flushPendingSave()" maxlength="${URL_MAX}" />
       </div>
       <div class="row">
         <div class="lead">🔑</div>
         <div class="body"><div class="t1">Enrollment Key</div><div class="t2">${DB.user.clientSecret ? "✓ Device enrolled — key no longer in use" : "Used once to register this device. Same value as the Worker's ENROLLMENT_KEY (or legacy API_KEY) secret."}</div></div>
         <input type="password" style="background:var(--bg-elev);padding:8px 10px;border-radius:8px;width:170px;text-align:right;font-size:11px"
           value="${esc(DB.settings.apiKey||"")}" placeholder="paste here"
-          oninput="DB.settings.apiKey=this.value.trim();save()" />
+          oninput="DB.settings.apiKey=this.value.replace(/[\x00-\x1F\x7F]/g,'').trim();saveDebounced()" onblur="flushPendingSave()" maxlength="500" />
       </div>
       <div class="row">
         <div class="lead">⚡</div>
@@ -3748,7 +3779,7 @@ function renderSettings() {
         <div class="lead">💵</div>
         <div class="body"><div class="t1">Paycheck threshold</div><div class="t2">Deposits ≥ this amount get reviewed</div></div>
         <input type="number" inputmode="numeric" value="${DB.settings.paycheckMin||500}"
-          oninput="DB.settings.paycheckMin=Number(this.value)||500;save()"
+          oninput="DB.settings.paycheckMin=Number(this.value)||500;saveDebounced()" onblur="flushPendingSave()"
           style="background:var(--bg-elev);padding:8px;border-radius:8px;width:80px;text-align:right" />
       </div>
       ${(DB.allocations||[]).length ? DB.allocations.map(a => {
@@ -3812,7 +3843,7 @@ function renderSettings() {
           <div class="lead">+</div>
           <div class="body"><div class="t1">Extra payment / month</div><div class="t2">Beyond minimums — accelerates payoff</div></div>
           <input type="number" inputmode="numeric" value="${DB.settings.debtExtraPayment||0}"
-            oninput="DB.settings.debtExtraPayment=Number(this.value)||0;save();render()"
+            oninput="DB.settings.debtExtraPayment=Number(this.value)||0;saveDebounced();render()" onblur="flushPendingSave()"
             style="background:var(--bg-elev);padding:8px;border-radius:8px;width:80px;text-align:right" />
         </div>
         ${debtAccounts().map(d => `
@@ -3890,7 +3921,7 @@ function renderSettings() {
         <div class="lead">🎯</div>
         <div class="body"><div class="t1">Monthly savings target</div><div class="t2">Reserved before computing what's safe to spend each day</div></div>
         <input type="number" inputmode="numeric" value="${DB.settings.monthlySavingsTarget||0}"
-          oninput="DB.settings.monthlySavingsTarget=Number(this.value)||0;save();render()"
+          oninput="DB.settings.monthlySavingsTarget=Number(this.value)||0;saveDebounced();render()" onblur="flushPendingSave()"
           style="background:var(--bg-elev);padding:8px;border-radius:8px;width:90px;text-align:right" />
       </div>
     </div>
