@@ -3256,6 +3256,33 @@ function renderGoals() {
       <div class="trail chev"></div>
     </div>
     ${goalsHtml}
+    ${(() => {
+      // Recently completed goals — surface accomplishments separately from
+      // in-progress work. Limited to 5, sorted by most-recent completion.
+      const done = (DB.goals || [])
+        .filter(g => g.done && (g.tier === activeTier || activeTier === "all"))
+        .sort((a,b) => (b.completedAt || 0) - (a.completedAt || 0))
+        .slice(0, 5);
+      if (!done.length) return "";
+      return `
+        <div class="section-h" style="margin-top:28px"><span class="lbl">Recently completed</span><span class="muted" style="font-size:12px">${done.length}</span></div>
+        <div class="list">
+          ${done.map(g => {
+            const when = g.completedAt ? new Date(g.completedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "";
+            return `
+              <div class="row tappable" onclick="addGoalSheet(DB.goals.find(x=>x.id==='${g.id}'))">
+                <div class="lead">🎯</div>
+                <div class="body">
+                  <div class="t1" style="text-decoration:line-through;color:var(--t2)">${esc(g.title)}</div>
+                  <div class="t2">${when ? `Completed ${when}` : "Completed"}</div>
+                </div>
+                <div class="trail chev"></div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    })()}
   `;
 }
 
