@@ -9,7 +9,6 @@ Sources (all public RSS, no API keys, no scraping):
   * NYT Business      — rss.nytimes.com/services/xml/rss/nyt/Business.xml
   * Bloomberg Markets — feeds.bloomberg.com/markets/news.rss
   * MarketWatch       — feeds.marketwatch.com/marketwatch/topstories
-  * Barron's          — barrons.com/feed/rssheadlines
   * Investing.com     — investing.com/rss/news.rss
 
 Cached in-memory for 5 minutes to keep the UI responsive without
@@ -41,7 +40,6 @@ SOURCES = [
     {"id": "nyt",         "name": "NYT Business",      "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",    "color": "#1a1a1a"},
     {"id": "bloomberg",   "name": "Bloomberg Markets", "url": "https://feeds.bloomberg.com/markets/news.rss",                 "color": "#ff5500"},
     {"id": "marketwatch", "name": "MarketWatch",       "url": "http://feeds.marketwatch.com/marketwatch/topstories",          "color": "#0067a5"},
-    {"id": "barrons",     "name": "Barron's",          "url": "https://www.barrons.com/feed/rssheadlines",                    "color": "#005ea2"},
     {"id": "investing",   "name": "Investing.com",     "url": "https://www.investing.com/rss/news.rss",                       "color": "#e93f33"},
 ]
 
