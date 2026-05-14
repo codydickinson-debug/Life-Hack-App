@@ -5863,6 +5863,43 @@ function renderStats() {
       `;
     })() : ""}
 
+    ${(() => {
+      // Mood trend — last 30 days of mood emoji ratings, gaps shown as faint dots.
+      // Surfaces emotional patterns alongside habit/spend data.
+      const moods = DB.moods || {};
+      const moodKeys = Object.keys(moods);
+      if (!moodKeys.length) return "";
+      const today3 = new Date();
+      const days = 30;
+      const series = [];
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(today3); d.setDate(today3.getDate() - i);
+        const k = todayKey(d);
+        series.push({ k, mood: moods[k] || "", isToday: i === 0 });
+      }
+      const filled = series.filter(s => s.mood).length;
+      const moodScore = { "😞":1, "😕":2, "😐":3, "🙂":4, "😄":5 };
+      const scores = series.filter(s => moodScore[s.mood]).map(s => moodScore[s.mood]);
+      const avg = scores.length ? (scores.reduce((a,v)=>a+v,0) / scores.length) : 0;
+      const avgEmoji = ["", "😞", "😕", "😐", "🙂", "😄"][Math.round(avg)] || "";
+      return `
+        <div class="section-h"><span class="lbl">Mood</span><span class="muted" style="font-size:12px">last 30 days · ${filled} tracked${avg ? ' · avg ' + avgEmoji : ''}</span></div>
+        <div style="background:var(--card);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
+          <div style="display:grid;grid-template-columns:repeat(10,1fr);gap:5px">
+            ${series.map(s => {
+              if (s.mood) {
+                return `<div style="aspect-ratio:1/1;background:var(--bg-elev);border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:14px;${s.isToday?'outline:1.5px solid var(--blue);outline-offset:1px':''}" title="${s.k}">${s.mood}</div>`;
+              }
+              return `<div style="aspect-ratio:1/1;background:var(--bg-elev);border-radius:5px;${s.isToday?'outline:1.5px solid var(--blue);outline-offset:1px':''};display:flex;align-items:center;justify-content:center;color:var(--t4);font-size:10px" title="${s.k} · no mood logged">·</div>`;
+            }).join("")}
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--t3);margin-top:8px">
+            <span>30 days ago</span><span>today</span>
+          </div>
+        </div>
+      `;
+    })()}
+
     ${DB.habits.length ? (() => {
       // Per-habit consistency rate — % of qualifying days each habit was "done"
       // over the last 30 days (or since creation, whichever is shorter). Helps
