@@ -4651,19 +4651,33 @@ function renderMoney() {
         const visible = subs.filter(s => s.status !== "ignored");
         if (!visible.length) return "";
         const totalMonthly = visible.filter(s => s.status === "active").reduce((a,s)=>a+s.monthly_cost,0);
+        const totalYearly = totalMonthly * 12;
+        const tenYear = totalYearly * 10;
         return `
-          <div class="section-h"><span class="lbl">Subscriptions</span><span class="muted" style="font-size:12px">${fmt$0(totalMonthly)}/mo</span></div>
-          <div class="list">
-            ${visible.map(s => `
-              <div class="row">
-                <div class="lead">${s.frequency === "yearly" ? "📅" : s.frequency === "weekly" ? "🔁" : "🔄"}</div>
-                <div class="body">
-                  <div class="t1">${esc(s.merchant)} <span class="muted" style="font-weight:400">${fmt$0(s.avg_amount)}/${s.frequency==="monthly"?"mo":s.frequency==="yearly"?"yr":s.frequency==="weekly"?"wk":s.frequency.slice(0,2)}</span></div>
-                  <div class="t2">${s.occurrences}× · last ${s.last_charge_date} · next ~${s.next_predicted}${s.frequency!=="monthly"?` · ${fmt$0(s.monthly_cost)}/mo`:""}</div>
-                </div>
-                <button class="btn sm secondary" style="font-size:11px;padding:4px 8px" onclick="setSubscriptionStatus(${jsAttr(s.key)},'ignored')">Hide</button>
+          <div class="section-h"><span class="lbl">Subscriptions</span><span class="muted" style="font-size:12px"><span data-priv="amount">${fmt$0(totalMonthly)}</span>/mo</span></div>
+          ${totalYearly > 0 ? `
+            <div style="background:var(--card);border-radius:var(--r);padding:14px 16px;margin-bottom:10px;border:0.5px solid var(--sep);border-left:3px solid var(--orange)">
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <div style="font-size:12px;color:var(--t3)">Annual subscription cost</div>
+                <div style="font-size:20px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt$0(totalYearly)}/yr</div>
               </div>
-            `).join("")}
+              <div style="font-size:11.5px;color:var(--t3);margin-top:4px">≈ <b style="color:var(--t1)" data-priv="amount">${fmt$0(tenYear)}</b> over 10 years — every cancellation compounds</div>
+            </div>
+          ` : ""}
+          <div class="list">
+            ${visible.map(s => {
+              const yearly = (s.monthly_cost || 0) * 12;
+              return `
+                <div class="row">
+                  <div class="lead">${s.frequency === "yearly" ? "📅" : s.frequency === "weekly" ? "🔁" : "🔄"}</div>
+                  <div class="body">
+                    <div class="t1">${esc(s.merchant)} <span class="muted" style="font-weight:400" data-priv="amount">${fmt$0(s.avg_amount)}/${s.frequency==="monthly"?"mo":s.frequency==="yearly"?"yr":s.frequency==="weekly"?"wk":s.frequency.slice(0,2)}</span></div>
+                    <div class="t2"><b style="color:var(--t2)" data-priv="amount">${fmt$0(yearly)}</b>/yr · ${s.occurrences}× tracked · next ~${s.next_predicted}</div>
+                  </div>
+                  <button class="btn sm secondary" style="font-size:11px;padding:4px 8px" onclick="setSubscriptionStatus(${jsAttr(s.key)},'ignored')">Hide</button>
+                </div>
+              `;
+            }).join("")}
           </div>
         `;
       })()}
