@@ -2315,6 +2315,90 @@ function todayHabitProgress() {
   return { done, total: DB.habits.length, pct: Math.round(100*done/DB.habits.length) };
 }
 
+// Habit detail sheet — opens when the user taps a habit's 🔥 streak pill on Today.
+// Shows long-term stats, 30-day heatmap, milestone forecast, and edit/delete shortcuts.
+function habitDetailSheet(id) {
+  const h = DB.habits.find(x => x.id === id);
+  if (!h) return;
+  const today = new Date();
+  // 30-day done count + grid
+  const grid = [];
+  let done30 = 0;
+  for (let i = 29; i >= 0; i--) {
+    const d = new Date(today); d.setDate(today.getDate() - i);
+    if (h.createdAt && new Date(h.createdAt) > d) { grid.push({ pad: true, k: todayKey(d) }); continue; }
+    const k = todayKey(d);
+    const v = h.log[k] || 0;
+    const did = h.type === "count" ? v >= (h.target || 1) : !!v;
+    if (did) done30++;
+    grid.push({ pad: false, hit: did, isToday: i === 0, k });
+  }
+  // All-time done count
+  let totalDone = 0;
+  let firstDate = null;
+  for (const [date, val] of Object.entries(h.log || {})) {
+    const did = h.type === "count" ? (val >= (h.target || 1)) : !!val;
+    if (did) {
+      totalDone++;
+      if (!firstDate || date < firstDate) firstDate = date;
+    }
+  }
+  const streak = streakOf(h);
+  // Next milestone for streak
+  const MILESTONES = [7, 14, 30, 60, 100, 180, 365, 500, 1000];
+  const nextMs = MILESTONES.find(m => m > streak) || (Math.ceil((streak + 1) / 500) * 500);
+  const daysToMs = nextMs - streak;
+  const msDate = new Date(today); msDate.setDate(today.getDate() + daysToMs);
+  const msLbl = msDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+
+  openSheet(`
+    <h2 style="margin-bottom:4px"><span style="margin-right:8px">${h.emoji || '✦'}</span>${esc(h.name)}</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">${h.type === "count" ? `Daily target: ${h.target || 1}${h.unit ? " " + esc(h.unit) : ""}` : "Daily check-off habit"}</p>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:10px;margin-bottom:14px">
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:12px 10px">
+        <div style="font-size:22px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums;line-height:1">🔥 ${streak}</div>
+        <div style="font-size:10.5px;color:var(--t3);margin-top:4px">day streak</div>
+      </div>
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:12px 10px">
+        <div style="font-size:22px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums;line-height:1">${done30}/30</div>
+        <div style="font-size:10.5px;color:var(--t3);margin-top:4px">last 30 days</div>
+      </div>
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:12px 10px">
+        <div style="font-size:22px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums;line-height:1">${totalDone}</div>
+        <div style="font-size:10.5px;color:var(--t3);margin-top:4px">all-time</div>
+      </div>
+    </div>
+
+    ${streak >= 1 ? `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--orange);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">
+        <div style="font-size:12px;color:var(--t3);margin-bottom:2px">Next milestone</div>
+        <div style="font-size:14px;color:var(--t1)"><b style="color:var(--t1)">${nextMs}-day</b> milestone in <b style="color:var(--orange)">${daysToMs} day${daysToMs===1?'':'s'}</b> (${msLbl})</div>
+      </div>
+    ` : ""}
+
+    <div class="section-h" style="margin-top:0"><span class="lbl">Last 30 days</span><span class="muted" style="font-size:12px">${Math.round(100*done30/30)}%</span></div>
+    <div style="display:grid;grid-template-columns:repeat(10, 1fr);gap:5px;margin-bottom:14px">
+      ${grid.map(c => {
+        if (c.pad) return `<div style="aspect-ratio:1/1;background:var(--bg-elev);opacity:0.4;border-radius:4px"></div>`;
+        const bg = c.hit ? "var(--green)" : "var(--bg-elev2)";
+        const ring = c.isToday ? "outline:1.5px solid var(--blue);outline-offset:1px" : "";
+        return `<div style="aspect-ratio:1/1;background:${bg};border-radius:4px;${ring}" title="${c.k}${c.hit?' · done':''}"></div>`;
+      }).join("")}
+    </div>
+    <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--t3);margin-top:-8px;margin-bottom:8px">
+      <span>30 days ago</span><span>today</span>
+    </div>
+
+    ${firstDate ? `<div class="muted" style="font-size:11.5px;margin-bottom:14px">First check-in: ${firstDate}</div>` : ""}
+
+    <div class="actions">
+      <button class="btn secondary" onclick="closeSheet();setTimeout(()=>addHabitSheet(DB.habits.find(x=>x.id==='${h.id}')),120)">Edit</button>
+      <button class="btn" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
 function toggleHabit(id) {
   const h = DB.habits.find(x => x.id === id);
   if (!h) return;
@@ -2698,7 +2782,7 @@ function renderToday() {
           ${dailyActionContextHtml(h.name)}
         </div>
         <div class="trail">
-          ${streak ? `<span class="streak-pill">🔥 ${streak}</span>` : ""}
+          ${streak ? `<span class="streak-pill" style="cursor:pointer" onclick="event.stopPropagation();habitDetailSheet('${h.id}')">🔥 ${streak}</span>` : ""}
           <button class="del-x" onclick="event.stopPropagation();addHabitSheet(DB.habits.find(x=>x.id==='${h.id}'))" title="Edit">⋯</button>
         </div>
       </div>
@@ -15666,7 +15750,7 @@ function init() {
   Object.assign(window, {
     DB, save, load, clone, todayKey, fmt$, fmt$0, esc, uid,
     showTab, render, renderToday, renderGoals, renderPlanning, renderMoney, renderStocks, renderStats, renderSettings, renderHeader,
-    renderCalendar, calendarPrevMonth, calendarNextMonth, calendarToday, calendarDaySheet, saveCalendarNote, calendarSetView, calendarJumpToMonth, addWinForDate, toggleHabitForDate,
+    renderCalendar, calendarPrevMonth, calendarNextMonth, calendarToday, calendarDaySheet, saveCalendarNote, calendarSetView, calendarJumpToMonth, addWinForDate, toggleHabitForDate, habitDetailSheet,
     PLAN_TIERS, PLAN_TEMPLATES, planById, plansByTier, addPlan, togglePlan, deletePlan,
     updatePlanProgress, addPlanSheet, planTemplatesSheet, logPlanProgressSheet,
     stocksApi, stocksAnalyze, stocksFetchNews, renderStocksResults,
