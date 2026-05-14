@@ -8,9 +8,14 @@ Sources (all public RSS, no API keys, no scraping):
   * CNBC Top News     — cnbc.com/id/100003114/device/rss/rss.html
   * NYT Business      — rss.nytimes.com/services/xml/rss/nyt/Business.xml
   * Bloomberg Markets — feeds.bloomberg.com/markets/news.rss
+  * MarketWatch       — feeds.marketwatch.com/marketwatch/topstories
+  * Barron's          — barrons.com/feed/rssheadlines
+  * Investing.com     — investing.com/rss/news.rss
 
 Cached in-memory for 5 minutes to keep the UI responsive without
-hammering the publishers.
+hammering the publishers. A failing feed degrades gracefully — the
+error is captured in the response so the UI can disclose it, but
+the rest of the sources still merge cleanly.
 """
 
 from __future__ import annotations
@@ -30,11 +35,14 @@ from urllib.request import Request, urlopen
 # ---------------------------------------------------------------------
 
 SOURCES = [
-    {"id": "yahoo",     "name": "Yahoo Finance",     "url": "https://finance.yahoo.com/news/rssindex",                       "color": "#7e22ce"},
-    {"id": "wsj",       "name": "WSJ Markets",       "url": "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain",  "color": "#000000"},
-    {"id": "cnbc",      "name": "CNBC",              "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",        "color": "#cc0000"},
-    {"id": "nyt",       "name": "NYT Business",      "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",    "color": "#1a1a1a"},
-    {"id": "bloomberg", "name": "Bloomberg Markets", "url": "https://feeds.bloomberg.com/markets/news.rss",                 "color": "#ff5500"},
+    {"id": "yahoo",       "name": "Yahoo Finance",     "url": "https://finance.yahoo.com/news/rssindex",                       "color": "#7e22ce"},
+    {"id": "wsj",         "name": "WSJ Markets",       "url": "https://feeds.content.dowjones.io/public/rss/RSSMarketsMain",  "color": "#000000"},
+    {"id": "cnbc",        "name": "CNBC",              "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",        "color": "#cc0000"},
+    {"id": "nyt",         "name": "NYT Business",      "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",    "color": "#1a1a1a"},
+    {"id": "bloomberg",   "name": "Bloomberg Markets", "url": "https://feeds.bloomberg.com/markets/news.rss",                 "color": "#ff5500"},
+    {"id": "marketwatch", "name": "MarketWatch",       "url": "http://feeds.marketwatch.com/marketwatch/topstories",          "color": "#0067a5"},
+    {"id": "barrons",     "name": "Barron's",          "url": "https://www.barrons.com/feed/rssheadlines",                    "color": "#005ea2"},
+    {"id": "investing",   "name": "Investing.com",     "url": "https://www.investing.com/rss/news.rss",                       "color": "#e93f33"},
 ]
 
 CACHE_TTL_SEC = 300  # 5 minutes
