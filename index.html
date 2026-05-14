@@ -10748,58 +10748,31 @@ function finishOnboarding() {
    Each step has an "Ask Cylan" button that hands off to openCounselor
    with a context-aware seed prompt so users can ask anything about
    what they're currently looking at. */
+// Interactive tour — 5 steps, each prompts a real tap on a real element.
+// Each step with a `target` attaches a one-time click listener so tapping
+// the highlighted element advances the tour automatically (after a short
+// delay so the user sees the result of their action). Otherwise the Next
+// button advances manually. No Ask-Cylan button per step — Cylan has its
+// own dedicated tab/FAB, the tour is for learning by doing.
 const TUTORIAL_STEPS = [
-  { emoji: "👋", title: "Welcome to Ascend", tab: "today",
-    body: "A guided tour with live demo data so you can see every feature in action. Tap Next — we'll visit each tab.",
-    askPrompt: "Give me a one-paragraph overview of what Ascend is, who it's for, and how to get the most out of it in the first week." },
+  { emoji: "👋", title: "Try it — don't read it", tab: "today",
+    body: "5 quick taps. Each one shows you a real feature using demo data." },
 
-  { emoji: "🧭", title: "Seven tabs at the bottom", tab: "today", target: "#tabbar",
-    body: "This is your navigation. Today, Calendar, Goals, Plan, Money, Stocks, Stats. Tap any tab any time — we'll visit each next.",
-    askPrompt: "What does each of the seven Ascend tabs do? Give me a one-line description per tab so I know which one to use for what." },
+  { emoji: "✓", title: "Check off a habit", tab: "today",
+    target: "#page-today [onclick^=\"toggleHabit\"]",
+    body: "Tap any habit below to mark it done." },
 
-  { emoji: "＋", title: "Quick add — log spend or wins fast", tab: "today", target: "#fab",
-    body: "The + button is always here. Tap it to log spending, add a win, or quick-add a habit — from any tab.",
-    askPrompt: "What kinds of things should I be logging in Ascend day-to-day, and how do I make it stick?" },
+  { emoji: "🏆", title: "Log a quick win", tab: "today",
+    target: "#page-today button[onclick*=\"addWin\"]",
+    body: "Tap + Add next to Wins to capture a small victory." },
 
-  { emoji: "☀︎", title: "Today — your daily home", tab: "today",
-    body: "Check off habits, see your streak, log wins. Day chips at the top jump to that day in Calendar. The 'Talk to Cylan' card opens your AI counselor.",
-    askPrompt: "How should I structure my Today tab to actually use it every morning? Give me a 60-second daily routine." },
+  { emoji: "📅", title: "See your patterns", tab: "today",
+    target: ".tab[data-tab=\"calendar\"]",
+    body: "Tap Calendar — every day shows your habits, mood, and spending." },
 
-  { emoji: "▤", title: "Calendar — habits + life over time", tab: "calendar",
-    body: "All your habits, wins, bills, savings, and mood — together by day. Tap any day for details. Switch to Year view for a 12-month heatmap of completion.",
-    askPrompt: "How can I use the Calendar tab to spot patterns in my habits and mood?" },
-
-  { emoji: "◎", title: "Goals — your direction", tab: "goals",
-    body: "Goals nest from daily → short-term → life. Example: 'pay off credit card' (short-term) ladders up to 'be debt-free in 3 years' (life). Each step you take feeds the bigger picture.",
-    askPrompt: "Help me set up my first three goals — one daily, one short-term, one life-tier. Use my situation." },
-
-  { emoji: "✦", title: "Plan — Smart Plays for your money", tab: "planning",
-    body: "Personalized next moves based on YOUR numbers: investment mix, savings opportunities, account-priority pyramid, retirement & FIRE projections, real-estate/refi analyzers, college planner, and more.",
-    askPrompt: "What's the single highest-impact Smart Play I should do this month given my situation?" },
-
-  { emoji: "$", title: "Money — everything financial", tab: "money",
-    body: "Spend tracking, budget, net worth, debt payoff strategies, sinking funds, subscription audit, tax planning. Connect a bank with Plaid for auto-import, or stay 100% manual — both work.",
-    askPrompt: "Walk me through how to set up the Money tab from scratch. What should I do in week 1, 2, 3?" },
-
-  { emoji: "↗", title: "Stocks — research workbench", tab: "stocks",
-    body: "Live quotes, market scans across S&P 500, REITs, crypto, ETFs, bonds. This is research, not a brokerage — you decide what to buy elsewhere.",
-    askPrompt: "Given my situation, suggest 3 specific ETFs or stocks I should research first and explain why." },
-
-  { emoji: "▦", title: "Stats — what's actually working", tab: "stats",
-    body: "Streaks, completion rates, year review, share cards. Open it weekly to see momentum and adjust if a habit isn't sticking.",
-    askPrompt: "What stats should I check weekly to know if my habits are actually working?" },
-
-  { emoji: "✨", title: "Meet Cylan — your financial counselor", tab: "today", target: "#counselor-fab",
-    body: "This button is your 24/7 in-app counselor. CFP-level planning meets index-fund discipline. Ask anything about budgeting, debt, investing, picking specific ETFs, tax-advantaged accounts, retirement.",
-    askPrompt: "Introduce yourself. What kinds of questions are you best at answering, and what should I ask first?" },
-
-  { emoji: "🔒", title: "Encrypt your data", tab: "settings",
-    body: "By default everything lives unencrypted in this browser. Anyone with device access could read it. Set a passphrase below to AES-encrypt your habits, transactions, and bank tokens at rest. Forgotten passphrase = unrecoverable (no backdoor).",
-    askPrompt: "Should I set a passphrase on Ascend? What are the tradeoffs and what happens if I forget it?" },
-
-  { emoji: "🎉", title: "You're ready to roll", tab: "today",
-    body: "Replay this tour any time from Settings → Take the tour. Tap ✨ on any screen to ask Cylan. Tap + to log anything fast.",
-    askPrompt: "I just finished the tour. What are the 3 things I should do right now to set myself up for success?" },
+  { emoji: "✨", title: "Cylan — your counselor",
+    target: "#counselor-fab",
+    body: "Tap ✨ any time to ask Cylan anything about your money. Hit Done to finish." },
 ];
 let _tutStep = 0;
 
@@ -10828,26 +10801,20 @@ function _tourEnsureChrome() {
     #tour-tooltip {
       position: fixed; z-index: 9999;
       background: var(--card, #fff); color: var(--text, #111);
-      border-radius: 18px; box-shadow: 0 14px 40px rgba(0,0,0,0.28);
-      padding: 20px 18px 16px; max-width: 360px; width: calc(100vw - 32px);
+      border-radius: 16px; box-shadow: 0 12px 32px rgba(0,0,0,0.28);
+      padding: 14px 16px 12px; max-width: 300px; width: calc(100vw - 32px);
       display: none;
     }
-    #tour-tooltip .counter { font-size: 11px; font-weight: 700; color: var(--t3, #888); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 10px; }
-    #tour-tooltip .e { font-size: 38px; line-height: 1; margin-bottom: 8px; }
-    #tour-tooltip .t { font-size: 19px; font-weight: 700; margin-bottom: 6px; line-height: 1.25; }
-    #tour-tooltip .b { font-size: 14px; line-height: 1.5; color: var(--t2, #555); }
-    #tour-tooltip .dots { display: flex; gap: 5px; justify-content: center; margin: 14px 0 12px; }
+    #tour-tooltip .counter { font-size: 10px; font-weight: 700; color: var(--t3, #888); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 6px; }
+    #tour-tooltip .e { font-size: 26px; line-height: 1; margin-bottom: 4px; }
+    #tour-tooltip .t { font-size: 16px; font-weight: 700; margin-bottom: 4px; line-height: 1.25; }
+    #tour-tooltip .b { font-size: 13px; line-height: 1.45; color: var(--t2, #555); }
+    #tour-tooltip .dots { display: flex; gap: 5px; justify-content: center; margin: 10px 0 8px; }
     #tour-tooltip .dots div { width: 5px; height: 5px; border-radius: 50%; background: var(--text); transition: opacity .15s, transform .15s; }
-    #tour-tooltip .ask {
-      width: 100%; margin: 4px 0 10px; padding: 10px 12px;
-      background: linear-gradient(135deg, #7c3aed, #ec4899); color: #fff;
-      border: none; border-radius: 12px; font-size: 13px; font-weight: 600;
-      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
-    }
-    #tour-tooltip .row { display: flex; gap: 8px; }
+    #tour-tooltip .row { display: flex; gap: 6px; }
     #tour-tooltip .row button {
-      flex: 1; padding: 10px 12px; border-radius: 12px; border: none;
-      font-size: 14px; font-weight: 600; cursor: pointer;
+      flex: 1; padding: 8px 10px; border-radius: 10px; border: none;
+      font-size: 13px; font-weight: 600; cursor: pointer;
     }
     #tour-tooltip .row .back { background: var(--bg-elev, #eee); color: var(--text); }
     #tour-tooltip .row .next { background: var(--text); color: var(--card, #fff); flex: 2; }
@@ -10897,13 +10864,53 @@ function startTutorial() {
   _tourGo();
 }
 
+// Track a one-time click listener on the current spotlight target so the
+// tour auto-advances when the user actually taps the highlighted thing.
+let _tourAdvanceCleanup = null;
+
+function _tourClearAdvanceListener() {
+  if (_tourAdvanceCleanup) { try { _tourAdvanceCleanup(); } catch {} _tourAdvanceCleanup = null; }
+}
+
+function _tourAttachAdvanceListener(el) {
+  _tourClearAdvanceListener();
+  if (!el) return;
+  const stepAtAttach = _tutStep;
+  const handler = () => {
+    // Don't double-advance: clear ourselves, then wait briefly so the
+    // user sees the result of their tap (habit ticks, win prompt opens,
+    // tab switches) before the next step blows the tooltip away.
+    _tourClearAdvanceListener();
+    setTimeout(() => {
+      // Only advance if we're still on the step the listener was for —
+      // user might have tapped Next manually in the meantime.
+      if (_tutStep === stepAtAttach && _tutStep < TUTORIAL_STEPS.length - 1) {
+        tutorialNext();
+      }
+    }, 320);
+  };
+  // Capture phase so we observe the click before the element's own
+  // onclick="..." handler fires; we don't stopPropagation, so the
+  // element's normal action (toggle, addWin, showTab) still runs.
+  el.addEventListener("click", handler, true);
+  _tourAdvanceCleanup = () => el.removeEventListener("click", handler, true);
+}
+
 function _tourGo() {
+  _tourClearAdvanceListener();
   const s = TUTORIAL_STEPS[_tutStep];
   // Close any in-app sheet first — would otherwise cover the tour overlay.
   try { if (typeof closeSheet === "function") { _lockSheet = false; closeSheet(); } } catch {}
   if (s.tab && typeof showTab === "function") showTab(s.tab);
   // Wait one frame so the new tab is laid out before we measure target.
-  setTimeout(() => { _tourRender(); _tourPosition(); }, 90);
+  setTimeout(() => {
+    _tourRender();
+    _tourPosition();
+    if (s.target) {
+      const el = document.querySelector(s.target);
+      if (el) _tourAttachAdvanceListener(el);
+    }
+  }, 90);
 }
 
 function _tourRender() {
@@ -10919,7 +10926,6 @@ function _tourRender() {
     <div class="e">${s.emoji}</div>
     <div class="t">${esc(s.title)}</div>
     <div class="b">${esc(s.body)}</div>
-    <button class="ask" onclick="tutorialAsk()">✨ Ask Cylan about this</button>
     <div class="dots">${dots}</div>
     <div class="row">
       <button class="back" onclick="${isFirst ? "tutorialFinish()" : "tutorialBack()"}">${isFirst ? "Skip" : "Back"}</button>
@@ -10977,10 +10983,11 @@ function _tourPosition() {
   }
 }
 
-function tutorialNext() { if (_tutStep < TUTORIAL_STEPS.length - 1) { _tutStep++; _tourGo(); } }
-function tutorialBack() { if (_tutStep > 0) { _tutStep--; _tourGo(); } }
+function tutorialNext() { _tourClearAdvanceListener(); if (_tutStep < TUTORIAL_STEPS.length - 1) { _tutStep++; _tourGo(); } }
+function tutorialBack() { _tourClearAdvanceListener(); if (_tutStep > 0) { _tutStep--; _tourGo(); } }
 
 function _tourTearDownChrome() {
+  _tourClearAdvanceListener();
   ["tour-overlay","tour-spotlight","tour-tooltip"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = "none";
