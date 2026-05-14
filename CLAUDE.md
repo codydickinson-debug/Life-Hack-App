@@ -4,21 +4,28 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-**Ascend** — a personal habit/goal/money tracker shipped as an installable PWA. Two pieces:
+**Ascend** — a personal habit/goal/money tracker shipped as an installable PWA. Three pieces:
 
-- **Frontend**: a single static `index.html` (~5,200 lines, HTML + CSS + JS inline) plus `sw.js`, `manifest.json`, and icons. No build step, no framework, no bundler.
-- **Backend** (optional, only for Plaid bank sync + AI insights): a single-file Cloudflare Worker in `backend/worker.js` (~570 lines) that brokers Plaid Link, transaction sync, AES-GCM-encrypted token storage in Cloudflare KV, and proxies Anthropic AI calls.
-
-The app works fully offline with manual entry; the backend only enables automatic bank-account/transaction import and AI insights.
+- **Frontend**: a single static `index.html` (~16,200 lines, HTML + CSS + JS inline) plus `sw.js`, `manifest.json`, and icons. No build step, no framework, no bundler.
+- **Vercel Python backend** (always on, deployed alongside the frontend): a Flask app under `stockanalyzer/` exposed at `/api/*` via `api/index.py`. Powers live stock quotes, market scans (SSE-streamed), housing/mortgage analysis, and an AI proxy for the in-app Cylan counselor — keys live in Vercel env vars, never the browser. Standalone HTML view at `/stockanalyzer` (Flask templates + `stockanalyzer-static/`).
+- **Cloudflare Worker backend** (optional, Plaid bank sync): single-file `backend/worker.js` brokers Plaid Link, transaction sync, and AES-GCM-encrypted token storage in Cloudflare KV. Only needed if the user wants auto bank import; the app works fully offline with manual entry otherwise.
 
 ## Common commands
 
 There is no build, lint, or test setup for the frontend. To work on it:
 
-- **Run locally**: open `index.html` in a browser (double-click). The service worker won't register on `file://` — that's expected; everything else works.
-- **Local dev with SW + HTTPS**: serve over a local HTTPS dev server if you need to test offline/install behavior (`npx serve` won't be HTTPS; use Netlify/Vercel deploy or `wrangler pages dev`).
+- **Run locally**: `npx -y serve .` (or open `index.html` in a browser by double-click — SW won't register on `file://` but everything else works).
+- **Deploy**: push to `main` on `codydickinson-debug/Life-Hack-App`; Vercel auto-deploys both the static site and the Python `/api/*` backend.
 
-Backend (`backend/`):
+Python backend (`api/` + `stockanalyzer/`):
+
+```bash
+cd stockanalyzer
+pip install -r requirements.txt
+python app.py           # local Flask server on http://127.0.0.1:5000
+```
+
+Cloudflare Worker (`backend/`, optional):
 
 ```bash
 cd backend
@@ -30,7 +37,7 @@ wrangler kv namespace create ASCEND_KV    # one-time KV setup; paste id into wra
 wrangler secret put <NAME>        # set each of: PLAID_CLIENT_ID, PLAID_SECRET, PLAID_ENV, API_KEY, ENCRYPTION_KEY, ALLOWED_ORIGIN
 ```
 
-Full first-time deploy walkthrough is in `DEPLOY.md`.
+Full first-time deploy walkthrough is in `DEPLOY.md`. AI proxy setup notes are in `api/AI_PROXY_SETUP.md`.
 
 ## Architecture
 
@@ -42,20 +49,26 @@ Full first-time deploy walkthrough is in `DEPLOY.md`.
 - **Persistence**: `localStorage["ascend_v2"]`. Every mutation should call `save()` (which is overwritten after declaration to encrypt-if-unlocked). Use `await save()` because the encrypted path is async — especially in handlers that may navigate, close a sheet, or `render()` immediately after, since fire-and-forget saves can lose changes if the user closes the tab during the encryption window. The codebase has many legacy non-`await`ed call sites; new code should use `await`.
 - **Inline `onclick=`/`oninput=` handlers in rendered HTML** are the primary event-binding pattern. Any function called from rendered markup must be exposed on `window` via the big `Object.assign(window, {...})` block at the bottom of `init()`. Adding a new handler? Add it to that list.
 - **When interpolating an untrusted string as a JS argument inside an inline handler, use `jsAttr(value)` — not `'${esc(value)}'`.** `esc()` is correct for HTML *text*, but inside an `onclick=` attribute the browser decodes entities *before* JS parses, so `'${esc("McDonald's")}'` produces broken JS. `jsAttr()` JSON-encodes the value (escaping `'`, `"`, `\`, newlines) and HTML-escapes the result, so `onclick="foo(${jsAttr(s)})"` is safe for any string. Use this for: merchant names, institution names, Plaid IDs, anything from outside the app.
-- **Render model**: tab-scoped renderers (`renderToday`, `renderGoals`, `renderMoney`, `renderStats`, `renderSettings`) each replace the full `innerHTML` of their `<div class="page">`. The dispatcher is `render()`, called by `showTab()` and after every mutation. There's no diffing — re-render is cheap because pages are small.
+- **Tabs**: seven primary tabs — Today, Calendar, Goals, Plan, Money, Stocks, Stats — each with its own `renderXxx()` function plus `renderSettings()`. The dispatcher is `render()`, called by `showTab()` and after every mutation. Each renderer replaces the full `innerHTML` of its `<div class="page">`. There's no diffing — re-render is cheap because pages are small.
 - **`esc()` everywhere** when interpolating user data into HTML strings (the renderers build raw HTML with template literals).
+
+### Onboarding and tutorial
+
+- **First-run onboarding**: `runOnboarding()` triggers when `DB.user.onboardedAt === 0`. The user picks between **Cylan (AI, ~3 min)** — a conversational setup that calls the Anthropic proxy (`aiOnboardingStart` → `aiOnbAcceptPlan` finalizes) — or **Quick setup (manual, 4 steps)** — `onboardingStep1..4` → `finishOnboarding`. Both paths land on the same final state and call `maybeStartTutorial()`.
+- **Tutorial**: a 9-step tab walkthrough sheet (`TUTORIAL_STEPS` → `startTutorial` → `tutorialShow/Next/Back/Finish`). Auto-fires once via `DB.user.tutorialSeenAt` flag; replayable from Settings → "Take the tour". Describes tabs without switching to them (sheet covers most of the screen on mobile, so switching underneath would be invisible).
 
 ### Frontend ↔ backend
 
-- `api(path, opts)` in the script is the single fetch wrapper. It reads `DB.settings.backendUrl` and `DB.settings.apiKey` and sends `Authorization: Bearer <apiKey>`. If either is unset, calls throw — callers should `try`/`catch` and `toast()` the error.
-- `ensureUserId()` lazily generates a per-device `DB.user.userId` and persists it (using the unencrypted `_origSave` to avoid recursion). Every backend call is keyed by this id.
+- `api(path, opts)` in the script is the single fetch wrapper for the Cloudflare Worker. It reads `DB.settings.backendUrl` and `DB.settings.apiKey` and sends `Authorization: Bearer <apiKey>`. If either is unset, calls throw — callers should `try`/`catch` and `toast()` the error.
+- `aiApi(...)` wraps calls to the Anthropic proxy. Routing is automatic: if `DB.settings.backendUrl` is set it goes through the Cloudflare Worker; otherwise it falls back to the Vercel Python `/api/*` proxy (zero-config — works for every user without bank-sync setup).
+- `ensureUserId()` lazily generates a per-device `DB.user.userId` and persists it (using the unencrypted `_origSave` to avoid recursion). Every Worker backend call is keyed by this id.
 - Plaid amount convention: **positive amount = outflow** (spend), negative = income/deposit. This is used directly throughout `DB.spend` and is what `processSyncedDeposits` and the spend UI assume.
-- Plaid Link is loaded from CDN via `<script src="https://cdn.plaid.com/...">`; `connectBank()` calls the backend for a `link_token`, then opens `window.Plaid.create({...}).open()`.
+- Plaid Link is loaded from CDN via `<script src="https://cdn.plaid.com/...">`; `connectBank()` calls the Worker for a `link_token`, then opens `window.Plaid.create({...}).open()`.
 
 ### Two layers of encryption
 
 1. **Server-side**: Plaid `access_token` values are AES-GCM encrypted with `ENCRYPTION_KEY` (a worker secret) before being written to KV. See `encryptString`/`decryptString` in `backend/worker.js`. A KV breach yields useless ciphertext without the key.
-2. **Client-side (optional)**: if the user sets a passphrase, all of `DB` is AES-GCM encrypted before being written to `localStorage`. Key is derived via PBKDF2-SHA256 (250k iterations) and held only in memory as `APP_KEY`. On cold start, `load()` detects an encrypted envelope (`{v:1, salt, iv, ct}`) and `init()` shows `showLockScreen()` to prompt for the passphrase. **Forgotten passphrase = unrecoverable** by design — the only escape is `localStorage.clear()`.
+2. **Client-side (optional)**: if the user sets a passphrase, all of `DB` is AES-GCM encrypted before being written to `localStorage`. Key is derived via PBKDF2-SHA256 (current envelope: 600k iterations; older v:1 envelopes use 250k and are upgraded on next save). Held only in memory as `APP_KEY`. On cold start, `load()` detects an encrypted envelope (`{v, salt, iv, ct}`) and `init()` shows `showLockScreen()` to prompt for the passphrase. **Forgotten passphrase = unrecoverable** by design — the only escape is `localStorage.clear()`.
 
 The two layers use independent keys with different blast radius — do not collapse them.
 
@@ -64,13 +77,14 @@ The two layers use independent keys with different blast radius — do not colla
 `sw.js`:
 - **Navigations + same-origin GETs (index.html, manifest.json, etc.) → network-first**, with cache fallback so the PWA still works offline. This means a fresh `index.html` is fetched on every load when online — no stale UI after deploy.
 - **Icons → cache-first**, precached on install.
+- **`/api/*` → passthrough** (never cache). Stock quotes go stale; SSE streams would break under caching.
 - **Cross-origin (Plaid CDN, etc.) → passthrough**, not intercepted by the worker.
 
-Cache name is derived from a **SHA-256 hash of `index.html`** (first 4 bytes, hex). So when you ship a change to `index.html`, the cache name changes automatically and the old cache is purged on the next service-worker activation — no manual version bumping for normal iteration.
+Cache name is derived from a **SHA-256 hash of `index.html`** (first 4 bytes, hex). So when you ship a change to `index.html`, the cache name changes automatically and the old cache is purged on the next service-worker activation — no manual version bumping for normal iteration. The same 8-hex-char hash is surfaced in the app as the build ID (Settings → About → Build).
 
 **Caveat**: icons are cache-first, so changing an icon file *alone* won't trigger an update on installed PWAs. To force-update icons, edit any byte of `sw.js` (the browser only re-checks the SW when its bytes change). New static files must be added to `STATIC_ASSETS`.
 
-### Backend: single Worker, KV-backed
+### Cloudflare Worker backend (optional, Plaid)
 
 `backend/worker.js` is one ES module (~570 lines, no SDK). All Plaid calls go through `plaidCall(env, path, body)` which posts to `PLAID_HOSTS[env.PLAID_ENV]` with credentials.
 
@@ -80,8 +94,21 @@ Cache name is derived from a **SHA-256 hash of `index.html`** (first 4 bytes, he
 - **Transactions sync** uses Plaid's cursor-based `/transactions/sync` endpoint with a 10-iteration safety cap; the cursor is persisted in the item record so resumes are incremental.
 - **Anthropic proxy** (`POST /anthropic/messages`): the worker forwards browser requests to Anthropic using its own `ANTHROPIC_KEY` secret — the AI key never leaves the worker. Per-user daily cap (`ANTHROPIC_DAILY_CAP`, default 50) is enforced via KV counters. Upstream errors (including 401 from a bad ANTHROPIC_KEY) are returned with the upstream status code, so the frontend must distinguish worker auth-failures from Anthropic auth-failures before clearing the device enrollment.
 
+### Vercel Python backend (always on)
+
+`stockanalyzer/app.py` is a Flask app served by Vercel via the WSGI shim in `api/index.py`. Modules:
+
+- `analyzer.py` — scoring/analysis for individual tickers.
+- `universe.py` — market universes (S&P 500, REITs, crypto, etc.) for streamed scans.
+- `housing.py` / `mortgages.py` — home affordability + mortgage math.
+- `news.py` — fetches relevant headlines per ticker.
+- Templates and CSS/JS for the standalone `/stockanalyzer` page live in `stockanalyzer/templates/` and `stockanalyzer-static/`.
+
+The AI proxy route forwards messages to Anthropic using the `ANTHROPIC_API_KEY` Vercel env var. See `api/AI_PROXY_SETUP.md`.
+
 ### Other things worth knowing
 
+- The AI (whether AI proxy on Vercel or via the Cloudflare Worker) is branded as **Cylan** in user-facing copy — onboarding coach + ongoing financial counselor. Default Anthropic model is `claude-haiku-4-5-20251001`.
 - The `loadDemoData()` path overwrites `DB` but **carries over** `backendUrl`, `apiKey`, `anthropicKey`, `anthropicModel`, `theme`, and `userId` so demo mode doesn't kick the user out of their backend.
-- AI insights (`fetchInsight`, `getMonthlyInsight`) call the Anthropic API **through the Cloudflare Worker proxy** (`POST {backendUrl}/anthropic/messages`). The Anthropic API key lives only as the worker's `ANTHROPIC_KEY` secret — it never touches the browser. The default model is `claude-haiku-4-5-20251001`. The worker enforces a per-user daily call cap (default 50) to bound runaway spend.
 - Notifications use the in-page `Notification` API and a `setTimeout`-based `scheduleReminder` chain. **This only fires while the app/PWA is open** — true scheduled push when closed would require a server.
+- Build identification: an async IIFE near the top of the script computes SHA-256 of `index.html` (first 4 bytes) into `BUILD_ID` and sets `BUILD_DATE` from `document.lastModified`. Surfaced in Settings → About to let users confirm which version is loaded — useful with multiple machines deploying.

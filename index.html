@@ -1565,7 +1565,7 @@ const SK_BAK = "ascend_v2.bak";  // rolling backup of last known-good blob (same
 const SK_PREV = "ascend_v2.prev"; // one prior generation (3-tier recovery)
 
 const DEFAULT_DB = {
-  user: { name: "", userId: "", clientSecret: "", onboardedAt: 0 },  // userId is generated once and persisted; identifies this device to the backend. clientSecret is a per-device random secret enrolled with the worker — never sent in plaintext after enrollment. onboardedAt = 0 → show first-run flow.
+  user: { name: "", userId: "", clientSecret: "", onboardedAt: 0, tutorialSeenAt: 0 },  // userId is generated once and persisted; identifies this device to the backend. clientSecret is a per-device random secret enrolled with the worker — never sent in plaintext after enrollment. onboardedAt = 0 → show first-run flow. tutorialSeenAt = 0 → show post-onboarding tab walkthrough once.
   habits: [],   // {id, name, emoji, type, target, unit, color, group:'health'|'mind'|'money'|'faith'|'other', createdAt, log:{}}
   goals:  [],   // {id, title, note, tier:'daily'|'short'|'life', steps:[{id,text,done}], done, createdAt, completedAt}
   savings:[],   // {id, name, emoji, current, target, color, log:[{date,amount,note}]}
@@ -7591,6 +7591,11 @@ function renderSettings() {
 
     <div class="section-h"><span class="lbl">Data</span></div>
     <div class="list">
+      <div class="row tappable" onclick="startTutorial()">
+        <div class="lead">🧭</div>
+        <div class="body"><div class="t1">Take the tour</div><div class="t2">30-second walkthrough of the tabs</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="aiOnboardingStart()">
         <div class="lead">✨</div>
         <div class="body"><div class="t1">Retake AI setup</div><div class="t2">Talk to Cylan to refresh your habits, goals, and tagline</div></div>
@@ -10157,6 +10162,73 @@ function finishOnboarding() {
   closeSheet();
   applyTheme();
   render();
+  maybeStartTutorial();
+}
+
+/* ================ POST-ONBOARDING TOUR ================
+   30-second walkthrough that fires once after either onboarding path
+   (manual or Cylan). DB.user.tutorialSeenAt gates auto-trigger; Settings
+   has a manual replay entry. Steps describe tabs without switching to
+   them — the sheet covers most of the screen on mobile, so switching
+   underneath would be invisible. */
+const TUTORIAL_STEPS = [
+  { emoji: "👋", title: "Welcome to Ascend",
+    body: "A 30-second tour of how the tabs fit together. Skip anytime." },
+  { emoji: "☀︎", title: "Today",
+    body: "Your daily home. Check off habits, log wins, and see your reminder. Tap a streak pill to open habit detail." },
+  { emoji: "▤", title: "Calendar",
+    body: "Habits, wins, bills, and savings together by day. Switch to Year view for a 12-month heatmap." },
+  { emoji: "◎  ✦", title: "Goals & Plan",
+    body: "Goals = your direction (daily → short-term → life). Plan surfaces Smart Plays: personalized next moves based on your situation." },
+  { emoji: "$  ↗", title: "Money & Stocks",
+    body: "Spend, budget, net worth. Connect a bank for auto-import via Plaid, or stay manual. Stocks tab tracks your portfolio with live quotes." },
+  { emoji: "▦", title: "Stats",
+    body: "Streaks, completion rates, and trends. Open it weekly to see what's working." },
+  { emoji: "🔒", title: "Encrypt your data",
+    body: "By default everything is stored as plaintext on this device. Set a passphrase in Settings to encrypt habits, transactions, and bank tokens at rest." },
+  { emoji: "✨", title: "Meet Cylan",
+    body: "Tap the ✨ button anywhere to chat with Cylan — your in-app financial counselor. Budget, debt, investing — ask anything." },
+  { emoji: "✓", title: "You're set",
+    body: "Replay this tour any time from Settings → Take the tour." },
+];
+let _tutStep = 0;
+
+function startTutorial() {
+  _tutStep = 0;
+  tutorialShow();
+}
+
+function tutorialShow() {
+  const s = TUTORIAL_STEPS[_tutStep];
+  const isLast = _tutStep === TUTORIAL_STEPS.length - 1;
+  const isFirst = _tutStep === 0;
+  const dots = TUTORIAL_STEPS.map((_, i) => `<div style="width:6px;height:6px;border-radius:50%;background:var(--text);opacity:${i===_tutStep?1:.25};transition:opacity .15s"></div>`).join("");
+  openSheet(`
+    <div style="padding:24px 22px 22px;text-align:center">
+      <div style="font-size:42px;line-height:1;margin-bottom:14px">${s.emoji}</div>
+      <div style="font-size:22px;font-weight:700;margin-bottom:8px">${esc(s.title)}</div>
+      <div style="color:var(--t2,#666);font-size:15px;line-height:1.5;max-width:340px;margin:0 auto">${esc(s.body)}</div>
+      <div style="display:flex;gap:6px;margin:22px 0 18px;justify-content:center">${dots}</div>
+      <div style="display:flex;gap:8px">
+        <button class="btn secondary" style="flex:1" onclick="${isFirst ? "tutorialFinish()" : "tutorialBack()"}">${isFirst ? "Skip" : "Back"}</button>
+        <button class="btn" style="flex:2" onclick="${isLast ? "tutorialFinish()" : "tutorialNext()"}">${isLast ? "Done" : "Next"}</button>
+      </div>
+    </div>
+  `);
+}
+
+function tutorialNext() { if (_tutStep < TUTORIAL_STEPS.length - 1) { _tutStep++; tutorialShow(); } }
+function tutorialBack() { if (_tutStep > 0) { _tutStep--; tutorialShow(); } }
+function tutorialFinish() {
+  DB.user.tutorialSeenAt = Date.now();
+  save();
+  closeSheet();
+}
+
+function maybeStartTutorial() {
+  if (DB.user && !DB.user.tutorialSeenAt) {
+    setTimeout(startTutorial, 350);
+  }
 }
 
 /* ================ AI ONBOARDING ================
@@ -10530,6 +10602,7 @@ async function aiOnbAcceptPlan() {
   toast("Plan added — welcome to Ascend!");
   applyTheme();
   render();
+  maybeStartTutorial();
 }
 
 function aiOnbRestart() {
@@ -17028,6 +17101,7 @@ function init() {
     yearReview, yearReviewSheet, shareCardSvg, downloadShareCard, shareStreakCard,
     backendHoldings, syncHoldings,
     runOnboarding, onboardingStep1, onboardingStep2, onboardingStep3, onboardingStep4, finishOnboarding,
+    startTutorial, tutorialNext, tutorialBack, tutorialFinish,
     aiOnboardingStart, aiOnboardingRender, aiOnbSend, aiOnbToggleHabit, aiOnbToggleGoal,
     aiOnbAcceptPlan, aiOnbRestart, aiOnbClose,
     safeToSpend, recurringMonthlyTotal,
