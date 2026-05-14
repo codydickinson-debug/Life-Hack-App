@@ -1140,6 +1140,53 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 .wr-banner .wr-t2 { font-size: 12px; opacity: 0.88; margin-top: 2px; }
 .wr-banner .wr-cta { background: rgba(255,255,255,.18); color: #fff; padding: 6px 12px; border-radius: var(--r-pill); font-size: 12px; font-weight: 600; }
 
+/* Stocks tab — recent-tickers chips */
+.stk-chip {
+  background: var(--bg-elev); color: var(--t2);
+  border: 1px solid var(--sep); border-radius: 999px;
+  padding: 5px 10px; font-size: 11.5px; font-weight: 700;
+  cursor: pointer; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  letter-spacing: 0.02em;
+  transition: all .12s ease;
+}
+.stk-chip:hover { color: #fff; background: var(--accent, #7c3aed); border-color: var(--accent, #7c3aed); }
+
+/* Net-worth scanner — confirmation list rows */
+.holdings-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 8px 10px; border-radius: 8px;
+  transition: opacity .12s ease;
+}
+.holdings-row:hover { background: var(--bg-elev); }
+.holdings-row.off { opacity: 0.45; }
+.holdings-check {
+  width: 22px; height: 22px; border-radius: 6px;
+  border: 2px solid var(--sep); background: transparent;
+  color: var(--green); font-size: 13px; font-weight: 700;
+  cursor: pointer; flex-shrink: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.holdings-check.on { background: var(--green); color: #fff; border-color: var(--green); }
+
+/* Cylan action confirmation chips — shown under assistant bubbles when
+   Cylan emits <ACTION> blocks that the frontend executed. */
+.cns-actions { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.cns-action-chip {
+  display: inline-flex; align-items: center;
+  gap: 6px; padding: 5px 10px;
+  background: rgba(52,199,89,0.12); color: var(--green, #34c759);
+  border: 1px solid rgba(52,199,89,0.28); border-radius: 999px;
+  font-size: 11.5px; font-weight: 700;
+  cursor: pointer; align-self: flex-start;
+  max-width: 100%; text-align: left; line-height: 1.3;
+}
+.cns-action-chip:hover { background: rgba(52,199,89,0.20); }
+.cns-action-chip:disabled { cursor: default; opacity: 0.7; }
+.cns-action-chip.err {
+  background: rgba(239,68,68,0.10); color: var(--red, #ef4444);
+  border-color: rgba(239,68,68,0.28);
+}
+
 /* Counselor mic button — pulses red while listening */
 #cns-mic.listening {
   background: #ef4444 !important; color: #fff !important;
@@ -5115,7 +5162,13 @@ function renderMoney() {
       ${learnEntry}
 
       <div id="wh-assets"></div>
-      <div class="section-h"><span class="lbl">Manual assets</span><button class="act" onclick="assetSheet()">+ Add</button></div>
+      <div class="section-h">
+        <span class="lbl">Manual assets</span>
+        <span style="display:flex;gap:8px">
+          <button class="act" onclick="scanHoldingsSheet()">📸 Scan</button>
+          <button class="act" onclick="assetSheet()">+ Add</button>
+        </span>
+      </div>
       <div class="list">
         ${(DB.assets||[]).length ? DB.assets.slice().sort((a,b)=>(+b.value||0)-(+a.value||0)).map(a => {
           const t = ASSET_TYPES.find(x => x.id === a.type) || ASSET_TYPES[ASSET_TYPES.length-1];
@@ -6059,45 +6112,69 @@ function renderStats() {
    route through /api/* to the same Flask backend. */
 function renderStocks() {
   const page = document.getElementById("page-stocks");
-  if (page.querySelector("#stk-iframe") || page.querySelector("#stk-local-msg")) return;
-  // When opened via file:// (double-clicked index.html), the iframe target
-  // /stockanalyzer doesn't resolve — there's no Python backend locally.
-  // Show a link to the deployed site instead.
-  if (location.protocol === "file:") {
-    page.innerHTML = `
-      <div id="stk-local-msg" class="lg-title">Stocks</div>
-      <div class="card" style="background:var(--card);border-radius:var(--r);padding:20px;margin-top:14px;text-align:center">
-        <div style="font-size:34px;margin-bottom:6px">📊</div>
-        <div style="font-size:15px;font-weight:600;margin-bottom:4px">StockAnalyzer lives on the server</div>
-        <div style="font-size:13px;color:var(--t3);line-height:1.5;margin-bottom:14px">You're viewing this file locally, so there's no Python backend to talk to. Open the deployed version to use Stocks, Housing, Mortgages, and News.</div>
-        <a href="https://life-hack-app.vercel.app" target="_blank" rel="noopener" class="btn" style="display:inline-block;text-decoration:none;padding:10px 18px">Open life-hack-app.vercel.app ↗</a>
-      </div>
-    `;
-    return;
-  }
-  // The iframe is mounted into a flush full-bleed container — no separate
-  // header bar, so it visually feels like part of the Today/Money tabs.
-  // A counselor CTA sits above so users can ask investing questions without
-  // leaving the tab. `eager` loading because we preload this on init so the
-  // iframe is ready before the user ever taps Stocks.
+  if (!page) return;
+  // Cache recent ticker queries for one-tap re-runs.
+  const recent = (DB.stocks && Array.isArray(DB.stocks.recentTickers)) ? DB.stocks.recentTickers : [];
+
   page.innerHTML = `
-    <div style="margin:-16px -14px 0;display:flex;flex-direction:column;height:calc(100dvh - 130px);background:#0b0d10">
-      <div style="padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--sep);flex-shrink:0">
-        <div class="row tappable" onclick="openCounselor(null, 'stocks')" role="button" tabindex="0"
-          style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:10px 12px;align-items:center;cursor:pointer;margin:0">
-          <div style="width:30px;height:30px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;color:var(--purple);margin-right:10px">✨</div>
-          <div class="body">
-            <div class="t1" style="margin:0;font-size:13px">Ask Cylan about investing</div>
-            <div class="t2" style="font-size:11px;margin-top:1px">Allocation, ETFs, risk — frameworks, not stock picks</div>
-          </div>
-          <div class="trail chev"></div>
-        </div>
+    <div class="lg-title">Stocks</div>
+    <div class="muted" style="margin:-12px 0 18px;font-size:14px">Analyze tickers, scan headlines, then ask Cylan.</div>
+
+    <div onclick="openCounselor(null, 'stocks')" role="button" tabindex="0"
+      style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border-radius:var(--r);padding:12px 14px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:10px;box-shadow:var(--sh-1)">
+      <div style="width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">✨</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13.5px;font-weight:700;line-height:1.2">Ask Cylan about investing</div>
+        <div style="font-size:11.5px;opacity:.85;margin-top:1px">Allocation, ETFs, risk — frameworks, not stock picks</div>
       </div>
-      <iframe id="stk-iframe" src="/stockanalyzer?v=4" loading="eager"
-        style="border:0;flex:1;width:100%;-webkit-overflow-scrolling:touch;background:#0a0a0c"
-        title="Stock research"></iframe>
+      <div style="font-size:18px;opacity:.85">→</div>
     </div>
+
+    <div class="stk-search" style="display:flex;gap:8px;margin-bottom:10px">
+      <input id="stk-input" type="text" placeholder="Enter tickers — e.g. AAPL MSFT SPY"
+        style="flex:1;background:var(--bg-elev);padding:11px 14px;border-radius:12px;font-size:14px;border:1px solid var(--sep);outline:none;color:var(--t1);text-transform:uppercase;letter-spacing:.04em"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();stocksAnalyze();}" />
+      <button class="btn" onclick="stocksAnalyze()" style="padding:0 18px;font-size:13.5px">Analyze</button>
+    </div>
+
+    ${recent.length ? `
+      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
+        <span style="font-size:11px;color:var(--t3);align-self:center;margin-right:4px">RECENT</span>
+        ${recent.slice(0, 10).map(t => `
+          <button class="stk-chip" onclick="(()=>{document.getElementById('stk-input').value=${jsAttr(t)};stocksAnalyze();})()">${esc(t)}</button>
+        `).join("")}
+      </div>
+    ` : ""}
+
+    <div id="stk-results" style="margin:0 0 18px"></div>
+
+    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);font-weight:700">Latest market headlines</div>
+      <button class="btn sm secondary" style="font-size:11px;padding:4px 10px" onclick="stocksFetchNews()">Refresh</button>
+    </div>
+    <div id="stk-news" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:6px 14px;margin-bottom:14px">
+      <div style="color:var(--t3);font-size:13px;padding:10px 0">Tap Refresh to load.</div>
+    </div>
+
+    <div style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:14px">
+      <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--t3);font-weight:700;margin-bottom:8px">More tools</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <a href="/stockanalyzer?v=4#housing" target="_blank" rel="noopener" class="btn secondary" style="text-decoration:none;text-align:center;padding:10px;font-size:12.5px">🏠 Housing</a>
+        <a href="/stockanalyzer?v=4#mortgages" target="_blank" rel="noopener" class="btn secondary" style="text-decoration:none;text-align:center;padding:10px;font-size:12.5px">🏦 Mortgages</a>
+      </div>
+      <div style="font-size:11px;color:var(--t4);margin-top:8px;line-height:1.4">Housing and Mortgage calculators open in a separate view for now — full migration coming.</div>
+    </div>
+
+    <p style="font-size:11px;color:var(--t4);line-height:1.5;text-align:center;margin-top:6px">
+      Educational research, not investment advice. Markets carry risk.
+    </p>
   `;
+
+  // Auto-fetch news in the background — first visit only, async.
+  if (!page.dataset.newsFetched) {
+    page.dataset.newsFetched = "1";
+    setTimeout(() => { try { stocksFetchNews(); } catch {} }, 250);
+  }
 }
 
 // Legacy helpers kept for backwards compatibility / window export — no longer
@@ -7968,7 +8045,53 @@ ASCEND FEATURES YOU CAN REFER TO (only these — do not invent features):
 - Settings (backend / AI / privacy / encryption)
 
 IDENTITY:
-If asked who you are: "I'm Cylan — your financial counselor inside Ascend. CFP-level planning meets index-fund discipline." Always sign off as Cylan when it feels natural (don't force it into every reply, but own the name when introductions or sign-offs come up). If the conversation drifts to high-stakes regulated topics (specific tax filings, specific securities trades, legal contracts), be clear you're an educational guide and recommend a licensed pro.`;
+If asked who you are: "I'm Cylan — your financial counselor inside Ascend. CFP-level planning meets index-fund discipline." Always sign off as Cylan when it feels natural (don't force it into every reply, but own the name when introductions or sign-offs come up). If the conversation drifts to high-stakes regulated topics (specific tax filings, specific securities trades, legal contracts), be clear you're an educational guide and recommend a licensed pro.
+
+ACTIONS YOU CAN TAKE:
+You can DO things in the user's app — not just advise. When the user asks you to add/log/set something concrete, emit ONE or MORE action blocks INSIDE your reply, on their own lines, in this exact format:
+
+<ACTION>{"type":"add_plan","tier":"short","title":"$1,000 starter emergency fund","emoji":"🛡️","target_amount":1000}</ACTION>
+<ACTION>{"type":"log_spend","amount":12.50,"category":"Food","note":"Coffee"}</ACTION>
+
+The action block must be valid JSON on a single line, wrapped in literal <ACTION>...</ACTION> tags. The user's app strips these tags from the displayed message and executes them silently, then shows a small confirmation chip ("✓ Added plan…").
+
+AVAILABLE ACTIONS — only emit these types:
+
+1. add_plan
+   { type:"add_plan", tier:"short"|"mid"|"long", title:string, emoji?:string, target_amount?:number, target_date?:"YYYY-MM-DD", note?:string }
+   Use for big-picture roadmap items on the Plan tab.
+
+2. add_goal
+   { type:"add_goal", tier:"daily"|"short"|"life", title:string, note?:string }
+   Use for habit-tier goals on the Goals tab.
+
+3. log_spend
+   { type:"log_spend", amount:number, category:string, note?:string, date?:"YYYY-MM-DD" }
+   Use ONLY when the user explicitly asks to log a transaction. Amount in dollars.
+
+4. add_savings_bucket
+   { type:"add_savings_bucket", name:string, target:number, emoji?:string }
+   For new earmark savings (emergency fund, vacation, etc).
+
+5. set_monthly_savings_target
+   { type:"set_monthly_savings_target", amount:number }
+   Updates the user's monthly auto-save target. Use when user names a specific number.
+
+6. set_portfolio_mix
+   { type:"set_portfolio_mix", stocks?:number, bonds?:number, cash?:number, crypto?:number }
+   Allocation percentages (must sum to ~100). Use only when the user explicitly asks you to set their mix.
+
+7. add_habit
+   { type:"add_habit", name:string, emoji?:string, group?:"health"|"mind"|"money"|"faith"|"misc" }
+   For new daily habits on the Today tab.
+
+ACTION RULES:
+- Only emit actions when the user's intent is concrete ("add a plan for...", "log a $X spend...", "set my savings target to $X"). Don't auto-emit for vague conversation.
+- ALWAYS confirm in plain English what you did, in addition to emitting the action. E.g. "Added a short-term plan: 'Build $1K emergency fund'. You'll see it on the Plan tab." The action block does the work; the prose tells the human.
+- Emit multiple actions in one reply when it makes sense (e.g. user says "set me up for FI" → add 1-2 plans + a savings target).
+- NEVER emit log_spend without an explicit amount from the user. NEVER guess amounts.
+- NEVER emit actions to delete or modify existing items in this version — only add/create.
+- If the user's request is ambiguous (which tier? which category?), ask ONE quick clarifying question instead of guessing.`;
 
 function buildCounselorSnapshot() {
   const monthKey = todayKey().slice(0, 7);
@@ -8166,7 +8289,10 @@ function counselorRender() {
       return `
         <div style="display:flex;gap:8px;margin-bottom:12px;align-items:flex-start">
           <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✨</div>
-          <div style="background:var(--bg-elev);padding:10px 14px;border-radius:16px;border-top-left-radius:4px;max-width:84%;font-size:14px;line-height:1.5;color:var(--t1);overflow-wrap:break-word">${_mdLite(m.content || "")}</div>
+          <div style="max-width:84%">
+            <div style="background:var(--bg-elev);padding:10px 14px;border-radius:16px;border-top-left-radius:4px;font-size:14px;line-height:1.5;color:var(--t1);overflow-wrap:break-word">${_mdLite(m.content || "")}</div>
+            ${_renderActionChips(m.actions)}
+          </div>
         </div>`;
     }
     return `
@@ -8302,9 +8428,19 @@ async function counselorSend(text) {
       messages,
     });
     if (data && data.error) throw new Error(data.error.message || data.error);
-    const reply = (data.content || []).map(c => c.text).join("\n") || "(no response)";
+    const rawReply = (data.content || []).map(c => c.text).join("\n") || "(no response)";
 
-    DB.counselor.thread.push({ role: "assistant", content: reply, t: Date.now() });
+    // Parse any <ACTION>{...}</ACTION> blocks Cylan emitted, execute them
+    // against DB, strip the tags from the displayed message, and attach a
+    // list of confirmation chips to the assistant turn so the UI can show
+    // "✓ Added plan…" / "✓ Logged $25 on Food" / etc.
+    const parsed = _parseAndRunActions(rawReply);
+    DB.counselor.thread.push({
+      role: "assistant",
+      content: parsed.cleanedText,
+      actions: parsed.confirmations,
+      t: Date.now(),
+    });
     await save();
   } catch (e) {
     DB.counselor.thread.push({
@@ -8317,6 +8453,144 @@ async function counselorSend(text) {
     _counselorState.busy = false;
     counselorRender();
   }
+}
+
+// ===== Cylan action handlers =====
+// Cylan can emit <ACTION>{...json...}</ACTION> blocks in its replies. This
+// parser extracts them, executes each via _runCylanAction(), and returns
+// the message text with the tags removed plus a list of human-readable
+// confirmations (or errors) the UI shows as small chips under the bubble.
+const _CYLAN_ACTION_RE = /<ACTION>\s*([\s\S]*?)\s*<\/ACTION>/g;
+function _parseAndRunActions(rawText) {
+  const confirmations = [];
+  let cleaned = rawText.replace(_CYLAN_ACTION_RE, (match, json) => {
+    let action;
+    try { action = JSON.parse(json.trim()); }
+    catch (e) {
+      confirmations.push({ ok: false, label: "Couldn't parse an action Cylan sent" });
+      return "";
+    }
+    const result = _runCylanAction(action);
+    confirmations.push(result);
+    return ""; // strip the block from the visible message
+  });
+  // Clean up doubled blank lines left behind when actions were on their own lines
+  cleaned = cleaned.replace(/\n{3,}/g, "\n\n").trim();
+  return { cleanedText: cleaned, confirmations };
+}
+
+// Dispatch a single action. Each handler does its own validation. Returns
+// {ok:true, label:string, icon?:string, link?:fnName} for success and
+// {ok:false, label:string} on failure.
+function _runCylanAction(action) {
+  if (!action || typeof action !== "object" || !action.type) {
+    return { ok: false, label: "Skipped malformed action" };
+  }
+  try {
+    switch (action.type) {
+      case "add_plan": {
+        const tier = ["short","mid","long"].includes(action.tier) ? action.tier : "short";
+        const title = sanitizeText(action.title || "", TEXT_MAX);
+        if (!title) return { ok: false, label: "Skipped add_plan (missing title)" };
+        addPlan(tier, {
+          title,
+          emoji: (action.emoji || "✨").slice(0, 4),
+          target_amount: +action.target_amount || 0,
+          target_date: /^\d{4}-\d{2}-\d{2}$/.test(action.target_date || "") ? action.target_date : "",
+          note: sanitizeText(action.note || "", NOTE_MAX),
+        });
+        const tierLabel = ({short:"short-term", mid:"mid-term", long:"long-term"})[tier];
+        return { ok: true, icon: "✦", label: `Added ${tierLabel} plan: "${title}"`, link: "planning" };
+      }
+      case "add_goal": {
+        const tier = ["daily","short","life"].includes(action.tier) ? action.tier : "short";
+        const title = sanitizeText(action.title || "", TEXT_MAX);
+        if (!title) return { ok: false, label: "Skipped add_goal (missing title)" };
+        if (!DB.goals) DB.goals = [];
+        DB.goals.push({
+          id: uid(), title, note: sanitizeText(action.note || "", NOTE_MAX),
+          tier, steps: [], done: false, createdAt: Date.now(),
+        });
+        save();
+        return { ok: true, icon: "◎", label: `Added ${tier} goal: "${title}"`, link: "goals" };
+      }
+      case "log_spend": {
+        const amount = +action.amount;
+        if (!amount || amount <= 0) return { ok: false, label: "Skipped log_spend (no amount)" };
+        const category = sanitizeText(action.category || "Other", TEXT_MAX);
+        const note = sanitizeText(action.note || "", TEXT_MAX);
+        const date = /^\d{4}-\d{2}-\d{2}$/.test(action.date || "") ? action.date : todayKey();
+        if (!DB.spend) DB.spend = [];
+        DB.spend.unshift({ id: uid(), date, category, amount, note, source: "manual" });
+        save();
+        return { ok: true, icon: "💸", label: `Logged ${fmt$0(amount)} on ${category}`, link: "money" };
+      }
+      case "add_savings_bucket": {
+        const name = sanitizeText(action.name || "", TEXT_MAX);
+        const target = +action.target || 0;
+        if (!name) return { ok: false, label: "Skipped add_savings_bucket (missing name)" };
+        if (!DB.savings) DB.savings = [];
+        const colors = ["#34C759","#007AFF","#5856D6","#AF52DE","#FF9500"];
+        DB.savings.push({
+          id: uid(), name, emoji: (action.emoji || "💰").slice(0, 4),
+          current: 0, target, color: colors[DB.savings.length % colors.length], log: [],
+        });
+        save();
+        return { ok: true, icon: "💰", label: `Added savings bucket: "${name}"${target ? ` ($${target.toLocaleString()} target)` : ""}`, link: "money" };
+      }
+      case "set_monthly_savings_target": {
+        const amt = +action.amount;
+        if (!amt || amt < 0) return { ok: false, label: "Skipped set_monthly_savings_target (bad amount)" };
+        DB.settings.monthlySavingsTarget = amt;
+        save();
+        return { ok: true, icon: "🎯", label: `Set monthly savings target to ${fmt$0(amt)}`, link: "settings" };
+      }
+      case "set_portfolio_mix": {
+        const mix = { stocks: action.stocks, bonds: action.bonds, cash: action.cash, crypto: action.crypto };
+        let changed = false;
+        for (const id of ["stocks","bonds","cash","crypto"]) {
+          if (mix[id] != null && _whatIfState && _whatIfState.portfolio) {
+            const row = _whatIfState.portfolio.rows.find(r => r.id === id);
+            if (row) { row.alloc = Math.max(0, Math.min(100, +mix[id] || 0)); changed = true; }
+          }
+        }
+        if (!changed) return { ok: false, label: "Skipped set_portfolio_mix (no valid fields)" };
+        _whatIfState.portfolio.preset = "custom";
+        try { if (document.getElementById("page-planning")) renderPlanningWhatIfOnly(); } catch {}
+        const parts = ["stocks","bonds","cash","crypto"].filter(k => mix[k] != null).map(k => `${k} ${mix[k]}%`);
+        return { ok: true, icon: "📊", label: `Updated mix: ${parts.join(", ")}`, link: "planning" };
+      }
+      case "add_habit": {
+        const name = sanitizeText(action.name || "", TEXT_MAX);
+        if (!name) return { ok: false, label: "Skipped add_habit (missing name)" };
+        const group = ["health","mind","money","faith","misc"].includes(action.group) ? action.group : "misc";
+        if (!DB.habits) DB.habits = [];
+        DB.habits.push({
+          id: uid(), name, emoji: (action.emoji || "✨").slice(0, 4),
+          type: "check", target: 1, unit: "", color: COLORS[DB.habits.length % COLORS.length],
+          group, createdAt: Date.now(), log: {},
+        });
+        save();
+        return { ok: true, icon: "✓", label: `Added habit: "${name}"`, link: "today" };
+      }
+      default:
+        return { ok: false, label: `Unknown action type: ${action.type}` };
+    }
+  } catch (e) {
+    return { ok: false, label: "Action failed: " + (e.message || "error") };
+  }
+}
+
+// Render confirmation chips beneath an assistant bubble. Tappable chips
+// route to the relevant tab so the user can see the change they just got.
+function _renderActionChips(actions) {
+  if (!actions || !actions.length) return "";
+  return `<div class="cns-actions">${actions.map(a => `
+    <button class="cns-action-chip ${a.ok ? "ok" : "err"}"
+      ${a.link ? `onclick="closeSheet();showTab(${jsAttr(a.link)})"` : "disabled"}>
+      ${a.ok ? (a.icon || "✓") : "⚠️"} ${esc(a.label)}
+    </button>
+  `).join("")}</div>`;
 }
 
 function counselorClear() {
@@ -15486,6 +15760,158 @@ async function scanReceiptFile(file) {
   }
 }
 
+// Scan a screenshot of a brokerage/retirement/crypto app and extract holdings.
+// Same vision pipeline as receipts. Opens the input picker, then surfaces a
+// confirmation sheet so the user can review + accept (or pick which rows to
+// add). Adds accepted rows to DB.assets as type:"investment" or "crypto".
+function scanHoldingsSheet() {
+  openSheet(`
+    <h2 style="margin-bottom:4px">📸 Scan your portfolio</h2>
+    <p class="muted" style="font-size:13px;line-height:1.5;margin-bottom:14px">
+      Snap a screenshot of any brokerage / 401(k) / crypto app showing positions and totals.
+      Cylan will read the tickers, names, and balances, then ask you to confirm each before adding.
+    </p>
+    <button class="btn" id="scan-port-pick" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;display:flex;gap:10px;align-items:center;justify-content:center">
+      <span style="font-size:18px">📷</span> Pick a screenshot
+    </button>
+    <input type="file" id="scan-port-file" accept="image/*" capture="environment" style="display:none" />
+    <p class="muted" style="font-size:11px;line-height:1.5;margin-top:14px">
+      Image is sent only to Anthropic for OCR and never stored. Works best on a clean screenshot showing tickers + values.
+    </p>
+    <button class="btn secondary" style="width:100%;margin-top:14px" onclick="closeSheet()">Cancel</button>
+  `);
+  setTimeout(() => {
+    const pick = document.getElementById("scan-port-pick");
+    const file = document.getElementById("scan-port-file");
+    if (pick && file) {
+      pick.addEventListener("click", () => file.click());
+      file.addEventListener("change", async (e) => {
+        const f = e.target.files && e.target.files[0];
+        if (f) await scanHoldingsFile(f);
+      });
+    }
+  }, 50);
+}
+
+async function scanHoldingsFile(file) {
+  if (!file) return;
+  toast("Reading portfolio…");
+  let base64, mediaType = "image/jpeg";
+  try {
+    const r = await _resizeImage(file, 1400, 0.88);
+    base64 = r.base64; mediaType = r.mediaType;
+  } catch (e) { toast("Couldn't read photo"); return; }
+  try {
+    const data = await aiApi({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 1200,
+      feature: "holdings_scan",
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+          { type: "text", text: 'This is a screenshot of an investment portfolio (brokerage, 401k, crypto, robo-advisor, etc.). Extract every position you can see. Reply with STRICT JSON only — no markdown fences, no commentary. Schema: {"institution": string|null, "holdings": [{"ticker": string|null, "name": string, "type": "stock"|"etf"|"mutual_fund"|"bond"|"crypto"|"cash"|"other", "value": number, "quantity": number|null}]}. The "value" field MUST be the current market value in dollars (not cost basis). If you can\'t parse a row confidently, skip it. If the image isn\'t a portfolio, return {"holdings":[]}.' }
+        ]
+      }],
+    });
+    const txt = (data.content || []).map(c => c.text).join("") || "{}";
+    const cleaned = txt.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+    let parsed; try { parsed = JSON.parse(cleaned); } catch { parsed = {}; }
+    const holdings = Array.isArray(parsed.holdings) ? parsed.holdings : [];
+    if (!holdings.length) {
+      toast("Couldn't find any positions in that image");
+      return;
+    }
+    closeSheet();
+    setTimeout(() => _holdingsConfirmSheet(parsed.institution || "Brokerage", holdings), 80);
+  } catch (e) {
+    toast("Scan failed: " + (e.message || "unknown"));
+  }
+}
+
+// Stash extracted holdings on a module-level var so the per-row toggles can
+// flip selection without re-parsing JSON each time the sheet re-renders.
+let _holdingsBuffer = null;
+
+function _holdingsConfirmSheet(institution, holdings) {
+  // Normalize + pre-select rows with both a name and a positive value.
+  _holdingsBuffer = {
+    institution: String(institution || "Brokerage").slice(0, 60),
+    rows: holdings.map((h, i) => ({
+      id: i,
+      ticker: h.ticker ? String(h.ticker).toUpperCase().slice(0, 10) : "",
+      name: String(h.name || h.ticker || "Unknown").slice(0, 80),
+      type: ["stock","etf","mutual_fund","bond","crypto","cash","other"].includes(h.type) ? h.type : "stock",
+      value: +h.value || 0,
+      selected: !!(h.name || h.ticker) && +h.value > 0,
+    })),
+  };
+  _renderHoldingsConfirm();
+}
+
+function _renderHoldingsConfirm() {
+  const buf = _holdingsBuffer;
+  if (!buf) return;
+  const selectedTotal = buf.rows.filter(r => r.selected).reduce((s, r) => s + r.value, 0);
+  const selectedCount = buf.rows.filter(r => r.selected).length;
+  openSheet(`
+    <h2 style="margin-bottom:4px">📸 Found ${buf.rows.length} position${buf.rows.length === 1 ? "" : "s"}</h2>
+    <p class="muted" style="font-size:13px;margin-bottom:6px">Review and uncheck anything wrong. <b>${selectedCount} selected · ${fmt$0(selectedTotal)} total</b></p>
+    <label>Institution name</label>
+    <input id="hold-inst" type="text" maxlength="60" value="${esc(buf.institution)}" />
+    <label>Positions</label>
+    <div style="max-height:50vh;overflow-y:auto;border:1px solid var(--sep);border-radius:10px;padding:6px;margin-top:4px">
+      ${buf.rows.map(r => `
+        <div class="holdings-row ${r.selected ? "" : "off"}">
+          <button class="holdings-check ${r.selected ? "on" : ""}" onclick="_holdingsToggle(${r.id})">${r.selected ? "✓" : ""}</button>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:700;color:var(--t1);line-height:1.2">${r.ticker ? `<span class="muted" style="font-family:ui-monospace,Menlo,monospace">${esc(r.ticker)}</span> ·  ` : ""}${esc(r.name)}</div>
+            <div style="font-size:11px;color:var(--t3);margin-top:2px">${esc(r.type)}</div>
+          </div>
+          <div style="font-size:14px;font-weight:800;color:var(--t1);font-family:ui-monospace,Menlo,monospace;flex-shrink:0">${fmt$0(r.value)}</div>
+        </div>
+      `).join("")}
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" onclick="closeSheet();_holdingsBuffer=null">Cancel</button>
+      <button class="btn" onclick="_holdingsAccept()" ${selectedCount === 0 ? "disabled" : ""}>Add ${selectedCount}</button>
+    </div>
+  `);
+}
+
+function _holdingsToggle(id) {
+  if (!_holdingsBuffer) return;
+  const row = _holdingsBuffer.rows.find(r => r.id === id);
+  if (!row) return;
+  row.selected = !row.selected;
+  _renderHoldingsConfirm();
+}
+
+function _holdingsAccept() {
+  if (!_holdingsBuffer) return;
+  const inst = sanitizeText(document.getElementById("hold-inst")?.value || _holdingsBuffer.institution || "Brokerage", 60);
+  const accepted = _holdingsBuffer.rows.filter(r => r.selected);
+  if (!accepted.length) { toast("Nothing selected"); return; }
+  if (!DB.assets) DB.assets = [];
+  for (const r of accepted) {
+    const assetType = r.type === "crypto" ? "crypto" : "investment";
+    const label = inst ? `${inst} · ${r.ticker || r.name}` : (r.ticker || r.name);
+    DB.assets.push({
+      id: uid(),
+      name: sanitizeText(label, TEXT_MAX),
+      type: assetType,
+      value: +r.value || 0,
+      note: r.ticker && r.name && r.ticker !== r.name ? `${r.name}` : "",
+      updatedAt: Date.now(),
+    });
+  }
+  save();
+  _holdingsBuffer = null;
+  closeSheet();
+  render();
+  toast(`✨ Added ${accepted.length} position${accepted.length === 1 ? "" : "s"}`);
+}
+
 function _resizeImage(file, maxDim, quality) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
@@ -16023,12 +16449,15 @@ function init() {
     debtConsolidationSheet,
     fetchInsight, getMonthlyInsight, runAiInsight, maybeFireDailyInsight,
     openCounselor, counselorRender, counselorSend, counselorClear, buildCounselorSnapshot,
+    _parseAndRunActions, _runCylanAction, _renderActionChips,
     counselorVoiceToggle, negotiateBillWithAI, negotiateBillWithAISeed,
     _whatIfState, whatIfCardHtml, _whatIfUpdate, renderPlanningWhatIfOnly,
     _whatIfBlendedReturn, _whatIfApplyPreset, _whatIfSetCell,
     PORTFOLIO_PRESETS, ASSET_DEFAULTS,
     findSavingsOpportunities, savingsOpportunitiesCardHtml, _applySavingToPlan, _opportunityAction,
-    scanReceiptFile, _resizeImage, aiApi,
+    scanReceiptFile, scanHoldingsSheet, scanHoldingsFile,
+    _holdingsConfirmSheet, _renderHoldingsConfirm, _holdingsToggle, _holdingsAccept,
+    _resizeImage, aiApi,
     billsToIcs, exportBillsIcs,
     yearReview, yearReviewSheet, shareCardSvg, downloadShareCard, shareStreakCard,
     backendHoldings, syncHoldings,
@@ -16053,10 +16482,8 @@ function init() {
   applyPrivacyMode();
   autoLockSetup();
   render();
-  // Preload the Stocks iframe in the background so it's ready the moment the
-  // user taps the tab — no per-tap load wait. The Stocks page is inactive
-  // (display:none) at this point, so the iframe loads invisibly.
-  setTimeout(() => { try { renderStocks(); } catch {} }, 400);
+  // (Iframe preload removed — Stocks tab is now native HTML calling
+  // /api/analyze + /api/news, so there's no iframe to warm.)
   maybeShowWhatsNew();
   if (_loadedFromBackup) {
     // Surface so the user knows recovery happened — silent recovery would
