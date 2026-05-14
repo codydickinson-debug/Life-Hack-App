@@ -10790,15 +10790,16 @@ async function counselorSend(text) {
   try {
     const snapshot = buildCounselorSnapshot();
     let snapshotJson = JSON.stringify(snapshot);
-    // The worker caps body.system at 8000 chars; static prompt is ~3kb, so
-    // ~4500 chars is the safe ceiling for the snapshot. If the user has a
-    // large portfolio, drop the lowest-priority fields first.
-    if (snapshotJson.length > 4500) {
+    // The Vercel proxy caps body.system at 32 kB; the static prompt is now
+    // ~11 kB (action schemas, identity, style guide) so up to ~18 kB of
+    // snapshot leaves room for context hints. If the user has a huge
+    // portfolio, drop the lowest-priority fields first.
+    if (snapshotJson.length > 18000) {
       const trimmed = { ...snapshot };
       delete trimmed.active_subscriptions;
-      if (JSON.stringify(trimmed).length > 4500) delete trimmed.investments;
-      if (JSON.stringify(trimmed).length > 4500) delete trimmed.manual_assets;
-      if (JSON.stringify(trimmed).length > 4500) delete trimmed.manual_liabilities;
+      if (JSON.stringify(trimmed).length > 18000) delete trimmed.investments;
+      if (JSON.stringify(trimmed).length > 18000) delete trimmed.manual_assets;
+      if (JSON.stringify(trimmed).length > 18000) delete trimmed.manual_liabilities;
       snapshotJson = JSON.stringify(trimmed);
     }
     const ctx = (_counselorState && _counselorState.context) || "default";

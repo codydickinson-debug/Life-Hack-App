@@ -405,7 +405,10 @@ def api_ai_messages():
 
     payload = {"model": model, "max_tokens": max_tokens, "messages": messages}
     if isinstance(body.get("system"), str) and body["system"]:
-        payload["system"] = body["system"][:8000]
+        # Cap system prompt size as a defense against client-side runaway, but
+        # set it high enough to fit the full counselor system + snapshot JSON
+        # (currently ~16 kB). Anthropic accepts vastly more than this.
+        payload["system"] = body["system"][:32000]
     if isinstance(body.get("temperature"), (int, float)):
         payload["temperature"] = float(body["temperature"])
 
