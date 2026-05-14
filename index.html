@@ -1144,6 +1144,45 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   background: var(--card); border: 1px solid var(--sep);
   border-radius: var(--r2, 10px); margin-top: 10px; line-height: 1.45;
 }
+.whatif-math {
+  margin-top: 12px;
+  border-top: 1px dashed var(--sep);
+  padding-top: 10px;
+}
+.whatif-math summary {
+  cursor: pointer; list-style: none;
+  font-size: 12px; font-weight: 700;
+  color: var(--t2); padding: 4px 0;
+  display: flex; align-items: center; justify-content: space-between;
+}
+.whatif-math summary::-webkit-details-marker { display: none; }
+.whatif-math summary::after {
+  content: "▾"; color: var(--t3); font-size: 10px; transition: transform .15s ease;
+}
+.whatif-math[open] summary::after { transform: rotate(180deg); }
+.whatif-math-body { padding: 8px 0 4px; font-size: 12.5px; color: var(--t2); line-height: 1.55; }
+.whatif-math-block { margin-bottom: 10px; }
+.whatif-math-block:last-of-type { margin-bottom: 0; }
+.whatif-math-head {
+  font-size: 11px; text-transform: uppercase; letter-spacing: 0.06em;
+  font-weight: 700; color: var(--t1); margin-bottom: 4px;
+}
+.whatif-math-body ul { margin: 4px 0 0; padding-left: 16px; }
+.whatif-math-body li { margin-bottom: 4px; }
+.whatif-math-body code {
+  background: rgba(127,127,127,0.18); padding: 1px 5px; border-radius: 4px;
+  font-size: 0.92em; font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.whatif-inline-btn {
+  background: transparent; border: none; padding: 0;
+  color: var(--accent, #7c3aed); cursor: pointer;
+  text-decoration: underline; font-size: inherit; font-weight: 600;
+}
+.whatif-math-disclaim {
+  font-size: 11px; color: var(--t4); margin-top: 8px;
+  padding-top: 8px; border-top: 1px dashed var(--sep);
+  line-height: 1.45;
+}
 
 /* Planning tab — fun, scannable life roadmap */
 .plan-section { margin-bottom: 24px; }
@@ -3116,6 +3155,12 @@ function renderPlanning() {
     ${whatIfCardHtml()}
     ${sections}
   `;
+  // Populate the what-if cells with their initial values (they ship as "…"
+  // placeholders so we have stable DOM nodes to update during slider drag).
+  if (page.querySelector(".whatif-card")) {
+    _whatIfUpdate("saving", _whatIfState.extraSavings);
+    _whatIfUpdate("debt",   _whatIfState.extraDebt);
+  }
 }
 
 /* ===== WHAT-IF SIMULATOR =====
@@ -3172,12 +3217,9 @@ function whatIfCardHtml() {
 
   const extraS = _whatIfState.extraSavings;
   const extraD = _whatIfState.extraDebt;
-  const at5  = _whatIfProjectAt(5,  extraS);
-  const at10 = _whatIfProjectAt(10, extraS);
-  const at20 = _whatIfProjectAt(20, extraS);
-  const baseAt20 = _whatIfProjectAt(20, 0);
-  const lift20 = at20 - baseAt20;
-  const debtImpact = hasDebt ? _whatIfDebtImpact(extraD) : null;
+  const debtStrategy = DB.settings.debtPayoffStrategy || "avalanche";
+  const totalDebt = (DB.liabilities || []).reduce((s, l) => s + (+l.balance || 0), 0)
+    + (debtAccounts ? debtAccounts().reduce((s, a) => s + (+a.balance_current || 0), 0) : 0);
 
   return `
     <div class="whatif-card">
@@ -3190,36 +3232,110 @@ function whatIfCardHtml() {
       ${hasInvestSignal ? `
         <div class="whatif-row">
           <div class="whatif-label">Save an extra <strong id="wi-saving-label">${fmt$0(extraS)}</strong> / month</div>
-          <input type="range" min="0" max="2000" step="25" value="${extraS}"
-            oninput="_whatIfState.extraSavings=+this.value;document.getElementById('wi-saving-label').textContent='${"$"}'+(+this.value).toLocaleString();renderPlanningWhatIfOnly()" />
+          <input type="range" id="wi-saving-slider" min="0" max="2000" step="10" value="${extraS}"
+            oninput="_whatIfUpdate('saving', +this.value)" />
         </div>
         <div class="whatif-grid">
-          <div class="whatif-cell"><div class="whatif-cell-label">In 5 yrs</div><div class="whatif-cell-val">${fmt$0(at5)}</div></div>
-          <div class="whatif-cell"><div class="whatif-cell-label">In 10 yrs</div><div class="whatif-cell-val">${fmt$0(at10)}</div></div>
-          <div class="whatif-cell highlight"><div class="whatif-cell-label">In 20 yrs</div><div class="whatif-cell-val">${fmt$0(at20)}</div><div class="whatif-cell-lift">+${fmt$0(lift20)} vs no change</div></div>
+          <div class="whatif-cell"><div class="whatif-cell-label">In 5 yrs</div><div class="whatif-cell-val" id="wi-5yr">…</div></div>
+          <div class="whatif-cell"><div class="whatif-cell-label">In 10 yrs</div><div class="whatif-cell-val" id="wi-10yr">…</div></div>
+          <div class="whatif-cell highlight"><div class="whatif-cell-label">In 20 yrs</div><div class="whatif-cell-val" id="wi-20yr">…</div><div class="whatif-cell-lift" id="wi-lift">…</div></div>
         </div>
       ` : ""}
       ${hasDebt ? `
         <div class="whatif-row" style="margin-top:14px">
           <div class="whatif-label">Throw extra <strong id="wi-debt-label">${fmt$0(extraD)}</strong> / month at debt</div>
-          <input type="range" min="0" max="1000" step="25" value="${extraD}"
-            oninput="_whatIfState.extraDebt=+this.value;document.getElementById('wi-debt-label').textContent='${"$"}'+(+this.value).toLocaleString();renderPlanningWhatIfOnly()" />
+          <input type="range" id="wi-debt-slider" min="0" max="1000" step="10" value="${extraD}"
+            oninput="_whatIfUpdate('debt', +this.value)" />
         </div>
-        ${debtImpact ? `
-          <div class="whatif-debt-result">
-            ${extraD > 0
-              ? `<b>Debt-free ${debtImpact.monthsSaved} months sooner.</b> ~${fmt$0(debtImpact.interestSaved)} saved in interest.`
-              : `<b>Baseline:</b> debt-free in ${Math.round(debtImpact.baseMonths)} months at current minimums.`}
-          </div>
-        ` : ""}
+        <div class="whatif-debt-result" id="wi-debt-result">…</div>
       ` : ""}
-      <div style="font-size:11px;color:var(--t4);margin-top:10px;line-height:1.4">Assumes ${b.annualReturn}% real return. Past returns don't guarantee future ones.</div>
+      <details class="whatif-math">
+        <summary>📐 How this is calculated</summary>
+        <div class="whatif-math-body">
+          ${hasInvestSignal ? `
+            <div class="whatif-math-block">
+              <div class="whatif-math-head">Future value</div>
+              <ul>
+                <li><b>Starting balance:</b> ${fmt$0(b.invested)} — sum of your investment accounts (Plaid brokerage/retirement + manual investments + crypto).</li>
+                <li><b>Monthly contribution:</b> ${fmt$0(b.baseMonthly)} base + slider — your retirement contribution from Settings, or your monthly savings target if that's unset.</li>
+                <li><b>Annual return:</b> ${b.annualReturn}% <span class="muted">real</span> (post-inflation). Long-run global stock average is ~6–7% real; adjust in <button onclick="retirementSheet&&retirementSheet()" class="whatif-inline-btn">Retirement settings</button>.</li>
+                <li><b>Formula:</b> balance compounds monthly — each month grows by <code>1 + (return/12)</code>, then contribution is added.</li>
+              </ul>
+            </div>
+          ` : ""}
+          ${hasDebt ? `
+            <div class="whatif-math-block">
+              <div class="whatif-math-head">Debt payoff</div>
+              <ul>
+                <li><b>Total debt:</b> ${fmt$0(totalDebt)} across all credit cards, loans, and manual liabilities.</li>
+                <li><b>Strategy:</b> <code>${debtStrategy === "avalanche" ? "avalanche" : "snowball"}</code> — ${debtStrategy === "avalanche" ? "extra payment goes to highest-APR debt first (saves the most interest)." : "extra payment goes to smallest balance first (faster psychological wins)."} Switch in <button onclick="debtSettingsSheet&&debtSettingsSheet()" class="whatif-inline-btn">Debt settings</button>.</li>
+                <li><b>Each month:</b> we pay minimums on every debt + the slider's extra dollars on the target debt, accrue APR on remaining balances, repeat until everything's zero.</li>
+                <li><b>Interest saved</b> compares total interest paid in the baseline (minimums only) vs with the slider extra.</li>
+              </ul>
+            </div>
+          ` : ""}
+          <div class="whatif-math-disclaim">Educational projection — not a guarantee. Real returns swing year-to-year; this assumes a smooth long-run average. Past performance isn't future performance.</div>
+        </div>
+      </details>
     </div>
   `;
 }
 
-// Lightweight re-render that only swaps the what-if card — avoids re-painting
-// every plan card on every slider drag (which would lose input focus).
+// Compute fresh projection numbers and write them directly to existing DOM
+// nodes. Avoids rebuilding the slider element, so the user's drag gesture
+// never loses contact with it. Called from each slider's oninput.
+function _whatIfUpdate(field, value) {
+  if (field === "saving") _whatIfState.extraSavings = value;
+  if (field === "debt")   _whatIfState.extraDebt    = value;
+
+  const b = _whatIfBaseline();
+  const hasInvestSignal = b.baseMonthly > 0 || b.invested > 0;
+  const hasDebt = (DB.liabilities || []).some(l => +l.balance > 0) || (debtAccounts ? debtAccounts().length > 0 : false);
+
+  if (field === "saving") {
+    const lbl = document.getElementById("wi-saving-label");
+    if (lbl) lbl.textContent = "$" + (value || 0).toLocaleString();
+  }
+  if (field === "debt") {
+    const lbl = document.getElementById("wi-debt-label");
+    if (lbl) lbl.textContent = "$" + (value || 0).toLocaleString();
+  }
+
+  // Re-project investments. cheap (50 years * 12 months max).
+  if (hasInvestSignal) {
+    const extraS = _whatIfState.extraSavings;
+    const at5  = _whatIfProjectAt(5,  extraS);
+    const at10 = _whatIfProjectAt(10, extraS);
+    const at20 = _whatIfProjectAt(20, extraS);
+    const baseAt20 = _whatIfProjectAt(20, 0);
+    const lift20 = at20 - baseAt20;
+    const $5  = document.getElementById("wi-5yr");
+    const $10 = document.getElementById("wi-10yr");
+    const $20 = document.getElementById("wi-20yr");
+    const $lift = document.getElementById("wi-lift");
+    if ($5)  $5.textContent  = fmt$0(at5);
+    if ($10) $10.textContent = fmt$0(at10);
+    if ($20) $20.textContent = fmt$0(at20);
+    if ($lift) $lift.textContent = (lift20 > 0 ? "+" : "") + fmt$0(lift20) + " vs no change";
+  }
+
+  if (hasDebt) {
+    const extraD = _whatIfState.extraDebt;
+    const imp = _whatIfDebtImpact(extraD);
+    const $debt = document.getElementById("wi-debt-result");
+    if ($debt) {
+      if (!imp) $debt.textContent = "";
+      else if (extraD > 0) {
+        $debt.innerHTML = `<b>Debt-free ${imp.monthsSaved} month${imp.monthsSaved===1?"":"s"} sooner.</b> ~${fmt$0(imp.interestSaved)} saved in interest.`;
+      } else {
+        $debt.innerHTML = `<b>Baseline:</b> debt-free in ${Math.round(imp.baseMonths)} months at current minimums.`;
+      }
+    }
+  }
+}
+
+// Keep the old name as an alias — anything that called renderPlanningWhatIfOnly
+// to refresh after a non-slider state change (e.g. new debt added) still works.
 function renderPlanningWhatIfOnly() {
   const page = document.getElementById("page-planning");
   if (!page) return;
@@ -3229,16 +3345,8 @@ function renderPlanningWhatIfOnly() {
   wrap.innerHTML = whatIfCardHtml();
   const fresh = wrap.querySelector(".whatif-card");
   if (fresh) {
-    // Preserve focus on the slider being dragged
-    const activeRange = document.activeElement;
-    const activeIsSlider = activeRange && activeRange.tagName === "INPUT" && activeRange.type === "range";
-    const activeStep = activeIsSlider ? activeRange.step : null;
     existing.replaceWith(fresh);
-    if (activeIsSlider) {
-      // Re-focus the corresponding slider so dragging continues seamlessly
-      const newSliders = fresh.querySelectorAll("input[type=range]");
-      for (const s of newSliders) { if (s.step === activeStep) { s.focus(); break; } }
-    }
+    _whatIfUpdate("saving", _whatIfState.extraSavings);
   }
 }
 
@@ -13857,7 +13965,7 @@ function init() {
     fetchInsight, getMonthlyInsight, runAiInsight, maybeFireDailyInsight,
     openCounselor, counselorRender, counselorSend, counselorClear, buildCounselorSnapshot,
     counselorVoiceToggle, negotiateBillWithAI, negotiateBillWithAISeed,
-    _whatIfState, whatIfCardHtml, renderPlanningWhatIfOnly,
+    _whatIfState, whatIfCardHtml, _whatIfUpdate, renderPlanningWhatIfOnly,
     scanReceiptFile, _resizeImage, aiApi,
     billsToIcs, exportBillsIcs,
     yearReview, yearReviewSheet, shareCardSvg, downloadShareCard, shareStreakCard,
