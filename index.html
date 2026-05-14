@@ -9476,6 +9476,139 @@ function _pickFollowups(ctx, n = 3) {
   return pool.slice(0, n);
 }
 
+// Build 1–3 personalized starter questions for the empty-chat state, based
+// on what's actually in DB right now. Each starter is a one-liner Cylan
+// can run with — phrased as a question the user would naturally ask, with
+// specific numbers baked in so the answer can be concrete. Returns [] when
+// the user has nothing meaningful to surface yet.
+function _personalizedStarters(ctx) {
+  const out = [];
+  const month = monthSpend ? monthSpend() : 0;
+  const spend = DB.spend || [];
+  const goals = DB.goals || [];
+  const savings = DB.savings || [];
+  const habits = DB.habits || [];
+  const recurring = DB.recurring || [];
+  const liabilities = DB.liabilities || [];
+  const tk = todayKey();
+  // 1) Biggest spend category this month
+  try {
+    const tally = {};
+    spend.forEach(t => {
+      const d = t.date || "";
+      if (!d.startsWith(tk.slice(0, 7))) return; // current YYYY-MM
+      const amt = +t.amount || 0;
+      if (amt <= 0) return; // outflows only (positive = outflow per CLAUDE.md)
+      const c = t.category || "Other";
+      tally[c] = (tally[c] || 0) + amt;
+    });
+    const ranked = Object.entries(tally).sort((a, b) => b[1] - a[1]);
+    if (ranked[0] && ranked[0][1] >= 50) {
+      const [cat, amt] = ranked[0];
+      out.push({
+        icon: "💸",
+        text: `My biggest category this month is ${cat} at $${Math.round(amt)}. Is that out of whack and what should I do about it?`,
+      });
+    }
+  } catch {}
+  // 2) Active high-interest debt → debt question
+  try {
+    const highApr = liabilities.filter(l => (+l.apr || 0) >= 10 && (+l.balance || 0) > 0)
+      .sort((a, b) => (+b.apr || 0) - (+a.apr || 0))[0];
+    if (highApr) {
+      out.push({
+        icon: "🏦",
+        text: `I have ${highApr.name || 'a debt'} at ${(+highApr.apr).toFixed(1)}% APR, balance about $${Math.round(+highApr.balance)}. What's my best payoff strategy?`,
+      });
+    }
+  } catch {}
+  // 3) Savings goal that's almost there
+  try {
+    const closest = savings
+      .filter(s => +s.target > 0 && +s.current < +s.target)
+      .map(s => ({ s, pct: (+s.current) / (+s.target) }))
+      .filter(x => x.pct >= 0.6)
+      .sort((a, b) => b.pct - a.pct)[0];
+    if (closest) {
+      const remaining = Math.max(0, (+closest.s.target) - (+closest.s.current));
+      out.push({
+        icon: "🎯",
+        text: `My ${closest.s.name} fund is ${Math.round(closest.pct * 100)}% there — $${Math.round(remaining)} to go. How do I close the gap fast without wrecking the rest of my budget?`,
+      });
+    }
+  } catch {}
+  // 4) Habit that's slipping — used 30 days ago but not lately
+  try {
+    let slippingHabit = null;
+    for (const h of habits) {
+      if (!h || !h.log) continue;
+      const past7 = (() => {
+        let n = 0; const d = new Date();
+        for (let i = 0; i < 7; i++) {
+          const k = todayKey(d);
+          const v = h.log[k];
+          if ((h.type === "count" ? +v >= (h.target || 1) : !!v)) n++;
+          d.setDate(d.getDate() - 1);
+        }
+        return n;
+      })();
+      const past30 = (() => {
+        let n = 0; const d = new Date();
+        for (let i = 0; i < 30; i++) {
+          const k = todayKey(d);
+          const v = h.log[k];
+          if ((h.type === "count" ? +v >= (h.target || 1) : !!v)) n++;
+          d.setDate(d.getDate() - 1);
+        }
+        return n;
+      })();
+      if (past30 >= 8 && past7 <= 2 && (!slippingHabit || past30 > slippingHabit.past30)) {
+        slippingHabit = { h, past7, past30 };
+      }
+    }
+    if (slippingHabit) {
+      out.push({
+        icon: "🔥",
+        text: `I was doing my "${slippingHabit.h.name}" habit ${slippingHabit.past30} times over the last 30 days but only ${slippingHabit.past7} this past week. How do I get back on it?`,
+      });
+    }
+  } catch {}
+  // 5) Subscription audit — if recurring spend is meaningful
+  try {
+    const subs = recurring.filter(r => r.kind === "expense" && (+r.amount || 0) > 0);
+    const monthlyTotal = subs.reduce((s, r) => {
+      const a = +r.amount || 0;
+      const c = r.cadence;
+      if (c === "monthly") return s + a;
+      if (c === "yearly") return s + a / 12;
+      if (c === "weekly") return s + a * 52 / 12;
+      if (c === "biweekly") return s + a * 26 / 12;
+      return s + a;
+    }, 0);
+    if (subs.length >= 3 && monthlyTotal >= 30) {
+      out.push({
+        icon: "🔁",
+        text: `I have ${subs.length} recurring charges totaling about $${Math.round(monthlyTotal)}/mo. Audit them for me — which should I cancel first?`,
+      });
+    }
+  } catch {}
+  // Bias toward context: if the user opened from a specific tab, prioritize
+  // a starter that matches.
+  const ctxBias = ({
+    money: ["💸", "🏦", "🔁"],
+    goals: ["🎯", "🔥"],
+    stocks: ["🎯"],
+  })[ctx];
+  if (ctxBias) {
+    out.sort((a, b) => {
+      const ai = ctxBias.indexOf(a.icon);
+      const bi = ctxBias.indexOf(b.icon);
+      return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
+  }
+  return out.slice(0, 3);
+}
+
 function counselorRender() {
   if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false };
   const thread = DB.counselor.thread || [];
@@ -9542,6 +9675,27 @@ function counselorRender() {
         ${introLine}
         <div style="font-size:11px;color:var(--t4);margin-top:6px">Educational guidance — not licensed financial advice. Do your own research before acting.</div>
       </div>
+      ${(() => {
+        // Data-driven personalized starters — drawn from current snapshot.
+        // Only shown when we have at least one meaningful nudge. Pre-pended
+        // to the static "Try asking" list so the user always sees relevant
+        // questions FIRST without scrolling.
+        const personalized = _personalizedStarters(ctx);
+        if (!personalized.length) return "";
+        return `
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--purple,#8957d9);font-weight:700;margin:6px 0 8px">For you, right now</div>
+          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+            ${personalized.map(s => `
+              <button onclick="counselorSend(${jsAttr(s.text)})"
+                style="text-align:left;padding:11px 13px;background:linear-gradient(135deg,rgba(124,58,237,0.10),rgba(236,72,153,0.08));border:0.5px solid rgba(124,58,237,0.35);border-radius:12px;color:var(--t1);font-size:13.5px;cursor:pointer;display:flex;gap:10px;align-items:flex-start;line-height:1.4;font-weight:500">
+                <span style="font-size:16px;flex-shrink:0;margin-top:1px">${s.icon}</span>
+                <span style="flex:1">${esc(s.text)}</span>
+                <span style="color:var(--purple,#8957d9);font-size:18px;flex-shrink:0">→</span>
+              </button>
+            `).join("")}
+          </div>
+        `;
+      })()}
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin:6px 0 8px">Try asking</div>
       <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
         ${suggestions.map(s => `
