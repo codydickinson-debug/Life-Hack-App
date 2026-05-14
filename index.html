@@ -3140,8 +3140,44 @@ async function _saveWinFromSheet() {
   closeSheet();
   render();
 }
+// Generate 2-3 suggested win texts based on today's actual activity. Surfaces
+// micro-wins users might otherwise forget to capture — perfect habit day,
+// streak milestones, savings logged, etc.
+function _suggestedWins() {
+  const out = [];
+  const k = todayKey();
+  // 1. Perfect habit day
+  if (DB.habits.length) {
+    const elig = DB.habits.filter(h => !h.createdAt || new Date(h.createdAt) <= new Date());
+    const done = elig.filter(h => h.type === "count" ? (h.log[k] || 0) >= (h.target || 1) : !!h.log[k]).length;
+    if (done > 0 && done === elig.length) out.push(`Perfect habit day — all ${elig.length} done`);
+    else if (done >= 3) out.push(`Knocked out ${done} habits today`);
+  }
+  // 2. New streak milestone hit
+  const MS = [7, 14, 30, 60, 100, 180, 365];
+  (DB.habits || []).forEach(h => {
+    if (out.length >= 3) return;
+    const s = streakOf(h);
+    if (MS.includes(s)) out.push(`${s}-day ${h.name} streak`);
+  });
+  // 3. Savings logged today
+  (DB.savings || []).forEach(s => {
+    if (out.length >= 3) return;
+    const todayLog = (s.log || []).find(l => l.date === k);
+    if (todayLog && (+todayLog.amount || 0) > 0) out.push(`Added ${fmt$0(+todayLog.amount)} to ${s.name}`);
+  });
+  // 4. Goal completed today
+  (DB.goals || []).forEach(g => {
+    if (out.length >= 3) return;
+    if (g.done && g.completedAt && new Date(g.completedAt).toISOString().slice(0,10) === k) {
+      out.push(`Completed goal: ${g.title}`);
+    }
+  });
+  return out.slice(0, 3);
+}
 function addWinSheet() {
   const hasVoice = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  const suggestions = _suggestedWins();
   openSheet(`
     <h2 style="margin-bottom:4px">Capture a win</h2>
     <p class="muted" style="font-size:12.5px;margin-bottom:14px">One short line. The little stuff adds up.</p>
@@ -3150,6 +3186,14 @@ function addWinSheet() {
         style="flex:1;background:var(--card);padding:14px;border-radius:var(--r);font-size:16px;border:1px solid var(--sep);box-sizing:border-box;color:var(--t1)" />
       ${hasVoice ? `<button id="win-voice-btn" onclick="startWinVoice()" title="Voice input" style="background:var(--bg-elev);border:1px solid var(--sep);border-radius:var(--r);width:54px;font-size:20px;cursor:pointer;color:var(--t1)">🎤</button>` : ""}
     </div>
+    ${suggestions.length ? `
+      <div style="font-size:11px;color:var(--t3);margin:14px 0 8px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">Today's auto-suggestions</div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${suggestions.map(s => `
+          <button onclick="document.getElementById('win-input').value=${jsAttr(s)}" style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:10px 14px;text-align:left;cursor:pointer;color:var(--t1);font-size:13px;display:flex;align-items:center;gap:8px"><span style="color:var(--orange)">⭐</span>${esc(s)}</button>
+        `).join("")}
+      </div>
+    ` : ""}
     <div class="actions" style="margin-top:14px">
       <button class="btn secondary" onclick="_stopWinRecognition();closeSheet()">Cancel</button>
       <button class="btn" onclick="_saveWinFromSheet()">Add win</button>
