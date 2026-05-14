@@ -5466,10 +5466,71 @@ function _nwLastSnapshotAge() {
   if (!hist.length) return null;
   return Math.floor((Date.now() - new Date(hist[hist.length-1].date + "T00:00:00").getTime()) / 86400000);
 }
+// Money Health snapshot — one card showing net worth + this month's net
+// cashflow + savings rate. Lives at the very top of the Money tab so the
+// user lands on "where am I right now?" before drilling into sub-tabs.
+function _moneyHealthSnapshot() {
+  const accountsCash = (DB.accounts || [])
+    .filter(a => ["depository", "investment", "brokerage"].includes(a.type))
+    .reduce((s, a) => s + (+a.balance_current || 0), 0);
+  const accountsDebt = (DB.accounts || [])
+    .filter(a => ["credit", "loan"].includes(a.type))
+    .reduce((s, a) => s + (+a.balance_current || 0), 0);
+  const manualAssets = (DB.assets || []).reduce((s, a) => s + (+a.value || 0), 0);
+  const manualLiab   = (DB.liabilities || []).reduce((s, l) => s + (+l.balance || 0), 0);
+  const savingsTotal = (DB.savings || []).reduce((s, sv) => s + (+sv.current || 0), 0);
+  const totalAssets = accountsCash + manualAssets + savingsTotal;
+  const totalDebt   = accountsDebt + manualLiab;
+  const netWorth = totalAssets - totalDebt;
+  // 30-day net-worth change from history snapshots (if any).
+  const history = DB.netWorthHistory || [];
+  let change30 = null;
+  if (history.length >= 2) {
+    const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+    const past = history.filter(h => h.date && h.date <= cutoff);
+    if (past.length) change30 = netWorth - past[past.length - 1].total;
+  }
+  // This month's cashflow from DB.spend (negative amount = income).
+  const monthKey = todayKey().slice(0, 7);
+  const monthTx = (DB.spend || []).filter(t => t.date && t.date.startsWith(monthKey));
+  const income   = monthTx.filter(t => +t.amount < 0).reduce((s, t) => s + Math.abs(+t.amount || 0), 0);
+  const spending = monthTx.filter(t => +t.amount > 0).reduce((s, t) => s + (+t.amount || 0), 0);
+  const netFlow = income - spending;
+  const savingsRate = income > 0 ? Math.round((netFlow / income) * 100) : null;
+  return { netWorth, change30, netFlow, income, spending, savingsRate };
+}
+
+function moneyHealthCardHtml() {
+  const h = _moneyHealthSnapshot();
+  // Skip when truly empty — avoids a blank "$0 / $0" card on fresh installs.
+  if (h.netWorth === 0 && h.income === 0 && h.spending === 0) return "";
+  const changeHtml = h.change30 != null && Math.abs(h.change30) >= 1
+    ? `<div style="font-size:12px;font-weight:600;margin-top:4px;color:${h.change30 >= 0 ? '#16a34a' : '#dc2626'}" data-priv="amount">${h.change30 >= 0 ? '↑' : '↓'} ${fmt$0(Math.abs(h.change30))} <span style="color:var(--t3);font-weight:500">30d</span></div>`
+    : "";
+  const flowLabel = h.savingsRate != null
+    ? `${h.savingsRate >= 0 ? `${h.savingsRate}% saved` : "spending > income"}`
+    : (h.spending > 0 ? `${fmt$0(h.spending)} spent` : "no activity yet");
+  return `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px 16px;margin-bottom:12px;display:grid;grid-template-columns:1fr 1fr;gap:14px;align-items:start">
+      <div>
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.08em;font-weight:700;margin-bottom:4px">Net worth</div>
+        <div style="font-size:22px;font-weight:800;letter-spacing:-0.02em" data-priv="amount">${fmt$0(h.netWorth)}</div>
+        ${changeHtml}
+      </div>
+      <div style="border-left:1px solid var(--sep);padding-left:14px">
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.08em;font-weight:700;margin-bottom:4px">This month</div>
+        <div style="font-size:18px;font-weight:700;letter-spacing:-0.02em;color:${h.netFlow >= 0 ? '#16a34a' : '#dc2626'}" data-priv="amount">${h.netFlow >= 0 ? '+' : ''}${fmt$0(h.netFlow)}</div>
+        <div style="font-size:12px;color:var(--t3);margin-top:2px">${flowLabel}</div>
+      </div>
+    </div>
+  `;
+}
+
 function renderMoney() {
   // Cashflow forecast (only when there's enough signal)
   const hasMoneyData = (+DB.budget?.income || 0) > 0 || (DB.recurring || []).length > 0 || (DB.spend || []).length > 0;
   const cashflowBlock = hasMoneyData ? cashflowCardHtml() : "";
+  const healthSnapshot = moneyHealthCardHtml();
   const counselorTeaser = `
     <div class="row tappable" onclick="openCounselor()" role="button" tabindex="0"
       style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:12px 14px;margin-bottom:12px;align-items:center;cursor:pointer">
@@ -5483,6 +5544,7 @@ function renderMoney() {
   `;
   const hdr = `
     <div class="lg-title">Money</div>
+    ${healthSnapshot}
     ${cashflowBlock}
     ${counselorTeaser}
     <div class="sub-tabs">
@@ -11423,10 +11485,14 @@ function _buildDemoData(currentDB) {
     { account_id:"a3", ticker:"VTI",  name:"Vanguard Total Stock Market", quantity:4.85, institution_price:240, institution_value:1166, cost_basis:1100 },
     { account_id:"a4", ticker:"AAPL", name:"Apple Inc",                   quantity:5.5,  institution_price:181, institution_value:996,  cost_basis:850 },
   ];
-  // 90 days of net worth history with mild upward drift
+  // 90 days of net worth history with mild upward drift, anchored so
+  // today's historical entry lands near the live net worth ($10K-ish
+  // computed from demo accounts + assets - liabilities + savings). Keeps
+  // the Money Health snapshot card's 30d-change indicator showing
+  // positive growth instead of a phantom drop.
   fresh.netWorthHistory = [];
   for (let d = 90; d >= 0; d--) {
-    const total = 11500 + (90 - d) * 32 + Math.sin(d / 6) * 250;
+    const total = 7500 + (90 - d) * 28 + Math.sin(d / 6) * 200;
     const dt = new Date(today); dt.setDate(dt.getDate() - d);
     fresh.netWorthHistory.push({ date: tk(dt), total: Math.round(total), by_type: {} });
   }
