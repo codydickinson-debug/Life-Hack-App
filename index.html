@@ -4769,6 +4769,46 @@ function renderStats() {
       `;
     })() : ""}
 
+    ${DB.habits.length ? (() => {
+      // Per-habit consistency rate — % of qualifying days each habit was "done"
+      // over the last 30 days (or since creation, whichever is shorter). Helps
+      // the user see which habit is dragging down the average.
+      const LOOKBACK = 30;
+      const today2 = new Date();
+      const rates = DB.habits.map(h => {
+        let done = 0, total = 0;
+        for (let i = 0; i < LOOKBACK; i++) {
+          const d = new Date(today2); d.setDate(today2.getDate() - i);
+          if (h.createdAt && new Date(h.createdAt) > d) continue;
+          total++;
+          const k = todayKey(d);
+          const did = h.type === "count" ? (h.log[k] || 0) >= (h.target || 1) : !!h.log[k];
+          if (did) done++;
+        }
+        return { h, done, total, pct: total ? Math.round(100 * done / total) : 0 };
+      }).filter(r => r.total > 0).sort((a, b) => b.pct - a.pct);
+      if (!rates.length) return "";
+      return `
+        <div class="section-h"><span class="lbl">Habit consistency</span><span class="muted" style="font-size:12px">last 30 days</span></div>
+        <div style="background:var(--card);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
+          ${rates.map((r, i) => {
+            const color = r.pct >= 80 ? "var(--green)" : r.pct >= 50 ? "var(--yellow)" : "var(--red)";
+            return `
+              <div style="${i > 0 ? 'margin-top:12px;' : ''}">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:5px">
+                  <span style="color:var(--t1)"><span style="margin-right:6px">${r.h.emoji || '✦'}</span>${esc(r.h.name)}</span>
+                  <span style="font-variant-numeric:tabular-nums"><span style="color:var(--t1);font-weight:600">${r.pct}%</span> <span style="color:var(--t3);font-size:11.5px">· ${r.done}/${r.total} days</span></span>
+                </div>
+                <div style="height:6px;background:var(--bg-elev);border-radius:4px;overflow:hidden">
+                  <div style="height:100%;width:${r.pct}%;background:${color};border-radius:4px;transition:width 0.4s ease"></div>
+                </div>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      `;
+    })() : ""}
+
     <div class="section-h"><span class="lbl">Streaks</span></div>
     <div class="list">
       ${topStreaks.length ? topStreaks.map(({h,s}) => {
