@@ -1448,6 +1448,143 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 .plan-section-add:hover { background: rgba(255,255,255,0.35); }
 .plan-section-add:active { transform: scale(.92); }
 
+/* ===== Roadmap cards ===== */
+.rm-section-head {
+  display: flex; align-items: center; gap: 10px;
+  margin: 4px 0 10px; padding: 4px 2px;
+}
+.rm-section-titles { flex: 1; min-width: 0; }
+.rm-section-label { font-size: 14px; font-weight: 700; color: var(--t1); }
+.rm-section-sub { font-size: 11.5px; color: var(--t3); margin-top: 2px; }
+.rm-card {
+  background: var(--card); border: 0.5px solid var(--sep);
+  border-radius: var(--r); padding: 14px; margin-bottom: 12px;
+  box-shadow: var(--sh-1); position: relative; overflow: hidden;
+}
+.rm-card::before {
+  content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  background: linear-gradient(90deg, #7c3aed, #ec4899);
+}
+.rm-head { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
+.rm-emoji { font-size: 26px; width: 36px; flex-shrink: 0; text-align: center; }
+.rm-titles { flex: 1; min-width: 0; }
+.rm-title { font-size: 15px; font-weight: 700; color: var(--t1); line-height: 1.25; }
+.rm-sub { font-size: 11.5px; color: var(--t3); margin-top: 3px; line-height: 1.35; }
+.rm-overall { text-align: right; flex-shrink: 0; min-width: 50px; }
+.rm-overall-pct { font-size: 18px; font-weight: 700; color: var(--t1); line-height: 1; font-variant-numeric: tabular-nums; }
+.rm-overall-lbl { font-size: 9.5px; color: var(--t3); text-transform: uppercase; letter-spacing: 0.06em; margin-top: 2px; }
+.rm-overall-bar {
+  height: 6px; background: var(--bg-elev); border-radius: 3px;
+  overflow: hidden; margin: 12px 0 4px;
+}
+.rm-overall-fill {
+  height: 100%; background: linear-gradient(90deg, #7c3aed, #ec4899);
+  border-radius: 3px; transition: width 0.4s ease;
+}
+.rm-phases { margin-top: 8px; }
+.rm-phase { display: flex; gap: 12px; position: relative; }
+.rm-phase-rail {
+  display: flex; flex-direction: column; align-items: center;
+  flex-shrink: 0; padding-top: 6px;
+}
+.rm-dot {
+  width: 26px; height: 26px; border-radius: 50%;
+  background: var(--bg-elev); border: 2px solid var(--sep);
+  color: var(--t3); font-size: 11px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; transition: all 0.2s ease;
+}
+.rm-dot.active {
+  background: var(--card); border-color: var(--purple, #8957d9);
+  color: var(--purple, #8957d9); box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18);
+}
+.rm-dot.done {
+  background: linear-gradient(135deg, #7c3aed, #ec4899);
+  border-color: transparent; color: #fff;
+}
+.rm-line {
+  flex: 1; width: 2px; background: var(--sep);
+  margin-top: 4px; min-height: 16px;
+}
+.rm-phase-body {
+  flex: 1; min-width: 0; padding: 6px 0 14px;
+  cursor: pointer;
+}
+.rm-phase-head { padding-right: 4px; }
+.rm-phase-meta {
+  display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: center;
+  margin-bottom: 4px;
+}
+.rm-phase-period {
+  font-size: 10.5px; font-weight: 700; color: var(--purple, #8957d9);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.rm-phase-amt, .rm-phase-date {
+  font-size: 11px; color: var(--t3);
+  background: var(--bg-elev); padding: 1px 8px;
+  border-radius: 999px; font-variant-numeric: tabular-nums;
+}
+.rm-phase-amt { color: var(--green, #34C759); background: rgba(52, 199, 89, 0.12); }
+.rm-phase-title {
+  font-size: 14px; font-weight: 600; color: var(--t1);
+  line-height: 1.3; margin-bottom: 6px;
+}
+.rm-phase-bar {
+  height: 4px; background: var(--bg-elev); border-radius: 2px;
+  overflow: hidden; margin-bottom: 6px;
+}
+.rm-phase-fill {
+  height: 100%; background: linear-gradient(90deg, #7c3aed, #ec4899);
+  border-radius: 2px; transition: width 0.4s ease;
+}
+.rm-phase-detail {
+  max-height: 0; opacity: 0; overflow: hidden;
+  transition: max-height 0.3s ease, opacity 0.2s ease, padding 0.2s ease;
+}
+.rm-phase.expanded .rm-phase-detail {
+  max-height: 800px; opacity: 1; padding-top: 4px;
+}
+.rm-phase-note {
+  font-size: 12.5px; color: var(--t2); line-height: 1.5;
+  margin-bottom: 8px; padding: 8px 10px;
+  background: var(--bg-elev); border-radius: 8px;
+}
+.rm-section-lbl {
+  font-size: 10px; font-weight: 700; color: var(--t3);
+  text-transform: uppercase; letter-spacing: 0.06em;
+  margin: 8px 0 4px;
+}
+.rm-ms-list { display: flex; flex-direction: column; gap: 4px; }
+.rm-ms-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 4px; cursor: pointer; border-radius: 6px;
+  transition: background 0.15s ease;
+}
+.rm-ms-row:active { background: var(--bg-elev); }
+.rm-ms-row .check.sm {
+  width: 18px; height: 18px; border-radius: 50%;
+  border: 1.5px solid var(--sep); background: transparent;
+  color: var(--green, #34C759); font-size: 10px; font-weight: 700;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0; padding: 0;
+}
+.rm-ms-row .check.sm.done {
+  background: var(--green, #34C759); border-color: var(--green, #34C759);
+  color: #fff;
+}
+.rm-ms-text { font-size: 13px; color: var(--t1); line-height: 1.4; }
+.rm-ms-text.done { color: var(--t3); text-decoration: line-through; }
+.rm-acts { display: flex; flex-direction: column; gap: 4px; }
+.rm-act {
+  font-size: 12.5px; color: var(--t2); line-height: 1.5;
+  padding: 4px 4px 4px 0;
+}
+.rm-empty {
+  background: var(--card); border: 0.5px solid var(--sep);
+  border-radius: var(--r); padding: 24px 16px; text-align: center;
+  margin-bottom: 14px;
+}
+
 .plan-card {
   background: var(--card); border-radius: var(--r);
   border: 1px solid var(--sep); border-left: 4px solid var(--blue);
@@ -1657,6 +1794,12 @@ const DEFAULT_DB = {
     insights: [],            // [{id, text, savedAt, context}] — user-saved
                              // standout replies. Survives thread auto-clear.
   },
+  roadmaps: [],              // multi-phase visual plans Cylan can author.
+                             // {id, title, emoji, note, createdAt, archived,
+                             //  phases:[{id, title, period, targetAmount,
+                             //    targetDate, note, completed, completedAt,
+                             //    milestones:[{id, text, done}],
+                             //    actions:[{id, text}]}]}
   plans: [],                 // big-picture life plans (distinct from daily Goals).
                              // {id, title, tier:'short'|'mid'|'long', emoji, note,
                              //  target_amount, current_amount, target_date,
@@ -4814,6 +4957,262 @@ function planHealthCardHtml() {
   `;
 }
 
+// ===== ROADMAPS =====
+// Multi-phase visual plans. Cylan can author a full roadmap in one shot
+// via the add_roadmap action. Each phase has its own milestones + actions
+// + optional target dollar amount + target date.
+
+// Progress 0-100 for a single phase based on milestone completion.
+// Returns 100 if explicitly completed even when milestones unchecked
+// (lets the user manually mark a phase done without ticking each box).
+function phaseProgress(ph) {
+  if (!ph) return 0;
+  if (ph.completed) return 100;
+  const ms = Array.isArray(ph.milestones) ? ph.milestones : [];
+  if (!ms.length) return 0;
+  const done = ms.filter(m => m && m.done).length;
+  return Math.round(100 * done / ms.length);
+}
+
+// Roadmap overall progress = average of phase progresses.
+function roadmapProgress(rm) {
+  if (!rm || !Array.isArray(rm.phases) || !rm.phases.length) return 0;
+  const sum = rm.phases.reduce((s, p) => s + phaseProgress(p), 0);
+  return Math.round(sum / rm.phases.length);
+}
+
+// HTML for a single roadmap card on the Plan tab. Vertical timeline of
+// phases with progress per phase and the active phase auto-expanded.
+function _roadmapCardHtml(rm) {
+  const pct = roadmapProgress(rm);
+  const phases = Array.isArray(rm.phases) ? rm.phases : [];
+  // Identify the first non-100% phase as the "active" one
+  let activeIdx = -1;
+  for (let i = 0; i < phases.length; i++) {
+    if (phaseProgress(phases[i]) < 100) { activeIdx = i; break; }
+  }
+  if (activeIdx === -1 && phases.length) activeIdx = phases.length - 1;
+  return `
+    <div class="rm-card">
+      <div class="rm-head" onclick="roadmapSheet(${jsAttr(rm.id)})">
+        <div class="rm-emoji">${esc(rm.emoji || '🗺️')}</div>
+        <div class="rm-titles">
+          <div class="rm-title">${esc(rm.title || 'Untitled roadmap')}</div>
+          <div class="rm-sub">${phases.length} phase${phases.length === 1 ? '' : 's'}${rm.note ? ' · ' + esc(rm.note.slice(0, 80)) + (rm.note.length > 80 ? '…' : '') : ''}</div>
+        </div>
+        <div class="rm-overall">
+          <div class="rm-overall-pct">${pct}%</div>
+          <div class="rm-overall-lbl">overall</div>
+        </div>
+      </div>
+      <div class="rm-overall-bar"><div class="rm-overall-fill" style="width:${pct}%"></div></div>
+      <div class="rm-phases">
+        ${phases.map((ph, i) => {
+          const pp = phaseProgress(ph);
+          const isActive = i === activeIdx;
+          const isLast = i === phases.length - 1;
+          const dotState = pp === 100 ? 'done' : isActive ? 'active' : 'pending';
+          const ms = Array.isArray(ph.milestones) ? ph.milestones : [];
+          const acts = Array.isArray(ph.actions) ? ph.actions : [];
+          return `
+            <div class="rm-phase ${isActive ? 'expanded' : ''}">
+              <div class="rm-phase-rail">
+                <div class="rm-dot ${dotState}">${pp === 100 ? '✓' : i + 1}</div>
+                ${isLast ? '' : '<div class="rm-line"></div>'}
+              </div>
+              <div class="rm-phase-body" onclick="_toggleRmPhaseUI(this)">
+                <div class="rm-phase-head">
+                  <div class="rm-phase-meta">
+                    <span class="rm-phase-period">${esc(ph.period || '')}</span>
+                    ${ph.targetAmount ? `<span class="rm-phase-amt" data-priv="amount">${fmt$0(+ph.targetAmount)}</span>` : ''}
+                    ${ph.targetDate ? `<span class="rm-phase-date">${esc(new Date(ph.targetDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }))}</span>` : ''}
+                  </div>
+                  <div class="rm-phase-title">${esc(ph.title || '')}</div>
+                  <div class="rm-phase-bar"><div class="rm-phase-fill" style="width:${pp}%"></div></div>
+                </div>
+                <div class="rm-phase-detail">
+                  ${ph.note ? `<div class="rm-phase-note">${esc(ph.note)}</div>` : ''}
+                  ${ms.length ? `
+                    <div class="rm-section-lbl">Milestones</div>
+                    <div class="rm-ms-list">
+                      ${ms.map(m => `
+                        <div class="rm-ms-row" onclick="event.stopPropagation();toggleRoadmapMilestone(${jsAttr(rm.id)},${jsAttr(ph.id)},${jsAttr(m.id)})">
+                          <button class="check sm ${m.done ? 'done' : ''}">${m.done ? '✓' : ''}</button>
+                          <div class="rm-ms-text ${m.done ? 'done' : ''}">${esc(m.text)}</div>
+                        </div>
+                      `).join('')}
+                    </div>
+                  ` : ''}
+                  ${acts.length ? `
+                    <div class="rm-section-lbl">Monthly actions</div>
+                    <div class="rm-acts">
+                      ${acts.map(a => `<div class="rm-act">→ ${esc(a.text)}</div>`).join('')}
+                    </div>
+                  ` : ''}
+                </div>
+              </div>
+            </div>
+          `;
+        }).join('')}
+      </div>
+    </div>
+  `;
+}
+
+// Wrapper section for the Plan tab.
+function renderRoadmapsSection() {
+  const list = (DB.roadmaps || []).filter(r => !r.archived);
+  if (!list.length) {
+    return `
+      <div class="rm-empty">
+        <div style="font-size:30px;margin-bottom:6px">🗺️</div>
+        <div style="font-weight:700;margin-bottom:4px">No roadmaps yet</div>
+        <div style="font-size:12.5px;color:var(--t3);margin-bottom:14px;line-height:1.5">Roadmaps are multi-phase plans with milestones &amp; monthly actions per phase. Have Cylan build one for you in one tap.</div>
+        <button class="btn" style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-size:13px"
+          onclick="openCounselor(${jsAttr(`Build me a complete multi-phase roadmap based on my actual situation in the snapshot. Use the add_roadmap action with at least 4 phases. Each phase should have: title, period (e.g. "Months 1-3", "Year 2"), targetAmount if money-related, optional targetDate (YYYY-MM-DD), short note, 3-5 milestones, and 2-4 monthly actions. Make it practical and specific to MY numbers — not generic. Tell me what plan you built and why before emitting the action.`)})">✨ Ask Cylan to build me a roadmap</button>
+      </div>
+    `;
+  }
+  return `
+    <div class="rm-section-head">
+      <div class="rm-section-titles">
+        <div class="rm-section-label">🗺️ Roadmaps</div>
+        <div class="rm-section-sub">${list.length} active · multi-phase plans</div>
+      </div>
+      <button class="plan-section-add" onclick="openCounselor(${jsAttr(`Build me a complete multi-phase roadmap based on my actual situation. Use add_roadmap with at least 4 phases. Each phase should include: title, period, optional targetAmount + targetDate, note, 3-5 milestones, 2-4 monthly actions. Make it practical and tied to MY numbers from the snapshot.`)})" title="Have Cylan build one">+</button>
+    </div>
+    ${list.map(rm => _roadmapCardHtml(rm)).join("")}
+  `;
+}
+
+// Manage a single roadmap — view all phases expanded, mark phases done,
+// rename / delete the roadmap, or "Ask Cylan about this".
+function roadmapSheet(id) {
+  const rm = (DB.roadmaps || []).find(r => r.id === id);
+  if (!rm) return;
+  const phases = Array.isArray(rm.phases) ? rm.phases : [];
+  const overallPct = roadmapProgress(rm);
+  openSheet(`
+    <h2 style="margin-bottom:4px"><span style="margin-right:8px">${esc(rm.emoji || '🗺️')}</span>${esc(rm.title)}</h2>
+    ${rm.note ? `<p class="muted" style="font-size:13px;margin-bottom:14px;line-height:1.5">${esc(rm.note)}</p>` : ''}
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+        <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:0.05em">Overall progress</div>
+        <div style="font-size:24px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${overallPct}%</div>
+      </div>
+      <div class="rm-overall-bar"><div class="rm-overall-fill" style="width:${overallPct}%"></div></div>
+      <div style="font-size:11.5px;color:var(--t3);margin-top:8px">${phases.filter(p => phaseProgress(p) === 100).length} of ${phases.length} phase${phases.length === 1 ? '' : 's'} done</div>
+    </div>
+    <div class="rm-phases" style="margin-bottom:14px">
+      ${phases.map((ph, i) => {
+        const pp = phaseProgress(ph);
+        const isLast = i === phases.length - 1;
+        const dotState = pp === 100 ? 'done' : pp > 0 ? 'active' : 'pending';
+        const ms = Array.isArray(ph.milestones) ? ph.milestones : [];
+        const acts = Array.isArray(ph.actions) ? ph.actions : [];
+        return `
+          <div class="rm-phase expanded">
+            <div class="rm-phase-rail">
+              <div class="rm-dot ${dotState}">${pp === 100 ? '✓' : i + 1}</div>
+              ${isLast ? '' : '<div class="rm-line"></div>'}
+            </div>
+            <div class="rm-phase-body">
+              <div class="rm-phase-head">
+                <div class="rm-phase-meta">
+                  <span class="rm-phase-period">${esc(ph.period || '')}</span>
+                  ${ph.targetAmount ? `<span class="rm-phase-amt" data-priv="amount">${fmt$0(+ph.targetAmount)}</span>` : ''}
+                  ${ph.targetDate ? `<span class="rm-phase-date">${esc(new Date(ph.targetDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', year: 'numeric' }))}</span>` : ''}
+                </div>
+                <div class="rm-phase-title">${esc(ph.title || '')}</div>
+                <div class="rm-phase-bar"><div class="rm-phase-fill" style="width:${pp}%"></div></div>
+              </div>
+              <div class="rm-phase-detail" style="max-height:none;opacity:1;padding-top:8px">
+                ${ph.note ? `<div class="rm-phase-note">${esc(ph.note)}</div>` : ''}
+                ${ms.length ? `
+                  <div class="rm-section-lbl">Milestones</div>
+                  <div class="rm-ms-list">
+                    ${ms.map(m => `
+                      <div class="rm-ms-row" onclick="toggleRoadmapMilestone(${jsAttr(rm.id)},${jsAttr(ph.id)},${jsAttr(m.id)});closeSheet();setTimeout(()=>roadmapSheet(${jsAttr(rm.id)}),60)">
+                        <button class="check sm ${m.done ? 'done' : ''}">${m.done ? '✓' : ''}</button>
+                        <div class="rm-ms-text ${m.done ? 'done' : ''}">${esc(m.text)}</div>
+                      </div>
+                    `).join('')}
+                  </div>
+                ` : ''}
+                ${acts.length ? `
+                  <div class="rm-section-lbl">Monthly actions</div>
+                  <div class="rm-acts">
+                    ${acts.map(a => `<div class="rm-act">→ ${esc(a.text)}</div>`).join('')}
+                  </div>
+                ` : ''}
+                <div style="display:flex;gap:6px;margin-top:10px">
+                  <button class="btn sm secondary" style="flex:1;font-size:11.5px;padding:7px" onclick="togglePhaseComplete(${jsAttr(rm.id)},${jsAttr(ph.id)});closeSheet();setTimeout(()=>roadmapSheet(${jsAttr(rm.id)}),60)">${ph.completed ? '↺ Reopen phase' : '✓ Mark phase complete'}</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        `;
+      }).join('')}
+    </div>
+    <div style="display:flex;gap:6px;margin-bottom:8px">
+      <button class="btn secondary" style="flex:1;font-size:13px" onclick="closeSheet();setTimeout(()=>openCounselor(${jsAttr(`I'm looking at my "${rm.title}" roadmap. Where am I behind, what's working, and what's the highest-leverage thing I should focus on this week?`)}),100)">✨ Ask Cylan</button>
+      <button class="btn danger sm" style="font-size:13px;padding:0 14px" onclick="if(confirm('Delete this roadmap?')){deleteRoadmap(${jsAttr(rm.id)});closeSheet();}">Delete</button>
+    </div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Done</button></div>
+  `);
+}
+
+// Inline expand/collapse for a phase in the Plan-tab roadmap card.
+function _toggleRmPhaseUI(bodyEl) {
+  const phase = bodyEl && bodyEl.closest('.rm-phase');
+  if (!phase) return;
+  phase.classList.toggle('expanded');
+}
+
+async function toggleRoadmapMilestone(rmId, phaseId, msId) {
+  const rm = (DB.roadmaps || []).find(r => r.id === rmId);
+  if (!rm) return;
+  const ph = (rm.phases || []).find(p => p.id === phaseId);
+  if (!ph) return;
+  const m = (ph.milestones || []).find(x => x.id === msId);
+  if (!m) return;
+  m.done = !m.done;
+  // Auto-complete phase if all milestones done
+  if ((ph.milestones || []).length && ph.milestones.every(x => x.done)) {
+    ph.completed = true;
+    ph.completedAt = Date.now();
+  } else if (ph.completed && !ph.milestones.every(x => x.done)) {
+    // Reopen the phase if we unchecked something on a previously completed phase
+    ph.completed = false;
+    ph.completedAt = null;
+  }
+  await save();
+  render();
+}
+
+async function togglePhaseComplete(rmId, phaseId) {
+  const rm = (DB.roadmaps || []).find(r => r.id === rmId);
+  if (!rm) return;
+  const ph = (rm.phases || []).find(p => p.id === phaseId);
+  if (!ph) return;
+  const wasDone = !!ph.completed;
+  ph.completed = !wasDone;
+  ph.completedAt = ph.completed ? Date.now() : null;
+  // If marking done, tick every remaining milestone for visual consistency
+  if (ph.completed && Array.isArray(ph.milestones)) {
+    for (const m of ph.milestones) m.done = true;
+  }
+  await save();
+  render();
+}
+
+async function deleteRoadmap(id) {
+  DB.roadmaps = (DB.roadmaps || []).filter(r => r.id !== id);
+  await save();
+  render();
+  toast("Roadmap deleted");
+}
+
 function renderPlanning() {
   const page = document.getElementById("page-planning");
   if (!page) return;
@@ -4910,6 +5309,7 @@ function renderPlanning() {
     <div class="muted" style="margin:-12px 0 18px;font-size:14px">Where you're headed — and how close you are.</div>
     ${planHealthCardHtml()}
     ${counselorCta}
+    ${renderRoadmapsSection()}
     ${cardRecsCallout}
     ${whatIfCardHtml()}
     ${savingsOpportunitiesCardHtml()}
@@ -9668,6 +10068,31 @@ AVAILABLE ACTIONS — only emit these types:
     substring of the bucket name. Amount is in dollars (positive).
     Use when the user says "I just put $200 into my Vacation fund".
 
+13. add_roadmap
+    {
+      type:"add_roadmap",
+      title:string,             // overall roadmap name, e.g. "Path to FI in 12 years"
+      emoji?:string,
+      note?:string,             // 1-2 sentences on the why
+      phases:[{
+        title:string,           // e.g. "Foundation", "Aggressive saving"
+        period:string,          // human period label e.g. "Year 1", "Months 1-3"
+        targetAmount?:number,   // optional dollar goal for this phase
+        targetDate?:"YYYY-MM-DD",  // optional firm deadline
+        note?:string,           // 1-2 sentences explaining the phase
+        milestones?:string[],   // 3-6 concrete check-off items
+        actions?:string[],      // 2-4 monthly habits or recurring actions
+      }]   // 3-8 phases total
+    }
+    Use add_roadmap when the user asks for a complete plan, roadmap, or
+    multi-phase strategy ("build me a plan to retire at 50", "give me a
+    debt-free roadmap", "lay out my next 3 years"). Pull real numbers
+    from the snapshot — current savings, debts, income — and use them
+    in phase targetAmounts. Phases should chain logically: each unlocks
+    the next. The frontend renders this as a visual timeline.
+    Always also describe what you built in plain prose so the user can
+    react before tapping into it.
+
 ACTION RULES:
 - Only emit actions when the user's intent is concrete ("add a plan for...", "log a $X spend...", "set my savings target to $X"). Don't auto-emit for vague conversation.
 - ALWAYS confirm in plain English what you did, in addition to emitting the action. E.g. "Added a short-term plan: 'Build $1K emergency fund'. You'll see it on the Plan tab." The action block does the work; the prose tells the human.
@@ -10613,6 +11038,51 @@ function _runCylanAction(action) {
         s.log.unshift({ date: todayKey(), amt: amount });
         save();
         return { ok: true, icon: "💰", label: `Deposited ${fmt$0(amount)} into ${s.name} (now ${fmt$0(s.current)})`, link: "money" };
+      }
+      case "add_roadmap": {
+        const title = sanitizeText(action.title || "", TEXT_MAX);
+        if (!title) return { ok: false, label: "Skipped add_roadmap (missing title)" };
+        const phasesIn = Array.isArray(action.phases) ? action.phases : [];
+        if (!phasesIn.length) return { ok: false, label: "Skipped add_roadmap (no phases)" };
+        // Cap phases at 8 so the visual timeline stays sane.
+        const phases = phasesIn.slice(0, 8).map(p => ({
+          id: uid(),
+          title: sanitizeText(p.title || "", TEXT_MAX),
+          period: sanitizeText(p.period || "", 40),
+          note: sanitizeText(p.note || "", NOTE_MAX),
+          targetAmount: +p.targetAmount || 0,
+          targetDate: /^\d{4}-\d{2}-\d{2}$/.test(p.targetDate || "") ? p.targetDate : "",
+          completed: false, completedAt: null,
+          milestones: (Array.isArray(p.milestones) ? p.milestones : [])
+            .slice(0, 8)
+            .map(m => ({
+              id: uid(),
+              text: sanitizeText(typeof m === "string" ? m : (m.text || ""), 200),
+              done: false,
+            }))
+            .filter(m => m.text),
+          actions: (Array.isArray(p.actions) ? p.actions : [])
+            .slice(0, 6)
+            .map(a => ({
+              id: uid(),
+              text: sanitizeText(typeof a === "string" ? a : (a.text || ""), 200),
+            }))
+            .filter(a => a.text),
+        })).filter(p => p.title);
+        if (!phases.length) return { ok: false, label: "Skipped add_roadmap (phases had no titles)" };
+        const rm = {
+          id: uid(),
+          title,
+          emoji: (action.emoji || "🗺️").slice(0, 4),
+          note: sanitizeText(action.note || "", NOTE_MAX),
+          createdAt: Date.now(),
+          archived: false,
+          phases,
+        };
+        if (!DB.roadmaps) DB.roadmaps = [];
+        DB.roadmaps.push(rm);
+        save();
+        return { ok: true, icon: "🗺️", label: `Built roadmap "${title}" — ${phases.length} phase${phases.length === 1 ? '' : 's'}`, link: "planning" };
       }
       default:
         return { ok: false, label: `Unknown action type: ${action.type}` };
