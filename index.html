@@ -1087,6 +1087,64 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 .wr-banner .wr-t2 { font-size: 12px; opacity: 0.88; margin-top: 2px; }
 .wr-banner .wr-cta { background: rgba(255,255,255,.18); color: #fff; padding: 6px 12px; border-radius: var(--r-pill); font-size: 12px; font-weight: 600; }
 
+/* Counselor mic button — pulses red while listening */
+#cns-mic.listening {
+  background: #ef4444 !important; color: #fff !important;
+  animation: mic-pulse 1.2s ease-in-out infinite;
+}
+@keyframes mic-pulse {
+  0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.6); }
+  50%     { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+}
+
+/* What-if simulator on Plan tab */
+.whatif-card {
+  background: linear-gradient(135deg, rgba(124,58,237,0.10), rgba(236,72,153,0.08));
+  border: 1px solid var(--sep);
+  border-radius: var(--r);
+  padding: 16px;
+  margin-bottom: 14px;
+}
+.whatif-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.whatif-title { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; color: var(--t1); }
+.whatif-sub { font-size: 12px; color: var(--t3); margin-top: 2px; }
+.whatif-row { padding: 4px 0; }
+.whatif-label { font-size: 13.5px; color: var(--t2); margin-bottom: 6px; line-height: 1.4; }
+.whatif-label strong { color: var(--t1); font-weight: 700; }
+.whatif-card input[type=range] {
+  width: 100%; -webkit-appearance: none; appearance: none;
+  height: 8px; background: var(--bg-elev); border-radius: 999px; outline: none;
+}
+.whatif-card input[type=range]::-webkit-slider-thumb {
+  -webkit-appearance: none; appearance: none;
+  width: 22px; height: 22px; border-radius: 50%;
+  background: linear-gradient(135deg,#7c3aed,#ec4899);
+  cursor: pointer; border: 3px solid var(--card);
+  box-shadow: 0 2px 8px rgba(124,58,237,0.4);
+}
+.whatif-card input[type=range]::-moz-range-thumb {
+  width: 22px; height: 22px; border-radius: 50%;
+  background: linear-gradient(135deg,#7c3aed,#ec4899);
+  cursor: pointer; border: 3px solid var(--card);
+}
+.whatif-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 12px; }
+.whatif-cell {
+  background: var(--card); border: 1px solid var(--sep);
+  border-radius: var(--r2, 10px); padding: 10px 8px; text-align: center;
+}
+.whatif-cell.highlight {
+  background: linear-gradient(135deg, rgba(52,199,89,0.14), rgba(52,199,89,0.05));
+  border-color: rgba(52,199,89,0.4);
+}
+.whatif-cell-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; color: var(--t3); }
+.whatif-cell-val   { font-size: 16px; font-weight: 800; color: var(--t1); margin-top: 4px; letter-spacing: -0.01em; }
+.whatif-cell-lift  { font-size: 10px; color: var(--green); font-weight: 700; margin-top: 2px; }
+.whatif-debt-result {
+  font-size: 13px; color: var(--t1); padding: 10px 12px;
+  background: var(--card); border: 1px solid var(--sep);
+  border-radius: var(--r2, 10px); margin-top: 10px; line-height: 1.45;
+}
+
 /* Planning tab — fun, scannable life roadmap */
 .plan-section { margin-bottom: 24px; }
 .plan-section-head {
@@ -2632,6 +2690,28 @@ function renderToday() {
       `;
     })()}
 
+    ${(() => {
+      // Proactive daily insight from the counselor — refreshed once per day
+      // by maybeFireDailyInsight() at app launch. Surfaces ABOVE the
+      // counselor CTA so users see today's takeaway without a tap.
+      const last = (DB.insights || [])[0];
+      const isToday = last && last.date === todayKey();
+      if (!isToday) return "";
+      return `
+        <div style="background:var(--card);border:1px solid var(--sep);border-left:4px solid #ec4899;border-radius:var(--r);padding:14px 16px;margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px">✨</div>
+              <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Today's insight</div>
+            </div>
+            <button class="btn sm secondary" style="font-size:11px;padding:4px 10px" onclick="runAiInsight()">Refresh</button>
+          </div>
+          <div style="font-size:13.5px;line-height:1.55;color:var(--t1);white-space:pre-wrap">${esc(last.response)}</div>
+          <div style="font-size:11px;color:var(--t4);margin-top:8px">Refreshed daily · Tap "Talk to your counselor" below to dig deeper.</div>
+        </div>
+      `;
+    })()}
+
     ${`
         <div class="row tappable" onclick="openCounselor()" role="button" tabindex="0"
           style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:center">
@@ -3033,8 +3113,133 @@ function renderPlanning() {
     <div class="muted" style="margin:-12px 0 18px;font-size:14px">Your roadmap — short, mid, long.</div>
     ${counselorCta}
     ${cardRecsCallout}
+    ${whatIfCardHtml()}
     ${sections}
   `;
+}
+
+/* ===== WHAT-IF SIMULATOR =====
+   Two sliders (extra monthly savings, extra debt payment) → live numbers
+   showing 5/10/20-year net-worth impact and debt-payoff acceleration.
+   Pure local-math; no API calls. Uses existing projectRetirement and
+   payoffSchedule for the heavy lifting. */
+
+let _whatIfState = { extraSavings: 200, extraDebt: 0 };
+
+function _whatIfBaseline() {
+  const baseMonthly = +DB.retirement?.monthlyContribution || +DB.settings.monthlySavingsTarget || 0;
+  let invested = 0;
+  try { invested = currentInvested(); } catch {}
+  const annualReturn = +DB.retirement?.annualReturn || 7;
+  const age = +DB.profile?.age || 30;
+  return { baseMonthly, invested, annualReturn, age };
+}
+
+function _whatIfProjectAt(years, extraMonthly) {
+  const b = _whatIfBaseline();
+  const pts = projectRetirement({
+    currentAge: b.age,
+    targetAge: b.age + years,
+    currentBalance: b.invested,
+    monthlyContribution: b.baseMonthly + extraMonthly,
+    annualReturn: b.annualReturn,
+  });
+  return (pts[pts.length - 1] || { balance: 0 }).balance;
+}
+
+function _whatIfDebtImpact(extraDebt) {
+  try {
+    const base = payoffSchedule(DB.settings.debtPayoffStrategy || "avalanche", 0);
+    const withExtra = payoffSchedule(DB.settings.debtPayoffStrategy || "avalanche", extraDebt);
+    if (!base || !withExtra) return null;
+    const baseMonths = base.months || 0;
+    const newMonths  = withExtra.months || 0;
+    if (!baseMonths) return null;
+    return {
+      baseMonths,
+      newMonths,
+      monthsSaved: Math.max(0, baseMonths - newMonths),
+      interestSaved: Math.max(0, (base.totalInterest || 0) - (withExtra.totalInterest || 0)),
+    };
+  } catch { return null; }
+}
+
+function whatIfCardHtml() {
+  const b = _whatIfBaseline();
+  const hasInvestSignal = b.baseMonthly > 0 || b.invested > 0;
+  const hasDebt = (DB.liabilities || []).some(l => +l.balance > 0) || (debtAccounts ? debtAccounts().length > 0 : false);
+  if (!hasInvestSignal && !hasDebt) return ""; // Nothing meaningful to show
+
+  const extraS = _whatIfState.extraSavings;
+  const extraD = _whatIfState.extraDebt;
+  const at5  = _whatIfProjectAt(5,  extraS);
+  const at10 = _whatIfProjectAt(10, extraS);
+  const at20 = _whatIfProjectAt(20, extraS);
+  const baseAt20 = _whatIfProjectAt(20, 0);
+  const lift20 = at20 - baseAt20;
+  const debtImpact = hasDebt ? _whatIfDebtImpact(extraD) : null;
+
+  return `
+    <div class="whatif-card">
+      <div class="whatif-head">
+        <div>
+          <div class="whatif-title">🔮 What if…</div>
+          <div class="whatif-sub">Drag the sliders. See how it changes your future.</div>
+        </div>
+      </div>
+      ${hasInvestSignal ? `
+        <div class="whatif-row">
+          <div class="whatif-label">Save an extra <strong id="wi-saving-label">${fmt$0(extraS)}</strong> / month</div>
+          <input type="range" min="0" max="2000" step="25" value="${extraS}"
+            oninput="_whatIfState.extraSavings=+this.value;document.getElementById('wi-saving-label').textContent='${"$"}'+(+this.value).toLocaleString();renderPlanningWhatIfOnly()" />
+        </div>
+        <div class="whatif-grid">
+          <div class="whatif-cell"><div class="whatif-cell-label">In 5 yrs</div><div class="whatif-cell-val">${fmt$0(at5)}</div></div>
+          <div class="whatif-cell"><div class="whatif-cell-label">In 10 yrs</div><div class="whatif-cell-val">${fmt$0(at10)}</div></div>
+          <div class="whatif-cell highlight"><div class="whatif-cell-label">In 20 yrs</div><div class="whatif-cell-val">${fmt$0(at20)}</div><div class="whatif-cell-lift">+${fmt$0(lift20)} vs no change</div></div>
+        </div>
+      ` : ""}
+      ${hasDebt ? `
+        <div class="whatif-row" style="margin-top:14px">
+          <div class="whatif-label">Throw extra <strong id="wi-debt-label">${fmt$0(extraD)}</strong> / month at debt</div>
+          <input type="range" min="0" max="1000" step="25" value="${extraD}"
+            oninput="_whatIfState.extraDebt=+this.value;document.getElementById('wi-debt-label').textContent='${"$"}'+(+this.value).toLocaleString();renderPlanningWhatIfOnly()" />
+        </div>
+        ${debtImpact ? `
+          <div class="whatif-debt-result">
+            ${extraD > 0
+              ? `<b>Debt-free ${debtImpact.monthsSaved} months sooner.</b> ~${fmt$0(debtImpact.interestSaved)} saved in interest.`
+              : `<b>Baseline:</b> debt-free in ${Math.round(debtImpact.baseMonths)} months at current minimums.`}
+          </div>
+        ` : ""}
+      ` : ""}
+      <div style="font-size:11px;color:var(--t4);margin-top:10px;line-height:1.4">Assumes ${b.annualReturn}% real return. Past returns don't guarantee future ones.</div>
+    </div>
+  `;
+}
+
+// Lightweight re-render that only swaps the what-if card — avoids re-painting
+// every plan card on every slider drag (which would lose input focus).
+function renderPlanningWhatIfOnly() {
+  const page = document.getElementById("page-planning");
+  if (!page) return;
+  const existing = page.querySelector(".whatif-card");
+  if (!existing) return;
+  const wrap = document.createElement("div");
+  wrap.innerHTML = whatIfCardHtml();
+  const fresh = wrap.querySelector(".whatif-card");
+  if (fresh) {
+    // Preserve focus on the slider being dragged
+    const activeRange = document.activeElement;
+    const activeIsSlider = activeRange && activeRange.tagName === "INPUT" && activeRange.type === "range";
+    const activeStep = activeIsSlider ? activeRange.step : null;
+    existing.replaceWith(fresh);
+    if (activeIsSlider) {
+      // Re-focus the corresponding slider so dragging continues seamlessly
+      const newSliders = fresh.querySelectorAll("input[type=range]");
+      for (const s of newSliders) { if (s.step === activeStep) { s.focus(); break; } }
+    }
+  }
 }
 
 /* ===== MONEY ===== */
@@ -4244,8 +4449,8 @@ function renderStocks() {
           <span style="font-size:16px;opacity:.85">→</span>
         </button>
       </div>
-      <iframe id="stk-iframe" src="/stockanalyzer?v=3" loading="eager"
-        style="border:0;flex:1;width:100%;-webkit-overflow-scrolling:touch;background:#0b0d10"
+      <iframe id="stk-iframe" src="/stockanalyzer?v=4" loading="eager"
+        style="border:0;flex:1;width:100%;-webkit-overflow-scrolling:touch;background:#0a0a0c"
         title="Stock research"></iframe>
     </div>
   `;
@@ -5956,6 +6161,7 @@ function counselorRender() {
     </div>
   ` : "";
 
+  const voiceSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
   const footer = busy ? `
     <div style="text-align:center;color:var(--t3);font-size:13px;padding:12px">Thinking…</div>
   ` : `
@@ -5964,6 +6170,10 @@ function counselorRender() {
         style="flex:1;background:var(--bg-elev);padding:10px 14px;border-radius:18px;font-size:15px;border:none;outline:none;color:var(--t1);resize:none;max-height:120px;line-height:1.4;font-family:inherit"
         oninput="this.style.height='auto';this.style.height=Math.min(120,this.scrollHeight)+'px'"
         onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();const v=this.value;this.value='';this.style.height='auto';counselorSend(v);}"></textarea>
+      ${voiceSupported ? `
+        <button id="cns-mic" class="btn secondary" style="border-radius:50%;width:44px;height:44px;padding:0;flex-shrink:0;font-size:18px"
+          onclick="counselorVoiceToggle()" aria-label="Voice input" title="Tap to dictate">🎤</button>
+      ` : ""}
       <button class="btn" style="border-radius:50%;width:44px;height:44px;padding:0;flex-shrink:0;font-size:18px"
         onclick="(()=>{const el=document.getElementById('cns-input');if(!el)return;const v=el.value;el.value='';el.style.height='auto';counselorSend(v);})()" aria-label="Send">→</button>
     </div>
@@ -6072,6 +6282,59 @@ function counselorClear() {
   DB.counselor.thread = [];
   save();
   counselorRender();
+}
+
+// Voice-to-text for the counselor input. Uses Web Speech API — supported on
+// modern Chrome/Safari. Tap mic to start, tap again (or speak silence) to stop.
+let _voiceRecognizer = null;
+let _voiceListening = false;
+function counselorVoiceToggle() {
+  const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const input = document.getElementById("cns-input");
+  const micBtn = document.getElementById("cns-mic");
+  if (!Rec) { toast("Voice input not supported in this browser"); return; }
+  if (!input) return;
+  if (_voiceListening && _voiceRecognizer) {
+    try { _voiceRecognizer.stop(); } catch {}
+    return;
+  }
+  const r = new Rec();
+  r.lang = "en-US";
+  r.continuous = true;
+  r.interimResults = true;
+  let baseText = input.value;
+  let finalAddition = "";
+  r.onresult = (ev) => {
+    let interim = "";
+    for (let i = ev.resultIndex; i < ev.results.length; i++) {
+      const transcript = ev.results[i][0].transcript;
+      if (ev.results[i].isFinal) finalAddition += transcript;
+      else interim += transcript;
+    }
+    input.value = (baseText + " " + finalAddition + " " + interim).trim();
+    input.style.height = "auto";
+    input.style.height = Math.min(120, input.scrollHeight) + "px";
+  };
+  r.onerror = (e) => {
+    toast("Mic error: " + (e.error || "unknown"));
+    _voiceListening = false;
+    if (micBtn) { micBtn.textContent = "🎤"; micBtn.classList.remove("listening"); }
+  };
+  r.onend = () => {
+    _voiceListening = false;
+    _voiceRecognizer = null;
+    baseText = input.value;
+    if (micBtn) { micBtn.textContent = "🎤"; micBtn.classList.remove("listening"); }
+  };
+  try {
+    r.start();
+    _voiceRecognizer = r;
+    _voiceListening = true;
+    if (micBtn) { micBtn.textContent = "⏹"; micBtn.classList.add("listening"); }
+    toast("Listening — tap mic again to stop");
+  } catch (err) {
+    toast("Mic failed to start");
+  }
 }
 
 // Minimal-safe markdown: escape first, then upgrade **bold**, *italic*, `code`,
@@ -10295,6 +10558,8 @@ function negotiationToolkitSheet() {
     <h2>🗣️ Bill negotiation toolkit</h2>
     <p class="muted" style="font-size:12px;margin-bottom:14px">Scripts and tips for negotiating common bills. The single highest-ROI hour most people skip. Tap any to see the full script.</p>
     <div class="list">${html}</div>
+    <button class="btn" style="width:100%;margin-top:14px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none"
+      onclick="closeSheet();negotiateBillWithAI()">✨ Coach me through one with AI</button>
     <p class="muted" style="font-size:11px;margin-top:14px;line-height:1.5">
       <b>The framework:</b> 1) Know the competing alternative. 2) Be polite but specific. 3) Ask for retention/loyalty department. 4) Don't accept the first offer. 5) Be ready to actually leave. Most savings come from companies that would rather discount than lose you.
     </p>
@@ -10302,6 +10567,54 @@ function negotiationToolkitSheet() {
       <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
     </div>
   `);
+}
+
+// Bill-negotiation AI coach: lightweight follow-up sheet asking which bill,
+// then opens the counselor with a tailored seed prompt + the user's actual
+// monthly amount (when detectable from recurring/subscription data).
+function negotiateBillWithAI() {
+  const subs = (typeof detectSubscriptions === "function") ? detectSubscriptions().filter(s => s.status === "active").slice(0, 8) : [];
+  const subsHtml = subs.length ? subs.map(s => `
+    <button onclick='closeSheet();negotiateBillWithAISeed(${jsAttr(s.merchant)}, ${s.avg_amount})'
+      style="text-align:left;padding:10px 12px;background:var(--bg-elev);border:none;border-radius:10px;color:var(--t1);font-size:13.5px;cursor:pointer;display:flex;gap:10px;align-items:center;width:100%;margin-bottom:6px">
+      <span style="font-size:16px">💸</span>
+      <span style="flex:1">
+        <div style="font-weight:600">${esc(s.merchant)}</div>
+        <div style="font-size:11px;color:var(--t3)">~${fmt$0(s.avg_amount)}/mo · tap to coach this one</div>
+      </span>
+      <span style="color:var(--t3)">→</span>
+    </button>
+  `).join("") : "";
+  const COMMON = [
+    { label: "Internet / cable", emoji: "🌐" },
+    { label: "Cell phone plan", emoji: "📱" },
+    { label: "Car insurance", emoji: "🚗" },
+    { label: "Home insurance", emoji: "🏠" },
+    { label: "Streaming subscriptions", emoji: "📺" },
+    { label: "Gym membership", emoji: "🏋️" },
+    { label: "Medical bill", emoji: "🏥" },
+  ];
+  const commonHtml = COMMON.map(c => `
+    <button onclick='closeSheet();negotiateBillWithAISeed(${jsAttr(c.label)}, 0)'
+      style="text-align:left;padding:10px 12px;background:var(--bg-elev);border:none;border-radius:10px;color:var(--t1);font-size:13.5px;cursor:pointer;display:flex;gap:10px;align-items:center;width:100%;margin-bottom:6px">
+      <span style="font-size:16px">${c.emoji}</span>
+      <span style="flex:1;font-weight:600">${esc(c.label)}</span>
+      <span style="color:var(--t3)">→</span>
+    </button>
+  `).join("");
+  openSheet(`
+    <h2 style="margin-bottom:4px">✨ Negotiate with AI</h2>
+    <p class="muted" style="font-size:13px;margin-bottom:14px">Which bill should we tackle? I'll generate a calling script using your actual numbers.</p>
+    ${subs.length ? `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin:6px 0 8px">Your active bills</div>${subsHtml}<div style="height:8px"></div>` : ""}
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin:6px 0 8px">Common categories</div>
+    ${commonHtml}
+    <button class="btn secondary" style="width:100%;margin-top:8px" onclick="closeSheet()">Cancel</button>
+  `);
+}
+function negotiateBillWithAISeed(billName, monthlyAmount) {
+  const amt = +monthlyAmount > 0 ? ` I'm currently paying about ${fmt$0(monthlyAmount)}/mo.` : "";
+  const seed = `Coach me through negotiating my ${billName}.${amt} Walk me through a phone script step-by-step — what to say first, how to ask for the retention department, the specific numbers I should ask for, and how to push back if they say no. Pull from my actual situation in the snapshot.`;
+  openCounselor(seed, "money");
 }
 
 function negotiationScriptSheet(id) {
@@ -12908,26 +13221,46 @@ toggleGoal = function(id) {
 ================================================================ */
 
 /* --- Quick-add Spend (the FAB sheet) ---------------------------- */
-function quickAddSpendSheet() {
+function quickAddSpendSheet(prefilled) {
   const cats = spendCategories();
+  const pre = prefilled || {};
   openSheet(
     '<h2>Quick add spend</h2>' +
+    '<button id="qs-scan" type="button" style="width:100%;padding:12px 14px;margin-bottom:14px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;border-radius:var(--r);font-size:13.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:10px">' +
+      '<span style="font-size:20px">📷</span>' +
+      '<span style="flex:1;text-align:left">' +
+        '<div style="font-weight:700">Scan a receipt</div>' +
+        '<div style="font-size:11px;opacity:.85">Snap a photo — AI fills the form</div>' +
+      '</span>' +
+      '<span style="font-size:18px;opacity:.85">→</span>' +
+    '</button>' +
+    '<input type="file" id="qs-file" accept="image/*" capture="environment" style="display:none" />' +
     '<div style="display:grid;grid-template-columns:2fr 1fr;gap:10px">' +
-      '<div><label>Amount ($)</label><input id="qs-amt" type="number" inputmode="decimal" autofocus placeholder="0.00" /></div>' +
-      '<div><label>When</label><input id="qs-date" type="date" value="' + todayKey() + '" /></div>' +
+      '<div><label>Amount ($)</label><input id="qs-amt" type="number" inputmode="decimal" placeholder="0.00" value="' + (pre.amount || "") + '" /></div>' +
+      '<div><label>When</label><input id="qs-date" type="date" value="' + (pre.date || todayKey()) + '" /></div>' +
     '</div>' +
     '<label>Category</label>' +
     '<select id="qs-cat" style="background:var(--bg-elev);padding:10px;border-radius:10px;width:100%">' +
-      cats.map(c => '<option value="' + esc(c) + '">' + esc(c) + '</option>').join("") +
+      cats.map(c => '<option value="' + esc(c) + '"' + ((pre.category === c) ? ' selected' : '') + '>' + esc(c) + '</option>').join("") +
     '</select>' +
     '<label>Note (optional)</label>' +
-    '<input id="qs-note" placeholder="e.g. Coffee at the corner" />' +
+    '<input id="qs-note" placeholder="e.g. Coffee at the corner" value="' + esc(pre.note || "") + '" />' +
     '<div class="actions">' +
       '<button class="btn secondary" onclick="closeSheet()">Cancel</button>' +
       '<button class="btn" id="qs-save">Add spend</button>' +
     '</div>'
   );
-  setTimeout(() => { var el = document.getElementById("qs-amt"); if (el) el.focus(); }, 50);
+  setTimeout(() => {
+    var el = document.getElementById("qs-amt");
+    if (el && !pre.amount) el.focus();
+  }, 50);
+  // Receipt-scan button → file input → vision API
+  $("#qs-scan").addEventListener("click", () => $("#qs-file").click());
+  $("#qs-file").addEventListener("change", async (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (!file) return;
+    await scanReceiptFile(file);
+  });
   $("#qs-save").addEventListener("click", async () => {
     const amt = Number($("#qs-amt").value);
     if (!amt || amt <= 0) { toast("Enter an amount"); return; }
@@ -12936,6 +13269,81 @@ function quickAddSpendSheet() {
     const date = $("#qs-date").value || todayKey();
     DB.spend.unshift({ id: uid(), date, category: cat, amount: amt, note, source: "manual" });
     await save(); closeSheet(); render(); toast("✓ " + fmt$0(amt) + " logged");
+  });
+}
+
+// Read a receipt photo → base64 → Anthropic Vision via /api/ai/messages →
+// parse JSON back → re-open the quick-add sheet with the fields pre-filled.
+async function scanReceiptFile(file) {
+  if (!file) return;
+  // Resize on-device first so we don't ship a 10MB photo to the model. ~1200px
+  // wide is plenty for OCR-grade text recognition.
+  toast("Reading receipt…");
+  let base64;
+  let mediaType = "image/jpeg";
+  try {
+    const resized = await _resizeImage(file, 1200, 0.85);
+    base64 = resized.base64;
+    mediaType = resized.mediaType;
+  } catch (e) {
+    toast("Could not read photo: " + (e.message || ""));
+    return;
+  }
+  // Call vision via existing proxy. Haiku 4.5 is multimodal + cheap.
+  try {
+    const data = await aiApi({
+      model: "claude-haiku-4-5-20251001",
+      max_tokens: 400,
+      feature: "receipt",
+      messages: [{
+        role: "user",
+        content: [
+          { type: "image", source: { type: "base64", media_type: mediaType, data: base64 } },
+          { type: "text", text: 'Extract the receipt details. Reply with STRICT JSON only — no markdown, no commentary. Schema: {"merchant": string, "amount": number, "date": "YYYY-MM-DD" or null, "category": one of ["Food","Groceries","Gas","Shopping","Travel","Entertainment","Bills","Health","Other"]}. The amount must be the total paid (including tax + tip). If unclear, take your best guess.' }
+        ]
+      }],
+    });
+    const txt = (data.content || []).map(c => c.text).join("") || "{}";
+    const cleaned = txt.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
+    let parsed;
+    try { parsed = JSON.parse(cleaned); } catch { parsed = {}; }
+    const pre = {
+      amount: +parsed.amount > 0 ? +parsed.amount : "",
+      date: /^\d{4}-\d{2}-\d{2}$/.test(parsed.date || "") ? parsed.date : todayKey(),
+      category: parsed.category || "Other",
+      note: parsed.merchant ? String(parsed.merchant).slice(0, 60) : "",
+    };
+    closeSheet();
+    setTimeout(() => quickAddSpendSheet(pre), 80);
+    toast(parsed.amount ? "✨ Read " + fmt$0(parsed.amount) + " — review and save" : "Couldn't read amount — fill it in");
+  } catch (e) {
+    toast("Scan failed: " + (e.message || "unknown"));
+  }
+}
+
+function _resizeImage(file, maxDim, quality) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("read error"));
+    reader.onload = () => {
+      const img = new Image();
+      img.onerror = () => reject(new Error("image error"));
+      img.onload = () => {
+        const ratio = Math.min(1, maxDim / Math.max(img.width, img.height));
+        const w = Math.round(img.width * ratio);
+        const h = Math.round(img.height * ratio);
+        const canvas = document.createElement("canvas");
+        canvas.width = w; canvas.height = h;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, w, h);
+        // Always output JPEG for predictable size + Anthropic compatibility
+        const dataUrl = canvas.toDataURL("image/jpeg", quality || 0.85);
+        const base64 = dataUrl.replace(/^data:image\/jpeg;base64,/, "");
+        resolve({ base64, mediaType: "image/jpeg" });
+      };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
   });
 }
 
@@ -13446,8 +13854,11 @@ function init() {
     netWorthBreakdown, donutSvg, cashFlowMonths, cashFlowSvg, timeToGoal,
     debtAccounts, setDebtMeta, payoffSchedule, debtMetaSheet, debtSettingsSheet,
     debtConsolidationSheet,
-    fetchInsight, getMonthlyInsight, runAiInsight,
+    fetchInsight, getMonthlyInsight, runAiInsight, maybeFireDailyInsight,
     openCounselor, counselorRender, counselorSend, counselorClear, buildCounselorSnapshot,
+    counselorVoiceToggle, negotiateBillWithAI, negotiateBillWithAISeed,
+    _whatIfState, whatIfCardHtml, renderPlanningWhatIfOnly,
+    scanReceiptFile, _resizeImage, aiApi,
     billsToIcs, exportBillsIcs,
     yearReview, yearReviewSheet, shareCardSvg, downloadShareCard, shareStreakCard,
     backendHoldings, syncHoldings,
@@ -13487,6 +13898,32 @@ function init() {
     setTimeout(() => { syncNow().then(() => { surfacePendingDeposits(); }).catch(()=>{}); }, 800);
   } else {
     setTimeout(() => surfacePendingDeposits(), 1200);
+  }
+
+  // Proactive daily insight: if the user has no insight for today and they're
+  // onboarded with some money signal, fire one in the background. Cheap
+  // (Haiku 4.5 ~$0.001) and the result is cached in DB.insights for the rest
+  // of the day. We wait 1.5s to avoid contending with first paint + sync.
+  setTimeout(() => { try { maybeFireDailyInsight(); } catch {} }, 1500);
+}
+
+async function maybeFireDailyInsight() {
+  if (!DB.user.onboardedAt) return;
+  const last = (DB.insights || [])[0];
+  // Already have today's insight? Skip — keep cost bounded.
+  if (last && last.date === todayKey()) return;
+  // Need at least some financial signal to be useful.
+  const hasSignal = (DB.spend||[]).length >= 3
+    || (+DB.budget?.income || 0) > 0
+    || (DB.savings||[]).length > 0
+    || (DB.plans||[]).length > 0;
+  if (!hasSignal) return;
+  try {
+    await getMonthlyInsight();
+    // Trigger a re-render so the Today card picks up the new insight.
+    render();
+  } catch (e) {
+    // Silent — the user didn't ask for this, no need to surface a toast.
   }
 }
 

@@ -1,34 +1,36 @@
 :root {
-  /* Light theme — soft blue-gray surfaces, navy text, jewel-tone accents */
-  --bg: #f4f6fa;
-  --bg-2: #ffffff;
-  --panel: #ffffff;
-  --panel-2: #f5f7fb;
-  --panel-3: #ebeef5;
-  --border: #d8dde7;
-  --border-soft: #e6eaf2;
-  --text: #16203a;
-  --text-soft: #3d4759;
-  --muted: #6b7385;
-  --muted-2: #9aa0b3;
+  /* Dark-first palette tuned to match the parent Ascend app so the iframe
+     feels like another tab, not a separate site. Same purple accent,
+     same warm dark backgrounds, same neutral text. */
+  --bg: #0a0a0c;
+  --bg-2: #131318;
+  --panel: #18181c;
+  --panel-2: #1d1d23;
+  --panel-3: #232329;
+  --border: #2a2a32;
+  --border-soft: #1f1f25;
+  --text: #f4f4f6;
+  --text-soft: #c7c7cc;
+  --muted: #8e8e93;
+  --muted-2: #636366;
 
-  --accent: #3776e6;
-  --accent-2: #5491f2;
+  --accent: #7c3aed;
+  --accent-2: #a855f7;
 
-  --green: #0e9f5d;
-  --green-soft: #129c5b;
-  --green-bg: rgba(14, 159, 93, 0.12);
-  --green-bg-strong: rgba(14, 159, 93, 0.20);
+  --green: #34c759;
+  --green-soft: #30b653;
+  --green-bg: rgba(52, 199, 89, 0.14);
+  --green-bg-strong: rgba(52, 199, 89, 0.22);
 
-  --yellow: #d4901c;
-  --yellow-bg: rgba(212, 144, 28, 0.12);
+  --yellow: #f59e0b;
+  --yellow-bg: rgba(245, 158, 11, 0.14);
 
-  --red: #d93f5c;
-  --red-bg: rgba(217, 63, 92, 0.12);
-  --red-bg-strong: rgba(217, 63, 92, 0.20);
+  --red: #ef4444;
+  --red-bg: rgba(239, 68, 68, 0.14);
+  --red-bg-strong: rgba(239, 68, 68, 0.22);
 
-  --shadow: 0 2px 14px rgba(15, 25, 50, 0.06);
-  --shadow-lg: 0 8px 28px rgba(15, 25, 50, 0.10);
+  --shadow: 0 2px 14px rgba(0, 0, 0, 0.4);
+  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.5);
 }
 
 * { box-sizing: border-box; }
