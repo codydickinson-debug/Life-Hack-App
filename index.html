@@ -3122,6 +3122,38 @@ function suggestSpendCategory(noteValue) {
   suggestEl.innerHTML = `Past matches: ` + ranked.map(([cat, n]) => `<button onclick="(()=>{const sel=document.getElementById('sp-cat');if(sel){[...sel.options].forEach(o => {if(o.value===${jsAttr(cat)})sel.value=o.value;});}})()" style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t1);padding:2px 8px;border-radius:var(--r-pill,999px);font-size:11px;margin-left:4px;cursor:pointer">${esc(cat)} <span style="color:var(--t3)">${n}×</span></button>`).join("");
 }
 
+// Voice input for the calendar-note textarea. Same Web Speech API plumbing as
+// the win sheet — separate state because both could be open in principle.
+let _noteRecognition = null;
+function _stopNoteRecognition() {
+  try { if (_noteRecognition) { _noteRecognition.stop(); _noteRecognition = null; } } catch {}
+  const b = document.getElementById("note-voice-btn");
+  if (b) { b.textContent = "🎤"; b.style.background = "var(--bg-elev)"; }
+}
+function startNoteVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast("Voice input isn't supported on this device"); return; }
+  if (_noteRecognition) { _stopNoteRecognition(); return; }
+  const r = new SR();
+  r.lang = navigator.language || "en-US";
+  r.continuous = false;
+  r.interimResults = true;
+  const ta = document.getElementById("cal-note-input");
+  const initial = ta ? ta.value : "";
+  r.onresult = (e) => {
+    let txt = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) txt += e.results[i][0].transcript;
+    if (ta) ta.value = initial + (initial && !initial.endsWith(" ") ? " " : "") + txt;
+  };
+  r.onerror = () => { _stopNoteRecognition(); toast("Voice input error — try again"); };
+  r.onend = () => _stopNoteRecognition();
+  _noteRecognition = r;
+  r.start();
+  const b = document.getElementById("note-voice-btn");
+  if (b) { b.textContent = "⏹"; b.style.background = "var(--red)"; }
+  toast("Listening… speak your note");
+}
+
 // Add-win sheet — replaces the bare prompt('Win:') with a real input field +
 // optional voice-to-text via the Web Speech API when supported.
 let _winRecognition = null;
@@ -7445,10 +7477,10 @@ function calendarDaySheet(dateKey) {
     <p class="muted" style="font-size:12.5px;margin-bottom:14px">Everything tracked on this day</p>
     ${quickActions}
     ${moodPicker}
-    <div class="section-h" style="margin-top:0"><span class="lbl">Note / reminder</span></div>
+    <div class="section-h" style="margin-top:0"><span class="lbl">Note / reminder</span>${(window.SpeechRecognition || window.webkitSpeechRecognition) ? `<button id="note-voice-btn" class="act" onclick="startNoteVoice()" title="Voice input" style="background:var(--bg-elev);border:0.5px solid var(--sep);border-radius:var(--r-pill,999px);padding:4px 10px;font-size:14px;color:var(--t1)">🎤</button>` : ''}</div>
     <textarea id="cal-note-input" placeholder="Capture a thought, reminder, or journal entry for this day…" maxlength="500"
       style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r2);padding:12px 14px;font-size:14px;width:100%;min-height:72px;box-sizing:border-box;color:var(--t1);font-family:inherit;resize:vertical">${esc(existingNote)}</textarea>
-    <button class="btn secondary" style="width:100%;margin-top:8px;font-size:13px" onclick="saveCalendarNote(${jsAttr(dateKey)})">${existingNote ? "Save note" : "Add note"}</button>
+    <button class="btn secondary" style="width:100%;margin-top:8px;font-size:13px" onclick="_stopNoteRecognition();saveCalendarNote(${jsAttr(dateKey)})">${existingNote ? "Save note" : "Add note"}</button>
     ${eligibleHabits.length
       ? section(
           isFuture2
@@ -17844,6 +17876,7 @@ function init() {
     addSpend, deleteSpend, monthSpend, spendCategories,
     addWin, deleteWin, winsToday, allWinsSheet, shuffleQuote, pinQuoteToToday, addStarterHabit,
     addWinSheet, startWinVoice, _saveWinFromSheet, _stopWinRecognition,
+    startNoteVoice, _stopNoteRecognition,
     suggestSpendCategory,
     customizeTodaySheet, toggleTodaySection, showAllTodaySections, isTodaySectionHidden,
     customizeTabsSheet, toggleTabVisibility, showAllTabs, isTabHidden, applyHiddenTabs,
