@@ -3054,6 +3054,7 @@ const TODAY_TOGGLEABLE_SECTIONS = [
   { id: "safeToSpend",     label: "Safe to spend",          desc: "Daily budget snapshot card" },
   { id: "todaySpent",      label: "Today's spending",       desc: "How much you spent today" },
   { id: "smartPlays",      label: "Smart plays",            desc: "Personalized money next-steps" },
+  { id: "spendLeaks",      label: "Spending leak alerts",   desc: "Auto-flag categories that surged this month" },
   { id: "importantDates",  label: "Important dates",        desc: "Tax deadlines and other key dates" },
   { id: "comingUp",        label: "Coming up · bills",      desc: "Bills due in the next week" },
   { id: "wealthHealth",    label: "Wealth Health card",     desc: "Overall financial health score" },
@@ -4065,6 +4066,48 @@ function renderToday() {
           </div>
           <div style="font-size:13.5px;line-height:1.55;color:var(--t1);white-space:pre-wrap">${esc(last.response)}</div>
           <div style="font-size:11px;color:var(--t4);margin-top:8px">Refreshed daily · Tap "Talk to Cylan" below to dig deeper.</div>
+        </div>
+      `;
+    })()}
+
+    ${isTodaySectionHidden('spendLeaks') ? "" : (() => {
+      // Auto-flag spending categories that surged month-over-month. Showing
+      // them on Today (rather than buried in Money) means the user sees the
+      // leak BEFORE they overspend further. Each leak has a Cylan deep-dive
+      // and a Dismiss-for-the-month action.
+      const leaks = detectSpendingLeaks();
+      if (!leaks.length) return "";
+      return `
+        <div style="background:linear-gradient(135deg,rgba(255,149,0,0.10),rgba(255,59,48,0.05));border:0.5px solid rgba(255,149,0,0.45);border-left:3px solid var(--orange,#FF9500);border-radius:var(--r);padding:14px;margin-bottom:14px">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+            <div style="font-size:20px">⚠️</div>
+            <div style="flex:1;min-width:0">
+              <div class="t1" style="margin:0">${leaks.length === 1 ? "Spending leak detected" : leaks.length + " spending leaks detected"}</div>
+              <div class="t2">Categories trending way up vs last month</div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px">
+            ${leaks.map(l => `
+              <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r2,12px);padding:10px 12px">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:6px">
+                  <div style="flex:1;min-width:0">
+                    <div style="font-weight:600;font-size:13.5px">${esc(l.category)}</div>
+                    <div style="font-size:11.5px;color:var(--t3);margin-top:2px">
+                      <span data-priv="amount">${fmt$0(l.current)}</span> this month vs <span data-priv="amount">${fmt$0(l.previous)}</span> last
+                    </div>
+                  </div>
+                  <div style="text-align:right;flex-shrink:0">
+                    <div style="font-weight:700;color:var(--orange,#FF9500);font-size:14px">+${l.deltaPct === 999 ? "new" : l.deltaPct + "%"}</div>
+                    <div style="font-size:11px;color:var(--t3)" data-priv="amount">+${fmt$0(l.deltaAmt)}</div>
+                  </div>
+                </div>
+                <div style="display:flex;gap:6px;margin-top:6px">
+                  <button class="btn sm" style="flex:1;font-size:11.5px;padding:7px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="openCounselor(${jsAttr(`My ${l.category} spend jumped from $${Math.round(l.previous)} last month to $${Math.round(l.current)} so far this month — that's +${l.deltaPct === 999 ? "all new" : l.deltaPct + "%"}. What happened and what should I do about it?`)})">✨ Ask Cylan</button>
+                  <button class="btn secondary sm" style="flex:0 0 auto;font-size:11.5px;padding:7px 12px;color:var(--t3)" onclick="dismissSpendingLeak(${jsAttr(l.category)})">Dismiss</button>
+                </div>
+              </div>
+            `).join("")}
+          </div>
         </div>
       `;
     })()}
@@ -13933,6 +13976,69 @@ function moneyPromptSheet() {
 
    Most people cancel 15-30% of recurring spend after a serious audit.
 */
+
+// Detect spending categories spiking month-over-month so we can surface
+// them as an actionable alert on Today. Compares current-month-to-date
+// against the same number of days from the previous month. Returns up to
+// 3 leaks sorted by absolute dollar increase, each with:
+//   { category, current, previous, deltaPct, deltaAmt }
+// Only flags categories where:
+//   - current spend ≥ $40 this month-to-date
+//   - increase ≥ 40% AND ≥ $30 absolute
+//   - user hasn't dismissed this category this month
+function detectSpendingLeaks() {
+  const spend = DB.spend || [];
+  if (spend.length < 3) return [];
+  const now = new Date();
+  const dayOfMonth = now.getDate();
+  const thisMonthKey = todayKey().slice(0, 7); // YYYY-MM
+  const last = new Date(now); last.setMonth(last.getMonth() - 1);
+  const lastMonthKey = todayKey(last).slice(0, 7);
+  // Tally outflows per category for both months, but only count last month
+  // up to the same day-of-month as today so comparisons are apples-to-apples
+  const current = {}, previous = {};
+  for (const t of spend) {
+    if (!t.date) continue;
+    const amt = +t.amount || 0;
+    if (amt <= 0) continue; // outflows only
+    const cat = t.category || "Other";
+    if (t.date.startsWith(thisMonthKey)) {
+      current[cat] = (current[cat] || 0) + amt;
+    } else if (t.date.startsWith(lastMonthKey)) {
+      const day = +t.date.slice(8, 10);
+      if (day > dayOfMonth) continue; // beyond comparison window
+      previous[cat] = (previous[cat] || 0) + amt;
+    }
+  }
+  const dismissed = ((DB.settings || {}).dismissedLeaks || {});
+  const dismissedThisMonth = dismissed[thisMonthKey] || [];
+  const leaks = [];
+  for (const cat of Object.keys(current)) {
+    if (dismissedThisMonth.includes(cat)) continue;
+    const cur = current[cat], prev = previous[cat] || 0;
+    if (cur < 40) continue;
+    const deltaAmt = cur - prev;
+    if (deltaAmt < 30) continue;
+    const deltaPct = prev > 0 ? Math.round((deltaAmt / prev) * 100) : 999;
+    if (deltaPct < 40) continue;
+    leaks.push({ category: cat, current: cur, previous: prev, deltaPct, deltaAmt });
+  }
+  return leaks.sort((a, b) => b.deltaAmt - a.deltaAmt).slice(0, 3);
+}
+
+// Dismiss a leak alert for the current month so we don't keep nagging.
+// Lives in DB.settings.dismissedLeaks keyed by YYYY-MM.
+async function dismissSpendingLeak(category) {
+  if (!DB.settings) DB.settings = {};
+  if (!DB.settings.dismissedLeaks) DB.settings.dismissedLeaks = {};
+  const monthKey = todayKey().slice(0, 7);
+  if (!DB.settings.dismissedLeaks[monthKey]) DB.settings.dismissedLeaks[monthKey] = [];
+  if (!DB.settings.dismissedLeaks[monthKey].includes(category)) {
+    DB.settings.dismissedLeaks[monthKey].push(category);
+  }
+  await save();
+  render();
+}
 
 // Heuristic detector for recurring expenses the user hasn't told the app
 // about yet. Scans DB.spend over the last 120 days, groups by lowercase
