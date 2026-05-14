@@ -4146,9 +4146,9 @@ function renderToday() {
     <div class="muted" style="margin:-12px 0 6px;font-size:14px">${dateLabel()}</div>
     <div style="display:flex;gap:16px;font-size:12px;color:var(--t3);margin:0 0 16px;flex-wrap:wrap;align-items:baseline">
       <span style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;color:var(--t3)">This week</span>
-      ${weekSummary.habitPossible ? `<span><b style="color:var(--t1)">${weekSummary.habitDones}/${weekSummary.habitPossible}</b> habits</span>` : ""}
-      <span><b style="color:var(--t1)">${weekSummary.winsW}</b> wins</span>
-      ${weekSummary.spendW > 0 ? `<span><b style="color:var(--t1)" data-priv="amount">${fmt$0(weekSummary.spendW)}</b> spent</span>` : ""}
+      ${weekSummary.habitPossible ? `<button onclick="showTab('stats')" style="background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer"><b style="color:var(--t1)">${weekSummary.habitDones}/${weekSummary.habitPossible}</b> habits</button>` : ""}
+      <button onclick="allWinsSheet()" style="background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer"><b style="color:var(--t1)">${weekSummary.winsW}</b> wins</button>
+      ${weekSummary.spendW > 0 ? `<button onclick="showTab('money')" style="background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer"><b style="color:var(--t1)" data-priv="amount">${fmt$0(weekSummary.spendW)}</b> spent</button>` : ""}
     </div>
 
     ${(!isTodaySectionHidden('weeklyRecap') && new Date().getDay() === 0) ? (() => {
