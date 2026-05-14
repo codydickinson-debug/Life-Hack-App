@@ -10560,8 +10560,8 @@ function finishOnboarding() {
    with a context-aware seed prompt so users can ask anything about
    what they're currently looking at. */
 const TUTORIAL_STEPS = [
-  { emoji: "👋", title: "Welcome to Ascend",
-    body: "A guided tour of how Ascend works. We'll visit each tab, highlight what's where, and answer any question you have along the way.",
+  { emoji: "👋", title: "Welcome to Ascend", tab: "today",
+    body: "A guided tour with live demo data so you can see every feature in action. Tap Next — we'll visit each tab.",
     askPrompt: "Give me a one-paragraph overview of what Ascend is, who it's for, and how to get the most out of it in the first week." },
 
   { emoji: "🧭", title: "Seven tabs at the bottom", tab: "today", target: "#tabbar",
@@ -10643,6 +10643,7 @@ function _tourEnsureChrome() {
       padding: 20px 18px 16px; max-width: 360px; width: calc(100vw - 32px);
       display: none;
     }
+    #tour-tooltip .counter { font-size: 11px; font-weight: 700; color: var(--t3, #888); letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 10px; }
     #tour-tooltip .e { font-size: 38px; line-height: 1; margin-bottom: 8px; }
     #tour-tooltip .t { font-size: 19px; font-weight: 700; margin-bottom: 6px; line-height: 1.25; }
     #tour-tooltip .b { font-size: 14px; line-height: 1.5; color: var(--t2, #555); }
@@ -10725,6 +10726,7 @@ function _tourRender() {
   ).join("");
   const tooltip = document.getElementById("tour-tooltip");
   tooltip.innerHTML = `
+    <div class="counter">${_tutStep + 1} of ${TUTORIAL_STEPS.length}</div>
     <div class="e">${s.emoji}</div>
     <div class="t">${esc(s.title)}</div>
     <div class="b">${esc(s.body)}</div>
@@ -10732,7 +10734,7 @@ function _tourRender() {
     <div class="dots">${dots}</div>
     <div class="row">
       <button class="back" onclick="${isFirst ? "tutorialFinish()" : "tutorialBack()"}">${isFirst ? "Skip" : "Back"}</button>
-      <button class="next" onclick="${isLast ? "tutorialFinish()" : "tutorialNext()"}">${isLast ? "Done" : "Next"}</button>
+      <button class="next" onclick="${isLast ? "tutorialFinish()" : "tutorialNext()"}">${isLast ? "Done" : "Next →"}</button>
     </div>
   `;
   tooltip.style.display = "block";
