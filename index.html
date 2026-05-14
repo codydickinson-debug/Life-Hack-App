@@ -9234,6 +9234,20 @@ AVAILABLE ACTIONS — only emit these types:
    { type:"add_habit", name:string, emoji?:string, group?:"health"|"mind"|"money"|"faith"|"misc" }
    For new daily habits on the Today tab.
 
+8. add_win
+   { type:"add_win", text:string, date?:"YYYY-MM-DD" }
+   For capturing wins the user mentions ("I just hit my 10K goal", "got the
+   promotion"). Date defaults to today. Keep the text short and concrete.
+
+9. add_recurring
+   { type:"add_recurring", name:string, amount:number, cadence:"weekly"|"biweekly"|"monthly"|"yearly", kind:"expense"|"income", category?:string, dayOfMonth?:number }
+   For subscriptions, salary, rent, etc. — anything that repeats. Amount in
+   dollars (always positive). kind picks which side it counts on.
+
+10. add_liability
+    { type:"add_liability", name:string, balance:number, apr?:number, minPayment?:number, debt_type?:"student"|"auto"|"mortgage"|"personal"|"medical"|"other" }
+    For recording a debt the user wants to track. APR is percent (e.g. 22.5).
+
 ACTION RULES:
 - Only emit actions when the user's intent is concrete ("add a plan for...", "log a $X spend...", "set my savings target to $X"). Don't auto-emit for vague conversation.
 - ALWAYS confirm in plain English what you did, in addition to emitting the action. E.g. "Added a short-term plan: 'Build $1K emergency fund'. You'll see it on the Plan tab." The action block does the work; the prose tells the human.
@@ -10108,6 +10122,49 @@ function _runCylanAction(action) {
         });
         save();
         return { ok: true, icon: "✓", label: `Added habit: "${name}"`, link: "today" };
+      }
+      case "add_win": {
+        const text = sanitizeText(action.text || "", 200);
+        if (!text) return { ok: false, label: "Skipped add_win (missing text)" };
+        const date = /^\d{4}-\d{2}-\d{2}$/.test(action.date || "") ? action.date : todayKey();
+        if (!DB.wins) DB.wins = [];
+        DB.wins.unshift({ id: uid(), date, text });
+        save();
+        return { ok: true, icon: "⭐", label: `Captured win: "${text.slice(0, 40)}${text.length > 40 ? '…' : ''}"`, link: "today" };
+      }
+      case "add_recurring": {
+        const name = sanitizeText(action.name || "", TEXT_MAX);
+        const amount = +action.amount;
+        if (!name) return { ok: false, label: "Skipped add_recurring (missing name)" };
+        if (!amount || amount <= 0) return { ok: false, label: "Skipped add_recurring (bad amount)" };
+        const cadence = ["weekly","biweekly","monthly","yearly"].includes(action.cadence) ? action.cadence : "monthly";
+        const kind = ["expense","income"].includes(action.kind) ? action.kind : "expense";
+        const category = sanitizeText(action.category || (kind === "income" ? "Income" : "Other"), TEXT_MAX);
+        const dayOfMonth = (action.dayOfMonth != null) ? Math.max(1, Math.min(28, +action.dayOfMonth || 1)) : new Date().getDate();
+        if (!DB.recurring) DB.recurring = [];
+        DB.recurring.push({
+          id: uid(), name, amount, cadence, kind, category, dayOfMonth,
+          createdAt: Date.now(),
+        });
+        save();
+        const cadenceLabel = ({ weekly: "/wk", biweekly: "/2wk", monthly: "/mo", yearly: "/yr" })[cadence] || "/mo";
+        return { ok: true, icon: kind === "income" ? "💵" : "🔁", label: `Added ${kind}: "${name}" ${fmt$0(amount)}${cadenceLabel}`, link: "money" };
+      }
+      case "add_liability": {
+        const name = sanitizeText(action.name || "", TEXT_MAX);
+        const balance = +action.balance;
+        if (!name) return { ok: false, label: "Skipped add_liability (missing name)" };
+        if (isNaN(balance) || balance < 0) return { ok: false, label: "Skipped add_liability (bad balance)" };
+        const dt = ["student","auto","mortgage","personal","medical","other"].includes(action.debt_type) ? action.debt_type : "other";
+        const apr = action.apr != null ? Math.max(0, Math.min(99, +action.apr || 0)) : 0;
+        const minPayment = action.minPayment != null ? Math.max(0, +action.minPayment || 0) : 0;
+        if (!DB.liabilities) DB.liabilities = [];
+        DB.liabilities.push({
+          id: uid(), name, type: dt, balance, apr, minPayment, note: "",
+          updatedAt: Date.now(),
+        });
+        save();
+        return { ok: true, icon: "🏦", label: `Added debt: "${name}" ${fmt$0(balance)}${apr ? ` @ ${apr}%` : ""}`, link: "money" };
       }
       default:
         return { ok: false, label: `Unknown action type: ${action.type}` };
