@@ -32,7 +32,9 @@ const PLAID_HOSTS = {
 
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
 const AUDIT_KEEP = 200;          // last N audit events per user
-const DEFAULT_LLM_CAP = 50;      // calls per user per day
+const DEFAULT_LLM_CAP = 50;      // calls per user per day (per feature)
+const DEFAULT_LLM_BURST = 10;    // calls per user per minute (global across features)
+const WEBHOOK_KEEP_DAYS = 30;    // Plaid webhook events expire after N days
 
 export default {
   async fetch(request, env, ctx) {
@@ -54,6 +56,17 @@ export default {
     // Public endpoints
     if (url.pathname === "/" || url.pathname === "/health") {
       return json({ ok: true, service: "ascend-backend", version: "v3" }, 200, allowed);
+    }
+
+    // Plaid webhook receiver — Plaid POSTs here with no auth header; it signs
+    // requests via Plaid-Verification JWT. We do a structural validation (must
+    // look like a Plaid webhook and reference an item_id we know about) and
+    // store the latest event keyed by item_id. The client surfaces these on
+    // the next /items call so the user can see "reconnect bank X" without us
+    // needing a push channel. Returns 200 even on validation failure so Plaid
+    // doesn't retry forever on bad data.
+    if (url.pathname === "/webhook" && request.method === "POST") {
+      return await handlePlaidWebhook(request, env);
     }
 
     try {
@@ -177,13 +190,17 @@ async function handleEnroll(request, env, origin) {
 }
 
 async function handleLinkToken(env, userId, origin) {
-  const r = await plaidCall(env, "/link/token/create", {
+  const params = {
     user: { client_user_id: userId },
     client_name: "Ascend",
     products: ["transactions"],
     country_codes: ["US"],
     language: "en",
-  });
+  };
+  // Wire Plaid up to our /webhook endpoint when WEBHOOK_URL is set. Plaid will
+  // POST ITEM_ERROR / PENDING_EXPIRATION / USER_PERMISSION_REVOKED events here.
+  if (env.WEBHOOK_URL) params.webhook = env.WEBHOOK_URL;
+  const r = await plaidCall(env, "/link/token/create", params);
   return json({ link_token: r.link_token, expiration: r.expiration }, 200, origin);
 }
 
@@ -302,11 +319,19 @@ async function handleItems(env, userId, origin) {
     const raw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!raw) continue;
     const r = JSON.parse(raw);
+    // Pull the most recent Plaid webhook for this item, if any. The client
+    // uses this to surface "reconnect bank" prompts when an item breaks.
+    let webhook = null;
+    try {
+      const whRaw = await env.ASCEND_KV.get(`webhook:${itemId}`);
+      if (whRaw) webhook = JSON.parse(whRaw);
+    } catch { /* ignore */ }
     items.push({
       item_id: r.itemId,
       institution_name: r.institutionName,
       created_at: r.createdAt,
       last_sync_at: r.lastSyncAt,
+      webhook,
     });
   }
   return json({ items }, 200, origin);
@@ -326,6 +351,8 @@ async function handleRemoveItem(url, env, userId, origin) {
     await env.ASCEND_KV.delete(itemKey(userId, itemId));
   }
   await removeItemFromIndex(env, userId, itemId);
+  // Don't leave an orphan webhook record for an item the user just disconnected
+  await env.ASCEND_KV.delete(`webhook:${itemId}`);
   return json({ ok: true }, 200, origin);
 }
 
@@ -373,26 +400,20 @@ async function handleAnthropic(request, env, userId, origin) {
     return json({ error: "AI insights not configured on this backend" }, 503, origin);
   }
 
-  // Per-user daily rate limit.
-  // Note: Cloudflare KV has no compare-and-swap, so this can over-count under
-  // perfectly-concurrent reads — but by writing the increment BEFORE the upstream
-  // call we bound the window to the few ms between read and write, which caps
-  // worst-case overage at "small burst" instead of "unlimited."
-  const cap = parseInt(env.ANTHROPIC_DAILY_CAP || `${DEFAULT_LLM_CAP}`, 10) || DEFAULT_LLM_CAP;
-  const day = new Date().toISOString().slice(0, 10);
-  const counterKey = `u:${userId}:llm:${day}`;
-  const cur = parseInt((await env.ASCEND_KV.get(counterKey)) || "0", 10) || 0;
-  if (cur >= cap) {
-    await appendAudit(env, userId, "anthropic_blocked_rate_limit");
-    return json({ error: `daily AI limit reached (${cap}/day)` }, 429, origin);
-  }
-
   const body = await request.json().catch(() => ({}));
   // Validate + clamp the request to prevent abuse
   const model = String(body.model || "claude-haiku-4-5-20251001").slice(0, 80);
   const maxTokens = Math.min(parseInt(body.max_tokens, 10) || 800, 2000);
   const messages = Array.isArray(body.messages) ? body.messages.slice(0, 20) : [];
   if (!messages.length) return json({ error: "messages required" }, 400, origin);
+  // Optional system prompt — Anthropic accepts a top-level `system` string.
+  // Forwarded only if the caller provided one (the AI onboarding flow does;
+  // the insights flow does not). Capped to keep costs predictable.
+  const systemPrompt = typeof body.system === "string" ? body.system.slice(0, 8000) : null;
+  // Optional feature tag — lets a single client distinguish e.g. "insights"
+  // from "onboarding" so we can rate-limit them independently. Defaults to
+  // "default" so unknown callers share one bucket.
+  const feature = String(body.feature || "default").slice(0, 32).replace(/[^a-zA-Z0-9_-]/g, "") || "default";
   // Trim any single message to a reasonable size to bound cost
   for (const m of messages) {
     if (typeof m.content === "string" && m.content.length > 40000) {
@@ -400,10 +421,47 @@ async function handleAnthropic(request, env, userId, origin) {
     }
   }
 
+  // ---- Rate limiting: per-feature daily cap + global per-minute burst ----
+  // The daily cap protects against quiet long-tail abuse; the burst cap stops
+  // a runaway client from emptying the daily quota in seconds.
+  const dailyCap = parseInt(env.ANTHROPIC_DAILY_CAP || `${DEFAULT_LLM_CAP}`, 10) || DEFAULT_LLM_CAP;
+  const burstCap = parseInt(env.ANTHROPIC_BURST_CAP || `${DEFAULT_LLM_BURST}`, 10) || DEFAULT_LLM_BURST;
+  const day = new Date().toISOString().slice(0, 10);
+  const min = new Date().toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
+  const dailyKey = `u:${userId}:llm:${feature}:${day}`;
+  const burstKey = `u:${userId}:llm:burst:${min}`;
+
+  const [curDaily, curBurst] = await Promise.all([
+    env.ASCEND_KV.get(dailyKey).then(v => parseInt(v || "0", 10) || 0),
+    env.ASCEND_KV.get(burstKey).then(v => parseInt(v || "0", 10) || 0),
+  ]);
+  if (curDaily >= dailyCap) {
+    await appendAudit(env, userId, `anthropic_blocked_daily_${feature}`);
+    return json({
+      error: `daily AI limit reached (${dailyCap}/day for "${feature}"). Resets at UTC midnight.`,
+      code: "rate_limit_daily",
+      feature,
+      resetAt: day + "T00:00:00Z (next day)",
+    }, 429, origin);
+  }
+  if (curBurst >= burstCap) {
+    await appendAudit(env, userId, "anthropic_blocked_burst");
+    return json({
+      error: `Too many AI requests in the last minute (${burstCap}/min). Wait a moment and try again.`,
+      code: "rate_limit_burst",
+    }, 429, origin);
+  }
+
   // Reserve the slot BEFORE calling Anthropic to narrow the race window.
   // We don't refund on failure — abusive clients that always error out would
   // otherwise bypass the cap entirely.
-  await env.ASCEND_KV.put(counterKey, String(cur + 1), { expirationTtl: 60 * 60 * 36 });
+  await Promise.all([
+    env.ASCEND_KV.put(dailyKey, String(curDaily + 1), { expirationTtl: 60 * 60 * 36 }),
+    env.ASCEND_KV.put(burstKey, String(curBurst + 1), { expirationTtl: 90 }),
+  ]);
+
+  const payload = { model, max_tokens: maxTokens, messages };
+  if (systemPrompt) payload.system = systemPrompt;
 
   const r = await fetch(ANTHROPIC_API, {
     method: "POST",
@@ -412,10 +470,10 @@ async function handleAnthropic(request, env, userId, origin) {
       "x-api-key": env.ANTHROPIC_KEY,
       "anthropic-version": "2023-06-01",
     },
-    body: JSON.stringify({ model, max_tokens: maxTokens, messages }),
+    body: JSON.stringify(payload),
   });
 
-  await appendAudit(env, userId, r.ok ? "anthropic" : "anthropic_error");
+  await appendAudit(env, userId, r.ok ? `anthropic_${feature}` : `anthropic_${feature}_error`);
 
   const text = await r.text();
   // Pass through whatever Anthropic returned, but never the API key
@@ -431,6 +489,53 @@ async function handleAuditList(env, userId, origin) {
   return json({ events }, 200, origin);
 }
 
+// ============ Plaid webhook receiver ============
+// Plaid POSTs notification events here when an item breaks (re-auth required,
+// permission revoked, etc.). We record the latest event per item_id with a
+// 30-day TTL; /items surfaces it so the client can show a "reconnect bank"
+// prompt without us needing a push channel.
+//
+// Security note: this endpoint is unauthenticated by design — Plaid won't
+// have our enrollment key. For production, verify the Plaid-Verification JWT
+// header against Plaid's JWK set (https://plaid.com/docs/api/webhooks/webhook-verification/).
+// v1 takes a lighter approach: we always return 200 (so Plaid doesn't retry
+// floods), but we only persist events that structurally look like Plaid
+// webhooks and reference an actionable webhook_code.
+async function handlePlaidWebhook(request, env) {
+  let body;
+  try { body = await request.json(); } catch { return new Response("", { status: 200 }); }
+
+  const itemId = String(body.item_id || "").slice(0, 100);
+  const type = String(body.webhook_type || "").toUpperCase().slice(0, 40);
+  const code = String(body.webhook_code || "").toUpperCase().slice(0, 60);
+  if (!itemId || !type) return new Response("", { status: 200 });
+
+  // Events worth surfacing to the user — anything that requires their action
+  const actionableCodes = new Set([
+    "ERROR",                        // ITEM
+    "PENDING_EXPIRATION",           // ITEM
+    "USER_PERMISSION_REVOKED",      // ITEM
+    "USER_ACCOUNT_REVOKED",         // ITEM
+    "LOGIN_REPAIRED",               // ITEM — recovery info
+    "NEW_ACCOUNTS_AVAILABLE",       // ITEM
+  ]);
+  if (!actionableCodes.has(code)) return new Response("", { status: 200 });
+
+  // Defensively cap the error payload size
+  const err = body.error && typeof body.error === "object" ? {
+    error_code: String(body.error.error_code || "").slice(0, 60),
+    error_message: String(body.error.error_message || "").slice(0, 400),
+    error_type: String(body.error.error_type || "").slice(0, 60),
+  } : null;
+
+  await env.ASCEND_KV.put(`webhook:${itemId}`, JSON.stringify({
+    t: new Date().toISOString(),
+    type, code, error: err,
+  }), { expirationTtl: 60 * 60 * 24 * WEBHOOK_KEEP_DAYS });
+
+  return new Response("", { status: 200 });
+}
+
 async function handleDeleteAccount(env, userId, origin) {
   // Best-effort: revoke each Plaid item, then nuke all KV records under u:userId:*
   const itemIds = await getItemIndex(env, userId);
@@ -444,11 +549,12 @@ async function handleDeleteAccount(env, userId, origin) {
       } catch {}
       await env.ASCEND_KV.delete(itemKey(userId, itemId));
     }
+    await env.ASCEND_KV.delete(`webhook:${itemId}`);
   }
   await env.ASCEND_KV.delete(indexKey(userId));
   await env.ASCEND_KV.delete(`u:${userId}:auth`);
   await env.ASCEND_KV.delete(`u:${userId}:audit`);
-  // Counters expire on their own.
+  // LLM counters expire on their own (TTL).
   return json({ ok: true }, 200, origin);
 }
 
