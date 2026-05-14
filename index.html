@@ -231,6 +231,17 @@ input::placeholder, textarea::placeholder { color: var(--t4); }
 .page.active { display: block; animation: fadeIn .28s cubic-bezier(.32,.72,.34,1); }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: none; } }
 
+/* Honor users' OS-level reduced-motion setting — keeps transitions but kills
+   the longer animations and curves. Accessibility win. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
 /* Accessible focus state for keyboard users */
 :focus-visible {
   outline: 2px solid var(--blue);
@@ -3057,6 +3068,76 @@ const ACCENT_COLORS = [
   { id: "pink",    hex: "#E64178", label: "Pink" },
   { id: "teal",    hex: "#36B0CC", label: "Teal" },
 ];
+// Quick-reference tips sheet — answers the most common 'how do I…?' questions
+// without making the user dig through the tabs. Replaces the lack of a real
+// help page in a mainstream app.
+function helpTipsSheet() {
+  const tips = [
+    { icon: "✓", title: "Check off a habit",        body: "Tap the circle next to a habit on Today. Tap the 🔥 streak pill to see its full history." },
+    { icon: "📅", title: "Tap any day on Calendar",  body: "See everything that happened that day, log a mood, write a note, or backfill a habit you forgot to mark." },
+    { icon: "⭐", title: "Capture wins",             body: "Tap '+ Add' under Wins on Today. Quick one-liners build a great year-end recap." },
+    { icon: "💸", title: "Log spending",             body: "Tap the white + button in the corner from any tab. Categorize as you go for accurate breakdowns." },
+    { icon: "📊", title: "Try the Forecast tab",     body: "Money → Forecast lets you slide monthly contributions and see what your wealth could look like at any age." },
+    { icon: "🎯", title: "Set wealth milestones",    body: "Money → Forecast → 'Next wealth milestones' shows exactly when you'll cross $10k, $50k, $100k, etc. at your current pace." },
+    { icon: "🎛️", title: "Hide stuff you don't use", body: "Settings → Customize lets you hide tabs or Today sections that don't match how you use the app." },
+    { icon: "🎨", title: "Change accent color",      body: "Settings → Appearance → Accent color. Pick the color you'll see on links, buttons, and active states." },
+    { icon: "🔒", title: "Encrypt your data",        body: "Settings → Privacy → Set passphrase. AES-GCM encrypts your DB in localStorage. Forgotten passphrase = unrecoverable." },
+    { icon: "💾", title: "Back up to a file",        body: "Settings → Data → Export data writes a JSON blob you can re-import on another device." },
+  ];
+  openSheet(`
+    <h2 style="margin-bottom:4px">Tips &amp; how-to</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Quick answers for the most common questions. The Tour walks you through the tabs visually if you'd rather see it in action.</p>
+    <div class="list">
+      ${tips.map(t => `
+        <div class="row">
+          <div class="lead" style="font-size:18px">${t.icon}</div>
+          <div class="body">
+            <div class="t1">${esc(t.title)}</div>
+            <div class="t2" style="line-height:1.4">${esc(t.body)}</div>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+    <button class="btn secondary" style="width:100%;margin-top:12px;font-size:13px" onclick="closeSheet();setTimeout(()=>startTutorial(),120)">▶ Replay the tour</button>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Done</button></div>
+  `);
+}
+
+// Send feedback sheet — builds a useful debug snapshot the user can copy
+// and paste into an email or message to Cody. Doesn't try to phone home —
+// keeps everything in the user's hands.
+function sendFeedbackSheet() {
+  const snapshot = [
+    `Ascend feedback —`,
+    `Date: ${new Date().toISOString()}`,
+    `User: ${(DB.user && DB.user.userId) || "(no userId)"}`,
+    `Habits: ${(DB.habits || []).length}`,
+    `Wins: ${(DB.wins || []).length}`,
+    `Savings goals: ${(DB.savings || []).length}`,
+    `Spend entries: ${(DB.spend || []).length}`,
+    `Theme: ${(DB.settings && DB.settings.theme) || "auto"}`,
+    `Accent: ${(DB.settings && DB.settings.accentColor) || "default"}`,
+    `Hidden tabs: ${((DB.settings && DB.settings.hiddenTabs) || []).join(",") || "none"}`,
+    `Hidden Today: ${((DB.settings && DB.settings.hiddenTodaySections) || []).length} section(s)`,
+    `Backend: ${(DB.settings && DB.settings.backendUrl) ? "configured" : "none"}`,
+    `User agent: ${navigator.userAgent}`,
+    ``,
+    `---`,
+    `What happened / what you'd like to see:`,
+    ``,
+    ``,
+  ].join("\n");
+  openSheet(`
+    <h2 style="margin-bottom:4px">Send feedback</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Copy the message below, then paste it into an email or message. The first lines describe your setup so a bug can be reproduced — review and edit if you'd rather not include any of it.</p>
+    <textarea id="fb-msg" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r2);padding:12px 14px;font-size:13px;width:100%;min-height:200px;box-sizing:border-box;color:var(--t1);font-family:ui-monospace,Menlo,Consolas,monospace;resize:vertical">${esc(snapshot)}</textarea>
+    <div class="actions">
+      <button class="btn secondary" onclick="(async () => { try { await navigator.clipboard.writeText(document.getElementById('fb-msg').value); toast('Copied to clipboard'); closeSheet(); } catch (e) { toast('Select the text and copy manually'); } })()">Copy to clipboard</button>
+      <button class="btn" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+}
+
 function applyAccent() {
   const c = (DB.settings && DB.settings.accentColor) || "";
   if (c) document.documentElement.style.setProperty("--blue", c);
@@ -7521,6 +7602,20 @@ function renderSettings() {
       <div class="row tappable" onclick="loadDemoData()">
         <div class="lead">✨</div>
         <div class="body"><div class="t1">Load demo data</div><div class="t2">Fill the app with realistic fake habits, transactions, accounts, etc. so you can see every feature populated.</div></div>
+        <div class="trail chev"></div>
+      </div>
+    </div>
+
+    <div class="section-h"><span class="lbl">Help</span></div>
+    <div class="list">
+      <div class="row tappable" onclick="helpTipsSheet()">
+        <div class="lead">💡</div>
+        <div class="body"><div class="t1">Tips &amp; how-to</div><div class="t2">Get the most out of Ascend in a few minutes</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="sendFeedbackSheet()">
+        <div class="lead">✉️</div>
+        <div class="body"><div class="t1">Send feedback</div><div class="t2">Report a bug or share an idea</div></div>
         <div class="trail chev"></div>
       </div>
     </div>
@@ -16965,6 +17060,7 @@ function init() {
     customizeTodaySheet, toggleTodaySection, showAllTodaySections, isTodaySectionHidden,
     customizeTabsSheet, toggleTabVisibility, showAllTabs, isTabHidden, applyHiddenTabs,
     setAccentColor, applyAccent, ACCENT_COLORS,
+    helpTipsSheet, sendFeedbackSheet,
     openSettings, applyTheme, toggleNotifications, scheduleReminder, exportData, importData, openSheet, closeSheet, toast,
     connectBank, syncNow, disconnectItem, backendLinkToken, backendExchange, backendSync, backendListItems, backendRemoveItem,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
