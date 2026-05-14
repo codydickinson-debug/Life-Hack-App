@@ -4742,8 +4742,58 @@ function renderStats() {
   const totalC = totalSaved(), totalT = totalTarget();
   const savPct = totalT ? Math.round(100*totalC/totalT) : 0;
 
+  // "Your journey so far" — lifetime totals across days tracking + habit
+  // completions + wins logged + total saved. Anchors the top of Stats with
+  // momentum the user can feel proud of regardless of today's progress.
+  const journey = (() => {
+    let firstDate = null;
+    let totalHabitDones = 0;
+    DB.habits.forEach(h => {
+      Object.entries(h.log || {}).forEach(([date, val]) => {
+        const did = h.type === "count" ? ((+val || 0) >= (+h.target || 1)) : !!val;
+        if (did) {
+          totalHabitDones++;
+          if (!firstDate || date < firstDate) firstDate = date;
+        }
+      });
+    });
+    (DB.wins || []).forEach(w => {
+      if (w.date && (!firstDate || w.date < firstDate)) firstDate = w.date;
+    });
+    const totalWins = (DB.wins || []).length;
+    const totalSaved = (DB.savings || []).reduce((a, s) => a + (+s.current || 0), 0);
+    const daysTracking = firstDate
+      ? Math.max(1, Math.ceil((new Date() - new Date(firstDate + "T00:00:00")) / (1000 * 60 * 60 * 24)))
+      : 0;
+    return { daysTracking, totalHabitDones, totalWins, totalSaved };
+  })();
+
   $("#page-stats").innerHTML = `
     <div class="lg-title">Stats</div>
+
+    ${journey.daysTracking > 0 ? `
+      <div style="background:var(--card);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
+        <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;margin-bottom:12px">Your journey so far</div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr 1fr;gap:12px">
+          <div>
+            <div style="font-size:22px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums;line-height:1">${journey.daysTracking}</div>
+            <div style="font-size:10.5px;color:var(--t3);margin-top:4px;line-height:1.2">day${journey.daysTracking===1?'':'s'}<br>tracking</div>
+          </div>
+          <div>
+            <div style="font-size:22px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums;line-height:1">${journey.totalHabitDones}</div>
+            <div style="font-size:10.5px;color:var(--t3);margin-top:4px;line-height:1.2">habits<br>checked</div>
+          </div>
+          <div>
+            <div style="font-size:22px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums;line-height:1">${journey.totalWins}</div>
+            <div style="font-size:10.5px;color:var(--t3);margin-top:4px;line-height:1.2">wins<br>logged</div>
+          </div>
+          <div>
+            <div style="font-size:22px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums;line-height:1" data-priv="amount">${fmt$0(journey.totalSaved)}</div>
+            <div style="font-size:10.5px;color:var(--t3);margin-top:4px;line-height:1.2">total<br>saved</div>
+          </div>
+        </div>
+      </div>
+    ` : ""}
 
     ${(() => {
       const hist = (DB.netWorthHistory || []).slice(-90);
