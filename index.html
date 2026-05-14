@@ -11098,9 +11098,19 @@ function _buildDemoData(currentDB) {
     }
     return log;
   };
+  // h2 (Read Bible) gets a deterministic 14-day streak so the tour's
+  // "Tap a streak" step always has a visible 🔥 pill to land on — pure
+  // randomization could produce a habit with no consecutive run.
+  const guaranteedStreakLog = (() => {
+    const log = {};
+    for (let d = 0; d < 14; d++) log[back(d)] = true;
+    // Add a few more sparser days going back further so the heatmap fills.
+    for (let d = 14; d < 35; d++) if (Math.random() < 0.75) log[back(d)] = true;
+    return log;
+  })();
   fresh.habits = [
     { id:"h1", name:"Workout",       emoji:"\u{1F4AA}", type:"check", group:"health", color:"#34C759", createdAt:Date.now(), log: habitDays(0.78) },
-    { id:"h2", name:"Read Bible",    emoji:"\u{1F4D6}", type:"check", group:"faith",  color:"#AF52DE", createdAt:Date.now(), log: habitDays(0.90) },
+    { id:"h2", name:"Read Bible",    emoji:"\u{1F4D6}", type:"check", group:"faith",  color:"#AF52DE", createdAt:Date.now(), log: guaranteedStreakLog },
     { id:"h3", name:"Drink water",   emoji:"\u{1F4A7}", type:"count", target:64, unit:"oz", group:"health", color:"#5AC8FA", createdAt:Date.now(), log: habitCounts(64, 0.85) },
     { id:"h4", name:"Read & learn",  emoji:"\u{1F4DA}", type:"check", group:"mind",   color:"#5856D6", createdAt:Date.now(), log: habitDays(0.70) },
     { id:"h5", name:"Log savings",   emoji:"\u{1F4B0}", type:"count", target:41, unit:"$", group:"money", color:"#FF9500", createdAt:Date.now(), log: habitCounts(41, 0.60) },
@@ -11466,23 +11476,46 @@ function finishOnboarding() {
 // own dedicated tab/FAB, the tour is for learning by doing.
 const TUTORIAL_STEPS = [
   { emoji: "👋", title: "Welcome — let's play", tab: "today",
-    body: "5 quick taps. Real features, live demo data behind the card." },
+    body: "A real walkthrough — every tab, the coolest features, all wired together." },
 
   { emoji: "✓", title: "Check off a habit", tab: "today",
     target: "#page-today [onclick^=\"toggleHabit\"]",
-    body: "Tap any habit below to mark it done." },
+    body: "Tap any habit to mark it done. Streaks build automatically." },
+
+  { emoji: "🔥", title: "Streaks live everywhere", tab: "today",
+    target: "#page-today .streak-pill",
+    body: "Tap a streak pill to open habit history. Same streak shows on Calendar + Stats." },
 
   { emoji: "🏆", title: "Log a quick win", tab: "today",
     target: "#page-today button[onclick*=\"addWin\"]",
-    body: "Tap + Add next to Wins to capture a small victory." },
+    body: "Wins build a separate streak. Tap + Add to capture a small victory." },
 
-  { emoji: "📅", title: "See your patterns", tab: "today",
-    target: ".tab[data-tab=\"calendar\"]",
-    body: "Tap Calendar — every day shows your habits, mood, and spending." },
+  { emoji: "📅", title: "Tabs link together", tab: "today",
+    target: "#page-today .daychips .daychip",
+    body: "Tap any day chip — you jump straight to that day in Calendar." },
 
-  { emoji: "✨", title: "Meet Cylan",
+  { emoji: "🗓️", title: "12 months at a glance", tab: "calendar",
+    target: "#page-calendar button[onclick*=\"calendarSetView('year')\"]",
+    body: "Tap Year to see a heatmap of every habit + mood + win across the year." },
+
+  { emoji: "◎", title: "Goals ladder up", tab: "goals",
+    body: "Daily → short-term → life. Hitting daily goals chains to bigger ones." },
+
+  { emoji: "✨", title: "Smart Plays for your money", tab: "planning",
+    body: "Personalized next moves based on YOUR numbers. Investment mix, savings ops, retirement projector — all live." },
+
+  { emoji: "💰", title: "Money — every dollar tracked", tab: "money",
+    body: "Spend, budget, net worth, debt payoff. Connect a bank or stay manual." },
+
+  { emoji: "↗", title: "Stocks — live research", tab: "stocks",
+    body: "Live quotes, market scans across S&P 500, REITs, crypto, ETFs." },
+
+  { emoji: "▦", title: "Stats — what's working", tab: "stats",
+    body: "Streaks, completion rates, year review. Open weekly to spot patterns." },
+
+  { emoji: "🤖", title: "Meet Cylan, your counselor", tab: "today",
     target: "#counselor-fab",
-    body: "Your in-app money counselor. Tap ✨ anytime to ask anything." },
+    body: "Tap ✨ any time to ask anything about your money. CFP-level planning, 24/7." },
 ];
 let _tutStep = 0;
 
