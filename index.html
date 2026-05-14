@@ -830,6 +830,59 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
 /* ================ DAY CHIPS (mini week ladder) ================ */
+/* ================ CALENDAR GRID ================ */
+.cal-grid-head {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 6px;
+  text-align: center;
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--t3);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+.cal-cell {
+  position: relative;
+  aspect-ratio: 1 / 1.05;
+  background: var(--bg-elev);
+  border-radius: 7px;
+  padding: 5px 6px 4px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  align-items: flex-start;
+  font-size: 13px;
+  cursor: pointer;
+  transition: transform .12s ease, background .15s ease;
+  border: 0.5px solid transparent;
+}
+.cal-cell:active { transform: scale(.96); }
+.cal-cell.pad { background: transparent; cursor: default; pointer-events: none; }
+.cal-cell .cal-day {
+  font-weight: 600;
+  color: var(--t1);
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.cal-cell .cal-dots {
+  display: flex;
+  gap: 2.5px;
+  align-self: flex-start;
+}
+.cal-cell .cal-dots span {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
 .daychips { display: flex; gap: 6px; margin: 0 0 16px; }
 .daychip {
   flex: 1;
@@ -1394,11 +1447,13 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
     <div class="page" id="page-money"></div>
     <div class="page" id="page-stocks"></div>
     <div class="page" id="page-stats"></div>
+    <div class="page" id="page-calendar"></div>
     <div class="page" id="page-settings"></div>
   </div>
 
   <nav id="tabbar">
     <button class="tab active" data-tab="today"><span class="ic">☀︎</span><span>Today</span></button>
+    <button class="tab" data-tab="calendar"><span class="ic">▤</span><span>Calendar</span></button>
     <button class="tab" data-tab="goals"><span class="ic">◎</span><span>Goals</span></button>
     <button class="tab" data-tab="planning"><span class="ic">✦</span><span>Plan</span></button>
     <button class="tab" data-tab="money"><span class="ic">$</span><span>Money</span></button>
@@ -2556,8 +2611,12 @@ function render() {
   if (tab === "money")    renderMoney();
   if (tab === "stocks")   renderStocks();
   if (tab === "stats")    renderStats();
+  if (tab === "calendar") renderCalendar();
   if (tab === "settings") renderSettings();
 }
+
+// Calendar month being viewed — defaults to today's month, navigated by calendarPrev/Next.
+var calendarMonth = new Date();
 
 /* ===== TODAY ===== */
 function renderToday() {
@@ -5845,6 +5904,256 @@ async function stocksFetchNews() {
   }
 }
 
+
+/* ===== CALENDAR =====
+   Unified monthly grid view pulling together: habit completion intensity per day,
+   wins, bills coming up, savings logs, and goal completions. Tap a day to see the
+   detail sheet for that date. Per Dylan's request — a single time-based lens on
+   everything Ascend tracks.
+*/
+function calendarPrevMonth() {
+  calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() - 1, 1);
+  renderCalendar();
+}
+function calendarNextMonth() {
+  calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + 1, 1);
+  renderCalendar();
+}
+function calendarToday() {
+  calendarMonth = new Date();
+  renderCalendar();
+}
+
+function calendarDaySheet(dateKey) {
+  const d = new Date(dateKey + "T00:00:00");
+  const titleLbl = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+
+  // Habits that day
+  const eligibleHabits = DB.habits.filter(h => !h.createdAt || new Date(h.createdAt) <= d);
+  const habitRows = eligibleHabits.map(h => {
+    const v = h.log[dateKey] || 0;
+    const done = h.type === "count" ? v >= (h.target || 1) : !!v;
+    const sub = h.type === "count" ? `${v||0} / ${h.target||1}${h.unit ? " "+esc(h.unit) : ""}` : (done ? "Done" : "Not done");
+    return `
+      <div class="row">
+        <button class="check ${done?'done':''}" disabled aria-hidden="true">✓</button>
+        <div class="lead">${h.emoji || '✦'}</div>
+        <div class="body"><div class="t1">${esc(h.name)}</div><div class="t2">${sub}</div></div>
+      </div>
+    `;
+  }).join("");
+
+  // Wins that day
+  const wins = (DB.wins || []).filter(w => w.date === dateKey);
+  const winRows = wins.map(w => `
+    <div class="row"><div class="lead">⭐</div><div class="body"><div class="t1">${esc(w.text)}</div></div></div>
+  `).join("");
+
+  // Spend that day
+  const spendDay = (DB.spend || []).filter(t => t.date === dateKey);
+  const spendTotal = spendDay.reduce((a, t) => a + (+t.amount || 0), 0);
+  const spendRows = spendDay.slice(0, 6).map(t => `
+    <div class="row">
+      <div class="lead">${(+t.amount) < 0 ? "💵" : "💳"}</div>
+      <div class="body">
+        <div class="t1">${esc(t.category)} <span class="muted" style="font-weight:400" data-priv="amount">${(+t.amount)<0?'+':''}${fmt$0(Math.abs(+t.amount||0))}</span></div>
+        ${t.note ? `<div class="t2">${esc(t.note)}</div>` : ""}
+      </div>
+    </div>
+  `).join("");
+
+  // Savings logs that day
+  const savingsLogs = [];
+  (DB.savings || []).forEach(s => {
+    (s.log || []).forEach(l => {
+      if (l.date === dateKey) savingsLogs.push({ name: s.name, emoji: s.emoji, amount: +l.amount || 0, note: l.note });
+    });
+  });
+  const savingsRows = savingsLogs.map(l => `
+    <div class="row">
+      <div class="lead">${l.emoji || '💰'}</div>
+      <div class="body">
+        <div class="t1">${esc(l.name)} <span class="muted" style="font-weight:400" data-priv="amount">${l.amount>=0?'+':''}${fmt$0(l.amount)}</span></div>
+        ${l.note ? `<div class="t2">${esc(l.note)}</div>` : ""}
+      </div>
+    </div>
+  `).join("");
+
+  // Goals completed that day
+  const goalsDone = (DB.goals || []).filter(g => g.completedAt && new Date(g.completedAt).toISOString().slice(0, 10) === dateKey);
+  const goalRows = goalsDone.map(g => `
+    <div class="row"><div class="lead">🎯</div><div class="body"><div class="t1">${esc(g.title)}</div><div class="t2">${esc((TIERS.find(t => t.id === g.tier) || {}).label || g.tier)} goal</div></div></div>
+  `).join("");
+
+  // Bills coming up that day (only future or today)
+  const todayKeyNow = todayKey();
+  const billsThatDay = dateKey >= todayKeyNow ? upcomingBills(60).filter(b => b.next_predicted === dateKey) : [];
+  const billRows = billsThatDay.map(b => `
+    <div class="row">
+      <div class="lead">📅</div>
+      <div class="body"><div class="t1">${esc(b.merchant)}</div><div class="t2" data-priv="amount">${fmt$0(b.amount)} ${b.days <= 0 ? "· today" : `· in ${b.days} days`}</div></div>
+    </div>
+  `).join("");
+
+  const section = (label, rows, emptyMsg) => rows ? `
+    <div class="section-h"><span class="lbl">${label}</span></div>
+    <div class="list">${rows}</div>
+  ` : (emptyMsg ? `<div class="muted" style="font-size:12.5px;margin:8px 0 4px">${emptyMsg}</div>` : "");
+
+  openSheet(`
+    <h2 style="margin-bottom:4px">${titleLbl}</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Everything tracked on this day</p>
+    ${eligibleHabits.length ? section(`Habits (${eligibleHabits.filter(h => h.type==='count' ? (h.log[dateKey]||0)>=(h.target||1) : !!h.log[dateKey]).length}/${eligibleHabits.length})`, habitRows) : section("Habits", "", "No habits tracked")}
+    ${section(`Wins${wins.length ? ` (${wins.length})` : ""}`, winRows, "No wins this day")}
+    ${section(`Spending${spendDay.length ? ` (${fmt$0(spendTotal)})` : ""}`, spendRows, "No transactions")}
+    ${savingsLogs.length ? section("Savings logged", savingsRows) : ""}
+    ${goalsDone.length ? section("Goals completed", goalRows) : ""}
+    ${billsThatDay.length ? section("Bills due", billRows) : ""}
+    <div class="actions"><button class="btn secondary" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+function renderCalendar() {
+  const y = calendarMonth.getFullYear(), m = calendarMonth.getMonth();
+  const monthLabel = calendarMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  const today = new Date();
+  const todayK = todayKey();
+  const isCurrentMonth = today.getFullYear() === y && today.getMonth() === m;
+
+  // First day of month, day-of-week (Mon=0)
+  const firstDay = new Date(y, m, 1);
+  const firstDow = (firstDay.getDay() + 6) % 7;
+  const daysInMonth = new Date(y, m + 1, 0).getDate();
+  // Pad to a multiple of 7 (6 weeks max — fits any month)
+  const totalCells = Math.ceil((firstDow + daysInMonth) / 7) * 7;
+
+  // Precompute markers per day
+  const winDates = new Set((DB.wins || []).map(w => w.date));
+  const goalDates = new Set((DB.goals || []).filter(g => g.completedAt).map(g => new Date(g.completedAt).toISOString().slice(0, 10)));
+  // Savings logs by date
+  const savingsDates = new Set();
+  (DB.savings || []).forEach(s => (s.log || []).forEach(l => l.date && savingsDates.add(l.date)));
+  // Bills next 60 days
+  const billDates = new Set(upcomingBills(60).map(b => b.next_predicted));
+
+  // Aggregate month-level stats for the header strip
+  let monthHabitDone = 0, monthHabitPossible = 0;
+  let monthWins = 0, monthSpend = 0, monthSavings = 0;
+  (DB.wins || []).forEach(w => { if (w.date && w.date.slice(0,7) === `${y}-${String(m+1).padStart(2,'0')}`) monthWins++; });
+  (DB.spend || []).forEach(t => {
+    if (t.date && t.date.slice(0,7) === `${y}-${String(m+1).padStart(2,'0')}` && (+t.amount || 0) > 0) monthSpend += (+t.amount || 0);
+  });
+  (DB.savings || []).forEach(s => (s.log || []).forEach(l => {
+    if (l.date && l.date.slice(0,7) === `${y}-${String(m+1).padStart(2,'0')}`) monthSavings += (+l.amount || 0);
+  }));
+
+  // Build the grid cells
+  const cells = [];
+  for (let i = 0; i < totalCells; i++) {
+    const dayNum = i - firstDow + 1;
+    if (dayNum < 1 || dayNum > daysInMonth) {
+      cells.push({ pad: true });
+      continue;
+    }
+    const d = new Date(y, m, dayNum);
+    const k = todayKey(d);
+    const isToday = k === todayK;
+    const isFuture = d > today;
+    // Habit completion pct for this day
+    let pct = 0;
+    if (DB.habits.length && !isFuture) {
+      const eligible = DB.habits.filter(h => !h.createdAt || new Date(h.createdAt) <= d);
+      if (eligible.length) {
+        const done = eligible.filter(h => h.type === "count" ? (h.log[k] || 0) >= (h.target || 1) : !!h.log[k]).length;
+        pct = done / eligible.length;
+        if (done === eligible.length) {
+          monthHabitDone += done;
+          monthHabitPossible += eligible.length;
+        } else {
+          monthHabitDone += done;
+          monthHabitPossible += eligible.length;
+        }
+      }
+    }
+    cells.push({
+      pad: false,
+      day: dayNum,
+      key: k,
+      isToday,
+      isFuture,
+      pct,
+      hasWin: winDates.has(k),
+      hasGoal: goalDates.has(k),
+      hasSavings: savingsDates.has(k),
+      hasBill: billDates.has(k) && !winDates.has(k), // bills hidden when other action exists, avoid clutter on past days
+    });
+  }
+
+  const monthHabitPct = monthHabitPossible ? Math.round(100 * monthHabitDone / monthHabitPossible) : 0;
+
+  const cellHtml = cells.map(c => {
+    if (c.pad) return `<div class="cal-cell pad"></div>`;
+    // Background shade based on habit completion pct (heatmap-style)
+    let bg = "var(--bg-elev)";
+    if (!c.isFuture && c.pct > 0) {
+      if (c.pct >= 1)        bg = "rgba(46,184,117,0.32)";
+      else if (c.pct >= 0.67) bg = "rgba(46,184,117,0.22)";
+      else if (c.pct >= 0.34) bg = "rgba(46,184,117,0.14)";
+      else                    bg = "rgba(46,184,117,0.08)";
+    }
+    if (c.isFuture && c.hasBill) bg = "rgba(237,139,34,0.10)";
+    const ring = c.isToday ? "box-shadow:inset 0 0 0 2px var(--blue);" : "";
+    const dots = [
+      c.hasWin && '<span style="background:var(--yellow)"></span>',
+      c.hasGoal && '<span style="background:var(--purple)"></span>',
+      c.hasSavings && '<span style="background:var(--green)"></span>',
+      c.hasBill && !c.isFuture && '<span style="background:var(--orange)"></span>',
+      c.isFuture && c.hasBill && '<span style="background:var(--orange)"></span>',
+    ].filter(Boolean).join("");
+    return `
+      <div class="cal-cell" style="background:${bg};${ring}" onclick="calendarDaySheet('${c.key}')" role="button" tabindex="0">
+        <span class="cal-day">${c.day}</span>
+        ${dots ? `<span class="cal-dots">${dots}</span>` : ""}
+      </div>
+    `;
+  }).join("");
+
+  $("#page-calendar").innerHTML = `
+    <div class="lg-title">Calendar</div>
+
+    <div style="display:flex;align-items:center;justify-content:space-between;margin:-4px 0 12px">
+      <button class="tb-btn" onclick="calendarPrevMonth()" aria-label="Previous month" style="background:var(--bg-elev);width:34px;height:34px;border-radius:50%;font-size:18px;color:var(--t1)">‹</button>
+      <div style="text-align:center">
+        <div style="font-size:17px;font-weight:700;color:var(--t1);line-height:1.1">${monthLabel}</div>
+        ${!isCurrentMonth ? `<button class="act" style="font-size:11.5px;margin-top:2px" onclick="calendarToday()">Jump to today</button>` : ""}
+      </div>
+      <button class="tb-btn" onclick="calendarNextMonth()" aria-label="Next month" style="background:var(--bg-elev);width:34px;height:34px;border-radius:50%;font-size:18px;color:var(--t1)">›</button>
+    </div>
+
+    ${(monthHabitPossible > 0 || monthWins > 0 || monthSpend > 0 || monthSavings > 0) ? `
+      <div style="display:flex;gap:16px;font-size:11.5px;color:var(--t3);margin-bottom:14px;flex-wrap:wrap;align-items:baseline">
+        <span style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">This month</span>
+        ${monthHabitPossible > 0 ? `<span><b style="color:var(--t1)">${monthHabitPct}%</b> habits</span>` : ""}
+        ${monthWins > 0 ? `<span><b style="color:var(--t1)">${monthWins}</b> win${monthWins===1?'':'s'}</span>` : ""}
+        ${monthSpend > 0 ? `<span><b style="color:var(--t1)" data-priv="amount">${fmt$0(monthSpend)}</b> spent</span>` : ""}
+        ${monthSavings > 0 ? `<span><b style="color:var(--t1)" data-priv="amount">${fmt$0(monthSavings)}</b> saved</span>` : ""}
+      </div>
+    ` : ""}
+
+    <div class="cal-grid-head">
+      ${["M","T","W","T","F","S","S"].map(d => `<div>${d}</div>`).join("")}
+    </div>
+    <div class="cal-grid">${cellHtml}</div>
+
+    <div style="display:flex;flex-wrap:wrap;gap:10px 14px;margin-top:16px;font-size:11.5px;color:var(--t3)">
+      <div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:rgba(46,184,117,0.32)"></span>habits done</div>
+      <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--yellow)"></span>win</div>
+      <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--green)"></span>savings</div>
+      <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--purple)"></span>goal</div>
+      <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--orange)"></span>bill</div>
+    </div>
+  `;
+}
 
 /* ===== SETTINGS ===== */
 function renderSettings() {
@@ -15200,6 +15509,7 @@ function init() {
   Object.assign(window, {
     DB, save, load, clone, todayKey, fmt$, fmt$0, esc, uid,
     showTab, render, renderToday, renderGoals, renderPlanning, renderMoney, renderStocks, renderStats, renderSettings, renderHeader,
+    renderCalendar, calendarPrevMonth, calendarNextMonth, calendarToday, calendarDaySheet,
     PLAN_TIERS, PLAN_TEMPLATES, planById, plansByTier, addPlan, togglePlan, deletePlan,
     updatePlanProgress, addPlanSheet, planTemplatesSheet, logPlanProgressSheet,
     stocksApi, stocksAnalyze, stocksFetchNews, renderStocksResults,
