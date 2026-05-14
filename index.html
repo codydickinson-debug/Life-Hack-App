@@ -3698,6 +3698,58 @@ function renderMoney() {
   }
   else if (moneySub === "budget") {
     const tot = totalExpenses(), inc = +DB.budget.income||0, left = inc - tot;
+    const savingsRate = inc > 0 ? Math.round(left / inc * 100) : 0;
+    // Income breakdown — stacked bar showing how planned income flows across
+    // expense categories + leftover. Visualizes the budget at a glance before
+    // the user sees plan-vs-actual tracking below.
+    const BUDGET_CAT_COLORS = {
+      "rent":     "#5856D6",
+      "rent (se florida)": "#5856D6",
+      "housing":  "#5856D6",
+      "groceries":"#34C759",
+      "food":     "#FF9500",
+      "gas":      "#007AFF",
+      "bills":    "#AF52DE",
+      "shopping": "#FF2D55",
+      "dining out":"#FF9500",
+      "gym":      "#FF375F",
+      "investing":"#5AC8FA",
+      "other":    "#8E8E93",
+    };
+    const colorForBudgetCat = (name) => BUDGET_CAT_COLORS[(name || "").toLowerCase().trim()] || "#4F4ED1";
+    const incomeBreakdown = (() => {
+      if (inc <= 0) return "";
+      const segs = DB.budget.expenses
+        .filter(e => (+e.amount || 0) > 0)
+        .map(e => ({ name: e.name, amount: +e.amount, color: colorForBudgetCat(e.name) }))
+        .sort((a,b) => b.amount - a.amount);
+      if (left > 0) segs.push({ name: "Leftover", amount: left, color: "#2EB875" });
+      if (!segs.length) return "";
+      const baseline = Math.max(inc, tot);
+      return `
+        <div style="background:var(--card);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:12px">
+            <div style="font-size:13px;font-weight:600;color:var(--t2)">Where your income goes</div>
+            <div style="font-size:11.5px;color:var(--t3)"><span data-priv="amount">${fmt$0(inc)}</span> / month</div>
+          </div>
+          <div style="display:flex;height:28px;border-radius:6px;overflow:hidden;background:var(--bg-elev)">
+            ${segs.map(s => `<div style="width:${(s.amount/baseline*100).toFixed(2)}%;background:${s.color}"></div>`).join("")}
+          </div>
+          ${tot > inc ? `<div style="font-size:11px;color:var(--red);margin-top:6px;font-weight:600">⚠︎ Planned expenses exceed income by <span data-priv="amount">${fmt$0(tot-inc)}</span></div>` : ""}
+          <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px 18px;margin-top:14px;font-size:12.5px">
+            ${segs.map(s => `
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;min-width:0">
+                <span style="display:flex;align-items:center;gap:7px;min-width:0;flex:1">
+                  <span style="width:9px;height:9px;background:${s.color};border-radius:2px;flex-shrink:0"></span>
+                  <span style="color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)}</span>
+                </span>
+                <span style="font-variant-numeric:tabular-nums;color:var(--t1);font-weight:600" data-priv="amount">${fmt$0(s.amount)}</span>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `;
+    })();
     // Plan-vs-actual — for each budgeted expense category, sum this month's
     // outflows in matching categories from DB.spend (case-insensitive name
     // match) and report % used. Status colors flag categories about to go over.
@@ -3741,8 +3793,9 @@ function renderMoney() {
       <div class="budget-hero">
         <div class="bh-lbl">Monthly leftover</div>
         <div class="bh-val" style="color:${left>=0?'var(--green)':'var(--red)'}">${left>=0?'+':''}${fmt$0(left)}</div>
-        <div class="bh-sub">Income ${fmt$0(inc)} − Expenses ${fmt$0(tot)}</div>
+        <div class="bh-sub">Income ${fmt$0(inc)} − Expenses ${fmt$0(tot)}${inc > 0 ? ` · <b style="color:${left>=0?'var(--green)':'var(--red)'}">${savingsRate}%</b> savings rate` : ''}</div>
       </div>
+      ${incomeBreakdown}
       ${pvaHtml}
       <div class="section-h"><span class="lbl">Income</span></div>
       <div class="list">
