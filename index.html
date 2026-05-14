@@ -1099,6 +1099,43 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 #counselor-fab:hover { box-shadow: 0 6px 24px rgba(124,58,237,.45); }
 #counselor-fab.hidden { display: none; }
 
+/* Desktop polish: the app is intentionally a phone-width column. On wide
+   screens that leaves a lot of empty viewport, which felt broken — like
+   the app was misaligned. Frame it instead: subtle gradient backdrop,
+   rounded edges + soft shadow on the column, and pull the fixed tabbar
+   and floating FABs back inside the column so they sit relative to the
+   frame, not the viewport. Placed at the end of the layout CSS so the
+   overrides win the cascade against the earlier #tabbar / #fab rules. */
+@media (min-width: 900px) {
+  body { background: linear-gradient(180deg, #f0f0ee 0%, #f7f7f5 100%); }
+  :root.theme-dark body { background: linear-gradient(180deg, #18181b 0%, #0a0a0c 100%); }
+  @media (prefers-color-scheme: dark) {
+    :root.theme-auto body { background: linear-gradient(180deg, #18181b 0%, #0a0a0c 100%); }
+  }
+  #app {
+    height: calc(100vh - 32px);
+    height: calc(100dvh - 32px);
+    margin: 16px auto;
+    border-radius: 22px;
+    overflow: hidden;
+    box-shadow: 0 24px 60px -20px rgba(0,0,0,0.28), 0 0 0 1px rgba(0,0,0,0.06);
+  }
+  :root.theme-dark #app { box-shadow: 0 24px 60px -20px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06); }
+  @media (prefers-color-scheme: dark) {
+    :root.theme-auto #app { box-shadow: 0 24px 60px -20px rgba(0,0,0,0.6), 0 0 0 1px rgba(255,255,255,0.06); }
+  }
+  #tabbar {
+    position: absolute;
+    left: 0; right: 0;
+    transform: none;
+    max-width: none;
+    width: auto;
+  }
+  /* FABs were position:fixed (clamped to viewport). Anchor to the app
+     column instead so they hover over the framed phone, not the desktop. */
+  #fab, #counselor-fab { position: absolute; }
+}
+
 /* Cashflow chart card */
 .cf-card { background: var(--card); border-radius: var(--r); border: 0.5px solid var(--sep); padding: 16px; margin-bottom: 14px; box-shadow: var(--sh-1); }
 .cf-card .cf-h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
