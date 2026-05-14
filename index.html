@@ -1991,7 +1991,21 @@ function openSheet(html) {
 }
 function closeSheet() {
   if (_lockSheet) return;
-  $("#sheet").classList.remove("show");
+  // If the counselor sheet was open, wipe the chat thread on close so the
+  // user never sees prior messages on a future open. Detected by a data
+  // attribute set inside counselorRender — no extra plumbing through the
+  // generic openSheet/closeSheet API.
+  const sheet = $("#sheet");
+  if (sheet && sheet.querySelector("[data-counselor-sheet]")) {
+    if (DB && DB.counselor) {
+      DB.counselor.thread = [];
+      try { save(); } catch {}
+    }
+    if (typeof _counselorState !== "undefined" && _counselorState) {
+      _counselorState.busy = false;
+    }
+  }
+  sheet.classList.remove("show");
   $("#scrim").classList.remove("show");
 }
 
@@ -5839,13 +5853,12 @@ function counselorRender() {
   `;
 
   openSheet(`
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+    <div data-counselor-sheet style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
       <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px">✨</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:15px">Financial Counselor</div>
-        <div style="font-size:11px;color:var(--t3)">Educational guidance · CFP-style planning</div>
+        <div style="font-size:11px;color:var(--t3)">Educational guidance · CFP-style planning · auto-clears on close</div>
       </div>
-      ${thread.length ? `<button style="background:none;border:none;font-size:12px;color:var(--t3);cursor:pointer;padding:6px 10px;font-weight:600" onclick="counselorClear()" title="Clear conversation">Clear</button>` : ""}
       <button style="background:none;border:none;font-size:22px;color:var(--t3);cursor:pointer;padding:4px 8px" onclick="closeSheet()" aria-label="Close">×</button>
     </div>
     <div id="cns-scroll" style="max-height:55vh;overflow-y:auto;padding-right:4px;margin-bottom:6px">
