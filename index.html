@@ -2829,19 +2829,47 @@ function renderGoals() {
     </div>
   `;
 
+  // Tier overview cards — double as tier selectors AND show count + completion.
+  // Replaces the old text-only tier pills with a richer at-a-glance summary.
+  const TIER_COLORS = { daily: "var(--blue)", short: "var(--orange)", life: "var(--purple)" };
+  const overviewHtml = `
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px;margin-bottom:14px">
+      ${TIERS.map(t => {
+        const tierGoals = DB.goals.filter(g => g.tier === t.id);
+        const done = tierGoals.filter(g => g.done).length;
+        const total = tierGoals.length;
+        const pct = total ? Math.round(100 * done / total) : 0;
+        const color = TIER_COLORS[t.id] || "var(--blue)";
+        const isActive = t.id === activeTier;
+        return `
+          <button onclick="activeTier='${t.id}';renderGoals()" style="background:var(--card);border:0.5px solid ${isActive ? color : 'var(--sep)'};${isActive ? `border-width:1.5px;` : ''}border-radius:var(--r);padding:12px 12px 11px;text-align:left;cursor:pointer;transition:transform .15s ease, border-color .15s ease;${isActive ? 'box-shadow:var(--sh-1)' : ''}">
+            <div style="font-size:10.5px;font-weight:600;color:${isActive ? color : 'var(--t3)'};letter-spacing:0.04em;margin-bottom:6px;text-transform:uppercase">${t.label}</div>
+            <div style="font-size:24px;font-weight:700;color:var(--t1);line-height:1;font-variant-numeric:tabular-nums">${total}</div>
+            <div style="font-size:10.5px;color:var(--t3);margin:4px 0 6px;line-height:1.2">${total ? `${done}/${total} done · ${pct}%` : "none yet"}</div>
+            <div style="height:3px;background:var(--bg-elev);border-radius:2px;overflow:hidden">
+              <div style="height:100%;width:${pct}%;background:${color};border-radius:2px;transition:width 0.4s ease"></div>
+            </div>
+          </button>
+        `;
+      }).join("")}
+    </div>
+  `;
+
   $("#page-goals").innerHTML = `
     <div class="lg-title">Goals</div>
-    <div class="tier-pills">
-      ${TIERS.map(t => `<button class="tier-pill ${t.id===activeTier?'active':''}" onclick="activeTier='${t.id}';renderGoals()">${t.label}</button>`).join("")}
-    </div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:8px">
+    ${overviewHtml}
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
       <button class="add-row" style="margin:0" onclick="addGoalSheet()"><span class="plus">+</span> New goal</button>
       <button class="add-row" style="margin:0" onclick="goalTemplatesSheet()"><span class="plus">★</span> From template</button>
     </div>
-    <button onclick="openCounselor('Help me prioritize my goals. What should I focus on first given my current situation?')"
-      style="width:100%;margin-bottom:14px;padding:11px 14px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;border-radius:var(--r-pill,999px);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
-      <span>✨</span><span>Ask the counselor to prioritize my goals</span>
-    </button>
+    <div class="row tappable" onclick="openCounselor('Help me prioritize my goals. What should I focus on first given my current situation?')" role="button" tabindex="0"
+      style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;align-items:center;cursor:pointer">
+      <div style="width:32px;height:32px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;color:var(--purple);margin-right:10px">✨</div>
+      <div class="body">
+        <div class="t1" style="margin:0;font-size:13.5px">Ask the counselor to prioritize my goals</div>
+      </div>
+      <div class="trail chev"></div>
+    </div>
     ${goalsHtml}
   `;
 }
