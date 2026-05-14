@@ -4947,19 +4947,43 @@ function debtConsolidationSheet() {
    The browser sends prompts to /anthropic/messages on the user's Worker; the
    Worker injects the key, enforces a per-user daily cap, and forwards.
    Legacy DB.settings.anthropicKey is ignored — clearing it is fine. */
-async function fetchInsight(prompt, context) {
-  if (!DB.settings.backendUrl) throw new Error("AI insights now require the backend Worker. Set the backend URL in Settings.");
-  const model = DB.settings.anthropicModel || "claude-haiku-4-5-20251001";
-  const data = await api("/anthropic/messages", {
+/* AI proxy is co-located with the Python backend on Vercel at
+   /api/ai/messages — same origin, zero per-user config. The legacy
+   Cloudflare Worker /anthropic/messages route still works if the user
+   has DB.settings.backendUrl pointed at a self-hosted Worker; AI auto-
+   falls-back to same-origin when no backend URL is configured. */
+async function aiCall(payload) {
+  const useWorker = !!DB.settings.backendUrl && !!(DB.settings.apiKey || DB.user.clientSecret);
+  if (useWorker) {
+    // Legacy self-hosted path
+    return api("/anthropic/messages", { method: "POST", body: JSON.stringify(payload) });
+  }
+  // Default: same-origin Python proxy on Vercel
+  const r = await fetch("/api/ai/messages", {
     method: "POST",
-    body: JSON.stringify({
-      model,
-      max_tokens: 800,
-      messages: [{
-        role: "user",
-        content: prompt + "\n\nData:\n```json\n" + JSON.stringify(context, null, 2) + "\n```",
-      }],
-    }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const text = await r.text();
+  let body; try { body = JSON.parse(text); } catch { body = { error: text || `HTTP ${r.status}` }; }
+  if (!r.ok) {
+    const msg = typeof body.error === "string"
+      ? body.error
+      : (body.error && body.error.message) || `HTTP ${r.status}`;
+    throw new Error(msg);
+  }
+  return body;
+}
+
+async function fetchInsight(prompt, context) {
+  const model = DB.settings.anthropicModel || "claude-haiku-4-5-20251001";
+  const data = await aiCall({
+    model,
+    max_tokens: 800,
+    messages: [{
+      role: "user",
+      content: prompt + "\n\nData:\n```json\n" + JSON.stringify(context, null, 2) + "\n```",
+    }],
   });
   if (data && data.error) throw new Error(data.error.message || data.error);
   return data.content?.map(c => c.text).join("\n") || "(no response)";
@@ -5837,25 +5861,26 @@ function _onbShell(stepNum, body, footer) {
 
 function onboardingStep1() {
   _onbState.step = 1;
-  // V2: If a backend is configured, skip the splash entirely and drop the
-  // user into the AI chat. This is the magic-moment first impression —
-  // they go from blank app to "this app knows me" in 30 seconds, no
-  // forms. The manual splash is preserved as the fallback when backend
-  // isn't configured (and as a "Skip AI" escape hatch inside the chat).
-  if (_backendReady()) {
+  // V2: AI is the default first-launch. The AI proxy is co-located with
+  // the Python backend on Vercel at /api/ai/messages (same-origin), so
+  // any user opening the live app gets AI with zero per-user config.
+  // Only the rare file:// "open the HTML directly on disk" case drops
+  // to the manual splash, because same-origin AI can't work there.
+  if (location.protocol.startsWith("http")) {
     _lockSheet = false;
     closeSheet();
     aiOnboardingStart({ name: _onbState.name, fromOnboarding: true });
     return;
   }
-  // Fallback splash — same as before for users without backend access.
+  // Fallback splash for file:// usage. Same brand language, but explains
+  // why AI isn't available and routes to manual quick-setup.
   _onbShell(1, `
     <h2 style="text-align:center;margin-bottom:4px;font-size:32px;letter-spacing:-0.02em">Life Hack</h2>
     <div style="text-align:center;font-size:11px;letter-spacing:1.6px;text-transform:uppercase;font-weight:700;background:var(--grad-hero);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:6px">Money on easy mode</div>
     <p class="muted" style="text-align:center;margin-bottom:18px;font-size:14px">Track your money, build the habits, hit your goals — all in one private, encrypted app.</p>
     <label style="font-size:12px;color:var(--t3);font-weight:700;letter-spacing:0.04em;margin-bottom:6px;display:block">What should we call you?</label>
     <input id="onb-name" placeholder="Your first name" autofocus value="${esc(_onbState.name)}" />
-    <p class="muted" style="font-size:11px;margin-top:10px;text-align:center;line-height:1.5">AI-guided setup needs a backend — configure one in Settings later to unlock it.</p>
+    <p class="muted" style="font-size:11px;margin-top:10px;text-align:center;line-height:1.5">AI setup needs a network connection. Open the deployed app for the full experience.</p>
   `, `
     <button class="btn" style="width:100%" onclick="(()=>{_onbState.name=$('#onb-name').value.trim();onboardingStep2();})()">Continue</button>
   `);
@@ -6025,11 +6050,15 @@ Never invent specific numbers the user didn't give you (exact dollars, weights, 
 let _aiOnb = null;
 
 function aiOnboardingStart(opts = {}) {
-  if (!_backendReady()) {
+  // AI is reachable via either (a) same-origin /api/ai/messages on the
+  // deployed Vercel backend or (b) the user's self-hosted Cloudflare
+  // Worker via DB.settings.backendUrl. Only file:// has neither.
+  const aiReachable = location.protocol.startsWith("http") || _backendReady();
+  if (!aiReachable) {
     openSheet(`
       <h2 style="margin-bottom:8px">✨ Life Hack AI setup</h2>
       <p style="font-size:14px;color:var(--t2);line-height:1.5;margin-bottom:14px">
-        The AI-guided setup uses your private backend, which has to be configured first. Once you add the Worker URL + Enrollment Key in <b>Settings → Backend</b>, come back here.
+        The AI-guided setup needs a network connection. Open the deployed app (or configure a backend in Settings) to use it.
       </p>
       <button class="btn" style="width:100%;margin-bottom:8px" onclick="closeSheet();showTab('settings')">Open Settings</button>
       <button class="btn secondary" style="width:100%" onclick="closeSheet();${opts.fromOnboarding ? 'runOnboarding()' : ''}">${opts.fromOnboarding ? 'Use the quick setup instead' : 'Close'}</button>
@@ -6200,14 +6229,11 @@ async function aiOnbSend(text) {
 
 async function aiOnbCall(history, systemPrompt) {
   const model = DB.settings.anthropicModel || "claude-haiku-4-5-20251001";
-  const data = await api("/anthropic/messages", {
-    method: "POST",
-    body: JSON.stringify({
-      model,
-      max_tokens: 700,
-      system: systemPrompt,
-      messages: history,
-    }),
+  const data = await aiCall({
+    model,
+    max_tokens: 700,
+    system: systemPrompt,
+    messages: history,
   });
   if (data && data.error) throw new Error(data.error.message || data.error);
   return data.content?.map(c => c.text).join("\n") || "";
