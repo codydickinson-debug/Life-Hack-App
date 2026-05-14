@@ -5098,7 +5098,7 @@ function renderMoney() {
 
       ${milestonesHtml}
 
-      <div class="section-h"><span class="lbl">Savings goals — time to target</span></div>
+      <div class="section-h"><span class="lbl">Savings goals — time to target</span>${savingsForecasts.length ? `<button class="act" style="font-size:11.5px;color:var(--purple)" onclick="openCounselor(${jsAttr(`Looking at my savings goals: ${savingsForecasts.map(f => `${f.name} (${fmt$0(f.remaining)} to go)`).join("; ")}. Which should I prioritize and why?`)})">✨ Ask</button>` : ""}</div>
       ${savingsForecasts.length ? `
         <div class="list">
           ${savingsForecasts.map(f => `
@@ -5441,6 +5441,7 @@ function renderMoney() {
                 </div>
               `).join("")}
             </div>
+            <button class="btn secondary" style="width:100%;margin-top:14px;font-size:12px;color:var(--purple);border-color:var(--purple)" onclick="openCounselor(${jsAttr(`My net worth is currently $${overallNet.toLocaleString()}. In 10 years at current pace I'd have $${scenarios[0].final.toLocaleString()}; +$200/mo gets to $${scenarios[1].final.toLocaleString()}; +$500/mo to $${scenarios[2].final.toLocaleString()}. Help me think through which scenario is realistic and what one specific thing I should do this month to move toward it.`)})">✨ Ask Cylan</button>
           </div>
         `;
       })();
@@ -6181,7 +6182,7 @@ function renderMoney() {
         const today3 = new Date();
         const next5 = bills.slice().sort((a,b) => a.days - b.days).slice(0, 5);
         return `
-          <div class="section-h"><span class="lbl">Bills · next 30 days</span><span class="muted" style="font-size:12px">${bills.length} · <span data-priv="amount">${fmt$0(totalSum)}</span></span></div>
+          <div class="section-h"><span class="lbl">Bills · next 30 days</span><span style="display:flex;gap:10px;align-items:center"><span class="muted" style="font-size:12px">${bills.length} · <span data-priv="amount">${fmt$0(totalSum)}</span></span><button class="act" style="font-size:11.5px;color:var(--purple)" onclick="openCounselor(${jsAttr(`I have ${bills.length} bills coming up in the next 30 days totaling $${Math.round(totalSum)}. Biggest: ${next5.map(b => `${b.merchant} $${Math.round(b.amount)} (in ${b.days}d)`).join("; ")}. Help me plan cash flow — which should I prepay, batch, or negotiate?`)})">✨ Ask</button></span></div>
           <div style="background:var(--card);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
             <div style="display:flex;gap:2px;height:48px;align-items:flex-end">
               ${cells.map((c, i) => {
@@ -6231,7 +6232,8 @@ function renderMoney() {
                 <div style="font-size:12px;color:var(--t3)">Annual subscription cost</div>
                 <div style="font-size:20px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt$0(totalYearly)}/yr</div>
               </div>
-              <div style="font-size:11.5px;color:var(--t3);margin-top:4px">≈ <b style="color:var(--t1)" data-priv="amount">${fmt$0(tenYear)}</b> over 10 years — every cancellation compounds</div>
+              <div style="font-size:11.5px;color:var(--t3);margin-top:4px;margin-bottom:10px">≈ <b style="color:var(--t1)" data-priv="amount">${fmt$0(tenYear)}</b> over 10 years — every cancellation compounds</div>
+              <button onclick="openCounselor(${jsAttr(`My subscriptions cost $${Math.round(totalMonthly)}/mo, $${Math.round(totalYearly)}/yr, ~$${Math.round(tenYear).toLocaleString()} over 10 years. Active subscriptions: ${visible.filter(s => s.status === "active").map(s => `${s.merchant} ($${Math.round(s.monthly_cost)}/mo)`).join(", ")}. Which 1-2 should I cancel and why? Be honest.`)})" style="background:rgba(137,87,217,0.12);border:0.5px solid var(--purple);color:var(--purple);padding:6px 10px;border-radius:var(--r-pill,999px);font-size:11.5px;cursor:pointer;font-weight:600">✨ Which should I cancel?</button>
             </div>
           ` : ""}
           <div class="list">
