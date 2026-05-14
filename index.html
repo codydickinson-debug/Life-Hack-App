@@ -2382,7 +2382,22 @@ function showTab(name) {
   try { $("#content").scrollTo({ top: 0, behavior: "instant" }); } catch {}
   render();
 }
-$$(".tab").forEach(t => t.addEventListener("click", () => showTab(t.dataset.tab)));
+$$(".tab").forEach(t => t.addEventListener("click", () => {
+  // Tapping an already-active tab scrolls that page to top (standard iOS app
+  // gesture). Useful for long Stats/Calendar pages.
+  if (t.dataset.tab === activeTab) {
+    try { $("#content").scrollTo({ top: 0, behavior: "smooth" }); } catch {}
+    return;
+  }
+  showTab(t.dataset.tab);
+}));
+// Tap the topbar (the greeting + name area) to scroll the current page to top.
+// Also a standard iOS app gesture.
+$("#topbar").addEventListener("click", (e) => {
+  // Don't intercept clicks on the privacy/settings buttons in the topbar.
+  if (e.target.closest("button")) return;
+  try { $("#content").scrollTo({ top: 0, behavior: "smooth" }); } catch {}
+});
 $("#content").addEventListener("scroll", () => {
   $("#topbar").classList.toggle("scrolled", $("#content").scrollTop > 4);
 });
