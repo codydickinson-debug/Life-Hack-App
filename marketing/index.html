@@ -1,0 +1,577 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Ascend — Goals made easy</title>
+<meta name="description" content="One app for your habits, goals, money, stocks, and housing. AI-tailored. No upsells. Built for the everyday." />
+<meta name="theme-color" content="#0079FE" />
+
+<!-- Open Graph / share -->
+<meta property="og:title" content="Ascend — Goals made easy" />
+<meta property="og:description" content="One app for your habits, goals, money, stocks, and housing. AI-tailored. No upsells." />
+<meta property="og:type" content="website" />
+<meta property="og:image" content="/icon-512.png" />
+
+<link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png" />
+<link rel="apple-touch-icon" href="/icon-180.png" />
+
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+
+<style>
+  :root {
+    --brand: #0079FE;
+    --brand-2: #5dbcff;
+    --ink: #0a1530;
+    --ink-2: #2a3554;
+    --muted: #6b7385;
+    --line: #e6eaf2;
+    --bg: #ffffff;
+    --bg-2: #f4f6fa;
+    --green: #0e9f5d;
+    --orange: #ff7a59;
+    --purple: #7c3aed;
+    --r: 18px;
+    --shadow: 0 2px 18px rgba(15, 25, 50, 0.06);
+    --shadow-lg: 0 12px 40px rgba(15, 25, 50, 0.10);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+    overflow-x: hidden;
+  }
+  a { color: var(--brand); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* ----- Nav ----- */
+  header.nav {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(255,255,255,0.85);
+    backdrop-filter: saturate(180%) blur(10px);
+    -webkit-backdrop-filter: saturate(180%) blur(10px);
+    border-bottom: 1px solid var(--line);
+  }
+  .nav-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 22px;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 800; font-size: 17px; letter-spacing: -0.3px;
+  }
+  .brand img { width: 28px; height: 28px; border-radius: 7px; }
+  .nav-links { display: flex; gap: 22px; align-items: center; font-size: 14px; }
+  .nav-links a { color: var(--ink-2); font-weight: 500; }
+  .btn {
+    background: linear-gradient(180deg, var(--brand-2) 0%, var(--brand) 100%);
+    color: white; padding: 10px 20px; border-radius: 999px;
+    font-weight: 600; font-size: 14px; border: none; cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0, 121, 254, 0.32);
+    transition: filter 0.12s, transform 0.05s;
+    display: inline-block;
+  }
+  .btn:hover { filter: brightness(1.08); text-decoration: none; }
+  .btn:active { transform: translateY(1px); }
+  .btn.ghost {
+    background: transparent;
+    color: var(--ink);
+    box-shadow: none;
+    border: 1px solid var(--line);
+  }
+
+  /* ----- Hero ----- */
+  .hero {
+    max-width: 1100px;
+    margin: 0 auto;
+    padding: 64px 22px 50px;
+    text-align: center;
+  }
+  .eyebrow {
+    font-size: 12px;
+    letter-spacing: 1.5px;
+    font-weight: 700;
+    color: var(--brand);
+    text-transform: uppercase;
+    margin-bottom: 18px;
+  }
+  h1 {
+    margin: 0 0 18px;
+    font-size: clamp(36px, 6vw, 64px);
+    font-weight: 900;
+    line-height: 1.05;
+    letter-spacing: -1.5px;
+    color: var(--ink);
+  }
+  h1 .grad {
+    background: linear-gradient(135deg, var(--brand) 0%, var(--orange) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  .sub {
+    margin: 0 auto 26px;
+    max-width: 640px;
+    font-size: clamp(16px, 2.2vw, 19px);
+    color: var(--ink-2);
+    line-height: 1.55;
+  }
+  .cta-row {
+    display: inline-flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .badges {
+    margin-top: 18px;
+    display: flex;
+    gap: 14px;
+    justify-content: center;
+    flex-wrap: wrap;
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: 500;
+  }
+  .badges span { display: inline-flex; align-items: center; gap: 5px; }
+
+  /* ----- Phone frame mock ----- */
+  .phone-wrap {
+    margin: 40px auto 0;
+    max-width: 360px;
+    aspect-ratio: 9 / 17;
+    background: linear-gradient(180deg, #1a1f2e 0%, #0a1530 100%);
+    border-radius: 44px;
+    padding: 14px;
+    box-shadow: 0 30px 80px rgba(15, 25, 50, 0.25), 0 6px 0 #2a3554 inset;
+    position: relative;
+  }
+  .phone-screen {
+    width: 100%;
+    height: 100%;
+    background: var(--bg);
+    border-radius: 30px;
+    overflow: hidden;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+  }
+  .phone-notch {
+    position: absolute;
+    top: 12px; left: 50%; transform: translateX(-50%);
+    width: 88px; height: 22px;
+    background: #0a1530;
+    border-radius: 14px;
+    z-index: 2;
+  }
+  .phone-screen .topbar {
+    padding: 38px 18px 12px;
+    border-bottom: 1px solid var(--line);
+  }
+  .phone-screen .topbar .h { font-size: 11px; color: var(--muted); }
+  .phone-screen .topbar .n { font-size: 19px; font-weight: 800; letter-spacing: -0.5px; }
+  .phone-screen .topbar .t { font-size: 11px; color: var(--muted); font-style: italic; margin-top: 1px; }
+  .phone-content { padding: 14px; flex: 1; }
+  .pill {
+    display: inline-block;
+    padding: 4px 10px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    margin-right: 6px;
+  }
+  .pill.b { background: rgba(0,121,254,0.12); color: var(--brand); }
+  .pill.g { background: rgba(14,159,93,0.12); color: var(--green); }
+  .pill.o { background: rgba(255,122,89,0.14); color: var(--orange); }
+  .phone-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--line);
+  }
+  .phone-row:last-child { border-bottom: 0; }
+  .phone-row .e { font-size: 20px; }
+  .phone-row .body { flex: 1; min-width: 0; }
+  .phone-row .body .t1 { font-size: 13px; font-weight: 600; }
+  .phone-row .body .t2 { font-size: 11px; color: var(--muted); margin-top: 2px; }
+  .phone-row .check {
+    width: 22px; height: 22px;
+    border: 2px solid var(--green);
+    border-radius: 7px;
+    color: var(--green);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px; font-weight: 700;
+    flex-shrink: 0;
+  }
+  .phone-row .check.empty { color: transparent; }
+
+  /* ----- Features ----- */
+  section.features {
+    background: var(--bg-2);
+    padding: 80px 22px;
+  }
+  .features-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .section-eyebrow {
+    text-align: center;
+    color: var(--brand);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 12px;
+  }
+  h2 {
+    text-align: center;
+    font-size: clamp(28px, 4vw, 42px);
+    font-weight: 800;
+    letter-spacing: -1px;
+    margin: 0 0 16px;
+    color: var(--ink);
+  }
+  .section-sub {
+    text-align: center;
+    max-width: 580px;
+    margin: 0 auto 44px;
+    color: var(--ink-2);
+    font-size: 16px;
+  }
+  .feature-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+    gap: 18px;
+  }
+  .feature-card {
+    background: var(--bg);
+    border-radius: var(--r);
+    padding: 26px 22px;
+    box-shadow: var(--shadow);
+    border: 1px solid var(--line);
+  }
+  .feature-card .icon {
+    font-size: 30px;
+    margin-bottom: 12px;
+  }
+  .feature-card h3 {
+    margin: 0 0 8px;
+    font-size: 18px;
+    font-weight: 700;
+    letter-spacing: -0.3px;
+  }
+  .feature-card p {
+    margin: 0;
+    color: var(--ink-2);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  /* ----- How it works ----- */
+  section.how {
+    padding: 80px 22px;
+  }
+  .how-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  .steps {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 26px;
+    margin-top: 40px;
+  }
+  .step .num {
+    font-family: "Inter", monospace;
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--brand);
+    letter-spacing: 1px;
+    margin-bottom: 8px;
+  }
+  .step h4 {
+    margin: 0 0 8px;
+    font-size: 17px;
+    font-weight: 700;
+  }
+  .step p {
+    margin: 0;
+    color: var(--ink-2);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+
+  /* ----- CTA strip ----- */
+  section.cta-strip {
+    background: linear-gradient(135deg, var(--brand) 0%, #4f8dff 100%);
+    color: white;
+    text-align: center;
+    padding: 80px 22px;
+  }
+  section.cta-strip h2 {
+    color: white;
+    margin-bottom: 14px;
+  }
+  section.cta-strip p {
+    color: rgba(255,255,255,0.85);
+    max-width: 520px;
+    margin: 0 auto 26px;
+    font-size: 17px;
+  }
+  section.cta-strip .btn {
+    background: white;
+    color: var(--brand);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.16);
+  }
+  section.cta-strip .btn:hover { filter: brightness(0.97); }
+
+  /* ----- Footer ----- */
+  footer {
+    background: var(--ink);
+    color: #c5cce0;
+    padding: 50px 22px 32px;
+  }
+  .foot-inner {
+    max-width: 1100px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1.4fr 1fr 1fr;
+    gap: 30px;
+  }
+  footer .brand { color: white; }
+  footer .brand img { width: 26px; height: 26px; }
+  footer h5 {
+    color: white;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 0 0 14px;
+    font-weight: 700;
+  }
+  footer a { color: #c5cce0; display: block; font-size: 14px; padding: 4px 0; }
+  footer a:hover { color: white; }
+  footer .tag { font-size: 13px; color: #93a0c0; margin-top: 14px; line-height: 1.6; }
+  .legal {
+    border-top: 1px solid rgba(255,255,255,0.08);
+    margin-top: 40px;
+    padding-top: 22px;
+    font-size: 12px;
+    color: #93a0c0;
+    text-align: center;
+  }
+
+  /* ----- Mobile tweaks ----- */
+  @media (max-width: 720px) {
+    .nav-links { gap: 14px; font-size: 13px; }
+    .nav-links a:not(.btn) { display: none; }
+    .hero { padding: 44px 18px 30px; }
+    .phone-wrap { margin-top: 26px; }
+    section.features, section.how, section.cta-strip { padding: 60px 18px; }
+    .foot-inner { grid-template-columns: 1fr; gap: 28px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="nav">
+  <div class="nav-inner">
+    <div class="brand">
+      <img src="/icon-192.png" alt="" />
+      Ascend
+    </div>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+      <a href="https://life-hack-app.vercel.app" class="btn">Open app</a>
+    </div>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="eyebrow">Goals made easy · Life Hack</div>
+  <h1>Decide with <span class="grad">numbers</span>,<br />not vibes.</h1>
+  <p class="sub">
+    One app for your habits, goals, money, stocks, and housing.
+    AI tailors it to your life. No upsells, no ads, no nonsense.
+  </p>
+  <div class="cta-row">
+    <a href="https://life-hack-app.vercel.app" class="btn">Open the app →</a>
+    <a href="#features" class="btn ghost">See what's inside</a>
+  </div>
+  <div class="badges">
+    <span>📱 Installs as a PWA</span>
+    <span>🔒 Encrypted on device</span>
+    <span>🆓 Free, no signup</span>
+  </div>
+
+  <!-- Phone preview -->
+  <div class="phone-wrap" aria-hidden="true">
+    <div class="phone-notch"></div>
+    <div class="phone-screen">
+      <div class="topbar">
+        <div class="h">Good morning,</div>
+        <div class="n">Alex</div>
+        <div class="t">"Discipline &gt; motivation."</div>
+      </div>
+      <div class="phone-content">
+        <div style="display:flex;gap:6px;margin-bottom:12px">
+          <span class="pill b">Today</span>
+          <span class="pill g">3 / 5 done</span>
+          <span class="pill o">🔥 14 day streak</span>
+        </div>
+        <div class="phone-row">
+          <div class="check">✓</div>
+          <div class="e">💪</div>
+          <div class="body">
+            <div class="t1">Workout</div>
+            <div class="t2">Done · 45 min</div>
+          </div>
+        </div>
+        <div class="phone-row">
+          <div class="check">✓</div>
+          <div class="e">💧</div>
+          <div class="body">
+            <div class="t1">Drink water</div>
+            <div class="t2">64 / 64 oz</div>
+          </div>
+        </div>
+        <div class="phone-row">
+          <div class="check">✓</div>
+          <div class="e">📖</div>
+          <div class="body">
+            <div class="t1">Read 20 min</div>
+            <div class="t2">Done · Atomic Habits</div>
+          </div>
+        </div>
+        <div class="phone-row">
+          <div class="check empty">✓</div>
+          <div class="e">🧘</div>
+          <div class="body">
+            <div class="t1">Meditate</div>
+            <div class="t2">Not yet today</div>
+          </div>
+        </div>
+        <div class="phone-row">
+          <div class="check empty">✓</div>
+          <div class="e">🌙</div>
+          <div class="body">
+            <div class="t1">Sleep before midnight</div>
+            <div class="t2">Logs at 12:00 AM</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="features" id="features">
+  <div class="features-inner">
+    <div class="section-eyebrow">What's inside</div>
+    <h2>Everything that matters,<br />in one app.</h2>
+    <p class="section-sub">
+      Most apps do one thing. Ascend covers the parts of your life that all influence each other —
+      so you actually see the whole picture.
+    </p>
+    <div class="feature-grid">
+      <div class="feature-card">
+        <div class="icon">✅</div>
+        <h3>Daily habits</h3>
+        <p>Streaks, groups (health, mind, faith), and a clean checklist that actually feels good to use. No notifications guilting you.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🎯</div>
+        <h3>Goals you finish</h3>
+        <p>Short-term sprints chained to your 5-year vision. The AI helps break big goals into next-week-sized moves.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">💰</div>
+        <h3>Money in plain English</h3>
+        <p>Safe-to-spend today, budget vs. actuals, debt payoff with avalanche/snowball, optional bank sync via Plaid.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">📈</div>
+        <h3>Stocks &amp; investing</h3>
+        <p>4-pillar analysis, Monte Carlo projections, scan stocks/REITs/crypto/bonds for buys. Built-in StockAnalyzer.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🏠</div>
+        <h3>Housing &amp; mortgages</h3>
+        <p>Buyer's vs. seller's market by ZIP, current 30y/15y rates, full payment calculator with PMI and refi math.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">✨</div>
+        <h3>AI coach</h3>
+        <p>3-minute setup chat builds your starter plan. Monthly insights read your spending and tell you what to fix.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="how" id="how">
+  <div class="how-inner">
+    <div class="section-eyebrow">How it works</div>
+    <h2>Three minutes to set up.<br />Yours forever.</h2>
+    <div class="steps">
+      <div class="step">
+        <div class="num">01</div>
+        <h4>Talk to Ascend AI</h4>
+        <p>Quick conversational onboarding — your name, the area you want to improve, your 5-year vision. AI builds the starter plan.</p>
+      </div>
+      <div class="step">
+        <div class="num">02</div>
+        <h4>Tweak &amp; track</h4>
+        <p>Keep what fits, drop what doesn't. Check off habits. Add expenses. Build the plan that works for your actual life.</p>
+      </div>
+      <div class="step">
+        <div class="num">03</div>
+        <h4>See it compound</h4>
+        <p>Daily streaks, monthly insights, year-in-review. The numbers do the convincing — discipline becomes the easy choice.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-strip">
+  <h2>Stop juggling apps. Start finishing.</h2>
+  <p>One app for habits, money, stocks, and housing. Tailored by AI. Free.</p>
+  <a href="https://life-hack-app.vercel.app" class="btn">Open Ascend →</a>
+</section>
+
+<footer>
+  <div class="foot-inner">
+    <div>
+      <div class="brand">
+        <img src="/icon-192.png" alt="" />
+        Ascend
+      </div>
+      <p class="tag">Goals made easy. The everyday life hack — one app for your habits, money, stocks, and housing.</p>
+    </div>
+    <div>
+      <h5>Product</h5>
+      <a href="https://life-hack-app.vercel.app">Open the app</a>
+      <a href="#features">Features</a>
+      <a href="#how">How it works</a>
+    </div>
+    <div>
+      <h5>Legal &amp; contact</h5>
+      <a href="/privacy">Privacy policy</a>
+      <a href="/terms">Terms of service</a>
+      <a href="mailto:hello@ascendapp.example">hello@ascendapp.example</a>
+    </div>
+  </div>
+  <div class="legal">© <span id="y"></span> Ascend. Built with care. Not financial advice.</div>
+</footer>
+
+<script>document.getElementById("y").textContent = new Date().getFullYear();</script>
+</body>
+</html>
