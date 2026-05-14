@@ -3687,14 +3687,27 @@ function renderStocks() {
     `;
     return;
   }
+  // The iframe is mounted into a flush full-bleed container — no separate
+  // header bar, so it visually feels like part of the Today/Money tabs.
+  // A counselor CTA sits above so users can ask investing questions without
+  // leaving the tab. `eager` loading because we preload this on init so the
+  // iframe is ready before the user ever taps Stocks.
   page.innerHTML = `
-    <div style="display:flex;flex-direction:column;height:calc(100dvh - 130px);margin:-16px -14px 0;background:#0b0d10">
-      <div style="padding:8px 14px;display:flex;align-items:center;flex-shrink:0;background:var(--bg);border-bottom:1px solid var(--line)">
-        <div style="font-size:13px;font-weight:600;color:var(--t1)">📊 StockAnalyzer</div>
+    <div style="margin:-16px -14px 0;display:flex;flex-direction:column;height:calc(100dvh - 130px);background:#0b0d10">
+      <div style="padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--sep);flex-shrink:0">
+        <button onclick="openCounselor(null, 'stocks')"
+          style="width:100%;padding:10px 12px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;border-radius:var(--r);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:10px;text-align:left">
+          <span style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">✨</span>
+          <span style="flex:1">
+            <div style="font-size:13px;font-weight:700;line-height:1.15">Ask the counselor about investing</div>
+            <div style="font-size:11px;opacity:.85;font-weight:500;margin-top:1px">Allocation, ETFs, risk — frameworks, not stock picks</div>
+          </span>
+          <span style="font-size:16px;opacity:.85">→</span>
+        </button>
       </div>
-      <iframe id="stk-iframe" src="/stockanalyzer?v=3" loading="lazy"
+      <iframe id="stk-iframe" src="/stockanalyzer?v=3" loading="eager"
         style="border:0;flex:1;width:100%;-webkit-overflow-scrolling:touch;background:#0b0d10"
-        title="StockAnalyzer"></iframe>
+        title="Stock research"></iframe>
     </div>
   `;
 }
@@ -5267,32 +5280,73 @@ function buildCounselorSnapshot() {
   };
 }
 
-let _counselorState = null; // { busy: boolean }
+let _counselorState = null; // { busy: boolean, context: string }
 
-function openCounselor(seedPrompt) {
-  // No backend-required gate — the counselor uses the same-origin /api/ai/messages
-  // proxy by default. If the operator hasn't set ANTHROPIC_API_KEY in Vercel, the
-  // proxy returns 503 and aiApi() will fall back to the user's Worker if set, else
-  // surface a clear error to the user via the chat bubble.
+// openCounselor(seedPrompt?, context?)
+//   seedPrompt: if provided, immediately sends as the first user message
+//   context:    one of "default" | "goals" | "money" | "stocks" — picks the
+//               suggested-prompt set. If omitted, auto-detected from the
+//               currently active tab so the FAB and inline CTAs each get
+//               appropriate suggestions without per-caller plumbing.
+function openCounselor(seedPrompt, context) {
+  // Same-origin /api/ai/messages handles auth; if not configured, falls back
+  // to the user's Cloudflare Worker if one is set. No pre-flight gate here.
   if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false };
   DB.counselor.lastOpenedAt = Date.now();
-  _counselorState = { busy: false };
+  if (!context) {
+    const activeTab = document.querySelector(".tab.active");
+    const tab = (activeTab && activeTab.dataset.tab) || "";
+    context = ({ goals: "goals", money: "money", stocks: "stocks" })[tab] || "default";
+  }
+  _counselorState = { busy: false, context };
   counselorRender();
   if (seedPrompt && typeof seedPrompt === "string" && seedPrompt.trim()) {
     setTimeout(() => counselorSend(seedPrompt), 60);
   }
 }
 
-const COUNSELOR_SUGGESTED = [
-  { icon: "📊", text: "Review my finances overall — what should I focus on first?" },
-  { icon: "🎯", text: "Help me prioritize my goals" },
-  { icon: "💸", text: "Where is my money leaking this month?" },
-  { icon: "🏦", text: "Should I pay off debt or invest first?" },
-  { icon: "📈", text: "How should I think about investing for someone in my situation?" },
-  { icon: "🏝️", text: "Am I on track for retirement?" },
-  { icon: "🛡️", text: "Help me build an emergency fund plan" },
-  { icon: "💰", text: "Design a budget I can actually stick to" },
-];
+// Suggested starter prompts per context. The "default" set is the all-rounder
+// shown on Today/Stats/Settings; tab-specific sets bias toward what the user
+// is most likely asking about *from that tab*.
+const COUNSELOR_SUGGESTIONS = {
+  default: [
+    { icon: "📊", text: "Review my finances overall — what should I focus on first?" },
+    { icon: "🎯", text: "Help me prioritize my goals" },
+    { icon: "💸", text: "Where is my money leaking this month?" },
+    { icon: "🏦", text: "Should I pay off debt or invest first?" },
+    { icon: "📈", text: "How should I think about investing for someone in my situation?" },
+    { icon: "🏝️", text: "Am I on track for retirement?" },
+    { icon: "🛡️", text: "Help me build an emergency fund plan" },
+    { icon: "💰", text: "Design a budget I can actually stick to" },
+  ],
+  goals: [
+    { icon: "🎯", text: "Help me prioritize my goals — what should I tackle first?" },
+    { icon: "🗓️", text: "What's a realistic timeline to hit my biggest goal?" },
+    { icon: "🪜", text: "Break my long-term goal into monthly steps" },
+    { icon: "⚖️", text: "How do I sequence competing goals?" },
+    { icon: "💡", text: "What goals am I missing that someone in my situation should set?" },
+    { icon: "🔥", text: "How do I stay accountable when goals feel far off?" },
+  ],
+  money: [
+    { icon: "💸", text: "Where's my biggest spending leak this month?" },
+    { icon: "🔁", text: "Audit my subscriptions for me" },
+    { icon: "🛡️", text: "How big should my emergency fund be at my income?" },
+    { icon: "🏦", text: "Pay off debt or build savings first?" },
+    { icon: "💰", text: "Design a budget I can actually stick to" },
+    { icon: "🏠", text: "Should I rent or buy at my current income?" },
+    { icon: "📉", text: "Am I saving enough each month?" },
+  ],
+  stocks: [
+    { icon: "📈", text: "How should I think about investing for someone in my situation?" },
+    { icon: "🧺", text: "Individual stocks or low-cost ETFs — which makes sense for me?" },
+    { icon: "⚖️", text: "What's a sensible portfolio allocation given my risk tolerance?" },
+    { icon: "🔍", text: "Help me understand expense ratios and what to actually compare" },
+    { icon: "🔄", text: "When and how should I rebalance my portfolio?" },
+    { icon: "🎯", text: "How do I size positions to control downside risk?" },
+    { icon: "🏛️", text: "Tax-advantaged accounts vs taxable — which do I fund first?" },
+    { icon: "⏳", text: "Dollar-cost averaging vs lump-sum investing — what's right for me?" },
+  ],
+};
 
 function counselorRender() {
   if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false };
@@ -5313,15 +5367,23 @@ function counselorRender() {
       </div>`;
   }).join("");
 
+  const ctx = (_counselorState && _counselorState.context) || "default";
+  const suggestions = COUNSELOR_SUGGESTIONS[ctx] || COUNSELOR_SUGGESTIONS.default;
+  const introLine = ({
+    goals:  "Open from your <b>Goals</b> tab — let's make these real. Pick what to tackle first or break a big one down.",
+    money:  "Open from your <b>Money</b> tab — let's tighten cash flow, find leaks, and lock in a plan that sticks.",
+    stocks: "Open from your <b>Stocks</b> tab — I'll talk investing frameworks (allocation, ETFs, risk), but I won't pick specific tickers for you.",
+    default:"I'm a financial counselor who knows your numbers. Ask me anything — planning, debt, investing, big decisions. I'll be candid and reference your actual situation.",
+  })[ctx];
   const suggested = !thread.length ? `
     <div style="padding:6px 2px 4px">
       <div style="font-size:13px;color:var(--t2);line-height:1.45;margin-bottom:12px">
-        I'm a financial counselor who knows your numbers. Ask me anything — planning, debt, investing, big decisions. I'll be candid and reference your actual situation.
+        ${introLine}
         <div style="font-size:11px;color:var(--t4);margin-top:6px">Educational guidance, not licensed advice. I won't pick specific stocks for you.</div>
       </div>
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin:6px 0 8px">Try asking</div>
       <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
-        ${COUNSELOR_SUGGESTED.map(s => `
+        ${suggestions.map(s => `
           <button onclick="counselorSend(${jsAttr(s.text)})"
             style="text-align:left;padding:10px 12px;background:var(--bg-elev);border:none;border-radius:12px;color:var(--t1);font-size:13.5px;cursor:pointer;display:flex;gap:10px;align-items:center;line-height:1.35">
             <span style="font-size:16px;flex-shrink:0">${s.icon}</span>
@@ -5404,7 +5466,14 @@ async function counselorSend(text) {
       if (JSON.stringify(trimmed).length > 4500) delete trimmed.manual_liabilities;
       snapshotJson = JSON.stringify(trimmed);
     }
-    const system = COUNSELOR_SYSTEM + "\n\nUSER SNAPSHOT (current right now):\n```json\n" + snapshotJson + "\n```";
+    const ctx = (_counselorState && _counselorState.context) || "default";
+    const ctxHint = ({
+      goals:  "\n\nCONTEXT: The user opened you from the Goals tab. Lean toward goal-setting, sequencing, milestones, and accountability framing if their message is ambiguous.",
+      money:  "\n\nCONTEXT: The user opened you from the Money tab. Lean toward budgeting, spending leaks, debt strategy, emergency fund sizing, and cash-flow framing if their message is ambiguous.",
+      stocks: "\n\nCONTEXT: The user opened you from the Stocks tab. Lean toward investing literacy — asset allocation, ETFs vs individual stocks, tax-advantaged accounts, rebalancing, position sizing. Hold the line on never recommending specific tickers — explain frameworks instead.",
+      default: "",
+    })[ctx] || "";
+    const system = COUNSELOR_SYSTEM + ctxHint + "\n\nUSER SNAPSHOT (current right now):\n```json\n" + snapshotJson + "\n```";
 
     // Send the last 24 turns — enough for continuity, bounded for cost.
     const recent = DB.counselor.thread.slice(-24);
@@ -12814,6 +12883,10 @@ function init() {
   applyPrivacyMode();
   autoLockSetup();
   render();
+  // Preload the Stocks iframe in the background so it's ready the moment the
+  // user taps the tab — no per-tap load wait. The Stocks page is inactive
+  // (display:none) at this point, so the iframe loads invisibly.
+  setTimeout(() => { try { renderStocks(); } catch {} }, 400);
   maybeShowWhatsNew();
   if (_loadedFromBackup) {
     // Surface so the user knows recovery happened — silent recovery would
