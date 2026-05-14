@@ -3775,17 +3775,40 @@ function renderToday() {
       `;
     })()}
 
-    ${isTodaySectionHidden('counselor') ? "" : `
-        <div class="row tappable" onclick="openCounselor()" role="button" tabindex="0"
-          style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:center">
-          <div style="width:36px;height:36px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;color:var(--purple)">✨</div>
-          <div class="body">
-            <div class="t1" style="margin:0">Talk to Cylan</div>
-            <div class="t2">Your financial counselor — budget, debt, investing, anything money</div>
+    ${isTodaySectionHidden('counselor') ? "" : (() => {
+      // Context-aware quick prompts — pick 3 that match the user's data so the
+      // chips are always relevant. Generic prompts fill remaining slots.
+      const chips = [];
+      const hasSpend = (DB.spend || []).length > 0;
+      const hasSavings = (DB.savings || []).length > 0;
+      const hasHabits = (DB.habits || []).length > 0;
+      const hasDebt = (DB.liabilities || []).length > 0 || (DB.accounts || []).some(a => a.type === "credit" || a.type === "loan");
+      if (hasSpend)   chips.push({ icon: "💸", text: "Where am I overspending?",          seed: "Looking at my recent spending, where am I overspending? Be specific and tell me which categories." });
+      if (hasSavings) chips.push({ icon: "🎯", text: "Prioritize my savings goals",       seed: "Help me prioritize my savings goals. Which one should I focus on first and why?" });
+      if (hasDebt)    chips.push({ icon: "🧾", text: "What's my best debt payoff plan?",   seed: "Look at my debts. What's the smartest payoff order — and what's the realistic timeline?" });
+      if (hasHabits)  chips.push({ icon: "🔥", text: "How can I be more consistent?",     seed: "Looking at my habit history, where am I slipping? Give me one concrete change that would help." });
+      chips.push({ icon: "🧭", text: "What should I focus on this week?", seed: "Given everything you can see about my situation, what should I focus on this week?" });
+      chips.push({ icon: "💡", text: "Suggest one money move",            seed: "Suggest one concrete money move I should make this month based on my data." });
+      // Take first 3 to keep the card compact
+      const top = chips.slice(0, 3);
+      return `
+        <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:14px;margin-bottom:14px">
+          <div onclick="openCounselor()" role="button" tabindex="0" style="display:flex;align-items:center;cursor:pointer;margin-bottom:10px">
+            <div style="width:36px;height:36px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;color:var(--purple);margin-right:12px">✨</div>
+            <div style="flex:1;min-width:0">
+              <div class="t1" style="margin:0">Ask Cylan</div>
+              <div class="t2">Your financial counselor — tap a prompt below or open chat</div>
+            </div>
+            <div class="trail chev"></div>
           </div>
-          <div class="trail chev"></div>
+          <div style="display:flex;gap:6px;flex-wrap:wrap">
+            ${top.map(c => `
+              <button onclick="event.stopPropagation();openCounselor(${jsAttr(c.seed)})" style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t1);padding:8px 12px;border-radius:var(--r-pill,999px);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span>${c.icon}</span>${esc(c.text)}</button>
+            `).join("")}
+          </div>
         </div>
-      `}
+      `;
+    })()}
 
     ${isTodaySectionHidden('mood') ? "" : (() => {
       const k = todayKey();
