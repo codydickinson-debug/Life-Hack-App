@@ -221,7 +221,9 @@ input::placeholder, textarea::placeholder { color: var(--t4); }
   overflow-y: auto;
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
-  padding: 4px 0 calc(var(--tab-h) + 28px);
+  /* Extra bottom padding leaves room for the floating FAB + counselor button
+     to sit over empty space when the user scrolls to the end, not over content. */
+  padding: 4px 0 calc(var(--tab-h) + 110px);
   scroll-behavior: smooth;
 }
 #content::-webkit-scrollbar { width: 0; height: 0; }
@@ -1896,9 +1898,19 @@ async function pinQuoteToToday() {
   if (!DB.calendarNotes) DB.calendarNotes = {};
   const k = todayKey();
   const existing = (DB.calendarNotes[k] || "").trim();
+  // Dedupe — don't add the same quote twice to today's note.
+  if (existing && existing.includes(q)) {
+    toast("Already saved to today's note");
+    return;
+  }
   DB.calendarNotes[k] = existing ? (existing + "\n\n" + q) : q;
-  await save();
-  toast("Quote saved to today's note");
+  try {
+    await save();
+    toast("Quote saved to today's note");
+  } catch (e) {
+    toast("Couldn't save — please try again");
+    return;
+  }
   if (activeTab === "calendar") renderCalendar();
 }
 
@@ -2490,8 +2502,9 @@ function setHabitCount(id, val) {
 async function toggleHabitForDate(id, dateKey) {
   const h = DB.habits.find(x => x.id === id);
   if (!h) return;
+  // Snapshot prior state so we can revert on save failure.
+  const prior = h.log[dateKey];
   if (h.type === "count") {
-    // For count-type habits, backfill means setting to the target (done) or 0 (not done)
     const cur = h.log[dateKey] || 0;
     if (cur >= (h.target || 1)) delete h.log[dateKey];
     else h.log[dateKey] = (h.target || 1);
@@ -2499,7 +2512,13 @@ async function toggleHabitForDate(id, dateKey) {
     h.log[dateKey] = !h.log[dateKey];
     if (!h.log[dateKey]) delete h.log[dateKey];
   }
-  await save();
+  try {
+    await save();
+  } catch (e) {
+    if (prior === undefined) delete h.log[dateKey]; else h.log[dateKey] = prior;
+    toast("Couldn't save — please try again");
+    return;
+  }
   if (activeTab === "calendar") renderCalendar();
   if (activeTab === "today") renderToday();
 }
@@ -2771,8 +2790,13 @@ function addWin(text) {
 // Lets a brand-new user kick off their habit tracking in one tap.
 async function addStarterHabit(name, emoji, group, isCount, target, unit) {
   if (!DB.habits) DB.habits = [];
+  // Prevent duplicates if the user double-taps a starter button.
+  if (DB.habits.some(h => h.name === name)) {
+    toast(`${name} already in your habits`);
+    return;
+  }
   const color = COLORS[DB.habits.length % COLORS.length];
-  DB.habits.push({
+  const newHabit = {
     id: uid(),
     name,
     emoji,
@@ -2783,9 +2807,16 @@ async function addStarterHabit(name, emoji, group, isCount, target, unit) {
     color,
     createdAt: Date.now(),
     log: {},
-  });
-  await save();
-  toast(`✓ ${name} added`);
+  };
+  DB.habits.push(newHabit);
+  try {
+    await save();
+    toast(`✓ ${name} added`);
+  } catch (e) {
+    DB.habits.pop();
+    toast("Couldn't save — please try again");
+    return;
+  }
   render();
 }
 
@@ -2858,11 +2889,21 @@ function allWinsSheet() {
 // Variant that lets the caller backfill a win for a specific date — used by the
 // Calendar day-detail sheet so users can log wins they forgot to capture earlier.
 async function addWinForDate(dateKey, text) {
-  if (!text || !text.trim()) return;
+  const t = (text || "").trim();
+  if (!t) return;
+  // Cap at 200 chars for sanity.
+  const clean = t.slice(0, 200);
   if (!DB.wins) DB.wins = [];
-  DB.wins.unshift({ id: uid(), date: dateKey, text: text.trim() });
-  await save();
-  toast("Win added");
+  DB.wins.unshift({ id: uid(), date: dateKey, text: clean });
+  try {
+    await save();
+    toast("Win added");
+  } catch (e) {
+    toast("Couldn't save win — please try again");
+    // Roll back so DB matches what's persisted.
+    DB.wins.shift();
+    return;
+  }
   if (activeTab === "calendar") renderCalendar();
   if (activeTab === "today") renderToday();
 }
@@ -6392,22 +6433,40 @@ async function setDayMood(dateKey, emoji) {
   // Tapping the same emoji again clears the mood.
   if (DB.moods[dateKey] === emoji) delete DB.moods[dateKey];
   else DB.moods[dateKey] = emoji;
-  await save();
+  try {
+    await save();
+  } catch (e) {
+    toast("Couldn't save mood — please try again");
+    return;
+  }
   if (activeTab === "calendar") renderCalendar();
-  // Re-open sheet so the new state is visible immediately.
-  closeSheet();
-  setTimeout(() => calendarDaySheet(dateKey), 120);
+  if (activeTab === "today") renderToday();
+  // Re-open the day sheet only if it's currently visible so the button state
+  // refreshes. Skipping the re-open from Today is more pleasant (no flash).
+  const sheet = document.getElementById("sheet");
+  if (sheet && sheet.classList.contains("show")) {
+    closeSheet();
+    setTimeout(() => calendarDaySheet(dateKey), 120);
+  }
 }
 
 async function saveCalendarNote(dateKey) {
   const ta = document.getElementById("cal-note-input");
   if (!ta) return;
-  const text = (ta.value || "").trim();
+  // Cap at 500 chars to match the textarea maxlength even if the user pastes
+  // a larger blob in. Sanitize whitespace-only as a clear.
+  const raw = (ta.value || "").slice(0, 500);
+  const text = raw.trim();
   if (!DB.calendarNotes) DB.calendarNotes = {};
   if (text) DB.calendarNotes[dateKey] = text;
   else delete DB.calendarNotes[dateKey];
-  await save();
-  toast(text ? "Note saved" : "Note cleared");
+  try {
+    await save();
+    toast(text ? "Note saved" : "Note cleared");
+  } catch (e) {
+    toast("Couldn't save — please try again");
+    return;
+  }
   closeSheet();
   if (activeTab === "calendar") renderCalendar();
 }
@@ -6741,13 +6800,13 @@ function renderCalendar() {
       </div>
       <div class="cal-grid">${cellHtml}</div>
 
-      <div style="display:flex;flex-wrap:wrap;gap:10px 14px;margin-top:16px;font-size:11.5px;color:var(--t3)">
-        <div style="display:flex;align-items:center;gap:6px"><span style="width:14px;height:14px;border-radius:3px;background:rgba(46,184,117,0.32)"></span>habits done</div>
-        <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--yellow)"></span>win</div>
-        <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--green)"></span>savings</div>
-        <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--purple)"></span>goal</div>
-        <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--orange)"></span>bill</div>
-        <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--blue)"></span>note</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px 12px;margin-top:16px;font-size:11px;color:var(--t3)">
+        <div style="display:flex;align-items:center;gap:5px"><span style="width:12px;height:12px;border-radius:3px;background:rgba(46,184,117,0.32)"></span>habits</div>
+        <div style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:var(--yellow)"></span>win</div>
+        <div style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:var(--green)"></span>save</div>
+        <div style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:var(--purple)"></span>goal</div>
+        <div style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:var(--orange)"></span>bill</div>
+        <div style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:var(--blue)"></span>note</div>
       </div>
     `}
   `;
