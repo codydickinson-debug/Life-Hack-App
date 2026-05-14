@@ -2837,8 +2837,9 @@ function deleteStep(gid, sid) {
   save(); render();
 }
 function addGoalSheet(existing) {
-  const g = existing || { title: "", note: "", tier: activeTier };
+  const g = existing || { title: "", note: "", tier: activeTier, steps: [] };
   const isEdit = !!existing;
+  if (!Array.isArray(g.steps)) g.steps = [];
   openSheet(`
     <h2>${isEdit ? "Edit goal" : "New goal"}</h2>
     <label>Goal</label>
@@ -2849,8 +2850,16 @@ function addGoalSheet(existing) {
     <select id="g-tier">
       ${TIERS.map(t=>`<option value="${t.id}" ${t.id===g.tier?'selected':''}>${t.label}</option>`).join("")}
     </select>
+    <label style="display:flex;justify-content:space-between;align-items:center">
+      <span>Milestones (optional)</span>
+      <span class="muted" style="font-size:11px;font-weight:400;text-transform:none;letter-spacing:0">Up to 8 sub-steps</span>
+    </label>
+    <div id="g-steps" style="display:flex;flex-direction:column;gap:6px">
+      ${g.steps.map((s, i) => _goalStepInputRow(s, i)).join("")}
+    </div>
+    <button class="btn secondary" style="width:100%;margin-top:6px;font-size:12.5px;padding:8px" id="g-add-step" ${g.steps.length >= 8 ? 'disabled' : ''}>+ Add milestone</button>
     ${isEdit ? `
-      <div style="margin-top:6px">
+      <div style="margin-top:10px">
         <button class="btn secondary" style="width:100%;font-size:13px" onclick="closeSheet();pickGoalParentSheet(${jsAttr(g.id)})">${g.parentId ? "🔗 Linked to a bigger goal" : "🔗 Link to a bigger goal"}</button>
       </div>` : ""}
     <div class="actions">
@@ -2859,20 +2868,55 @@ function addGoalSheet(existing) {
       <button class="btn" id="g-save">${isEdit?'Save':'Add'}</button>
     </div>
   `);
+  $("#g-add-step").addEventListener("click", () => {
+    const cont = $("#g-steps");
+    const rows = cont.querySelectorAll(".goal-step-input");
+    if (rows.length >= 8) { toast("Max 8 milestones"); return; }
+    const newStep = { id: uid(), text: "", done: false };
+    cont.insertAdjacentHTML("beforeend", _goalStepInputRow(newStep, rows.length));
+    if (rows.length + 1 >= 8) $("#g-add-step").setAttribute("disabled", "true");
+    // Focus the new input
+    cont.lastElementChild.querySelector("input").focus();
+  });
   $("#g-save").addEventListener("click", async () => {
     const title = $("#g-title").value.trim();
     if (!title) { toast("Add a title"); return; }
     const note = $("#g-note").value.trim();
     const tier = $("#g-tier").value;
+    // Collect steps from the DOM
+    const stepInputs = document.querySelectorAll(".goal-step-input");
+    const newSteps = [];
+    stepInputs.forEach((row) => {
+      const text = sanitizeText(row.querySelector("input").value, 120);
+      if (!text) return;
+      const sid = row.dataset.sid;
+      const wasDone = (g.steps.find(s => s.id === sid) || {}).done || false;
+      newSteps.push({ id: sid || uid(), text, done: wasDone });
+    });
     if (isEdit) {
-      Object.assign(g, { title, note, tier });
+      Object.assign(g, { title, note, tier, steps: newSteps });
     } else {
-      DB.goals.push({ id: uid(), title, note, tier, steps: [], done: false, createdAt: Date.now() });
+      DB.goals.push({ id: uid(), title, note, tier, steps: newSteps, done: false, createdAt: Date.now() });
       activeTier = tier;
     }
     await save(); closeSheet(); render();
   });
 }
+
+// Single milestone input row inside addGoalSheet's step editor.
+function _goalStepInputRow(step, idx) {
+  return `
+    <div class="goal-step-input" data-sid="${esc(step.id || "")}" style="display:flex;gap:6px;align-items:center">
+      <span style="color:var(--t3);font-size:11px;width:18px;text-align:center">${idx + 1}.</span>
+      <input maxlength="120" placeholder="Step ${idx + 1} — e.g. Save first $1k" value="${esc(step.text || "")}" style="flex:1;background:var(--bg-elev);padding:8px 10px;border-radius:8px;font-size:13px;border:0.5px solid var(--sep);color:var(--t1)" />
+      <button type="button" onclick="this.closest('.goal-step-input').remove();document.getElementById('g-add-step').removeAttribute('disabled');" style="background:none;border:none;color:var(--t3);font-size:18px;cursor:pointer;padding:0 6px;flex-shrink:0">×</button>
+    </div>
+  `;
+}
+
+// (toggleStep already exists — used for the inline goal-step UI on the Goals
+// tab. The addGoalSheet milestones editor writes to the same g.steps array
+// so the two surfaces stay in sync without duplicate handlers.)
 
 /* ================ SAVINGS ================ */
 function totalSaved() { return DB.savings.reduce((a,s)=>a+(+s.current||0), 0); }
