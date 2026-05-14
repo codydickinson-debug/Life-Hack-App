@@ -1517,6 +1517,7 @@ const DEFAULT_DB = {
   pendingDeposits: [],
   dismissedDeposits: [],     // plaid_ids of deposits the user explicitly Skipped — prevents re-surfacing on next sync
   dismissedPlays: {},        // { playId: true } — smart-play recommendations user has dismissed
+  calendarNotes: {},         // { 'YYYY-MM-DD': 'note text' } — per-day reminders/journal entries shown on Calendar
   profile: {                 // optional self-reported info that sharpens smart-play recommendations
     age: 0,                  // 0 = not set; play engine uses 30 as a neutral default when missing
     filingStatus: "single",  // single | married | hoh — for tax-related plays
@@ -5924,9 +5925,23 @@ function calendarToday() {
   renderCalendar();
 }
 
+async function saveCalendarNote(dateKey) {
+  const ta = document.getElementById("cal-note-input");
+  if (!ta) return;
+  const text = (ta.value || "").trim();
+  if (!DB.calendarNotes) DB.calendarNotes = {};
+  if (text) DB.calendarNotes[dateKey] = text;
+  else delete DB.calendarNotes[dateKey];
+  await save();
+  toast(text ? "Note saved" : "Note cleared");
+  closeSheet();
+  if (activeTab === "calendar") renderCalendar();
+}
+
 function calendarDaySheet(dateKey) {
   const d = new Date(dateKey + "T00:00:00");
   const titleLbl = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+  const existingNote = (DB.calendarNotes || {})[dateKey] || "";
 
   // Habits that day
   const eligibleHabits = DB.habits.filter(h => !h.createdAt || new Date(h.createdAt) <= d);
@@ -6003,6 +6018,10 @@ function calendarDaySheet(dateKey) {
   openSheet(`
     <h2 style="margin-bottom:4px">${titleLbl}</h2>
     <p class="muted" style="font-size:12.5px;margin-bottom:14px">Everything tracked on this day</p>
+    <div class="section-h" style="margin-top:0"><span class="lbl">Note / reminder</span></div>
+    <textarea id="cal-note-input" placeholder="Capture a thought, reminder, or journal entry for this day…" maxlength="500"
+      style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r2);padding:12px 14px;font-size:14px;width:100%;min-height:72px;box-sizing:border-box;color:var(--t1);font-family:inherit;resize:vertical">${esc(existingNote)}</textarea>
+    <button class="btn secondary" style="width:100%;margin-top:8px;font-size:13px" onclick="saveCalendarNote(${jsAttr(dateKey)})">${existingNote ? "Save note" : "Add note"}</button>
     ${eligibleHabits.length ? section(`Habits (${eligibleHabits.filter(h => h.type==='count' ? (h.log[dateKey]||0)>=(h.target||1) : !!h.log[dateKey]).length}/${eligibleHabits.length})`, habitRows) : section("Habits", "", "No habits tracked")}
     ${section(`Wins${wins.length ? ` (${wins.length})` : ""}`, winRows, "No wins this day")}
     ${section(`Spending${spendDay.length ? ` (${fmt$0(spendTotal)})` : ""}`, spendRows, "No transactions")}
@@ -6035,6 +6054,8 @@ function renderCalendar() {
   (DB.savings || []).forEach(s => (s.log || []).forEach(l => l.date && savingsDates.add(l.date)));
   // Bills next 60 days
   const billDates = new Set(upcomingBills(60).map(b => b.next_predicted));
+  // Per-day notes
+  const noteDates = new Set(Object.keys(DB.calendarNotes || {}));
 
   // Aggregate month-level stats for the header strip
   let monthHabitDone = 0, monthHabitPossible = 0;
@@ -6086,6 +6107,7 @@ function renderCalendar() {
       hasGoal: goalDates.has(k),
       hasSavings: savingsDates.has(k),
       hasBill: billDates.has(k) && !winDates.has(k), // bills hidden when other action exists, avoid clutter on past days
+      hasNote: noteDates.has(k),
     });
   }
 
@@ -6109,6 +6131,7 @@ function renderCalendar() {
       c.hasSavings && '<span style="background:var(--green)"></span>',
       c.hasBill && !c.isFuture && '<span style="background:var(--orange)"></span>',
       c.isFuture && c.hasBill && '<span style="background:var(--orange)"></span>',
+      c.hasNote && '<span style="background:var(--blue)"></span>',
     ].filter(Boolean).join("");
     return `
       <div class="cal-cell" style="background:${bg};${ring}" onclick="calendarDaySheet('${c.key}')" role="button" tabindex="0">
@@ -6151,6 +6174,7 @@ function renderCalendar() {
       <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--green)"></span>savings</div>
       <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--purple)"></span>goal</div>
       <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--orange)"></span>bill</div>
+      <div style="display:flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:50%;background:var(--blue)"></span>note</div>
     </div>
   `;
 }
@@ -15509,7 +15533,7 @@ function init() {
   Object.assign(window, {
     DB, save, load, clone, todayKey, fmt$, fmt$0, esc, uid,
     showTab, render, renderToday, renderGoals, renderPlanning, renderMoney, renderStocks, renderStats, renderSettings, renderHeader,
-    renderCalendar, calendarPrevMonth, calendarNextMonth, calendarToday, calendarDaySheet,
+    renderCalendar, calendarPrevMonth, calendarNextMonth, calendarToday, calendarDaySheet, saveCalendarNote,
     PLAN_TIERS, PLAN_TEMPLATES, planById, plansByTier, addPlan, togglePlan, deletePlan,
     updatePlanProgress, addPlanSheet, planTemplatesSheet, logPlanProgressSheet,
     stocksApi, stocksAnalyze, stocksFetchNews, renderStocksResults,
