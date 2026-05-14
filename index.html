@@ -2559,9 +2559,36 @@ function renderToday() {
     </div>
   ` : "";
 
+  // "This week so far" — habits done / wins / spend across the current Mon-Sun window.
+  // Sits under the date label so the daily view always has a week-level anchor.
+  const weekSummary = (() => {
+    const sow = new Date(today); sow.setDate(today.getDate() - ((today.getDay() + 6) % 7));
+    let habitDones = 0, habitPossible = 0;
+    for (let i = 0; i < 7; i++) {
+      const d = new Date(sow); d.setDate(sow.getDate() + i);
+      if (d > today) break;
+      const k = todayKey(d);
+      DB.habits.forEach(h => {
+        habitPossible++;
+        const did = h.type === "count" ? (h.log[k] || 0) >= (h.target || 1) : !!h.log[k];
+        if (did) habitDones++;
+      });
+    }
+    const sowKey = todayKey(sow);
+    const winsW = (DB.wins || []).filter(w => w.date >= sowKey && w.date <= todayKey()).length;
+    const spendW = (DB.spend || []).filter(t => t.date && t.date >= sowKey && t.date <= todayKey() && (+t.amount || 0) > 0).reduce((a,t) => a + (+t.amount || 0), 0);
+    return { habitDones, habitPossible, winsW, spendW };
+  })();
+
   $("#page-today").innerHTML = `
     <div class="lg-title">Today</div>
-    <div class="muted" style="margin:-12px 0 18px;font-size:14px">${dateLabel()}</div>
+    <div class="muted" style="margin:-12px 0 6px;font-size:14px">${dateLabel()}</div>
+    <div style="display:flex;gap:16px;font-size:12px;color:var(--t3);margin:0 0 16px;flex-wrap:wrap;align-items:baseline">
+      <span style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;color:var(--t3)">This week</span>
+      ${weekSummary.habitPossible ? `<span><b style="color:var(--t1)">${weekSummary.habitDones}/${weekSummary.habitPossible}</b> habits</span>` : ""}
+      <span><b style="color:var(--t1)">${weekSummary.winsW}</b> wins</span>
+      ${weekSummary.spendW > 0 ? `<span><b style="color:var(--t1)" data-priv="amount">${fmt$0(weekSummary.spendW)}</b> spent</span>` : ""}
+    </div>
 
     <!-- ===== DO TODAY: habits, wins (the daily action lives here) ===== -->
     <div class="hero">
