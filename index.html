@@ -2336,6 +2336,25 @@ function setHabitCount(id, val) {
   if (v) h.log[k] = v; else delete h.log[k];
   save(); render();
 }
+// Backfill — toggle a habit's done state for any specific date. Used by the
+// Calendar day-detail sheet so users can retroactively mark habits done on
+// days they forgot.
+async function toggleHabitForDate(id, dateKey) {
+  const h = DB.habits.find(x => x.id === id);
+  if (!h) return;
+  if (h.type === "count") {
+    // For count-type habits, backfill means setting to the target (done) or 0 (not done)
+    const cur = h.log[dateKey] || 0;
+    if (cur >= (h.target || 1)) delete h.log[dateKey];
+    else h.log[dateKey] = (h.target || 1);
+  } else {
+    h.log[dateKey] = !h.log[dateKey];
+    if (!h.log[dateKey]) delete h.log[dateKey];
+  }
+  await save();
+  if (activeTab === "calendar") renderCalendar();
+  if (activeTab === "today") renderToday();
+}
 function deleteHabit(id) {
   DB.habits = DB.habits.filter(h => h.id !== id);
   save(); render();
@@ -5974,17 +5993,21 @@ function calendarDaySheet(dateKey) {
   const titleLbl = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const existingNote = (DB.calendarNotes || {})[dateKey] || "";
 
-  // Habits that day
+  // Habits that day — for past+today dates, tapping toggles the done state
+  // (backfill). For future dates the checks are display-only.
+  const isToday2 = dateKey === todayKey();
+  const isFuture2 = dateKey > todayKey();
   const eligibleHabits = DB.habits.filter(h => !h.createdAt || new Date(h.createdAt) <= d);
   const habitRows = eligibleHabits.map(h => {
     const v = h.log[dateKey] || 0;
     const done = h.type === "count" ? v >= (h.target || 1) : !!v;
     const sub = h.type === "count" ? `${v||0} / ${h.target||1}${h.unit ? " "+esc(h.unit) : ""}` : (done ? "Done" : "Not done");
+    const tappable = !isFuture2;
     return `
-      <div class="row">
-        <button class="check ${done?'done':''}" disabled aria-hidden="true">✓</button>
+      <div class="row${tappable ? ' tappable' : ''}" ${tappable ? `onclick="toggleHabitForDate('${h.id}',${jsAttr(dateKey)}).then(()=>{closeSheet();setTimeout(()=>calendarDaySheet(${jsAttr(dateKey)}),120);});"` : ''}>
+        <button class="check ${done?'done':''}" ${tappable ? '' : 'disabled aria-hidden="true"'} tabindex="-1">✓</button>
         <div class="lead">${h.emoji || '✦'}</div>
-        <div class="body"><div class="t1">${esc(h.name)}</div><div class="t2">${sub}</div></div>
+        <div class="body"><div class="t1">${esc(h.name)}</div><div class="t2">${sub}${tappable ? ' · tap to toggle' : ''}</div></div>
       </div>
     `;
   }).join("");
@@ -15643,7 +15666,7 @@ function init() {
   Object.assign(window, {
     DB, save, load, clone, todayKey, fmt$, fmt$0, esc, uid,
     showTab, render, renderToday, renderGoals, renderPlanning, renderMoney, renderStocks, renderStats, renderSettings, renderHeader,
-    renderCalendar, calendarPrevMonth, calendarNextMonth, calendarToday, calendarDaySheet, saveCalendarNote, calendarSetView, calendarJumpToMonth, addWinForDate,
+    renderCalendar, calendarPrevMonth, calendarNextMonth, calendarToday, calendarDaySheet, saveCalendarNote, calendarSetView, calendarJumpToMonth, addWinForDate, toggleHabitForDate,
     PLAN_TIERS, PLAN_TEMPLATES, planById, plansByTier, addPlan, togglePlan, deletePlan,
     updatePlanProgress, addPlanSheet, planTemplatesSheet, logPlanProgressSheet,
     stocksApi, stocksAnalyze, stocksFetchNews, renderStocksResults,
