@@ -1153,47 +1153,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 .wr-banner .wr-t2 { font-size: 12px; opacity: 0.88; margin-top: 2px; }
 .wr-banner .wr-cta { background: rgba(255,255,255,.18); color: #fff; padding: 6px 12px; border-radius: var(--r-pill); font-size: 12px; font-weight: 600; }
 
-/* Stocks tab — host wrapper. The StockAnalyzer's own static/style.css is
-   loaded dynamically and styles everything inside #stk-host. The CSS was
-   originally written against `body { display: grid; ... }`, which doesn't
-   apply to our wrapper div — so we re-apply the layout here. Without this
-   the sidebar takes its 240px column and the rest of the row stays empty,
-   leaving a black gap on the right. */
-#stk-host {
-  color-scheme: dark;
-  display: grid;
-  grid-template-columns: 240px 1fr;
-  min-height: calc(100dvh - 130px);
-  background: #0a0a0c;
-  color: #f4f4f6;
-  width: 100%;
-}
-/* Sidebar was sticky at viewport top:0 in the standalone page. Inside our
-   wrapper, anchor it to the top of #stk-host instead. */
-#stk-host > .sidebar {
-  position: sticky;
-  top: 0;
-  height: auto;
-  max-height: 100dvh;
-  overflow-y: auto;
-  align-self: start;
-}
-#stk-host > .main {
-  min-width: 0;  /* prevents content from forcing the column wider than 1fr */
-}
-/* Phone: stack sidebar above main (parallels the stockanalyzer's own
-   900px-breakpoint rule, but scoped to our wrapper so we don't depend on
-   the standalone stylesheet's specificity). */
-@media (max-width: 900px) {
-  #stk-host {
-    grid-template-columns: 1fr;
-  }
-  #stk-host > .sidebar {
-    border-right: none;
-    border-bottom: 1px solid var(--sep);
-    max-height: none;
-  }
-}
+/* (Stocks tab uses an iframe — no host-wrapper CSS needed.) */
 
 /* Net-worth scanner — confirmation list rows */
 .holdings-row {
@@ -6522,20 +6482,19 @@ function renderStats() {
   `;
 }
 
-/* ===== STOCKS — inline-fetched StockAnalyzer, no iframe =====
+/* ===== STOCKS — iframe-embedded StockAnalyzer =====
    The full StockAnalyzer UI (sidebar, market pills, all views, charts,
-   mortgage calculator, news) renders natively inside #page-stocks. We
-   fetch /stockanalyzer at runtime, load its stylesheet into the parent
-   <head>, inject the body markup, and execute its scripts. Single source
-   of truth — Flask template + static files stay put — but no iframe. */
+   mortgage calculator, news) lives inside an iframe. The inline-fetch
+   experiment had layout bugs that weren't worth chasing — the iframe is
+   the simple, reliable option. Reskinned dark in stockanalyzer/static/
+   style.css so it visually fits Ascend, and we keep the iframe mounted
+   across tab switches so its SPA state survives. */
 
 function renderStocks() {
   const page = document.getElementById("page-stocks");
   if (!page) return;
-  // Already loaded — preserve in-page state across tab switches.
-  if (page.dataset.stkLoaded === "1") return;
-  if (page.dataset.stkLoaded === "loading") return;
-  page.dataset.stkLoaded = "loading";
+  // Preserve iframe state across tab switches.
+  if (page.querySelector("#stk-iframe") || page.querySelector("#stk-local-msg")) return;
 
   // file:// fallback (PWA opened locally with no Python backend)
   if (location.protocol === "file:") {
@@ -6548,15 +6507,12 @@ function renderStocks() {
         <a href="https://life-hack-app.vercel.app" target="_blank" rel="noopener" class="btn" style="display:inline-block;text-decoration:none;padding:10px 18px">Open life-hack-app.vercel.app ↗</a>
       </div>
     `;
-    page.dataset.stkLoaded = "1";
     return;
   }
 
-  // Shell: Cylan CTA + host container for the injected StockAnalyzer markup.
-  // The `stk-scope` class is a hook for any future scoped CSS overrides.
   page.innerHTML = `
-    <div style="margin:-16px -14px 0;background:#0a0a0c;min-height:calc(100dvh - 110px)">
-      <div style="padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--sep)">
+    <div style="margin:-16px -14px 0;display:flex;flex-direction:column;height:calc(100dvh - 130px);background:#0a0a0c">
+      <div style="padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--sep);flex-shrink:0">
         <div class="row tappable" onclick="openCounselor(null, 'stocks')" role="button" tabindex="0"
           style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:10px 12px;align-items:center;cursor:pointer;margin:0">
           <div style="width:30px;height:30px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;color:var(--purple);margin-right:10px">✨</div>
@@ -6567,54 +6523,11 @@ function renderStocks() {
           <div class="trail chev"></div>
         </div>
       </div>
-      <div id="stk-host" class="stk-scope">
-        <div style="padding:40px 20px;text-align:center;color:#9aa0b3;font-size:13px">Loading research…</div>
-      </div>
+      <iframe id="stk-iframe" src="/stockanalyzer?v=5" loading="eager"
+        style="border:0;flex:1;width:100%;-webkit-overflow-scrolling:touch;background:#0a0a0c"
+        title="Stock research"></iframe>
     </div>
   `;
-
-  _loadStockAnalyzer(page);
-}
-
-async function _loadStockAnalyzer(page) {
-  // Load the StockAnalyzer stylesheet into the parent <head> once. The dark
-  // reskin already matches the Ascend palette — :root variable overlap on
-  // --bg / --green / --red / --accent is benign because values are similar.
-  if (!document.querySelector('link[data-stk-css]')) {
-    const css = document.createElement("link");
-    css.rel = "stylesheet";
-    css.href = "/stockanalyzer-static/style.css?v=5";
-    css.setAttribute("data-stk-css", "1");
-    document.head.appendChild(css);
-  }
-
-  try {
-    const res = await fetch("/stockanalyzer?v=5", { cache: "no-store" });
-    const html = await res.text();
-    const doc = new DOMParser().parseFromString(html, "text/html");
-    const host = document.getElementById("stk-host");
-    if (!host) return;
-
-    // Inject body markup. Script tags inserted via innerHTML do NOT execute
-    // automatically — they're recreated below so the StockAnalyzer's
-    // bootstrap actually runs.
-    host.innerHTML = doc.body.innerHTML;
-    doc.querySelectorAll("script").forEach(orig => {
-      const s = document.createElement("script");
-      if (orig.src) s.src = orig.getAttribute("src");
-      else s.textContent = orig.textContent;
-      ["type", "defer", "async"].forEach(attr => {
-        if (orig.getAttribute(attr)) s.setAttribute(attr, orig.getAttribute(attr));
-      });
-      document.body.appendChild(s);
-    });
-
-    if (page) page.dataset.stkLoaded = "1";
-  } catch (e) {
-    const host = document.getElementById("stk-host");
-    if (host) host.innerHTML = `<div style="padding:30px 20px;text-align:center;color:#ef4444;font-size:13px">Couldn't load research: ${esc(e.message || "")}</div>`;
-    if (page) page.dataset.stkLoaded = "";
-  }
 }
 
 // Removed: native sub-tab helpers (_stocksTickersBody, _stocksHousingBody,
@@ -17237,7 +17150,6 @@ function init() {
     PLAN_TIERS, PLAN_TEMPLATES, planById, plansByTier, addPlan, togglePlan, deletePlan,
     updatePlanProgress, addPlanSheet, planTemplatesSheet, logPlanProgressSheet,
     stocksApi, stocksAnalyze, stocksFetchNews, renderStocksResults,
-    _loadStockAnalyzer,
     toggleHabit, setHabitCount, addHabitSheet, deleteHabit, streakOf, habitDoneToday, todayHabitProgress,
     toggleGoal, toggleStep, addGoalSheet, deleteGoal, addStepInline, deleteStep, goalProgress,
     addSavingSheet, logSavingSheet, deleteSaving, totalSaved, totalTarget,
