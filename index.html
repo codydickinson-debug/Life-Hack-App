@@ -293,7 +293,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .section-h {
   display: flex; align-items: baseline; justify-content: space-between;
-  margin: 28px 2px 12px;
+  margin: 36px 2px 14px;
 }
 .section-h .lbl {
   font-size: 11px;
@@ -2333,80 +2333,51 @@ function renderToday() {
     <div class="lg-title">Today</div>
     <div class="muted" style="margin:-12px 0 18px;font-size:14px">${dateLabel()}</div>
 
-    ${wrBanner}
+    <!-- ===== DO TODAY: habits, wins (the daily action lives here) ===== -->
+    <div class="hero">
+      <div class="h-eyebrow">Today's progress</div>
+      <div class="h-big">${p.done} / ${p.total} habits</div>
+      <div class="h-sub">${p.total ? (p.pct===100 ? "All done — keep the streak alive 🔥" : "You've got this.") : "Add a habit to get started."}</div>
+      <div class="h-bar"><div class="h-fill" style="width:${p.pct}%"></div></div>
+    </div>
 
-    ${(() => {
-      // Setup checklist banner — surface for new users with incomplete setup.
-      // Auto-hides when complete or when user dismisses.
-      if (DB.setupChecklistDismissed) return "";
-      const r = computeSetupChecklist();
-      if (r.complete) return "";
-      return `
-        <div class="row tappable" onclick="setupChecklistSheet()" role="button" tabindex="0" style="background:linear-gradient(135deg, #007AFF, #5856D6);color:#fff;border-radius:var(--r);padding:14px;margin-bottom:14px;border:none">
-          <div style="font-size:24px;width:40px;text-align:center">🚀</div>
-          <div class="body">
-            <div class="t1" style="color:#fff;margin:0">Setup checklist · ${r.doneCount}/${r.total}</div>
-            <div class="t2" style="color:rgba(255,255,255,0.85)">Finish setup so Smart Plays, Pyramid, and projections light up</div>
-            <div style="height:4px;background:rgba(255,255,255,0.25);border-radius:2px;overflow:hidden;margin-top:8px"><div style="height:100%;width:${(r.doneCount/r.total)*100}%;background:#fff"></div></div>
-          </div>
-          <div style="color:rgba(255,255,255,0.7);font-size:18px">›</div>
-        </div>
-      `;
-    })()}
+    <div class="daychips">
+      ${days.map(d=>{
+        const isToday = todayKey(d) === todayKey();
+        const pct = dayPct(d);
+        const done = pct === 100 && DB.habits.length;
+        const wd = d.toLocaleDateString("en-US",{weekday:"short"})[0];
+        return `<div class="daychip ${isToday?'today':''} ${done?'done':''}"><div>${wd}</div><div class="n">${d.getDate()}</div></div>`;
+      }).join("")}
+    </div>
+
+    <div class="section-h"><span class="lbl">Habits</span><button class="act" onclick="addHabitSheet()">+ Add</button></div>
+    ${DB.habits.length > 3 ? `
+      <div class="tier-pills">
+        <button class="tier-pill ${activeHabitGroup==='all'?'active':''}" onclick="activeHabitGroup='all';renderToday()">All <span class="muted" style="font-weight:400">${DB.habits.length}</span></button>
+        ${HABIT_GROUPS.filter(g => DB.habits.some(h => (h.group||'other')===g.id)).map(g => `
+          <button class="tier-pill ${activeHabitGroup===g.id?'active':''}" onclick="activeHabitGroup='${g.id}';renderToday()" style="${activeHabitGroup===g.id?`background:${g.color}`:''}">${g.emoji} ${g.label}</button>
+        `).join("")}
+      </div>
+    ` : ""}
+    <div class="list">${habitsHtmlFiltered}</div>
+
+    <div class="section-h"><span class="lbl">Wins today</span><button class="act" onclick="(()=>{const t=prompt('Win:');if(t)addWin(t);})()">+ Add</button></div>
+    <div class="list">${winsHtml}</div>
+
+    <!-- ===== MONEY SNAPSHOT: daily glance ===== -->
     ${stsHtml}
-
-    ${`
-        <div onclick="openCounselor()" role="button" tabindex="0"
-          style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border-radius:var(--r);padding:14px 16px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:12px;box-shadow:var(--sh-1)">
-          <div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">✨</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:14px;font-weight:700;line-height:1.2">Talk to your financial counselor</div>
-            <div style="font-size:12px;opacity:.88;margin-top:2px">Budget, debt, investing — ask anything about your money</div>
-          </div>
-          <div style="font-size:20px;opacity:.85">→</div>
-        </div>
-      `}
-
     ${(() => {
-      // Wealth Health score — only show when there's meaningful financial data,
-      // otherwise the score is artificially 0 and demotivating for new users.
-      const hasMoneyContext = (+(DB.budget?.income) || 0) > 0
-        || (DB.savings || []).length > 0
-        || (DB.liabilities || []).length > 0
-        || (DB.recurring || []).length > 0;
-      if (!hasMoneyContext) return "";
-      const r = computeWealthHealth();
-      const lbl = wealthHealthLabel(r.total);
-      return `
-        <div class="row tappable" onclick="wealthHealthSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:center">
-          <div style="font-size:30px;font-weight:700;color:${lbl.color};line-height:1;margin-right:14px;min-width:60px;text-align:center">${r.total}</div>
-          <div class="body">
-            <div class="t1" style="margin:0">🩺 Wealth Health · <span style="color:${lbl.color}">${lbl.word}</span></div>
-            <div class="t2">${r.topGap ? esc(r.topGap.suggest) : "Strong across all dimensions — keep compounding"}</div>
-          </div>
-          <div class="trail chev"></div>
-        </div>
-      `;
+      const today = todayKey();
+      const todaySpent = (DB.spend||[]).filter(t => t.date === today && (+t.amount) > 0).reduce((a,t)=>a+(+t.amount||0), 0);
+      if (!todaySpent) return "";
+      return `<div class="row" style="background:var(--card);border-radius:var(--r);margin-bottom:10px;border:none">
+        <div class="lead">💸</div>
+        <div class="body"><div class="t1" data-priv="amount">${fmt$0(todaySpent)} spent today</div><div class="t2">${(DB.spend||[]).filter(t=>t.date===today).length} transactions</div></div>
+      </div>`;
     })()}
 
-    ${(() => {
-      // Money reflection prompt — small card with today's question. Tap to journal.
-      // Only show if user has profile filled in (signal they're engaged with the app).
-      const profile = DB.profile || {};
-      if (!profile.age) return "";
-      const prompt = todaysMoneyPrompt();
-      return `
-        <div class="row tappable" onclick="moneyPromptSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-left:3px solid var(--blue);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:flex-start">
-          <div style="font-size:20px;width:32px;text-align:center;line-height:1.4">💭</div>
-          <div class="body">
-            <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:4px">Today's money reflection</div>
-            <div class="t1" style="margin:0;font-size:14px;line-height:1.4">${esc(prompt)}</div>
-          </div>
-          <div class="trail chev"></div>
-        </div>
-      `;
-    })()}
-
+    <!-- ===== INSIGHTS: smart plays, dates, bills, wealth, reflection ===== -->
     ${(() => {
       const plays = computeSmartPlays();
       if (!plays.length) return "";
@@ -2480,47 +2451,81 @@ function renderToday() {
       `;
     })()}
 
-    <div class="hero">
-      <div class="h-eyebrow">Today's progress</div>
-      <div class="h-big">${p.done} / ${p.total} habits</div>
-      <div class="h-sub">${p.total ? (p.pct===100 ? "All done — keep the streak alive 🔥" : "You've got this.") : "Add a habit to get started."}</div>
-      <div class="h-bar"><div class="h-fill" style="width:${p.pct}%"></div></div>
-    </div>
-
     ${(() => {
-      const today = todayKey();
-      const todaySpent = (DB.spend||[]).filter(t => t.date === today && (+t.amount) > 0).reduce((a,t)=>a+(+t.amount||0), 0);
-      if (!todaySpent) return "";
-      return `<div class="row" style="background:var(--card);border-radius:var(--r);margin-bottom:10px;border:none">
-        <div class="lead">💸</div>
-        <div class="body"><div class="t1" data-priv="amount">${fmt$0(todaySpent)} spent today</div><div class="t2">${(DB.spend||[]).filter(t=>t.date===today).length} transactions</div></div>
-      </div>`;
+      // Wealth Health score — only show when there's meaningful financial data,
+      // otherwise the score is artificially 0 and demotivating for new users.
+      const hasMoneyContext = (+(DB.budget?.income) || 0) > 0
+        || (DB.savings || []).length > 0
+        || (DB.liabilities || []).length > 0
+        || (DB.recurring || []).length > 0;
+      if (!hasMoneyContext) return "";
+      const r = computeWealthHealth();
+      const lbl = wealthHealthLabel(r.total);
+      return `
+        <div class="row tappable" onclick="wealthHealthSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:center">
+          <div style="font-size:30px;font-weight:700;color:${lbl.color};line-height:1;margin-right:14px;min-width:60px;text-align:center">${r.total}</div>
+          <div class="body">
+            <div class="t1" style="margin:0">🩺 Wealth Health · <span style="color:${lbl.color}">${lbl.word}</span></div>
+            <div class="t2">${r.topGap ? esc(r.topGap.suggest) : "Strong across all dimensions — keep compounding"}</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      `;
     })()}
 
-    <div class="daychips">
-      ${days.map(d=>{
-        const isToday = todayKey(d) === todayKey();
-        const pct = dayPct(d);
-        const done = pct === 100 && DB.habits.length;
-        const wd = d.toLocaleDateString("en-US",{weekday:"short"})[0];
-        return `<div class="daychip ${isToday?'today':''} ${done?'done':''}"><div>${wd}</div><div class="n">${d.getDate()}</div></div>`;
-      }).join("")}
-    </div>
+    ${(() => {
+      // Money reflection prompt — small card with today's question. Tap to journal.
+      // Only show if user has profile filled in (signal they're engaged with the app).
+      const profile = DB.profile || {};
+      if (!profile.age) return "";
+      const prompt = todaysMoneyPrompt();
+      return `
+        <div class="row tappable" onclick="moneyPromptSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-left:3px solid var(--blue);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:flex-start">
+          <div style="font-size:20px;width:32px;text-align:center;line-height:1.4">💭</div>
+          <div class="body">
+            <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:4px">Today's money reflection</div>
+            <div class="t1" style="margin:0;font-size:14px;line-height:1.4">${esc(prompt)}</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      `;
+    })()}
 
-    <div class="section-h"><span class="lbl">Habits</span><button class="act" onclick="addHabitSheet()">+ Add</button></div>
-    ${DB.habits.length > 3 ? `
-      <div class="tier-pills">
-        <button class="tier-pill ${activeHabitGroup==='all'?'active':''}" onclick="activeHabitGroup='all';renderToday()">All <span class="muted" style="font-weight:400">${DB.habits.length}</span></button>
-        ${HABIT_GROUPS.filter(g => DB.habits.some(h => (h.group||'other')===g.id)).map(g => `
-          <button class="tier-pill ${activeHabitGroup===g.id?'active':''}" onclick="activeHabitGroup='${g.id}';renderToday()" style="${activeHabitGroup===g.id?`background:${g.color}`:''}">${g.emoji} ${g.label}</button>
-        `).join("")}
-      </div>
-    ` : ""}
-    <div class="list">${habitsHtmlFiltered}</div>
+    <!-- ===== SETUP / PROMPTS: only when relevant ===== -->
+    ${wrBanner}
 
-    <div class="section-h"><span class="lbl">Wins today</span><button class="act" onclick="(()=>{const t=prompt('Win:');if(t)addWin(t);})()">+ Add</button></div>
-    <div class="list">${winsHtml}</div>
+    ${(() => {
+      // Setup checklist banner — surface for new users with incomplete setup.
+      // Auto-hides when complete or when user dismisses.
+      if (DB.setupChecklistDismissed) return "";
+      const r = computeSetupChecklist();
+      if (r.complete) return "";
+      return `
+        <div class="row tappable" onclick="setupChecklistSheet()" role="button" tabindex="0" style="background:linear-gradient(135deg, #007AFF, #5856D6);color:#fff;border-radius:var(--r);padding:14px;margin-bottom:14px;border:none">
+          <div style="font-size:24px;width:40px;text-align:center">🚀</div>
+          <div class="body">
+            <div class="t1" style="color:#fff;margin:0">Setup checklist · ${r.doneCount}/${r.total}</div>
+            <div class="t2" style="color:rgba(255,255,255,0.85)">Finish setup so Smart Plays, Pyramid, and projections light up</div>
+            <div style="height:4px;background:rgba(255,255,255,0.25);border-radius:2px;overflow:hidden;margin-top:8px"><div style="height:100%;width:${(r.doneCount/r.total)*100}%;background:#fff"></div></div>
+          </div>
+          <div style="color:rgba(255,255,255,0.7);font-size:18px">›</div>
+        </div>
+      `;
+    })()}
 
+    ${`
+        <div onclick="openCounselor()" role="button" tabindex="0"
+          style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border-radius:var(--r);padding:14px 16px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:12px;box-shadow:var(--sh-1)">
+          <div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">✨</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:700;line-height:1.2">Talk to your financial counselor</div>
+            <div style="font-size:12px;opacity:.88;margin-top:2px">Budget, debt, investing — ask anything about your money</div>
+          </div>
+          <div style="font-size:20px;opacity:.85">→</div>
+        </div>
+      `}
+
+    <!-- ===== AMBIENT: daily quote ===== -->
     <div class="section-h"><span class="lbl">Reminder</span></div>
     <div class="list">
       <div class="row">
