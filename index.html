@@ -3658,12 +3658,52 @@ function renderMoney() {
   }
   else if (moneySub === "budget") {
     const tot = totalExpenses(), inc = +DB.budget.income||0, left = inc - tot;
+    // Plan-vs-actual — for each budgeted expense category, sum this month's
+    // outflows in matching categories from DB.spend (case-insensitive name
+    // match) and report % used. Status colors flag categories about to go over.
+    const ym = todayKey().slice(0, 7);
+    const planVsActual = DB.budget.expenses
+      .filter(e => (+e.amount || 0) > 0)
+      .map(e => {
+        const target = (e.name || "").toLowerCase().trim();
+        const actual = DB.spend
+          .filter(t => t.date && t.date.startsWith(ym) && (+t.amount || 0) > 0
+                     && (t.category || "").toLowerCase().trim() === target)
+          .reduce((a, t) => a + (+t.amount || 0), 0);
+        const budgeted = +e.amount || 0;
+        return { name: e.name, budgeted, actual, pct: Math.round(100 * actual / budgeted) };
+      })
+      .sort((a, b) => b.pct - a.pct);
+    const totalSpent = planVsActual.reduce((a, r) => a + r.actual, 0);
+    const pvaHtml = planVsActual.length ? `
+      <div class="section-h"><span class="lbl">This month — spent vs budget</span><span class="muted" style="font-size:12px"><span data-priv="amount">${fmt$0(totalSpent)}</span> of <span data-priv="amount">${fmt$0(tot)}</span></span></div>
+      <div style="background:var(--card);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
+        ${planVsActual.map((r, i) => {
+          const color = r.pct >= 100 ? "var(--red)" : r.pct >= 90 ? "var(--orange)" : r.pct >= 60 ? "var(--yellow)" : "var(--green)";
+          const widthPct = Math.min(100, r.pct);
+          const overage = r.actual - r.budgeted;
+          const overLbl = overage > 0 ? ` · <span style="color:var(--red);font-weight:600">+${fmt$0(overage)}</span>` : "";
+          return `
+            <div style="${i > 0 ? 'margin-top:12px;' : ''}">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:5px">
+                <span style="color:var(--t1);font-weight:500">${esc(r.name)}</span>
+                <span style="font-variant-numeric:tabular-nums"><span style="color:var(--t1);font-weight:600" data-priv="amount">${fmt$0(r.actual)}</span> <span style="color:var(--t3);font-size:11.5px">of ${fmt$0(r.budgeted)} · ${r.pct}%${overLbl}</span></span>
+              </div>
+              <div style="height:6px;background:var(--bg-elev);border-radius:4px;overflow:hidden">
+                <div style="height:100%;width:${widthPct}%;background:${color};border-radius:4px;transition:width 0.4s ease"></div>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    ` : "";
     body = `
       <div class="budget-hero">
         <div class="bh-lbl">Monthly leftover</div>
         <div class="bh-val" style="color:${left>=0?'var(--green)':'var(--red)'}">${left>=0?'+':''}${fmt$0(left)}</div>
         <div class="bh-sub">Income ${fmt$0(inc)} − Expenses ${fmt$0(tot)}</div>
       </div>
+      ${pvaHtml}
       <div class="section-h"><span class="lbl">Income</span></div>
       <div class="list">
         <div class="row">
