@@ -1833,10 +1833,26 @@ const QUOTES = [
   "Showing up is most of it.",
   "Progress isn't loud. It's steady.",
 ];
+// quoteOffset bumps the date-based index when the user shuffles. Resets daily.
+var quoteOffset = 0;
 const todaysQuote = () => {
-  const i = (new Date()).getDate() % QUOTES.length;
+  const i = ((new Date()).getDate() + quoteOffset) % QUOTES.length;
   return QUOTES[i];
 };
+function shuffleQuote() {
+  quoteOffset = (quoteOffset + 1 + Math.floor(Math.random() * (QUOTES.length - 1))) % QUOTES.length;
+  if (activeTab === "today") renderToday();
+}
+async function pinQuoteToToday() {
+  const q = todaysQuote();
+  if (!DB.calendarNotes) DB.calendarNotes = {};
+  const k = todayKey();
+  const existing = (DB.calendarNotes[k] || "").trim();
+  DB.calendarNotes[k] = existing ? (existing + "\n\n" + q) : q;
+  await save();
+  toast("Quote saved to today's note");
+  if (activeTab === "calendar") renderCalendar();
+}
 
 /* ================ CRYPTO (passphrase encryption) ================
    Envelope shape: { v, salt:base64, iv:base64, ct:base64 }
@@ -3149,7 +3165,7 @@ function renderToday() {
       `}
 
     <!-- ===== AMBIENT: daily quote ===== -->
-    <div class="section-h"><span class="lbl">Reminder</span></div>
+    <div class="section-h"><span class="lbl">Reminder</span><span style="display:flex;gap:14px"><button class="act" onclick="pinQuoteToToday()" title="Save to today's note">📌 Save</button><button class="act" onclick="shuffleQuote()" title="Get another quote">↻ Shuffle</button></span></div>
     <div class="list">
       <div class="row">
         <div class="lead">💭</div>
@@ -15854,7 +15870,7 @@ function init() {
     goalForecastSheet, _onGoalForecastSlider, _goalForecastBody,
     addExpenseInline, deleteExpense, totalExpenses, leftover,
     addSpend, deleteSpend, monthSpend, spendCategories,
-    addWin, deleteWin, winsToday, allWinsSheet,
+    addWin, deleteWin, winsToday, allWinsSheet, shuffleQuote, pinQuoteToToday,
     openSettings, applyTheme, toggleNotifications, scheduleReminder, exportData, importData, openSheet, closeSheet, toast,
     connectBank, syncNow, disconnectItem, backendLinkToken, backendExchange, backendSync, backendListItems, backendRemoveItem,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
