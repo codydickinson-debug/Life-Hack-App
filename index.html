@@ -1600,6 +1600,7 @@ const DEFAULT_DB = {
     monthlySavingsTarget: 0, // factored into safe-to-spend (per-month dollars set aside)
     celebrationsEnabled: true, // confetti on streak milestones / goal completion
     accentColor: "",          // hex string — overrides the default blue accent across the app. Empty = use default.
+    recentSearches: [],       // [string] last 6 queries from global search, newest first
   },
   categoryRules: [],
   allocations: [],
@@ -3089,8 +3090,22 @@ const ACCENT_COLORS = [
 function _computeSearchResults(query) {
   const q = (query || "").trim().toLowerCase();
   if (!q) {
-    return `<div class="muted" style="font-size:13px;padding:14px 4px;text-align:center">Type to search habits, wins, notes, transactions, and goals across your whole history.</div>`;
+    const recent = (DB.settings && DB.settings.recentSearches) || [];
+    if (!recent.length) {
+      return `<div class="muted" style="font-size:13px;padding:14px 4px;text-align:center">Type to search habits, wins, notes, transactions, and goals across your whole history.</div>`;
+    }
+    return `
+      <div style="font-size:11px;color:var(--t3);margin:8px 0 8px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">Recent</div>
+      <div style="display:flex;flex-wrap:wrap;gap:6px">
+        ${recent.map(s => `
+          <button onclick="document.getElementById('g-search-input').value=${jsAttr(s)};globalSearchOnInput(${jsAttr(s)})" style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t1);padding:7px 12px;border-radius:var(--r-pill,999px);font-size:12.5px;cursor:pointer">${esc(s)}</button>
+        `).join("")}
+      </div>
+      <button class="act" style="font-size:11.5px;margin-top:10px" onclick="clearRecentSearches()">Clear recent searches</button>
+    `;
   }
+  // Record this query in recent (debounced — only record when length > 2 to avoid every keystroke).
+  if (q.length >= 3) _recordSearch(q);
   const habits = (DB.habits || []).filter(h => (h.name || "").toLowerCase().includes(q));
   const wins = (DB.wins || []).filter(w => (w.text || "").toLowerCase().includes(q));
   const notes = Object.entries(DB.calendarNotes || {})
@@ -3161,6 +3176,32 @@ function _computeSearchResults(query) {
 function globalSearchOnInput(value) {
   const out = document.getElementById("g-search-results");
   if (out) out.innerHTML = _computeSearchResults(value);
+}
+// Throttle search recording so we only persist queries that look intentional
+// (>=3 chars, no duplicate of the most-recent, max 6 saved).
+let _searchRecordT;
+function _recordSearch(q) {
+  clearTimeout(_searchRecordT);
+  _searchRecordT = setTimeout(async () => {
+    if (!DB.settings) DB.settings = {};
+    if (!Array.isArray(DB.settings.recentSearches)) DB.settings.recentSearches = [];
+    const cleaned = q.trim();
+    if (!cleaned) return;
+    const list = DB.settings.recentSearches;
+    // Move to top if already present
+    const existing = list.findIndex(s => s.toLowerCase() === cleaned.toLowerCase());
+    if (existing >= 0) list.splice(existing, 1);
+    list.unshift(cleaned);
+    while (list.length > 6) list.pop();
+    try { await save(); } catch {}
+  }, 800);
+}
+async function clearRecentSearches() {
+  if (!DB.settings) DB.settings = {};
+  DB.settings.recentSearches = [];
+  try { await save(); } catch (e) { toast("Couldn't save"); return; }
+  const out = document.getElementById("g-search-results");
+  if (out) out.innerHTML = _computeSearchResults("");
 }
 function globalSearchSheet() {
   openSheet(`
@@ -17626,7 +17667,7 @@ function init() {
     customizeTabsSheet, toggleTabVisibility, showAllTabs, isTabHidden, applyHiddenTabs,
     setAccentColor, applyAccent, ACCENT_COLORS,
     helpTipsSheet, sendFeedbackSheet,
-    globalSearchSheet, globalSearchOnInput, _computeSearchResults,
+    globalSearchSheet, globalSearchOnInput, _computeSearchResults, _recordSearch, clearRecentSearches,
     openSettings, applyTheme, toggleNotifications, scheduleReminder, exportData, importData, openSheet, closeSheet, toast,
     connectBank, syncNow, disconnectItem, backendLinkToken, backendExchange, backendSync, backendListItems, backendRemoveItem,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
