@@ -1562,6 +1562,7 @@ const DEFAULT_DB = {
   calendarNotes: {},         // { 'YYYY-MM-DD': 'note text' } — per-day reminders/journal entries shown on Calendar
   moods: {},                 // { 'YYYY-MM-DD': '😄' } — daily mood rating, set from Calendar day sheet
   hiddenTodaySections: [],   // [string] — Today-tab section ids the user has hidden via Settings → Customize Today
+  hiddenTabs: [],            // [string] — tab ids the user has hidden from the bottom nav (today + money are never hideable)
   profile: {                 // optional self-reported info that sharpens smart-play recommendations
     age: 0,                  // 0 = not set; play engine uses 30 as a neutral default when missing
     filingStatus: "single",  // single | married | hoh — for tax-related plays
@@ -3007,6 +3008,76 @@ async function showAllTodaySections() {
   if (activeTab === "today") renderToday();
   customizeTodaySheet();
 }
+// Tab visibility — Today and Money are core and always shown. Everything else
+// can be hidden by users who don't use that part of the app.
+const HIDEABLE_TABS = [
+  { id: "calendar", label: "Calendar", desc: "Monthly grid + journal + mood tracking" },
+  { id: "goals",    label: "Goals",    desc: "Daily / Short-term / Life goals" },
+  { id: "planning", label: "Plan",     desc: "Short / Mid / Long-term roadmap + what-if" },
+  { id: "stocks",   label: "Stocks",   desc: "Markets, tickers, housing, mortgages" },
+  { id: "stats",    label: "Stats",    desc: "Heatmaps, streaks, charts, projections" },
+];
+function isTabHidden(id) {
+  return ((DB.settings && DB.settings.hiddenTabs) || (DB.hiddenTabs || [])).includes(id);
+}
+function applyHiddenTabs() {
+  // Walk every .tab in the tabbar and toggle display based on hiddenTabs.
+  // Today and Money never hide regardless of state.
+  const PROTECTED = new Set(["today", "money"]);
+  document.querySelectorAll("#tabbar .tab").forEach(t => {
+    const id = t.dataset.tab;
+    if (PROTECTED.has(id)) { t.style.display = ""; return; }
+    t.style.display = isTabHidden(id) ? "none" : "";
+  });
+  // If the user just hid the active tab, bounce them to Today.
+  if (isTabHidden(activeTab) && !PROTECTED.has(activeTab)) showTab("today");
+}
+async function toggleTabVisibility(id) {
+  if (!DB.settings) DB.settings = {};
+  if (!Array.isArray(DB.settings.hiddenTabs)) DB.settings.hiddenTabs = [];
+  const list = DB.settings.hiddenTabs;
+  const idx = list.indexOf(id);
+  if (idx >= 0) list.splice(idx, 1);
+  else list.push(id);
+  try { await save(); } catch (e) { toast("Couldn't save — please try again"); return; }
+  applyHiddenTabs();
+  customizeTabsSheet();
+}
+async function showAllTabs() {
+  if (!DB.settings) DB.settings = {};
+  DB.settings.hiddenTabs = [];
+  try { await save(); } catch (e) { toast("Couldn't save — please try again"); return; }
+  toast("All tabs restored");
+  applyHiddenTabs();
+  customizeTabsSheet();
+}
+function customizeTabsSheet() {
+  const hidden = (DB.settings && DB.settings.hiddenTabs) || [];
+  const rows = HIDEABLE_TABS.map(t => {
+    const isHidden = hidden.includes(t.id);
+    return `
+      <div class="row tappable" onclick="toggleTabVisibility('${t.id}')" role="button" tabindex="0">
+        <div class="body">
+          <div class="t1">${esc(t.label)}</div>
+          <div class="t2">${esc(t.desc)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:42px;height:24px;background:${isHidden ? 'var(--bg-elev2)' : 'var(--green)'};border-radius:12px;position:relative;transition:background .2s ease">
+            <div style="position:absolute;top:2px;${isHidden ? 'left:2px' : 'right:2px'};width:20px;height:20px;background:#fff;border-radius:50%;transition:left .2s ease, right .2s ease;box-shadow:0 1px 2px rgba(0,0,0,0.2)"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+  openSheet(`
+    <h2 style="margin-bottom:4px">Customize tabs</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Hide tabs you don't use from the bottom navigation. Today and Money are always shown.</p>
+    <div class="list">${rows}</div>
+    ${hidden.length ? `<button class="btn secondary" style="width:100%;margin-top:14px;font-size:13px" onclick="showAllTabs()">Restore all tabs</button>` : ""}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Done</button></div>
+  `);
+}
+
 function customizeTodaySheet() {
   const hidden = (DB.settings && DB.settings.hiddenTodaySections) || [];
   const rows = TODAY_TOGGLEABLE_SECTIONS.map(s => {
@@ -7068,6 +7139,18 @@ function renderSettings() {
             const hiddenCount = ((DB.settings && DB.settings.hiddenTodaySections) || []).length;
             if (hiddenCount === 0) return "Show or hide sections to fit how you use Today";
             return `${hiddenCount} section${hiddenCount===1?'':'s'} hidden`;
+          })()}</div>
+        </div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="customizeTabsSheet()">
+        <div class="lead">▦</div>
+        <div class="body">
+          <div class="t1">Customize tabs</div>
+          <div class="t2">${(() => {
+            const hiddenCount = ((DB.settings && DB.settings.hiddenTabs) || []).length;
+            if (hiddenCount === 0) return "Hide tabs you don't use from the bottom nav";
+            return `${hiddenCount} tab${hiddenCount===1?'':'s'} hidden`;
           })()}</div>
         </div>
         <div class="trail chev"></div>
@@ -16804,6 +16887,7 @@ function init() {
     addSpend, deleteSpend, monthSpend, spendCategories,
     addWin, deleteWin, winsToday, allWinsSheet, shuffleQuote, pinQuoteToToday, addStarterHabit,
     customizeTodaySheet, toggleTodaySection, showAllTodaySections, isTodaySectionHidden,
+    customizeTabsSheet, toggleTabVisibility, showAllTabs, isTabHidden, applyHiddenTabs,
     openSettings, applyTheme, toggleNotifications, scheduleReminder, exportData, importData, openSheet, closeSheet, toast,
     connectBank, syncNow, disconnectItem, backendLinkToken, backendExchange, backendSync, backendListItems, backendRemoveItem,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
@@ -16896,6 +16980,9 @@ function init() {
   applyPrivacyMode();
   autoLockSetup();
   render();
+  // Apply user's hidden-tabs preference after initial render so the bottom
+  // nav reflects their customization choices.
+  applyHiddenTabs();
   // Pre-render the Stocks tab in the background so its data loads start
   // warming the moment the user opens the app. Page div is inactive at
   // this point so the pre-render is invisible.
