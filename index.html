@@ -4672,6 +4672,57 @@ function renderMoney() {
       ${holdingsHtml}
       ${debtsHtml}
       ${(() => {
+        // Bills timeline — visual 30-day strip showing when charges land, with the
+        // earliest few called out below. Lets the user spot 'oh, big week coming up'
+        // patterns instead of scanning a long list.
+        const bills = upcomingBills(30);
+        if (!bills.length) return "";
+        const cells = Array.from({ length: 30 }, () => ({ total: 0 }));
+        bills.forEach(b => {
+          if (b.days < 0 || b.days > 29) return;
+          cells[b.days].total += +b.amount || 0;
+        });
+        const maxTotal = Math.max(1, ...cells.map(c => c.total));
+        const totalSum = bills.reduce((a, b) => a + (+b.amount || 0), 0);
+        const today3 = new Date();
+        const next5 = bills.slice().sort((a,b) => a.days - b.days).slice(0, 5);
+        return `
+          <div class="section-h"><span class="lbl">Bills · next 30 days</span><span class="muted" style="font-size:12px">${bills.length} · <span data-priv="amount">${fmt$0(totalSum)}</span></span></div>
+          <div style="background:var(--card);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
+            <div style="display:flex;gap:2px;height:48px;align-items:flex-end">
+              ${cells.map((c, i) => {
+                const h = c.total > 0 ? Math.max(10, (c.total / maxTotal) * 100) : 5;
+                const color = c.total > 0 ? "var(--orange)" : "var(--bg-elev)";
+                const dayDate = new Date(today3); dayDate.setDate(today3.getDate() + i);
+                const lbl = dayDate.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+                const tip = c.total > 0 ? `${lbl} · ${fmt$0(c.total)}` : lbl;
+                return `<div style="flex:1;height:${h}%;background:${color};border-radius:2px;${i===0?'outline:2px solid var(--blue);outline-offset:1px':''}" title="${esc(tip)}"></div>`;
+              }).join("")}
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--t3);margin-top:6px">
+              <span>Today</span>
+              <span>+15 days</span>
+              <span>+30 days</span>
+            </div>
+            ${next5.length ? `
+              <div style="margin-top:14px;border-top:0.5px solid var(--sep);padding-top:12px">
+                <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;margin-bottom:8px">Coming up first</div>
+                ${next5.map(b => {
+                  const dayLbl = b.days === 0 ? "Today" : b.days === 1 ? "Tomorrow" : `In ${b.days} days`;
+                  const color = b.days <= 2 ? "var(--orange)" : b.days <= 7 ? "var(--blue)" : "var(--t3)";
+                  return `
+                    <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 0;font-size:13px">
+                      <span><b style="color:${color}">${dayLbl}</b> · <span style="color:var(--t1)">${esc(b.merchant)}</span></span>
+                      <span style="font-weight:600;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt$0(b.amount)}</span>
+                    </div>
+                  `;
+                }).join("")}
+              </div>
+            ` : ""}
+          </div>
+        `;
+      })()}
+      ${(() => {
         const subs = detectSubscriptions();
         const visible = subs.filter(s => s.status !== "ignored");
         if (!visible.length) return "";
