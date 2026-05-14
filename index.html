@@ -4585,20 +4585,37 @@ function renderMoney() {
     })() : "";
 
     // Spending by category this month — horizontal bar breakdown so the user
-    // can see where their money actually went, not just the total.
+    // can see where their money actually went. Each category also carries a
+    // trend vs the user's prior 3-month average so they know if they're
+    // running hot or cool relative to their own baseline.
     const spendByCat = (() => {
       const ym = todayKey().slice(0, 7);
-      const rows = {};
+      const now = new Date();
+      // Build a {category: thisMonthTotal} map + a {category: [m1,m2,m3]} map for trend.
+      const thisMonth = {};
       let total = 0;
+      const priorMonthsKeys = [];
+      for (let i = 1; i <= 3; i++) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        priorMonthsKeys.push(`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`);
+      }
+      const priorByCat = {}; // cat → sum across last 3 months
       DB.spend.forEach(t => {
         const amt = +t.amount || 0;
-        if (amt <= 0) return; // outflows only — refunds/income skew the breakdown
-        if (!t.date || !t.date.startsWith(ym)) return;
+        if (amt <= 0 || !t.date) return;
         const cat = t.category || "Other";
-        rows[cat] = (rows[cat] || 0) + amt;
-        total += amt;
+        if (t.date.startsWith(ym)) {
+          thisMonth[cat] = (thisMonth[cat] || 0) + amt;
+          total += amt;
+        } else if (priorMonthsKeys.some(k => t.date.startsWith(k))) {
+          priorByCat[cat] = (priorByCat[cat] || 0) + amt;
+        }
       });
-      const sorted = Object.entries(rows).map(([cat, amt]) => ({ cat, amt })).sort((a,b) => b.amt - a.amt);
+      const sorted = Object.entries(thisMonth).map(([cat, amt]) => {
+        const priorAvg = (priorByCat[cat] || 0) / 3;
+        const delta = priorAvg > 0 ? Math.round(((amt - priorAvg) / priorAvg) * 100) : null;
+        return { cat, amt, priorAvg, delta };
+      }).sort((a,b) => b.amt - a.amt);
       return sorted.length ? { rows: sorted, total } : null;
     })();
     const SPEND_CAT_COLORS = {
@@ -4620,10 +4637,18 @@ function renderMoney() {
         ${spendByCat.rows.slice(0, 7).map(r => {
           const pct = spendByCat.total > 0 ? (r.amt / spendByCat.total) * 100 : 0;
           const color = spendCatColor(r.cat);
+          // Trend tag: up/down arrow with % delta vs 3-mo avg.
+          // Hidden when there's no prior history or the delta is <5% (noise).
+          let trendTag = "";
+          if (r.delta !== null && Math.abs(r.delta) >= 5) {
+            const up = r.delta > 0;
+            const trendColor = up ? "var(--red)" : "var(--green)";
+            trendTag = ` <span style="color:${trendColor};font-size:10.5px;font-weight:600;margin-left:4px">${up ? "▲" : "▼"} ${Math.abs(r.delta)}%</span>`;
+          }
           return `
             <div style="margin-bottom:10px">
               <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:13px;margin-bottom:5px">
-                <span style="color:var(--t1);font-weight:500">${esc(r.cat)}</span>
+                <span style="color:var(--t1);font-weight:500">${esc(r.cat)}${trendTag}</span>
                 <span style="font-variant-numeric:tabular-nums"><span style="color:var(--t1);font-weight:600" data-priv="amount">${fmt$0(r.amt)}</span> <span style="color:var(--t3);font-weight:400;font-size:11.5px">${pct.toFixed(0)}%</span></span>
               </div>
               <div style="height:6px;background:var(--bg-elev);border-radius:4px;overflow:hidden">
