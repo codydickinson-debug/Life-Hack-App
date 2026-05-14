@@ -4842,6 +4842,46 @@ function renderStats() {
       }).join("") : `<div class="row"><div class="body"><div class="t2 muted">Add habits to start tracking streaks.</div></div></div>`}
     </div>
 
+    ${(() => {
+      // 28-day wins grid — quick read on "how often am I capturing wins?"
+      // 4 rows × 7 cols, today highlighted with a blue ring.
+      const days = 28;
+      const today3 = new Date();
+      const winsByDate = new Set((DB.wins || []).map(w => w.date));
+      let daysWithWins = 0;
+      const cells = [];
+      for (let i = days - 1; i >= 0; i--) {
+        const d = new Date(today3); d.setDate(today3.getDate() - i);
+        const k = todayKey(d);
+        const has = winsByDate.has(k);
+        if (has) daysWithWins++;
+        cells.push({ has, isToday: i === 0 });
+      }
+      const totalWins = (DB.wins || []).filter(w => {
+        const wd = new Date(w.date + "T00:00:00");
+        const diff = (today3 - wd) / (1000 * 60 * 60 * 24);
+        return diff <= days;
+      }).length;
+      const insight = daysWithWins >= 14
+        ? "You're consistently capturing wins — keep it up."
+        : daysWithWins >= 7
+        ? "Catching wins about half the time — push for more."
+        : daysWithWins > 0
+        ? "Plenty of room to capture more wins."
+        : "No wins yet this month — log one in the Today tab when something good happens.";
+      return `
+        <div class="section-h"><span class="lbl">Wins — last 28 days</span><span class="muted" style="font-size:12px">${daysWithWins}/${days} days · ${totalWins} total</span></div>
+        <div style="background:var(--card);border-radius:var(--r);padding:18px;border:0.5px solid var(--sep);box-shadow:var(--sh-1);margin-bottom:14px">
+          <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">
+            ${cells.map(c => `
+              <div style="aspect-ratio:1/1;border-radius:6px;background:${c.has ? 'var(--orange)' : 'var(--bg-elev)'};${c.isToday ? 'box-shadow:0 0 0 2px var(--blue);' : ''}display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px">${c.has ? '⭐' : ''}</div>
+            `).join("")}
+          </div>
+          <div style="font-size:11.5px;color:var(--t3);margin-top:12px;line-height:1.4">${insight}</div>
+        </div>
+      `;
+    })()}
+
     <div class="section-h"><span class="lbl">This month</span></div>
     <div class="list">
       <div class="row"><div class="lead">⭐</div><div class="body"><div class="t1">${winsM} wins logged</div><div class="t2">Small wins compound</div></div></div>
