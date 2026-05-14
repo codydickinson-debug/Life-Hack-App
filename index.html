@@ -6154,68 +6154,49 @@ function renderStats() {
 function renderStocks() {
   const page = document.getElementById("page-stocks");
   if (!page) return;
-  // Cache recent ticker queries for one-tap re-runs.
-  const recent = (DB.stocks && Array.isArray(DB.stocks.recentTickers)) ? DB.stocks.recentTickers : [];
+  // If the iframe is already mounted, keep it — preserves in-iframe state
+  // (selected market, scroll position, mortgage inputs) across tab switches.
+  if (page.querySelector("#stk-iframe") || page.querySelector("#stk-local-msg")) return;
 
-  page.innerHTML = `
-    <div class="lg-title">Stocks</div>
-    <div class="muted" style="margin:-12px 0 18px;font-size:14px">Analyze tickers, scan headlines, then ask Cylan.</div>
-
-    <div onclick="openCounselor(null, 'stocks')" role="button" tabindex="0"
-      style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border-radius:var(--r);padding:12px 14px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:10px;box-shadow:var(--sh-1)">
-      <div style="width:30px;height:30px;border-radius:50%;background:rgba(255,255,255,.22);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">✨</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:13.5px;font-weight:700;line-height:1.2">Ask Cylan about investing</div>
-        <div style="font-size:11.5px;opacity:.85;margin-top:1px">Allocation, ETFs, risk — frameworks, not stock picks</div>
+  // file:// fallback (PWA opened locally with no Python backend)
+  if (location.protocol === "file:") {
+    page.innerHTML = `
+      <div id="stk-local-msg" class="lg-title">Stocks</div>
+      <div class="card" style="background:var(--card);border-radius:var(--r);padding:20px;margin-top:14px;text-align:center">
+        <div style="font-size:34px;margin-bottom:6px">📊</div>
+        <div style="font-size:15px;font-weight:600;margin-bottom:4px">StockAnalyzer lives on the server</div>
+        <div style="font-size:13px;color:var(--t3);line-height:1.5;margin-bottom:14px">You're viewing this file locally, so there's no Python backend to talk to. Open the deployed version to use Stocks, Housing, Mortgages, and News.</div>
+        <a href="https://life-hack-app.vercel.app" target="_blank" rel="noopener" class="btn" style="display:inline-block;text-decoration:none;padding:10px 18px">Open life-hack-app.vercel.app ↗</a>
       </div>
-      <div style="font-size:18px;opacity:.85">→</div>
-    </div>
-
-    <div class="stk-search" style="display:flex;gap:8px;margin-bottom:10px">
-      <input id="stk-input" type="text" placeholder="Enter tickers — e.g. AAPL MSFT SPY"
-        style="flex:1;background:var(--bg-elev);padding:11px 14px;border-radius:12px;font-size:14px;border:1px solid var(--sep);outline:none;color:var(--t1);text-transform:uppercase;letter-spacing:.04em"
-        onkeydown="if(event.key==='Enter'){event.preventDefault();stocksAnalyze();}" />
-      <button class="btn" onclick="stocksAnalyze()" style="padding:0 18px;font-size:13.5px">Analyze</button>
-    </div>
-
-    ${recent.length ? `
-      <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
-        <span style="font-size:11px;color:var(--t3);align-self:center;margin-right:4px">RECENT</span>
-        ${recent.slice(0, 10).map(t => `
-          <button class="stk-chip" onclick="(()=>{document.getElementById('stk-input').value=${jsAttr(t)};stocksAnalyze();})()">${esc(t)}</button>
-        `).join("")}
-      </div>
-    ` : ""}
-
-    <div id="stk-results" style="margin:0 0 18px"></div>
-
-    <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
-      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.06em;color:var(--t3);font-weight:700">Latest market headlines</div>
-      <button class="btn sm secondary" style="font-size:11px;padding:4px 10px" onclick="stocksFetchNews()">Refresh</button>
-    </div>
-    <div id="stk-news" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:6px 14px;margin-bottom:14px">
-      <div style="color:var(--t3);font-size:13px;padding:10px 0">Tap Refresh to load.</div>
-    </div>
-
-    <div style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:14px">
-      <div style="font-size:12px;text-transform:uppercase;letter-spacing:.04em;color:var(--t3);font-weight:700;margin-bottom:8px">More tools</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
-        <a href="/stockanalyzer?v=4#housing" target="_blank" rel="noopener" class="btn secondary" style="text-decoration:none;text-align:center;padding:10px;font-size:12.5px">🏠 Housing</a>
-        <a href="/stockanalyzer?v=4#mortgages" target="_blank" rel="noopener" class="btn secondary" style="text-decoration:none;text-align:center;padding:10px;font-size:12.5px">🏦 Mortgages</a>
-      </div>
-      <div style="font-size:11px;color:var(--t4);margin-top:8px;line-height:1.4">Housing and Mortgage calculators open in a separate view for now — full migration coming.</div>
-    </div>
-
-    <p style="font-size:11px;color:var(--t4);line-height:1.5;text-align:center;margin-top:6px">
-      Educational research, not investment advice. Markets carry risk.
-    </p>
-  `;
-
-  // Auto-fetch news in the background — first visit only, async.
-  if (!page.dataset.newsFetched) {
-    page.dataset.newsFetched = "1";
-    setTimeout(() => { try { stocksFetchNews(); } catch {} }, 250);
+    `;
+    return;
   }
+
+  // Restored full StockAnalyzer iframe — every market (stocks, ETFs, REITs,
+  // crypto, international, bonds), Housing search, Mortgages with the
+  // down-payment calculator, and News. The iframe was reskinned in
+  // stockanalyzer/static/style.css to match the parent Ascend app's dark
+  // palette so the seam is minimal. Cylan CTA sits above for one-tap
+  // investing questions, and Cylan is now allowed to suggest specific
+  // tickers + money moves (with educational framing).
+  page.innerHTML = `
+    <div style="margin:-16px -14px 0;display:flex;flex-direction:column;height:calc(100dvh - 130px);background:#0a0a0c">
+      <div style="padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--sep);flex-shrink:0">
+        <div class="row tappable" onclick="openCounselor(null, 'stocks')" role="button" tabindex="0"
+          style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:10px 12px;align-items:center;cursor:pointer;margin:0">
+          <div style="width:30px;height:30px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;color:var(--purple);margin-right:10px">✨</div>
+          <div class="body">
+            <div class="t1" style="margin:0;font-size:13px">Ask Cylan: stocks, ETFs, where to move money</div>
+            <div class="t2" style="font-size:11px;margin-top:1px">Specific ideas with the why — research them yourself</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      </div>
+      <iframe id="stk-iframe" src="/stockanalyzer?v=5" loading="eager"
+        style="border:0;flex:1;width:100%;-webkit-overflow-scrolling:touch;background:#0a0a0c"
+        title="Stock research"></iframe>
+    </div>
+  `;
 }
 
 // Legacy helpers kept for backwards compatibility / window export — no longer
@@ -8116,12 +8097,14 @@ YOUR SCOPE:
 - Stock-market literacy: how to evaluate ETFs (expense ratio, holdings concentration, tracking error), why total-market indexing usually beats stock-picking over decades, position sizing, when concentrated stock makes sense and when it's dangerous.
 
 YOUR GUARDRAILS:
-- You are an EDUCATOR and PLANNER, not a licensed fiduciary advisor or registered broker. Speak in frameworks the user can apply themselves.
-- Do NOT recommend specific tickers to buy or sell ("buy AAPL today"). If asked about a specific stock, explain how to evaluate it — fundamentals, valuation, role in the portfolio, downside risk — and remind the user the call is theirs.
+- You are a counselor and educator — not a licensed fiduciary advisor or registered broker. You CAN make specific recommendations when the user asks for them: tickers, ETFs, allocation changes, where to put their next dollar. Always frame these as IDEAS TO RESEARCH AND DECIDE ON YOURSELF, not orders to execute, and explain the WHY based on the user's actual situation (snapshot below).
+- When you suggest specific stocks/ETFs, prefer broad, well-understood instruments (total-market index funds, sector ETFs, dividend-aristocrat funds, blue-chip leaders) over speculative picks. You don't have real-time prices or news, so frame recommendations around long-term fundamentals, not market timing.
+- When you suggest moves with the user's money, be CONCRETE — name the dollar amount and destination ("put your next $1,000 in VTI", "rebalance by trimming X to fund Y") — but always add a one-line WHY tied to their numbers and a reminder to review and execute themselves.
 - Do NOT give specific tax-filing or legal advice. For complex situations, recommend a CPA or estate attorney.
-- Do NOT promise returns. Speak in historical ranges with appropriate uncertainty.
+- Do NOT promise returns. Speak in historical ranges with appropriate uncertainty. Markets can lose money in any given year.
 - For health/insurance specifics, defer to licensed agents.
-- Always be clear when something is your reasoned framework vs. the user's decision to make.
+- Always be clear about what's your reasoned suggestion vs. the user's call to make.
+- Always include a brief "Educational guidance — not licensed financial advice. Do your own research." line at the end of replies that include specific ticker/dollar/move recommendations.
 
 YOUR STYLE:
 - Warm, direct, candid. Like a fee-only planner who has known the user for years. No fluff, no preamble, no "as an AI" disclaimers, no hedging filler.
@@ -8353,14 +8336,14 @@ const COUNSELOR_SUGGESTIONS = {
     { icon: "📉", text: "Am I saving enough each month?" },
   ],
   stocks: [
-    { icon: "📈", text: "How should I think about investing for someone in my situation?" },
-    { icon: "🧺", text: "Individual stocks or low-cost ETFs — which makes sense for me?" },
-    { icon: "⚖️", text: "What's a sensible portfolio allocation given my risk tolerance?" },
-    { icon: "🔍", text: "Help me understand expense ratios and what to actually compare" },
-    { icon: "🔄", text: "When and how should I rebalance my portfolio?" },
-    { icon: "🎯", text: "How do I size positions to control downside risk?" },
+    { icon: "🎯", text: "Suggest 3 specific ETFs that fit my situation" },
+    { icon: "💵", text: "Where should I move my next $1,000?" },
+    { icon: "📈", text: "Pick 5 stocks worth researching given my risk tolerance" },
+    { icon: "🔄", text: "How should I rebalance my portfolio right now?" },
+    { icon: "⚖️", text: "What allocation should I target — be specific" },
     { icon: "🏛️", text: "Tax-advantaged accounts vs taxable — which do I fund first?" },
-    { icon: "⏳", text: "Dollar-cost averaging vs lump-sum investing — what's right for me?" },
+    { icon: "⏳", text: "Dollar-cost averaging vs lump-sum — what should I do?" },
+    { icon: "📊", text: "Look at my current holdings and tell me what to change" },
   ],
   planning: [
     { icon: "🗺️", text: "Help me build a 1, 5, and 10-year plan from scratch" },
@@ -8402,14 +8385,14 @@ function counselorRender() {
     goals:    "Hey, I'm Cylan. From your <b>Goals</b> tab — let's make these real. Pick what to tackle first or break a big one down.",
     planning: "Hey, I'm Cylan. From your <b>Plan</b> tab — let's map your short, mid, and long-term roadmap. I'll talk priorities, sequencing, and what's actually realistic.",
     money:    "Hey, I'm Cylan. From your <b>Money</b> tab — let's tighten cash flow, find leaks, and lock in a plan that sticks.",
-    stocks:   "Hey, I'm Cylan. From your <b>Stocks</b> tab — I'll talk investing frameworks (allocation, ETFs, risk), but I won't pick specific tickers for you.",
+    stocks:   "Hey, I'm Cylan. From your <b>Stocks</b> tab — ask me for specific tickers, ETFs, or where to move your next dollar. I'll give the why behind each pick, but you do the final research and click.",
     default:  "I'm Cylan — your financial counselor inside Ascend. I know your numbers. Ask me anything — planning, debt, investing, big decisions. I'll be candid and reference your actual situation.",
   })[ctx];
   const suggested = !thread.length ? `
     <div style="padding:6px 2px 4px">
       <div style="font-size:13px;color:var(--t2);line-height:1.45;margin-bottom:12px">
         ${introLine}
-        <div style="font-size:11px;color:var(--t4);margin-top:6px">Educational guidance, not licensed advice. I won't pick specific stocks for you.</div>
+        <div style="font-size:11px;color:var(--t4);margin-top:6px">Educational guidance — not licensed financial advice. Do your own research before acting.</div>
       </div>
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin:6px 0 8px">Try asking</div>
       <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
@@ -8505,7 +8488,7 @@ async function counselorSend(text) {
       goals:    "\n\nCONTEXT: The user opened you from the Goals tab. Lean toward goal-setting, sequencing, milestones, and accountability framing if their message is ambiguous.",
       planning: "\n\nCONTEXT: The user opened you from the Plan tab — they're working on a big-picture roadmap of short-term (1–12 months), mid-term (1–5 years), and long-term (5+ years) plans. Lean toward life sequencing, realistic timelines, what's worth their attention first, and translating vague aspirations into concrete next moves. The user can save plans directly in this tab.",
       money:    "\n\nCONTEXT: The user opened you from the Money tab. Lean toward budgeting, spending leaks, debt strategy, emergency fund sizing, and cash-flow framing if their message is ambiguous.",
-      stocks:   "\n\nCONTEXT: The user opened you from the Stocks tab. Lean toward investing literacy — asset allocation, ETFs vs individual stocks, tax-advantaged accounts, rebalancing, position sizing. Hold the line on never recommending specific tickers — explain frameworks instead.",
+      stocks:   "\n\nCONTEXT: The user opened you from the Stocks tab. They likely want concrete suggestions — specific tickers/ETFs to consider, where to move their next dollar, how to allocate. Give those — be specific and confident — but ALWAYS justify with the WHY (their horizon, risk tolerance, current mix from the snapshot) and frame as ideas to research, not orders to execute.",
       default: "",
     })[ctx] || "";
     const system = COUNSELOR_SYSTEM + ctxHint + "\n\nUSER SNAPSHOT (current right now):\n```json\n" + snapshotJson + "\n```";
@@ -16577,8 +16560,10 @@ function init() {
   applyPrivacyMode();
   autoLockSetup();
   render();
-  // (Iframe preload removed — Stocks tab is now native HTML calling
-  // /api/analyze + /api/news, so there's no iframe to warm.)
+  // Preload the Stocks iframe in the background so the first tap on the
+  // tab has zero load wait. The Stocks page div is inactive (display:none)
+  // at this point so the iframe loads invisibly.
+  setTimeout(() => { try { renderStocks(); } catch {} }, 400);
   maybeShowWhatsNew();
   if (_loadedFromBackup) {
     // Surface so the user knows recovery happened — silent recovery would
