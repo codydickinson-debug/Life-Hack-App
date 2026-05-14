@@ -3905,8 +3905,69 @@ function renderMoney() {
         `;
       }
 
+      // Net worth projection — 10 years out, 3 contribution scenarios.
+      // Investments grow at annualReturn; cash + real assets − debts held flat.
+      const netWorthChart = (() => {
+        const monthlyR = (annualReturn / 100) / 12;
+        const horizon = 10;
+        const flatPortion = comp.cash + comp.realAssets - comp.debts;
+        const scenarios = [
+          { label: "Current pace", monthly: monthly,       color: "var(--blue)"   },
+          { label: "+$200/mo",     monthly: monthly + 200, color: "var(--purple)" },
+          { label: "+$500/mo",     monthly: monthly + 500, color: "var(--green)"  },
+        ];
+        scenarios.forEach(s => {
+          let invT = comp.investments;
+          const pts = [];
+          for (let y = 0; y <= horizon; y++) {
+            pts.push({ year: y, balance: Math.round(invT + flatPortion) });
+            for (let m = 0; m < 12; m++) invT = invT * (1 + monthlyR) + s.monthly;
+          }
+          s.points = pts;
+          s.final = pts[pts.length - 1].balance;
+        });
+        const W=320, H=130;
+        const allVals = scenarios.flatMap(s => s.points.map(p => p.balance));
+        const min = Math.min(0, ...allVals);
+        const max = Math.max(...allVals, 1);
+        const range = (max - min) || 1;
+        const n = scenarios[0].points.length;
+        const stepX = n > 1 ? W / (n - 1) : 0;
+        const lines = scenarios.map(s => {
+          const pts = s.points.map((p,i) => `${(i*stepX).toFixed(1)},${(H - ((p.balance - min) / range) * H).toFixed(1)}`).join(" ");
+          return `<polyline fill="none" stroke="${s.color}" stroke-width="2.25" points="${pts}" stroke-linejoin="round" stroke-linecap="round"/>`;
+        }).join("");
+        const grid = [0.25, 0.5, 0.75].map(f => `<line x1="0" y1="${(H*f).toFixed(1)}" x2="${W}" y2="${(H*f).toFixed(1)}" stroke="var(--sep-2)" stroke-dasharray="2 4" stroke-width="0.5"/>`).join("");
+        return `
+          <div style="background:var(--card);border-radius:var(--r);padding:18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
+            <div style="font-size:13px;font-weight:600;color:var(--t2);margin-bottom:2px">Net worth projection · 10 years</div>
+            <div style="font-size:11.5px;color:var(--t3);margin-bottom:6px">Where your total wealth lands at ${annualReturn}% return on invested portion</div>
+            <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:${H}px;display:block;margin-top:8px">
+              ${grid}
+              ${lines}
+            </svg>
+            <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--t3);margin-top:4px">
+              <span>Today · <span data-priv="amount">${fmt$0(overallNet)}</span></span><span>+10 years</span>
+            </div>
+            <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
+              ${scenarios.map(s => `
+                <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px;padding:3px 0">
+                  <div style="display:flex;align-items:center;gap:10px">
+                    <span style="width:12px;height:3px;border-radius:2px;background:${s.color}"></span>
+                    <span style="color:var(--t2)">${s.label}</span>
+                    <span style="color:var(--t3);font-size:11.5px" data-priv="amount">${fmt$0(s.monthly)}/mo</span>
+                  </div>
+                  <span style="font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt$0(s.final)}</span>
+                </div>
+              `).join("")}
+            </div>
+          </div>
+        `;
+      })();
+
       return `
         <div class="section-h"><span class="lbl">Projections</span></div>
+        ${netWorthChart}
         <div class="list">
           ${retirementRow}
           ${fireRow}
