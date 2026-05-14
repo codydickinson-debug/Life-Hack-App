@@ -4070,36 +4070,54 @@ function renderToday() {
     })()}
 
     ${isTodaySectionHidden('counselor') ? "" : (() => {
-      // Context-aware quick prompts — pick 3 that match the user's data so the
-      // chips are always relevant. Generic prompts fill remaining slots.
-      const chips = [];
-      const hasSpend = (DB.spend || []).length > 0;
-      const hasSavings = (DB.savings || []).length > 0;
-      const hasHabits = (DB.habits || []).length > 0;
-      const hasDebt = (DB.liabilities || []).length > 0 || (DB.accounts || []).some(a => a.type === "credit" || a.type === "loan");
-      if (hasSpend)   chips.push({ icon: "💸", text: "Where am I overspending?",          seed: "Looking at my recent spending, where am I overspending? Be specific and tell me which categories." });
-      if (hasSavings) chips.push({ icon: "🎯", text: "Prioritize my savings goals",       seed: "Help me prioritize my savings goals. Which one should I focus on first and why?" });
-      if (hasDebt)    chips.push({ icon: "🧾", text: "What's my best debt payoff plan?",   seed: "Look at my debts. What's the smartest payoff order — and what's the realistic timeline?" });
-      if (hasHabits)  chips.push({ icon: "🔥", text: "How can I be more consistent?",     seed: "Looking at my habit history, where am I slipping? Give me one concrete change that would help." });
-      chips.push({ icon: "🧭", text: "What should I focus on this week?", seed: "Given everything you can see about my situation, what should I focus on this week?" });
-      chips.push({ icon: "💡", text: "Suggest one money move",            seed: "Suggest one concrete money move I should make this month based on my data." });
-      // Take first 3 to keep the card compact
-      const top = chips.slice(0, 3);
+      // Prefer data-driven personalized starters (e.g. "Your biggest category
+      // is Food at $200 — fix it?"). They reference real numbers so Cylan's
+      // reply starts concrete. Fall back to generic chips when the user has
+      // too little data for a meaningful personalized question.
+      const personalized = _personalizedStarters("default");
+      let chipsHtml;
+      let subtitle;
+      if (personalized.length >= 2) {
+        // Use full personalized starter text (compact-styled). One-line truncated.
+        chipsHtml = personalized.slice(0, 3).map(p => `
+          <button onclick="event.stopPropagation();openCounselor(${jsAttr(p.text)})"
+            style="background:linear-gradient(135deg,rgba(124,58,237,0.10),rgba(236,72,153,0.06));border:0.5px solid rgba(124,58,237,0.35);color:var(--t1);padding:10px 12px;border-radius:var(--r);font-size:12.5px;cursor:pointer;display:flex;align-items:flex-start;gap:8px;text-align:left;line-height:1.4;font-weight:500;width:100%;margin-bottom:6px">
+            <span style="font-size:14px;flex-shrink:0">${p.icon}</span>
+            <span style="flex:1">${esc(p.text)}</span>
+            <span style="color:var(--purple,#8957d9);font-size:16px;flex-shrink:0">→</span>
+          </button>
+        `).join("");
+        subtitle = "Picked just for you — based on what's in your data right now";
+      } else {
+        // Fallback: generic but data-aware chips
+        const chips = [];
+        const hasSpend = (DB.spend || []).length > 0;
+        const hasSavings = (DB.savings || []).length > 0;
+        const hasHabits = (DB.habits || []).length > 0;
+        const hasDebt = (DB.liabilities || []).length > 0 || (DB.accounts || []).some(a => a.type === "credit" || a.type === "loan");
+        if (hasSpend)   chips.push({ icon: "💸", text: "Where am I overspending?",          seed: "Looking at my recent spending, where am I overspending? Be specific and tell me which categories." });
+        if (hasSavings) chips.push({ icon: "🎯", text: "Prioritize my savings goals",       seed: "Help me prioritize my savings goals. Which one should I focus on first and why?" });
+        if (hasDebt)    chips.push({ icon: "🧾", text: "What's my best debt payoff plan?",   seed: "Look at my debts. What's the smartest payoff order — and what's the realistic timeline?" });
+        if (hasHabits)  chips.push({ icon: "🔥", text: "How can I be more consistent?",     seed: "Looking at my habit history, where am I slipping? Give me one concrete change that would help." });
+        chips.push({ icon: "🧭", text: "What should I focus on this week?", seed: "Given everything you can see about my situation, what should I focus on this week?" });
+        chips.push({ icon: "💡", text: "Suggest one money move",            seed: "Suggest one concrete money move I should make this month based on my data." });
+        const top = chips.slice(0, 3);
+        chipsHtml = `<div style="display:flex;gap:6px;flex-wrap:wrap">${top.map(c => `
+          <button onclick="event.stopPropagation();openCounselor(${jsAttr(c.seed)})" style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t1);padding:8px 12px;border-radius:var(--r-pill,999px);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span>${c.icon}</span>${esc(c.text)}</button>
+        `).join("")}</div>`;
+        subtitle = "Your financial counselor — tap a prompt below or open chat";
+      }
       return `
         <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:14px;margin-bottom:14px">
           <div onclick="openCounselor()" role="button" tabindex="0" style="display:flex;align-items:center;cursor:pointer;margin-bottom:10px">
             <div style="width:36px;height:36px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;color:var(--purple);margin-right:12px">✨</div>
             <div style="flex:1;min-width:0">
               <div class="t1" style="margin:0">Ask Cylan</div>
-              <div class="t2">Your financial counselor — tap a prompt below or open chat</div>
+              <div class="t2">${subtitle}</div>
             </div>
             <div class="trail chev"></div>
           </div>
-          <div style="display:flex;gap:6px;flex-wrap:wrap">
-            ${top.map(c => `
-              <button onclick="event.stopPropagation();openCounselor(${jsAttr(c.seed)})" style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t1);padding:8px 12px;border-radius:var(--r-pill,999px);font-size:12px;cursor:pointer;display:inline-flex;align-items:center;gap:6px;white-space:nowrap"><span>${c.icon}</span>${esc(c.text)}</button>
-            `).join("")}
-          </div>
+          ${chipsHtml}
         </div>
       `;
     })()}
