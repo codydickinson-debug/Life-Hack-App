@@ -14,6 +14,7 @@ browser window automatically.
 from __future__ import annotations
 
 import json
+import os
 import threading
 import time
 import webbrowser
@@ -293,6 +294,142 @@ def api_mortgage_calculate():
         return jsonify({"error": f"bad input: {e}"}), 400
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+
+
+# ----------------------------------------------------------------------
+# AI proxy — /api/ai/messages
+# ----------------------------------------------------------------------
+# Proxies frontend chat / insight requests to Anthropic so the API key
+# never reaches the browser. Same role the Cloudflare Worker plays, but
+# co-located with the existing Python backend so the frontend can hit it
+# at the same origin with zero per-user config.
+#
+# Environment variables (set in Vercel project settings):
+#   ANTHROPIC_API_KEY        required — sk-ant-... server-side key
+#   ANTHROPIC_DAILY_CAP      optional, default 50 (per-IP daily request cap)
+#   AI_MODEL_ALLOWLIST       optional comma-separated list; if set, only
+#                            these model strings are accepted from clients
+#
+# Notes for App-Store reviewers and downstream auditors:
+#  - The key lives only in the runtime env. It is never logged, never
+#    returned in responses, never injected into client code.
+#  - Per-IP daily cap is a soft cost guard, not abuse-grade security.
+#    A real launch should add proper auth (e.g. signed Vercel JWT) on
+#    top of this — flagged in IOS_BUILD.md.
+#  - We mirror Anthropic's error shape verbatim on non-2xx so the
+#    frontend's existing error handling (which distinguishes worker
+#    auth errors from upstream Anthropic errors by HTTP status) keeps
+#    working unchanged.
+import json as _json_mod
+import time as _time_mod
+from collections import defaultdict as _defaultdict
+from threading import Lock as _Lock
+
+import requests as _requests
+
+_AI_COUNTERS = _defaultdict(lambda: {"day": "", "count": 0})
+_AI_COUNTERS_LOCK = _Lock()
+
+_AI_DEFAULT_MODEL = "claude-haiku-4-5-20251001"
+_AI_MAX_TOKENS_CAP = 4000  # client may request less; never more
+_AI_REQUEST_TIMEOUT_S = 60
+_ANTHROPIC_VERSION = "2023-06-01"
+
+
+def _ai_today_key() -> str:
+    return _time_mod.strftime("%Y-%m-%d", _time_mod.gmtime())
+
+
+def _ai_client_ip() -> str:
+    # Vercel sets x-forwarded-for; trust the first hop (the Vercel edge).
+    fwd = request.headers.get("x-forwarded-for", "")
+    return (fwd.split(",")[0] or request.remote_addr or "0.0.0.0").strip()
+
+
+def _ai_check_quota(ip: str) -> tuple[bool, int, int]:
+    """Returns (allowed, used_today, daily_cap)."""
+    try:
+        cap = int(os.environ.get("ANTHROPIC_DAILY_CAP", "50"))
+    except (TypeError, ValueError):
+        cap = 50
+    today = _ai_today_key()
+    with _AI_COUNTERS_LOCK:
+        entry = _AI_COUNTERS[ip]
+        if entry["day"] != today:
+            entry["day"] = today
+            entry["count"] = 0
+        if entry["count"] >= cap:
+            return False, entry["count"], cap
+        entry["count"] += 1
+        return True, entry["count"], cap
+
+
+@app.route("/api/ai/messages", methods=["POST"])
+def api_ai_messages():
+    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    if not api_key:
+        # Surfaced to the frontend so it can fall back to manual setup.
+        return jsonify({"error": "AI is not configured on this deployment."}), 503
+
+    body = request.get_json(silent=True) or {}
+    messages = body.get("messages")
+    if not isinstance(messages, list) or not messages:
+        return jsonify({"error": "messages[] is required"}), 400
+
+    # Model allowlist (optional). Defends against a compromised client
+    # asking for a more expensive model than the operator intends to pay for.
+    allowlist = [m.strip() for m in os.environ.get("AI_MODEL_ALLOWLIST", "").split(",") if m.strip()]
+    model = (body.get("model") or _AI_DEFAULT_MODEL).strip()
+    if allowlist and model not in allowlist:
+        return jsonify({"error": f"model '{model}' not allowed"}), 400
+
+    # Clamp max_tokens to prevent runaway responses.
+    try:
+        max_tokens = int(body.get("max_tokens", 800))
+    except (TypeError, ValueError):
+        max_tokens = 800
+    max_tokens = max(1, min(_AI_MAX_TOKENS_CAP, max_tokens))
+
+    # Per-IP daily cap. Soft guard against casual abuse / runaway costs.
+    ip = _ai_client_ip()
+    allowed, used, cap = _ai_check_quota(ip)
+    if not allowed:
+        return jsonify({
+            "error": f"Daily AI cap reached ({used}/{cap}). Try again tomorrow.",
+        }), 429
+
+    payload = {
+        "model": model,
+        "max_tokens": max_tokens,
+        "messages": messages,
+    }
+    if isinstance(body.get("system"), str) and body["system"]:
+        payload["system"] = body["system"]
+    if isinstance(body.get("temperature"), (int, float)):
+        payload["temperature"] = float(body["temperature"])
+
+    try:
+        r = _requests.post(
+            "https://api.anthropic.com/v1/messages",
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": _ANTHROPIC_VERSION,
+                "content-type": "application/json",
+            },
+            data=_json_mod.dumps(payload),
+            timeout=_AI_REQUEST_TIMEOUT_S,
+        )
+    except _requests.RequestException as e:
+        return jsonify({"error": f"Upstream Anthropic request failed: {e.__class__.__name__}"}), 502
+
+    # Mirror upstream status + body verbatim. The Anthropic error shape is
+    # already JSON; we don't reformat. Frontend distinguishes our 401 vs
+    # Anthropic 401 by inspecting body shape (string vs nested object).
+    try:
+        resp_body = r.json()
+    except ValueError:
+        resp_body = {"error": "Upstream returned non-JSON response"}
+    return jsonify(resp_body), r.status_code
 
 
 def open_browser():

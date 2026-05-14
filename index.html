@@ -3,15 +3,65 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
-<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+
+<!-- Theme color matches the manifest background so PWA browser chrome blends
+     into the app surface, no flash on launch. -->
+<meta name="theme-color" content="#F7F7F5" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0A0A0A" media="(prefers-color-scheme: dark)" />
+
+<!-- SEO + App Store / social-share preview metadata. The description shows up
+     in App Store Connect search-result previews when the App Store fetches
+     the canonical URL, and in iMessage / WhatsApp / Twitter / Slack link
+     previews when the live URL is shared. -->
+<meta name="description" content="Personal-finance on easy mode. Track spending, set savings goals, build money habits, plan retirement — all encrypted locally, no ads, no data sales." />
+<meta name="application-name" content="Life Hack" />
+<meta name="author" content="Life Hack" />
+<meta name="generator" content="Life Hack" />
+<link rel="canonical" href="https://life-hack-app.vercel.app/" />
+
+<!-- Prevent iOS Safari from auto-converting phone numbers, dates, and
+     addresses into tappable links inside the app — they collide with our
+     own inline handlers and create visual artifacts in rendered amounts. -->
+<meta name="format-detection" content="telephone=no, date=no, address=no, email=no" />
+
+<!-- Open Graph (Facebook, LinkedIn, iMessage, Slack, Discord). Image is a
+     square 512px PNG that already exists in the repo; replace with a
+     dedicated 1200x630 OG image when designed. -->
+<meta property="og:type" content="website" />
+<meta property="og:site_name" content="Life Hack" />
+<meta property="og:title" content="Life Hack — Money, Habits & Goals" />
+<meta property="og:description" content="Personal-finance on easy mode. Track spending, set savings goals, build money habits, plan retirement — all encrypted locally, no ads, no data sales." />
+<meta property="og:url" content="https://life-hack-app.vercel.app/" />
+<meta property="og:image" content="https://life-hack-app.vercel.app/icon-512.png" />
+<meta property="og:image:width" content="512" />
+<meta property="og:image:height" content="512" />
+<meta property="og:locale" content="en_US" />
+
+<!-- Twitter / X card -->
+<meta name="twitter:card" content="summary_large_image" />
+<meta name="twitter:title" content="Life Hack — Money, Habits & Goals" />
+<meta name="twitter:description" content="Personal-finance on easy mode. Track spending, set savings goals, build money habits, plan retirement — all encrypted locally, no ads, no data sales." />
+<meta name="twitter:image" content="https://life-hack-app.vercel.app/icon-512.png" />
 
 <!-- iOS PWA meta -->
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-status-bar-style" content="default" />
-<meta name="apple-mobile-web-app-title" content="Ascend" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Life Hack" />
+
+<!-- Apple Touch Icons. iOS uses the same 180x180 PNG for every home-screen
+     size and scales as needed; we serve one definitive file. Other sizes
+     can be added later if a dedicated icon set is generated. -->
 <link rel="apple-touch-icon" href="icon-180.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png" />
+
+<!-- Favicons. PNG favicons are supported by every modern browser; no need
+     for a separate .ico. Sized variants help browser-tab rendering on
+     high-DPI displays. -->
+<link rel="icon" type="image/png" sizes="192x192" href="icon-192.png" />
+<link rel="icon" type="image/png" sizes="512x512" href="icon-512.png" />
+<link rel="shortcut icon" href="icon-192.png" />
+
 <link rel="manifest" href="manifest.json" />
 
 <!--
@@ -51,24 +101,28 @@
      would break the app whenever they push a fix. CSP above restricts script origin. -->
 <script src="https://cdn.plaid.com/link/v2/stable/link-initialize.js" defer></script>
 
-<title>Ascend</title>
+<title>Life Hack — Money, Habits & Goals</title>
 
 <style>
 /* ================ DESIGN TOKENS ================ */
+/* Visual refresh v1 — dark-first premium feel.
+   Light theme is now a crisp cool-neutral instead of warm beige; the
+   signature accent gradient (violet → magenta → orange) is reserved
+   for hero moments only so it stays special. */
 :root {
-  /* Surfaces — refined neutrals with the slightest warmth */
-  --bg:        #F7F7F5;
-  --bg-elev:   #EFEFEC;
-  --bg-elev2:  #E5E5E1;
+  /* Surfaces — crisp cool-neutrals (cooler than the prior beige) */
+  --bg:        #FBFBFD;
+  --bg-elev:   #F2F2F5;
+  --bg-elev2:  #E8E8EE;
   --card:      #FFFFFF;
-  --sep:       rgba(17,17,19,.06);
-  --sep-2:     rgba(17,17,19,.10);
+  --sep:       rgba(17,17,21,.06);
+  --sep-2:     rgba(17,17,21,.10);
 
   /* Text — refined hierarchy */
   --t1:        #0A0A0B;
-  --t2:        #46464D;
-  --t3:        #86868D;
-  --t4:        #B8B8BD;
+  --t2:        #43434B;
+  --t3:        #7A7A85;
+  --t4:        #B0B0BA;
 
   /* Accents — calibrated system colors */
   --blue:      #2F6FEB;
@@ -81,11 +135,20 @@
   --indigo:    #4F4ED1;
   --teal:      #36B0CC;
 
+  /* Signature accent gradients — used sparingly on hero moments
+     (the safe-to-spend block, milestone celebrations, share cards,
+     primary CTAs). NOT for backgrounds, never for body text. */
+  --grad-hero: linear-gradient(135deg, #6366F1 0%, #A855F7 35%, #EC4899 65%, #F97316 100%);
+  --grad-cool: linear-gradient(135deg, #0EA5E9 0%, #6366F1 100%);
+  --grad-warm: linear-gradient(135deg, #F97316 0%, #DB2777 100%);
+  --accent:    #7C3AED;  /* solo color picked from the hero gradient — for focus rings, links */
+
   /* Elevation — for the App-Store-grade card feel */
   --sh-1:      0 1px 2px rgba(15,17,21,0.04), 0 1px 3px rgba(15,17,21,0.04);
   --sh-2:      0 2px 4px rgba(15,17,21,0.04), 0 6px 20px rgba(15,17,21,0.06);
   --sh-pop:    0 4px 12px rgba(15,17,21,0.06), 0 16px 40px rgba(15,17,21,0.10);
-  --sh-hero:   0 1px 2px rgba(0,0,0,0.10), 0 12px 32px rgba(0,0,0,0.18);
+  --sh-hero:   0 2px 4px rgba(0,0,0,0.08), 0 24px 56px rgba(124,58,237,0.18);
+  --sh-glow:   0 0 0 1px rgba(124,58,237,0.12), 0 12px 32px rgba(124,58,237,0.15);
 
   /* Geometry — generous corners, Apple-modern */
   --r:         16px;
@@ -104,37 +167,48 @@
   --tab-h:     calc(64px + var(--sa-bot));
 }
 
+/* Dark theme — deliberately designed, not inverted.
+   - Base is a deep blue-black (#08080C) rather than neutral charcoal;
+     reads as "premium fintech" instead of "OLED black."
+   - Card surfaces have a slight cool tint so they read as separate
+     planes on top of the base, not the same color.
+   - Text contrast hits WCAG AA on all tiers.
+   - Shadows are stronger + bluer in dark for depth. */
 @media (prefers-color-scheme: dark) {
   :root.theme-auto {
-    --bg:        #0A0A0C;
-    --bg-elev:   #16161A;
-    --bg-elev2:  #22222A;
-    --card:      #16161A;
-    --sep:       rgba(255,255,255,.06);
-    --sep-2:     rgba(255,255,255,.10);
+    --bg:        #08080C;
+    --bg-elev:   #14141B;
+    --bg-elev2:  #1F1F28;
+    --card:      #14141B;
+    --sep:       rgba(255,255,255,.07);
+    --sep-2:     rgba(255,255,255,.12);
     --t1:        #F5F5F7;
-    --t2:        #B5B5BA;
-    --t3:        #7A7A82;
-    --t4:        #4A4A52;
-    --sh-1:      0 1px 2px rgba(0,0,0,0.30), 0 1px 3px rgba(0,0,0,0.20);
-    --sh-2:      0 2px 4px rgba(0,0,0,0.30), 0 6px 20px rgba(0,0,0,0.30);
-    --sh-pop:    0 4px 12px rgba(0,0,0,0.40), 0 16px 40px rgba(0,0,0,0.45);
+    --t2:        #B8B8C0;
+    --t3:        #7A7A86;
+    --t4:        #4A4A55;
+    --sh-1:      0 1px 2px rgba(0,0,0,0.40), 0 1px 3px rgba(0,0,0,0.30);
+    --sh-2:      0 2px 4px rgba(0,0,0,0.45), 0 8px 24px rgba(0,0,0,0.50);
+    --sh-pop:    0 4px 12px rgba(0,0,0,0.55), 0 24px 56px rgba(0,0,0,0.65);
+    --sh-hero:   0 2px 4px rgba(0,0,0,0.40), 0 32px 72px rgba(124,58,237,0.25);
+    --sh-glow:   0 0 0 1px rgba(168,85,247,0.20), 0 16px 48px rgba(168,85,247,0.25);
   }
 }
 :root.theme-dark {
-  --bg:        #0A0A0C;
-  --bg-elev:   #16161A;
-  --bg-elev2:  #22222A;
-  --card:      #16161A;
-  --sep:       rgba(255,255,255,.06);
-  --sep-2:     rgba(255,255,255,.10);
+  --bg:        #08080C;
+  --bg-elev:   #14141B;
+  --bg-elev2:  #1F1F28;
+  --card:      #14141B;
+  --sep:       rgba(255,255,255,.07);
+  --sep-2:     rgba(255,255,255,.12);
   --t1:        #F5F5F7;
-  --t2:        #B5B5BA;
-  --t3:        #7A7A82;
-  --t4:        #4A4A52;
-  --sh-1:      0 1px 2px rgba(0,0,0,0.30), 0 1px 3px rgba(0,0,0,0.20);
-  --sh-2:      0 2px 4px rgba(0,0,0,0.30), 0 6px 20px rgba(0,0,0,0.30);
-  --sh-pop:    0 4px 12px rgba(0,0,0,0.40), 0 16px 40px rgba(0,0,0,0.45);
+  --t2:        #B8B8C0;
+  --t3:        #7A7A86;
+  --t4:        #4A4A55;
+  --sh-1:      0 1px 2px rgba(0,0,0,0.40), 0 1px 3px rgba(0,0,0,0.30);
+  --sh-2:      0 2px 4px rgba(0,0,0,0.45), 0 8px 24px rgba(0,0,0,0.50);
+  --sh-pop:    0 4px 12px rgba(0,0,0,0.55), 0 24px 56px rgba(0,0,0,0.65);
+  --sh-hero:   0 2px 4px rgba(0,0,0,0.40), 0 32px 72px rgba(124,58,237,0.25);
+  --sh-glow:   0 0 0 1px rgba(168,85,247,0.20), 0 16px 48px rgba(168,85,247,0.25);
 }
 
 /* ================ BASE ================ */
@@ -202,11 +276,11 @@ input::placeholder, textarea::placeholder { color: var(--t4); }
 
 .tb-title { font-size: 17px; font-weight: 600; letter-spacing: -.2px; }
 .tb-btn {
-  width: 38px; height: 38px;
+  width: 40px; height: 40px;
   border-radius: 50%;
   background: var(--bg-elev);
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 15px; color: var(--t2);
+  color: var(--t2);
   border: 0.5px solid var(--sep);
   transition: transform .15s ease, background .15s ease, color .15s ease;
 }
@@ -268,27 +342,41 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: var(--t3);
   font-size: 10px;
   font-weight: 600;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
   transition: color .15s ease, transform .15s ease;
   position: relative;
 }
 .tab .ic {
-  font-size: 18px;
-  line-height: 1;
-  opacity: 0.7;
+  width: 22px;
+  height: 22px;
+  opacity: 0.70;
   transition: opacity .15s ease, transform .2s cubic-bezier(.34,1.56,.64,1), color .15s ease;
+  color: var(--t3);
 }
 .tab.active { color: var(--t1); }
-.tab.active .ic { opacity: 1; transform: translateY(-1px); }
+.tab.active .ic { opacity: 1; transform: translateY(-1px); color: var(--t1); }
 .tab:active .ic { transform: scale(.88); }
+
+/* Active tab gets a small accent dot above the icon — like iOS Maps tab,
+   distinctive premium signal that doesn't rely on color saturation. */
+.tab.active::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--accent);
+  box-shadow: 0 0 8px rgba(124,58,237,0.7);
+}
 
 /* ================ TYPOGRAPHY / SECTIONS ================ */
 .lg-title {
-  font-size: 34px;
-  font-weight: 700;
-  letter-spacing: -0.028em;
-  margin: 8px 0 20px;
-  line-height: 1.1;
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  margin: 4px 0 4px;
+  line-height: 1.0;
   color: var(--t1);
 }
 .section-h {
@@ -358,20 +446,22 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .btn {
   display: inline-flex; align-items: center; justify-content: center;
   gap: 6px;
-  padding: 14px 20px;
-  border-radius: var(--r2);
+  padding: 15px 22px;
+  border-radius: 14px;
   font-size: 15px;
-  font-weight: 600;
-  background: var(--t1);
-  color: var(--bg);
-  transition: opacity .15s ease, transform .15s ease, background .15s ease;
+  font-weight: 700;
+  background: var(--grad-hero);
+  color: #fff;
+  transition: opacity .15s ease, transform .15s ease, box-shadow .15s ease;
   width: 100%;
   letter-spacing: -0.01em;
   border: none;
   -webkit-user-select: none;
   user-select: none;
+  position: relative;
+  box-shadow: var(--sh-1);
 }
-.btn:hover { opacity: .92; }
+.btn:hover { box-shadow: var(--sh-glow); }
 .btn:active { opacity: .85; transform: scale(.985); }
 .btn.secondary {
   background: var(--bg-elev);
@@ -453,15 +543,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 /* ================ HERO / TODAY FOCUS ================ */
 .hero {
   background:
-    radial-gradient(120% 80% at 100% 0%, rgba(94,224,160,0.12) 0%, rgba(94,224,160,0) 50%),
-    linear-gradient(180deg, #18181C 0%, #0F0F12 100%);
+    radial-gradient(120% 90% at 100% 0%, rgba(168,85,247,0.20) 0%, rgba(168,85,247,0) 55%),
+    radial-gradient(100% 70% at 0% 100%, rgba(99,102,241,0.18) 0%, rgba(99,102,241,0) 55%),
+    linear-gradient(180deg, #18181F 0%, #0C0C12 100%);
   color: #F5F5F7;
-  border-radius: var(--r);
-  padding: 24px 22px 26px;
+  border-radius: 22px;
+  padding: 28px 24px 30px;
   margin-bottom: 14px;
   position: relative;
   overflow: hidden;
-  border: 0.5px solid rgba(255,255,255,0.06);
+  border: 0.5px solid rgba(255,255,255,0.10);
   box-shadow: var(--sh-hero);
 }
 .hero::before {
@@ -469,43 +560,44 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   position: absolute;
   top: 0; left: 0; right: 0;
   height: 1px;
-  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.10), transparent);
+  background: linear-gradient(90deg, transparent 0%, rgba(168,85,247,0.40) 50%, transparent 100%);
   pointer-events: none;
 }
-.hero .h-eyebrow { font-size: 11px; font-weight: 600; color: rgba(245,245,247,0.55); letter-spacing: 0.08em; text-transform: uppercase; }
+.hero .h-eyebrow { font-size: 11px; font-weight: 700; color: rgba(245,245,247,0.60); letter-spacing: 0.16em; text-transform: uppercase; }
 .hero .h-big {
-  font-size: 30px;
-  font-weight: 700;
-  letter-spacing: -0.028em;
-  margin-top: 8px;
-  line-height: 1.12;
+  font-size: 52px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
+  margin-top: 10px;
+  line-height: 1.0;
   color: #F5F5F7;
+  font-variant-numeric: tabular-nums;
 }
-.hero .h-sub { font-size: 13.5px; color: rgba(245,245,247,0.66); margin-top: 6px; line-height: 1.4; }
-.hero .h-bar { height: 5px; background: rgba(255,255,255,.10); border-radius: 4px; margin-top: 18px; overflow: hidden; }
-.hero .h-fill { height: 100%; background: linear-gradient(90deg, #2EB875, #5EE0A0); border-radius: 4px; transition: width .7s cubic-bezier(.34,1.56,.64,1); box-shadow: 0 0 12px rgba(94,224,160,0.45); }
+.hero .h-sub { font-size: 14px; color: rgba(245,245,247,0.70); margin-top: 10px; line-height: 1.4; }
+.hero .h-bar { height: 6px; background: rgba(255,255,255,.08); border-radius: 6px; margin-top: 22px; overflow: hidden; }
+.hero .h-fill { height: 100%; background: var(--grad-hero); border-radius: 6px; transition: width .7s cubic-bezier(.34,1.56,.64,1); box-shadow: 0 0 16px rgba(168,85,247,0.55); }
 .hero::after { display: none; }
 
 /* ================ STATS / GRID ================ */
 .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
 .kpi {
   background: var(--card);
-  border-radius: var(--r);
-  padding: 16px 16px 14px;
+  border-radius: 18px;
+  padding: 18px 18px 16px;
   border: 0.5px solid var(--sep);
   box-shadow: var(--sh-1);
-  transition: transform .15s ease;
+  transition: transform .15s ease, box-shadow .15s ease;
 }
 .kpi:active { transform: scale(.99); }
 .kpi .v {
-  font-size: 26px;
-  font-weight: 700;
-  letter-spacing: -0.028em;
+  font-size: 34px;
+  font-weight: 800;
+  letter-spacing: -0.035em;
   color: var(--t1);
   font-variant-numeric: tabular-nums;
-  line-height: 1.1;
+  line-height: 1.05;
 }
-.kpi .l { font-size: 11.5px; color: var(--t3); margin-top: 4px; font-weight: 600; letter-spacing: 0.01em; }
+.kpi .l { font-size: 11px; color: var(--t3); margin-top: 6px; font-weight: 700; letter-spacing: 0.10em; text-transform: uppercase; }
 .kpi .ic { font-size: 14px; opacity: 0.6; }
 .kpi .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; color: var(--t3); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
 
@@ -548,6 +640,76 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 /* ================ GOALS ================ */
 .tier-pills { display: flex; gap: 6px; overflow-x: auto; margin: 4px 0 14px; padding-bottom: 4px; }
 .tier-pills::-webkit-scrollbar { display: none; }
+
+/* Insights pill row — collapses Wealth Health, Smart Plays, Important Dates,
+   Upcoming Bills, and Money Reflection into one horizontally-scrolling row
+   so the Today tab doesn't stack 5 cards before reaching habits.
+   Pills only render when their underlying surface has content. */
+.insights-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 0 0 16px;
+  padding: 2px 2px 6px;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+}
+.insights-row::-webkit-scrollbar { display: none; }
+.insight-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 14px;
+  border-radius: var(--r-pill);
+  background: var(--card);
+  border: 0.5px solid var(--sep-2);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--t1);
+  cursor: pointer;
+  scroll-snap-align: start;
+  white-space: nowrap;
+  transition: transform 0.1s ease, background 0.1s ease;
+}
+.insight-pill:active { transform: scale(0.97); background: var(--bg-elev); }
+.insight-pill .ip-emoji { font-size: 15px; line-height: 1; }
+.insight-pill .ip-label { font-size: 13px; }
+.insight-pill .ip-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 7px;
+  background: var(--bg-elev);
+  color: var(--t2);
+  border-radius: 10px;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Compact inline "spent today" line that used to be a full card */
+.today-spent {
+  font-size: 12px;
+  color: var(--t3);
+  margin: -8px 0 14px;
+  padding-left: 2px;
+  font-weight: 500;
+}
+
+/* Slim footer quote that used to be a "Reminder" section with a row */
+.today-quote {
+  margin: 22px 0 8px;
+  padding: 14px 4px 0;
+  text-align: center;
+  font-size: 13px;
+  font-style: italic;
+  color: var(--t3);
+  line-height: 1.5;
+  border-top: 0.5px solid var(--sep);
+}
 .tier-pill {
   flex-shrink: 0;
   padding: 8px 16px;
@@ -910,35 +1072,53 @@ body.priv-on [data-priv="amount"]:active { filter: blur(0); }
   position: fixed; inset: 0; pointer-events: none; z-index: 200;
 }
 
-/* Safe-to-spend hero card */
+/* Safe-to-spend hero card.
+   Uses the signature accent gradient so the most important number
+   on the home screen earns visual real estate. The 'over' variant
+   stays warm/red so the user immediately reads "danger."
+   Decorative blurred orbs add depth without an image asset. */
 .sts {
-  background: linear-gradient(135deg, var(--green) 0%, color-mix(in srgb, var(--green) 65%, var(--blue)) 100%);
+  background: var(--grad-hero);
   color: #fff;
-  border-radius: var(--r);
-  padding: 18px 18px 16px;
-  margin-bottom: 14px;
-  box-shadow: var(--sh-2);
+  border-radius: 22px;
+  padding: 24px 22px 22px;
+  margin-bottom: 16px;
+  box-shadow: var(--sh-hero);
   position: relative;
   overflow: hidden;
+  isolation: isolate;
 }
-.sts.over { background: linear-gradient(135deg, var(--orange) 0%, var(--red) 100%); }
+.sts::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(60% 50% at 20% 10%, rgba(255,255,255,0.22) 0%, transparent 60%),
+    radial-gradient(50% 40% at 95% 90%, rgba(0,0,0,0.18) 0%, transparent 60%);
+  pointer-events: none;
+  z-index: -1;
+}
+.sts.over {
+  background: linear-gradient(135deg, #F97316 0%, #DC2626 100%);
+}
 .sts .sts-eyebrow {
-  font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
-  opacity: 0.85; margin-bottom: 4px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.16em; text-transform: uppercase;
+  opacity: 0.92; margin-bottom: 6px;
 }
 .sts .sts-big {
-  font-family: var(--font-num); font-size: 38px; font-weight: 700;
-  letter-spacing: -0.025em; line-height: 1.1; margin-bottom: 4px;
+  font-family: var(--font-num); font-size: 56px; font-weight: 800;
+  letter-spacing: -0.035em; line-height: 1.0; margin-bottom: 8px;
+  font-variant-numeric: tabular-nums;
 }
 .sts .sts-sub {
-  font-size: 13px; opacity: 0.92; line-height: 1.4;
+  font-size: 13px; opacity: 0.92; line-height: 1.45;
 }
 .sts .sts-meta {
-  margin-top: 12px; padding-top: 12px;
-  border-top: 0.5px solid rgba(255,255,255,0.22);
-  display: flex; gap: 18px; font-size: 11px; opacity: 0.92; font-weight: 600;
+  margin-top: 14px; padding-top: 14px;
+  border-top: 0.5px solid rgba(255,255,255,0.25);
+  display: flex; gap: 18px; font-size: 11px; opacity: 0.92; font-weight: 600; letter-spacing: 0.04em;
 }
-.sts .sts-meta div span { opacity: 0.7; font-weight: 500; }
+.sts .sts-meta div span { opacity: 0.65; font-weight: 500; }
 
 /* Goal hierarchy chain */
 .goal-chain {
@@ -973,31 +1153,35 @@ body.priv-on [data-priv="amount"]:active { filter: blur(0); }
 
 /* Privacy chip in topbar */
 .tb-priv {
-  width: 38px; height: 38px; border-radius: 50%;
+  width: 40px; height: 40px; border-radius: 50%;
   background: var(--bg-elev); display: inline-flex; align-items: center; justify-content: center;
-  font-size: 16px; color: var(--t2); border: 0.5px solid var(--sep); margin-right: 6px;
-  transition: transform .15s ease, color .15s ease;
+  color: var(--t2); border: 0.5px solid var(--sep);
+  transition: transform .15s ease, color .15s ease, background .15s ease;
 }
-.tb-priv:active { transform: scale(.92); }
-body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(--blue) 14%, var(--bg-elev)); }
+.tb-priv:active, .tb-btn:active { transform: scale(.92); background: var(--bg-elev2); }
+body.priv-on .tb-priv {
+  color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 14%, var(--bg-elev));
+  border-color: color-mix(in srgb, var(--accent) 30%, transparent);
+}
 
 /* Floating action button (Quick Add Spend) */
 #fab {
   position: fixed;
   right: max(20px, env(safe-area-inset-right));
   bottom: calc(var(--tab-h) + 14px);
-  width: 56px; height: 56px;
+  width: 60px; height: 60px;
   border-radius: 50%;
-  background: var(--t1);
-  color: var(--bg);
-  font-size: 28px; font-weight: 300; line-height: 1;
-  box-shadow: var(--sh-pop);
+  background: var(--grad-hero);
+  color: #fff;
+  font-size: 30px; font-weight: 300; line-height: 1;
+  box-shadow: var(--sh-hero);
   z-index: 6;
   display: flex; align-items: center; justify-content: center;
-  transition: transform .12s ease, background .15s ease;
+  transition: transform .12s ease, box-shadow .15s ease;
 }
 #fab:active { transform: scale(.92); }
-#fab:hover { background: var(--blue); color: #fff; }
+#fab:hover { box-shadow: var(--sh-glow), var(--sh-hero); }
 
 /* Cashflow chart card */
 .cf-card { background: var(--card); border-radius: var(--r); border: 0.5px solid var(--sep); padding: 16px; margin-bottom: 14px; box-shadow: var(--sh-1); }
@@ -1064,9 +1248,19 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
       <div class="tb-name"  id="tb-title">Ascend</div>
       <div id="tb-tagline" style="font-size:11px;color:var(--t3);font-style:italic;margin-top:1px;display:none"></div>
     </div>
-    <div style="display:flex;align-items:center">
-      <button class="tb-priv" id="tb-priv" title="Privacy mode" onclick="togglePrivacyMode()" aria-label="Privacy mode">👁</button>
-      <button class="tb-btn" id="tb-action" title="Settings" onclick="openSettings()">⚙︎</button>
+    <div style="display:flex;align-items:center;gap:8px">
+      <button class="tb-priv" id="tb-priv" title="Privacy mode" onclick="togglePrivacyMode()" aria-label="Privacy mode">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/>
+          <circle cx="12" cy="12" r="3"/>
+        </svg>
+      </button>
+      <button class="tb-btn" id="tb-action" title="Settings" onclick="openSettings()" aria-label="Settings">
+        <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/>
+        </svg>
+      </button>
     </div>
   </div>
 
@@ -1080,11 +1274,43 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   </div>
 
   <nav id="tabbar">
-    <button class="tab active" data-tab="today"><span class="ic">☀︎</span><span>Today</span></button>
-    <button class="tab" data-tab="goals"><span class="ic">◎</span><span>Goals</span></button>
-    <button class="tab" data-tab="money"><span class="ic">$</span><span>Money</span></button>
-    <button class="tab" data-tab="stocks"><span class="ic">↗</span><span>Stocks</span></button>
-    <button class="tab" data-tab="stats"><span class="ic">▦</span><span>Stats</span></button>
+    <button class="tab active" data-tab="today" aria-label="Today">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 3v2M12 19v2M5 12H3M21 12h-2M5.6 5.6l1.4 1.4M17 17l1.4 1.4M5.6 18.4 7 17M17 7l1.4-1.4"/>
+        <circle cx="12" cy="12" r="4"/>
+      </svg>
+      <span>Today</span>
+    </button>
+    <button class="tab" data-tab="goals" aria-label="Goals">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <circle cx="12" cy="12" r="9"/>
+        <circle cx="12" cy="12" r="5"/>
+        <circle cx="12" cy="12" r="1.5" fill="currentColor"/>
+      </svg>
+      <span>Goals</span>
+    </button>
+    <button class="tab" data-tab="money" aria-label="Money">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M12 2v20"/>
+        <path d="M17 6.5a4 4 0 0 0-4-2.5h-2.5A3 3 0 0 0 10.5 10h3.5a3 3 0 0 1 0 6H10a4 4 0 0 1-4-2.5"/>
+      </svg>
+      <span>Money</span>
+    </button>
+    <button class="tab" data-tab="stocks" aria-label="Stocks">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <path d="M3 17l5-5 3.5 3.5L20 7"/>
+        <path d="M14 7h6v6"/>
+      </svg>
+      <span>Stocks</span>
+    </button>
+    <button class="tab" data-tab="stats" aria-label="Stats">
+      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="3" y="13" width="4" height="8" rx="1"/>
+        <rect x="10" y="9" width="4" height="12" rx="1"/>
+        <rect x="17" y="5" width="4" height="16" rx="1"/>
+      </svg>
+      <span>Stats</span>
+    </button>
   </nav>
 
   <button id="fab" aria-label="Quick add spend" onclick="quickAddSpendSheet()">+</button>
@@ -2249,6 +2475,70 @@ function renderToday() {
     </div>
   ` : "";
 
+  // ---- Build the Insights pill row -------------------------------------
+  // Collapses what used to be five separate stacked cards (Wealth Health,
+  // Money Reflection, Smart Plays, Important Dates, Coming Up bills) into
+  // a single horizontally-scrolling pill row. Each pill is only emitted if
+  // that surface has content — empty insights stay hidden. Tapping a pill
+  // opens the same sheet/tab the old card opened, so no feature is lost.
+  const insightPills = [];
+  {
+    // Smart plays — count-only pill
+    const plays = computeSmartPlays();
+    if (plays.length) {
+      insightPills.push(`<button class="insight-pill" onclick="smartPlaysSheet()" aria-label="Smart plays">
+        <span class="ip-emoji">💡</span><span class="ip-label">Smart plays</span><span class="ip-count">${plays.length}</span>
+      </button>`);
+    }
+    // Wealth Health — show score in the pill so it earns its spot
+    const hasMoneyContext = (+(DB.budget?.income) || 0) > 0
+      || (DB.savings || []).length > 0
+      || (DB.liabilities || []).length > 0
+      || (DB.recurring || []).length > 0;
+    if (hasMoneyContext) {
+      const wh = computeWealthHealth();
+      const lbl = wealthHealthLabel(wh.total);
+      insightPills.push(`<button class="insight-pill" onclick="wealthHealthSheet()" aria-label="Wealth health">
+        <span class="ip-emoji">🩺</span><span class="ip-label">Wealth</span><span class="ip-count" style="background:${lbl.color};color:#fff">${wh.total}</span>
+      </button>`);
+    }
+    // Upcoming bills — only when there's something to flag
+    const bills = upcomingBills();
+    if (bills.length) {
+      const urgent = bills.filter(b => b.days <= 2).length;
+      insightPills.push(`<button class="insight-pill" onclick="showTab('money')" aria-label="Upcoming bills">
+        <span class="ip-emoji">📅</span><span class="ip-label">Bills</span><span class="ip-count" ${urgent ? 'style="background:var(--orange);color:#fff"' : ""}>${bills.length}</span>
+      </button>`);
+    }
+    // Important dates within 60d
+    const events = computeFinancialCalendar({ horizonMonths: 12 })
+      .filter(e => daysUntil(e.date) <= 60);
+    if (events.length) {
+      insightPills.push(`<button class="insight-pill" onclick="financialCalendarSheet()" aria-label="Important dates">
+        <span class="ip-emoji">🗓</span><span class="ip-label">Dates</span><span class="ip-count">${events.length}</span>
+      </button>`);
+    }
+    // Money reflection — daily prompt
+    if ((DB.profile||{}).age) {
+      insightPills.push(`<button class="insight-pill" onclick="moneyPromptSheet()" aria-label="Today's money reflection">
+        <span class="ip-emoji">💭</span><span class="ip-label">Reflect</span>
+      </button>`);
+    }
+  }
+  const insightsRow = insightPills.length
+    ? `<div class="insights-row" role="navigation" aria-label="Insights">${insightPills.join("")}</div>`
+    : "";
+
+  // ---- Today spending micro-line ---------------------------------------
+  // Previously its own card; now folded as a small inline below safe-to-spend
+  const todayKeyStr = todayKey();
+  const todaySpentToday = (DB.spend||[])
+    .filter(t => t.date === todayKeyStr && (+t.amount) > 0)
+    .reduce((a,t)=>a+(+t.amount||0), 0);
+  const spentLine = todaySpentToday ? `
+    <div class="today-spent" data-priv="amount">💸 ${fmt$0(todaySpentToday)} spent today · ${(DB.spend||[]).filter(t=>t.date===todayKeyStr).length} tx</div>
+  ` : "";
+
   $("#page-today").innerHTML = `
     <div class="lg-title">Today</div>
     <div class="muted" style="margin:-12px 0 18px;font-size:14px">${dateLabel()}</div>
@@ -2274,119 +2564,9 @@ function renderToday() {
       `;
     })()}
     ${stsHtml}
+    ${spentLine}
 
-    ${(() => {
-      // Wealth Health score — only show when there's meaningful financial data,
-      // otherwise the score is artificially 0 and demotivating for new users.
-      const hasMoneyContext = (+(DB.budget?.income) || 0) > 0
-        || (DB.savings || []).length > 0
-        || (DB.liabilities || []).length > 0
-        || (DB.recurring || []).length > 0;
-      if (!hasMoneyContext) return "";
-      const r = computeWealthHealth();
-      const lbl = wealthHealthLabel(r.total);
-      return `
-        <div class="row tappable" onclick="wealthHealthSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:center">
-          <div style="font-size:30px;font-weight:700;color:${lbl.color};line-height:1;margin-right:14px;min-width:60px;text-align:center">${r.total}</div>
-          <div class="body">
-            <div class="t1" style="margin:0">🩺 Wealth Health · <span style="color:${lbl.color}">${lbl.word}</span></div>
-            <div class="t2">${r.topGap ? esc(r.topGap.suggest) : "Strong across all dimensions — keep compounding"}</div>
-          </div>
-          <div class="trail chev"></div>
-        </div>
-      `;
-    })()}
-
-    ${(() => {
-      // Money reflection prompt — small card with today's question. Tap to journal.
-      // Only show if user has profile filled in (signal they're engaged with the app).
-      const profile = DB.profile || {};
-      if (!profile.age) return "";
-      const prompt = todaysMoneyPrompt();
-      return `
-        <div class="row tappable" onclick="moneyPromptSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-left:3px solid var(--blue);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:flex-start">
-          <div style="font-size:20px;width:32px;text-align:center;line-height:1.4">💭</div>
-          <div class="body">
-            <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:.4px;font-weight:600;margin-bottom:4px">Today's money reflection</div>
-            <div class="t1" style="margin:0;font-size:14px;line-height:1.4">${esc(prompt)}</div>
-          </div>
-          <div class="trail chev"></div>
-        </div>
-      `;
-    })()}
-
-    ${(() => {
-      const plays = computeSmartPlays();
-      if (!plays.length) return "";
-      const top = plays.slice(0, 2);
-      const moreCount = plays.length - top.length;
-      return `
-        <div class="section-h"><span class="lbl">💡 Smart plays</span><button class="act" onclick="smartPlaysSheet()">${moreCount > 0 ? `View all ${plays.length}` : "Details"}</button></div>
-        <div class="list">
-          ${top.map(p => `
-            <div class="row tappable" onclick="smartPlaysSheet()" role="button" tabindex="0">
-              <div class="lead">${p.emoji}</div>
-              <div class="body">
-                <div class="t1">${esc(p.title)}</div>
-                <div class="t2">${esc(p.body)}</div>
-              </div>
-              <div class="trail chev"></div>
-            </div>
-          `).join("")}
-        </div>
-      `;
-    })()}
-
-    ${(() => {
-      const events = computeFinancialCalendar({ horizonMonths: 12 });
-      // Surface only events within the next 60 days here — Coming Up + Important Dates
-      // overlap less when this section focuses on a tighter window.
-      const soon = events.filter(e => daysUntil(e.date) <= 60).slice(0, 3);
-      if (!soon.length) return "";
-      return `
-        <div class="section-h"><span class="lbl">📅 Important dates</span><button class="act" onclick="financialCalendarSheet()">View all</button></div>
-        <div class="list">
-          ${soon.map(e => {
-            const days = daysUntil(e.date);
-            const color = days <= 7 ? "var(--orange)" : days <= 30 ? "var(--blue)" : "var(--t3)";
-            return `
-              <div class="row tappable" onclick="financialCalendarSheet()" role="button" tabindex="0">
-                <div class="lead">${e.icon}</div>
-                <div class="body">
-                  <div class="t1">${esc(e.title)}</div>
-                  <div class="t2"><span style="color:${color};font-weight:600">${dayLabel(e.date)}</span> · ${e.date.toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
-                </div>
-                <div class="trail chev"></div>
-              </div>
-            `;
-          }).join("")}
-        </div>
-      `;
-    })()}
-
-    ${(() => {
-      const bills = upcomingBills();
-      if (!bills.length) return "";
-      return `
-        <div class="section-h"><span class="lbl">Coming up</span></div>
-        <div class="list">
-          ${bills.map(b => {
-            const label = b.days <= 0 ? (b.days === 0 ? "Due today" : `${Math.abs(b.days)}d overdue`) : b.days === 1 ? "Tomorrow" : `In ${b.days} days`;
-            const color = b.days <= 0 ? "var(--red)" : b.days <= 2 ? "var(--orange)" : "var(--t3)";
-            return `
-              <div class="row">
-                <div class="lead">📅</div>
-                <div class="body">
-                  <div class="t1">${esc(b.merchant)} <span class="muted" style="font-weight:400" data-priv="amount">${fmt$0(b.avg_amount)}</span></div>
-                  <div class="t2" style="color:${color}">${label} · ${b.next_predicted}</div>
-                </div>
-                <button class="btn sm secondary" style="font-size:11px;padding:4px 8px" onclick="dismissBill(${jsAttr(b.key)},${jsAttr(b.next_predicted)})">Dismiss</button>
-              </div>
-            `;
-          }).join("")}
-        </div>
-      `;
-    })()}
+    ${insightsRow}
 
     <div class="hero">
       <div class="h-eyebrow">Today's progress</div>
@@ -2394,16 +2574,6 @@ function renderToday() {
       <div class="h-sub">${p.total ? (p.pct===100 ? "All done — keep the streak alive 🔥" : "You've got this.") : "Add a habit to get started."}</div>
       <div class="h-bar"><div class="h-fill" style="width:${p.pct}%"></div></div>
     </div>
-
-    ${(() => {
-      const today = todayKey();
-      const todaySpent = (DB.spend||[]).filter(t => t.date === today && (+t.amount) > 0).reduce((a,t)=>a+(+t.amount||0), 0);
-      if (!todaySpent) return "";
-      return `<div class="row" style="background:var(--card);border-radius:var(--r);margin-bottom:10px;border:none">
-        <div class="lead">💸</div>
-        <div class="body"><div class="t1" data-priv="amount">${fmt$0(todaySpent)} spent today</div><div class="t2">${(DB.spend||[]).filter(t=>t.date===today).length} transactions</div></div>
-      </div>`;
-    })()}
 
     <div class="daychips">
       ${days.map(d=>{
@@ -2429,15 +2599,7 @@ function renderToday() {
     <div class="section-h"><span class="lbl">Wins today</span><button class="act" onclick="(()=>{const t=prompt('Win:');if(t)addWin(t);})()">+ Add</button></div>
     <div class="list">${winsHtml}</div>
 
-    <div class="section-h"><span class="lbl">Reminder</span></div>
-    <div class="list">
-      <div class="row">
-        <div class="lead">💭</div>
-        <div class="body">
-          <div class="t1" style="font-style:italic;font-weight:400">${esc(todaysQuote())}</div>
-        </div>
-      </div>
-    </div>
+    <div class="today-quote">"${esc(todaysQuote())}"</div>
   `;
 }
 
@@ -4042,7 +4204,7 @@ function renderSettings() {
     <div class="list">
       <div class="row tappable" onclick="aiOnboardingStart()">
         <div class="lead">✨</div>
-        <div class="body"><div class="t1">Retake AI setup</div><div class="t2">Talk to Ascend AI to refresh your habits, goals, and tagline</div></div>
+        <div class="body"><div class="t1">Retake AI setup</div><div class="t2">Talk to Life Hack AI to refresh your plan, habits, goals, and budget</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="exportData()">
@@ -4065,6 +4227,13 @@ function renderSettings() {
     <div class="section-h"><span class="lbl">About</span></div>
     <div class="list">
       <div class="row"><div class="lead">★</div><div class="body"><div class="t1">Ascend · Goals made easy</div><div class="t2">v3.0 · ${DB.items?.length ? `${DB.items.length} bank${DB.items.length===1?"":"s"} connected` : "saved on this device"}</div></div></div>
+      <div class="row" style="align-items:flex-start">
+        <div class="lead">ⓘ</div>
+        <div class="body">
+          <div class="t1">Educational tool — not financial advice</div>
+          <div class="t2" style="line-height:1.5">This app is a personal-finance tracking and education tool. It is not a registered investment advisor, broker-dealer, or licensed financial planner. Calculators, AI insights, Smart Plays, and lessons are educational illustrations only and should not be relied on as personalized investment, tax, legal, or financial advice. Before making any significant financial decision, consult a qualified professional. Past results in any example do not guarantee future outcomes.</div>
+        </div>
+      </div>
     </div>
     <div style="height:30px"></div>
   `;
@@ -4947,19 +5116,43 @@ function debtConsolidationSheet() {
    The browser sends prompts to /anthropic/messages on the user's Worker; the
    Worker injects the key, enforces a per-user daily cap, and forwards.
    Legacy DB.settings.anthropicKey is ignored — clearing it is fine. */
-async function fetchInsight(prompt, context) {
-  if (!DB.settings.backendUrl) throw new Error("AI insights now require the backend Worker. Set the backend URL in Settings.");
-  const model = DB.settings.anthropicModel || "claude-haiku-4-5-20251001";
-  const data = await api("/anthropic/messages", {
+/* AI proxy is co-located with the Python backend on Vercel at
+   /api/ai/messages — same origin, zero per-user config. The legacy
+   Cloudflare Worker /anthropic/messages route still works if the user
+   has DB.settings.backendUrl pointed at a self-hosted Worker; AI auto-
+   falls-back to same-origin when no backend URL is configured. */
+async function aiCall(payload) {
+  const useWorker = !!DB.settings.backendUrl && !!(DB.settings.apiKey || DB.user.clientSecret);
+  if (useWorker) {
+    // Legacy self-hosted path
+    return api("/anthropic/messages", { method: "POST", body: JSON.stringify(payload) });
+  }
+  // Default: same-origin Python proxy on Vercel
+  const r = await fetch("/api/ai/messages", {
     method: "POST",
-    body: JSON.stringify({
-      model,
-      max_tokens: 800,
-      messages: [{
-        role: "user",
-        content: prompt + "\n\nData:\n```json\n" + JSON.stringify(context, null, 2) + "\n```",
-      }],
-    }),
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const text = await r.text();
+  let body; try { body = JSON.parse(text); } catch { body = { error: text || `HTTP ${r.status}` }; }
+  if (!r.ok) {
+    const msg = typeof body.error === "string"
+      ? body.error
+      : (body.error && body.error.message) || `HTTP ${r.status}`;
+    throw new Error(msg);
+  }
+  return body;
+}
+
+async function fetchInsight(prompt, context) {
+  const model = DB.settings.anthropicModel || "claude-haiku-4-5-20251001";
+  const data = await aiCall({
+    model,
+    max_tokens: 800,
+    messages: [{
+      role: "user",
+      content: prompt + "\n\nData:\n```json\n" + JSON.stringify(context, null, 2) + "\n```",
+    }],
   });
   if (data && data.error) throw new Error(data.error.message || data.error);
   return data.content?.map(c => c.text).join("\n") || "(no response)";
@@ -4992,7 +5185,9 @@ async function getMonthlyInsight() {
     open_goals: goals,
   };
 
-  const prompt = `You are a sharp, candid personal-finance and life coach helping the user (named ${esc(DB.user.name||"the user")}). Read their data below and give them 3-5 specific, actionable observations and 1-2 concrete next steps. Be warm but direct. Skip generic advice. Reference actual numbers and merchants from the data. Keep it under 250 words. No bullet points unless truly useful — prefer short paragraphs. End with a single sentence of encouragement.`;
+  const prompt = `You are a sharp, candid personal-finance and life coach helping the user (named ${esc(DB.user.name||"the user")}). Read their data below and give them 3-5 specific, actionable observations and 1-2 concrete next steps. Be warm but direct. Skip generic advice. Reference actual numbers and merchants from the data. Keep it under 250 words. No bullet points unless truly useful — prefer short paragraphs. End with a single sentence of encouragement.
+
+IMPORTANT: You are an educational tool, not a registered investment advisor. Frame observations as general financial education and behavior coaching (saving more, reducing specific spending categories, paying down high-interest debt, building emergency funds, increasing retirement contributions). Do NOT recommend buying or selling specific securities, stocks, ETFs, cryptocurrencies, or other investments. Do NOT make personalized investment-allocation recommendations. If the user clearly needs specific investment advice for their situation, suggest they consult a licensed financial professional.`;
   const txt = await fetchInsight(prompt, ctx);
   // Cache
   if (!DB.insights) DB.insights = [];
@@ -5121,6 +5316,203 @@ async function shareStreakCard() {
     } catch {}
   }
   downloadShareCard();
+}
+
+/* ============== YEAR-IN-REVIEW SHAREABLE CARD ==============
+   1080x1920 SVG -> PNG card built from yearReview() data. Designed for
+   Instagram Stories / TikTok / Snap (9:16). Defaults to privacy-safe
+   content (habits, goals, streak, wins counts — no $). Toggle
+   includeMoney:true to opt in to spending/income figures.
+
+   Returns SVG string. Convert to PNG with yearReviewSharePng() so it
+   saves cleanly to a phone camera roll (iOS Photos rejects most SVGs). */
+function yearReviewShareSvg(opts) {
+  const cfg = Object.assign({ includeMoney: false }, opts || {});
+  const r = yearReview();
+  const W = 1080, H = 1920;
+  const name = (DB.user.name || "Your").trim();
+  const possessive = name === "Your" ? "Your" : esc(name) + "'s";
+  // Top three habits by count + top streak
+  const top3 = (r.perHabit || []).filter(x => x.count > 0).slice(0, 3);
+  const topStreak = (r.streaks || []).filter(x => x.streak > 0)[0];
+  // Build stat blocks. Order = visual importance descending.
+  const stats = [
+    { label: "Habit check-offs", value: r.totalChecks.toLocaleString() },
+    { label: "Goals completed",  value: String(r.goalsCompleted.length) },
+    { label: "Top streak",       value: topStreak ? `🔥 ${topStreak.streak}` : "—" },
+    { label: "Wins captured",    value: String(r.winsYear) },
+  ];
+  if (cfg.includeMoney) {
+    stats.push({ label: "Spent this year",  value: fmt$0(r.yearOut) });
+    stats.push({ label: "Income this year", value: fmt$0(r.yearIn) });
+  }
+  // 2-column grid for stats; we lay them out manually for SVG.
+  const cols = 2, statH = 180, statGapY = 24, statGapX = 24;
+  const statBlockW = (W - 160 - statGapX) / cols; // 80px side padding each side
+  const statsX = 80, statsY = 720;
+  const statSvg = stats.map((s, i) => {
+    const c = i % cols, row = Math.floor(i / cols);
+    const x = statsX + c * (statBlockW + statGapX);
+    const y = statsY + row * (statH + statGapY);
+    return `
+      <g transform="translate(${x}, ${y})">
+        <rect width="${statBlockW}" height="${statH}" rx="32"
+              fill="rgba(255,255,255,0.10)" stroke="rgba(255,255,255,0.18)" stroke-width="1"/>
+        <text x="36" y="78" fill="#ffffff" font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+              font-size="60" font-weight="700" letter-spacing="-1">${esc(s.value)}</text>
+        <text x="36" y="130" fill="rgba(255,255,255,0.75)"
+              font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+              font-size="26" font-weight="500" letter-spacing="0.5">${esc(s.label).toUpperCase()}</text>
+      </g>
+    `;
+  }).join("");
+  // Habits list block at bottom
+  const habitsY = statsY + Math.ceil(stats.length / cols) * (statH + statGapY) + 60;
+  const habitsSvg = top3.length ? `
+    <text x="${statsX}" y="${habitsY}" fill="rgba(255,255,255,0.85)"
+          font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+          font-size="24" font-weight="700" letter-spacing="3">MOST CONSISTENT</text>
+    ${top3.map((h, i) => `
+      <g transform="translate(${statsX}, ${habitsY + 36 + i * 84})">
+        <text x="0"   y="56" font-family="-apple-system, 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif" font-size="44">${esc(h.emoji || "✓")}</text>
+        <text x="76"  y="56" fill="#ffffff"
+              font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+              font-size="36" font-weight="600">${esc(h.name).slice(0, 24)}</text>
+        <text x="${W-statsX}" y="56" fill="rgba(255,255,255,0.85)"
+              font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+              font-size="36" font-weight="700" text-anchor="end">${h.count.toLocaleString()} days</text>
+      </g>
+    `).join("")}
+  ` : "";
+
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+  <defs>
+    <linearGradient id="yrBg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#1a1a2e"/>
+      <stop offset="45%"  stop-color="#4338ca"/>
+      <stop offset="100%" stop-color="#f97316"/>
+    </linearGradient>
+    <radialGradient id="yrGlow" cx="0.5" cy="0.15" r="0.6">
+      <stop offset="0%"   stop-color="rgba(255,255,255,0.20)"/>
+      <stop offset="100%" stop-color="rgba(255,255,255,0)"/>
+    </radialGradient>
+  </defs>
+  <rect width="${W}" height="${H}" fill="url(#yrBg)"/>
+  <rect width="${W}" height="${H}" fill="url(#yrGlow)"/>
+
+  <!-- Top eyebrow -->
+  <text x="${statsX}" y="160" fill="rgba(255,255,255,0.7)"
+        font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+        font-size="28" font-weight="700" letter-spacing="6">YEAR IN REVIEW</text>
+
+  <!-- Year (giant) -->
+  <text x="${statsX}" y="380" fill="#ffffff"
+        font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+        font-size="220" font-weight="800" letter-spacing="-6">${r.year}</text>
+
+  <!-- Subtitle -->
+  <text x="${statsX}" y="500" fill="rgba(255,255,255,0.92)"
+        font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+        font-size="56" font-weight="600" letter-spacing="-1">${possessive} year of</text>
+  <text x="${statsX}" y="580" fill="#ffffff"
+        font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+        font-size="64" font-weight="700" letter-spacing="-1">building habits ✨</text>
+
+  ${statSvg}
+  ${habitsSvg}
+
+  <!-- Footer brand -->
+  <text x="${W/2}" y="${H-90}" fill="rgba(255,255,255,0.60)"
+        font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+        font-size="26" font-weight="600" letter-spacing="4" text-anchor="middle">LIFE HACK</text>
+  <text x="${W/2}" y="${H-50}" fill="rgba(255,255,255,0.45)"
+        font-family="-apple-system, 'SF Pro Display', system-ui, sans-serif"
+        font-size="22" font-weight="500" text-anchor="middle">life-hack-app.vercel.app</text>
+</svg>`;
+}
+
+/* SVG -> PNG via Canvas. Returns a Promise<Blob> of a 1080x1920 PNG.
+   PNG (not SVG) because: iOS Photos rejects most SVG saves; Instagram
+   Story upload prefers raster; Web Share API works more reliably with
+   PNG MIME types. We rasterize at native 1080x1920 (no scaling) so the
+   exported file matches the source resolution exactly. */
+function _svgToPngBlob(svgText, width, height) {
+  return new Promise((resolve, reject) => {
+    const svgBlob = new Blob([svgText], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(svgBlob);
+    const img = new Image();
+    // No crossOrigin — blob: URLs of same-origin content with cross-origin
+    // hint can taint the canvas and break toBlob(). The SVG has no
+    // external references so the canvas stays clean.
+    img.onload = () => {
+      try {
+        const canvas = document.createElement("canvas");
+        canvas.width = width; canvas.height = height;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob((blob) => {
+          URL.revokeObjectURL(url);
+          if (blob) resolve(blob); else reject(new Error("toBlob returned null"));
+        }, "image/png", 0.95);
+      } catch (e) { URL.revokeObjectURL(url); reject(e); }
+    };
+    img.onerror = (e) => { URL.revokeObjectURL(url); reject(new Error("SVG load failed")); };
+    img.src = url;
+  });
+}
+
+async function downloadYearReviewCard(opts) {
+  const svg = yearReviewShareSvg(opts);
+  try {
+    const png = await _svgToPngBlob(svg, 1080, 1920);
+    const url = URL.createObjectURL(png);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `life-hack-${yearReview().year}-recap.png`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast("Recap saved");
+  } catch {
+    // PNG conversion can fail (CSP image-load issues on some browsers).
+    // Fallback to SVG so the user still gets something downloadable.
+    const svgBlob = new Blob([svg], { type: "image/svg+xml" });
+    const url = URL.createObjectURL(svgBlob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `life-hack-${yearReview().year}-recap.svg`;
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast("Recap saved (SVG)");
+  }
+}
+
+async function shareYearReviewCard(opts) {
+  const svg = yearReviewShareSvg(opts);
+  // Try Web Share API with PNG file (best UX on mobile — opens the
+  // native share sheet so user picks Instagram, Messages, etc.).
+  try {
+    const png = await _svgToPngBlob(svg, 1080, 1920);
+    const file = new File([png], `life-hack-${yearReview().year}-recap.png`, { type: "image/png" });
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title: "My year in review", text: "My year on Life Hack" });
+      return;
+    }
+  } catch { /* fall through to download */ }
+  // Fallback: download (desktop, or browser without file-share support)
+  await downloadYearReviewCard(opts);
+}
+
+/* Render a preview <img> of the year-review card directly in a sheet so
+   the user can see what they'll be sharing before tapping Share. */
+async function _yearReviewPreviewDataUrl(opts) {
+  const svg = yearReviewShareSvg(opts);
+  try {
+    const png = await _svgToPngBlob(svg, 540, 960); // half-res for preview
+    return await new Promise(res => { const r = new FileReader(); r.onload = () => res(r.result); r.readAsDataURL(png); });
+  } catch {
+    return "data:image/svg+xml;utf8," + encodeURIComponent(svg);
+  }
 }
 
 /* ================ HOLDINGS (Plaid investments) ================ */
@@ -5600,8 +5992,8 @@ function yearReviewSheet() {
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
       <div class="kpi"><div class="v">${r.totalChecks}</div><div class="l">Habit check-offs</div></div>
       <div class="kpi"><div class="v">${r.goalsCompleted.length}</div><div class="l">Goals done</div></div>
-      <div class="kpi"><div class="v">${fmt$0(r.yearOut)}</div><div class="l">Spent</div></div>
-      <div class="kpi"><div class="v">${fmt$0(r.yearIn)}</div><div class="l">Income</div></div>
+      <div class="kpi" data-priv="amount"><div class="v">${fmt$0(r.yearOut)}</div><div class="l">Spent</div></div>
+      <div class="kpi" data-priv="amount"><div class="v">${fmt$0(r.yearIn)}</div><div class="l">Income</div></div>
     </div>
     <label>Most consistent habits</label>
     ${list(r.perHabit)}
@@ -5611,11 +6003,48 @@ function yearReviewSheet() {
     <hr class="sep">
     <label>Wins logged</label>
     <div style="font-size:13px;color:var(--t2)">${r.winsYear} small wins captured this year.</div>
+
+    <!-- Shareable card preview + share controls. PNG is generated lazily
+         after the sheet opens so users see the layout immediately, then
+         the image fades in once the canvas render is done. -->
+    <hr class="sep">
+    <label>Share your year</label>
+    <div id="yr-preview-wrap" style="position:relative;width:100%;max-width:280px;margin:8px auto 12px;border-radius:18px;overflow:hidden;aspect-ratio:9/16;background:linear-gradient(135deg,#1a1a2e,#4338ca,#f97316);box-shadow:0 8px 24px rgba(0,0,0,0.25)">
+      <div id="yr-preview-spinner" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:rgba(255,255,255,0.85);font-size:13px">Generating recap…</div>
+      <img id="yr-preview-img" alt="Year in review preview" style="width:100%;height:100%;object-fit:cover;opacity:0;transition:opacity 250ms ease" />
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:13px;color:var(--t2);margin-bottom:10px">
+      <input type="checkbox" id="yr-include-money" style="width:18px;height:18px" />
+      <label for="yr-include-money" style="cursor:pointer">Include $ amounts (off by default for privacy)</label>
+    </div>
     <div class="actions">
       <button class="btn secondary" onclick="closeSheet()">Close</button>
-      <button class="btn" onclick="downloadShareCard()">Download streak card</button>
+      <button class="btn secondary" id="yr-download-btn">⬇ Save</button>
+      <button class="btn" id="yr-share-btn">↗ Share</button>
     </div>
   `);
+
+  // Lazy-render preview after sheet is in the DOM
+  const refreshPreview = async () => {
+    const includeMoney = !!$("#yr-include-money")?.checked;
+    const img = $("#yr-preview-img");
+    const spinner = $("#yr-preview-spinner");
+    if (img) img.style.opacity = "0";
+    if (spinner) spinner.style.display = "flex";
+    try {
+      const dataUrl = await _yearReviewPreviewDataUrl({ includeMoney });
+      if (img) {
+        img.src = dataUrl;
+        img.onload = () => { img.style.opacity = "1"; if (spinner) spinner.style.display = "none"; };
+      }
+    } catch {
+      if (spinner) spinner.textContent = "Preview unavailable — Save still works";
+    }
+  };
+  refreshPreview();
+  $("#yr-include-money")?.addEventListener("change", refreshPreview);
+  $("#yr-download-btn")?.addEventListener("click", () => downloadYearReviewCard({ includeMoney: !!$("#yr-include-money")?.checked }));
+  $("#yr-share-btn")?.addEventListener("click", () => shareYearReviewCard({ includeMoney: !!$("#yr-include-money")?.checked }));
 }
 
 
@@ -5837,15 +6266,28 @@ function _onbShell(stepNum, body, footer) {
 
 function onboardingStep1() {
   _onbState.step = 1;
+  // V2: AI is the default first-launch. The AI proxy is co-located with
+  // the Python backend on Vercel at /api/ai/messages (same-origin), so
+  // any user opening the live app gets AI with zero per-user config.
+  // Only the rare file:// "open the HTML directly on disk" case drops
+  // to the manual splash, because same-origin AI can't work there.
+  if (location.protocol.startsWith("http")) {
+    _lockSheet = false;
+    closeSheet();
+    aiOnboardingStart({ name: _onbState.name, fromOnboarding: true });
+    return;
+  }
+  // Fallback splash for file:// usage. Same brand language, but explains
+  // why AI isn't available and routes to manual quick-setup.
   _onbShell(1, `
-    <h2 style="text-align:center;margin-bottom:4px">Ascend</h2>
-    <div style="text-align:center;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;font-weight:700;color:var(--t3);margin-bottom:6px">Goals made easy · Life Hack</div>
-    <p class="muted" style="text-align:center;margin-bottom:18px;font-size:14px">Track your habits, plan your money, and build a life you actually want.</p>
-    <label style="font-size:12px;color:var(--t3);font-weight:600;margin-bottom:6px;display:block">What should we call you?</label>
+    <h2 style="text-align:center;margin-bottom:4px;font-size:32px;letter-spacing:-0.02em">Life Hack</h2>
+    <div style="text-align:center;font-size:11px;letter-spacing:1.6px;text-transform:uppercase;font-weight:700;background:var(--grad-hero);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:6px">Money on easy mode</div>
+    <p class="muted" style="text-align:center;margin-bottom:18px;font-size:14px">Track your money, build the habits, hit your goals — all in one private, encrypted app.</p>
+    <label style="font-size:12px;color:var(--t3);font-weight:700;letter-spacing:0.04em;margin-bottom:6px;display:block">What should we call you?</label>
     <input id="onb-name" placeholder="Your first name" autofocus value="${esc(_onbState.name)}" />
+    <p class="muted" style="font-size:11px;margin-top:10px;text-align:center;line-height:1.5">AI setup needs a network connection. Open the deployed app for the full experience.</p>
   `, `
-    <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="(()=>{const n=$('#onb-name').value.trim();_onbState.name=n;closeSheet();aiOnboardingStart({name:n,fromOnboarding:true});})()">✨ Talk to Ascend AI (~3 min)</button>
-    <button class="btn secondary" style="width:100%;margin-top:8px" onclick="(()=>{_onbState.name=$('#onb-name').value.trim();onboardingStep2();})()">Quick setup instead</button>
+    <button class="btn" style="width:100%" onclick="(()=>{_onbState.name=$('#onb-name').value.trim();onboardingStep2();})()">Continue</button>
   `);
 }
 
@@ -5936,18 +6378,20 @@ function finishOnboarding() {
    Anthropic key never touches the browser. Falls back gracefully when
    the backend isn't configured. */
 
-const AI_ONBOARDING_SYSTEM = `You are Ascend AI, the warm onboarding coach for the Ascend app (a personal-development tool that tracks habits, goals, and money). Tagline: "Goals made easy".
+const AI_ONBOARDING_SYSTEM = `You are Life Hack AI, the warm onboarding coach for Life Hack — an app that combines money management with daily habits. Tagline: "Money on easy mode".
 
-Your job is a short 3-7 turn conversation to learn the user, then propose a tailored starter plan. Be warm, casual, brief (1-2 sentences per reply, no preamble, no "as an AI" disclaimers).
+Your job is a short 4-8 turn conversation to learn the user, then propose a tailored starter plan that includes habits, goals, AND a finance setup (budget categories, recurring expenses if they mentioned any, debt strategy). Be warm, casual, brief (1-2 sentences per reply, no preamble, no "as an AI" disclaimers).
 
-Conversation arc (skip topics they say they don't care about):
+Conversation arc (skip topics they say don't apply):
 1. Name (skip if already provided)
-2. The ONE area they most want to improve right now (Money, Health, Mind/Learning, Career, Relationships, Faith)
-3. What "winning" looks like for them in ~5 years
-4. Their smallest realistic move this week
-5. Time/day they can realistically commit (5 min? 30 min? 1 hour?)
+2. The ONE area they most want to improve right now (Money is the default focus; others are valid: Health, Mind/Learning, Career, Relationships, Faith)
+3. ROUGH monthly take-home income range — purely so you can size their goals/budget realistically. Use ranges: "Under $2k", "$2-4k", "$4-7k", "$7-12k", "$12k+", "Prefer not to say". Don't ask for an exact number.
+4. Current financial situation in one of: "Mostly debt I want to pay off", "I'm saving but want more", "Mix of both", "Trying to invest more", "Just starting out".
+5. Smallest realistic financial move they can make THIS week.
+6. Their 5-year vision (free-form).
+7. Time/day they can realistically commit to checking the app (1 min? 5 min? 15 min?).
 
-After 4-6 user turns, generate the plan. Don't drag it out.
+After 5-7 user turns, generate the plan. Don't drag it out. If they answer tersely, skip questions — adapt.
 
 Output: respond with STRICT JSON only. No markdown fences, no commentary outside the JSON.
 
@@ -5961,39 +6405,65 @@ WHILE CONVERSING:
 
 WHEN DONE:
 {
-  "say": "warm closing line like 'Here's what I'm thinking…'",
+  "say": "warm closing line like 'Here's what I'm thinking for you…'",
   "quickReplies": [],
   "done": true,
   "plan": {
     "habits": [
-      {"name": "Workout", "emoji": "💪", "type": "check", "group": "health"},
-      {"name": "Drink water", "emoji": "💧", "type": "count", "target": 64, "unit": "oz", "group": "health"}
+      {"name": "Log every spend", "emoji": "💰", "type": "check", "group": "money"},
+      {"name": "Workout", "emoji": "💪", "type": "check", "group": "health"}
     ],
     "shortGoal": {"title": "Save $500 this month", "note": "Auto-transfer on payday"},
     "longGoal": {"title": "Be financially free by 40", "note": "$1M invested"},
-    "todayTagline": "Discipline > motivation"
+    "todayTagline": "Discipline > motivation",
+    "budget": {
+      "income": 4000,
+      "savingsTarget": 600,
+      "expenses": [
+        {"name": "Rent", "amount": 1400},
+        {"name": "Groceries", "amount": 400},
+        {"name": "Transport", "amount": 200}
+      ]
+    },
+    "debtStrategy": "avalanche",
+    "savings": [
+      {"name": "Emergency fund", "emoji": "🛡️", "target": 6000, "current": 0},
+      {"name": "House down payment", "emoji": "🏠", "target": 25000, "current": 0}
+    ]
   }
 }
 
 Plan rules:
-- 3-5 habits, anchored to what they said matters most
-- Emojis from this set: 💪 💧 📖 🚶 🧘 ✍️ 🌙 🙏 💰 🎯 🛌 📝 🎨 🎵 💼 🍎 ☀️ 🏃 🧠 ☕
-- type "check" for yes/no, "count" for measurable (requires target and unit)
-- group: one of "health", "mind", "money", "faith", "misc"
+- 3-5 habits, anchored to what they said matters most. For money-focused users, include 1-2 money habits ("Log every spend", "Weekly money check-in", "No-spend day"). For other primary areas, money habits are optional.
+- Emojis from this set: 💪 💧 📖 🚶 🧘 ✍️ 🌙 🙏 💰 🎯 🛌 📝 🎨 🎵 💼 🍎 ☀️ 🏃 🧠 ☕ 💸 🛡️ 🏠 🚗 ✈️ 🎓 📈 💎 🪴 ⏰
+- habit.type: "check" for yes/no, "count" for measurable (requires target and unit)
+- habit.group: one of "health", "mind", "money", "faith", "misc"
 - shortGoal: actionable in 1-8 weeks, concrete
 - longGoal: their 5-year vision as a concrete goal
 - todayTagline: 3-8 word motto matching their vibe
 
-Never invent specific numbers (dollars, weights) unless they told you. Never ask two questions in one turn. Never break the JSON format.`;
+Finance-specific:
+- budget.income: midpoint of the user's stated range (e.g. they said "$4-7k" → use 5500). Always use a clean round number.
+- budget.savingsTarget: 10-20% of income. Be conservative if they have debt.
+- budget.expenses: best-effort guesses based on their income range. Use general categories (Rent/Mortgage, Groceries, Transport, Utilities, Subscriptions, Fun). If they mentioned specific bills, include those by name.
+- debtStrategy: "avalanche" if they're optimization-minded; "snowball" if they need motivation wins. Default "avalanche".
+- savings: 1-3 buckets matching their situation. Emergency fund is almost always first.
+- Skip any sub-field that doesn't apply (e.g., omit "savings" if they're 100% debt-focused right now).
+
+Never invent specific numbers the user didn't give you (exact dollars, weights, ages). Use the range they chose. Never ask two questions in one turn. Never break the JSON format.`;
 
 let _aiOnb = null;
 
 function aiOnboardingStart(opts = {}) {
-  if (!_backendReady()) {
+  // AI is reachable via either (a) same-origin /api/ai/messages on the
+  // deployed Vercel backend or (b) the user's self-hosted Cloudflare
+  // Worker via DB.settings.backendUrl. Only file:// has neither.
+  const aiReachable = location.protocol.startsWith("http") || _backendReady();
+  if (!aiReachable) {
     openSheet(`
-      <h2 style="margin-bottom:8px">✨ Talk to Ascend AI</h2>
+      <h2 style="margin-bottom:8px">✨ Life Hack AI setup</h2>
       <p style="font-size:14px;color:var(--t2);line-height:1.5;margin-bottom:14px">
-        The AI setup uses your private backend, which has to be configured first. Once you add the Worker URL + Enrollment Key in <b>Settings → Backend</b>, you can come back here.
+        The AI-guided setup needs a network connection. Open the deployed app (or configure a backend in Settings) to use it.
       </p>
       <button class="btn" style="width:100%;margin-bottom:8px" onclick="closeSheet();showTab('settings')">Open Settings</button>
       <button class="btn secondary" style="width:100%" onclick="closeSheet();${opts.fromOnboarding ? 'runOnboarding()' : ''}">${opts.fromOnboarding ? 'Use the quick setup instead' : 'Close'}</button>
@@ -6010,10 +6480,13 @@ function aiOnboardingStart(opts = {}) {
     fromOnboarding: !!opts.fromOnboarding,
   };
 
-  // Seed first message — no API call needed for the opener.
+  // Seed first message — no API call needed for the opener. The opener
+  // is finance-anchored (matches Life Hack's positioning) but still
+  // surfaces non-money areas via quick-reply chips for users who want
+  // a habit-first or holistic setup.
   const opener = _aiOnb.knownName
-    ? `Hey ${_aiOnb.knownName}! I'm Ascend AI. I'll ask a few quick questions to set things up the way that fits you — about 3 minutes. Which area of life matters most to you right now?`
-    : `Hey! I'm Ascend AI. I'll ask a few quick questions to set things up the way that fits you — about 3 minutes. What should I call you?`;
+    ? `Hey ${_aiOnb.knownName} 👋 I'm Life Hack AI. Quick chat to learn what would help — about 2 minutes. What's the ONE thing about your money or life you want to feel better about?`
+    : `Hey 👋 I'm Life Hack AI. Quick chat to set things up — about 2 minutes. What should I call you?`;
   const openerChips = _aiOnb.knownName
     ? ["💰 Money", "💪 Health", "🧠 Mind", "💼 Career", "❤️ Relationships", "🙏 Faith"]
     : [];
@@ -6033,14 +6506,14 @@ function aiOnboardingRender() {
     if (m.role === "assistant") {
       const text = m.parsed?.say || m.content || "";
       return `
-        <div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-start">
-          <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✨</div>
-          <div style="background:var(--bg-elev);padding:10px 14px;border-radius:16px;border-top-left-radius:4px;max-width:80%;font-size:14px;line-height:1.45">${esc(text)}</div>
+        <div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-start">
+          <div style="width:30px;height:30px;border-radius:50%;background:var(--grad-hero);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;box-shadow:0 4px 12px rgba(124,58,237,0.30)">✨</div>
+          <div style="background:var(--bg-elev);padding:12px 16px;border-radius:18px;border-top-left-radius:6px;max-width:80%;font-size:14.5px;line-height:1.5;color:var(--t1)">${esc(text)}</div>
         </div>`;
     }
     return `
-      <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
-        <div style="background:var(--blue,#007AFF);color:#fff;padding:10px 14px;border-radius:16px;border-top-right-radius:4px;max-width:80%;font-size:14px;line-height:1.45">${esc(m.content)}</div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+        <div style="background:var(--grad-hero);color:#fff;padding:12px 16px;border-radius:18px;border-top-right-radius:6px;max-width:80%;font-size:14.5px;line-height:1.5;box-shadow:0 4px 12px rgba(124,58,237,0.25)">${esc(m.content)}</div>
       </div>`;
   }).join("");
 
@@ -6076,15 +6549,15 @@ function aiOnboardingRender() {
   }
 
   openSheet(`
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-      <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px">✨</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-bottom:14px;border-bottom:0.5px solid var(--sep)">
+      <div style="width:36px;height:36px;border-radius:50%;background:var(--grad-hero);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 6px 18px rgba(124,58,237,0.30)">✨</div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:15px">Ascend AI</div>
-        <div style="font-size:11px;color:var(--t3)">${o.plan ? "Plan ready" : o.asking ? "Thinking…" : "Setting things up · ~3 min"}</div>
+        <div style="font-weight:800;font-size:16px;letter-spacing:-0.01em">Life Hack AI</div>
+        <div style="font-size:11px;color:var(--t3);font-weight:600;letter-spacing:0.04em">${o.plan ? "Plan ready" : o.asking ? "Thinking…" : "Setting things up · ~2 min"}</div>
       </div>
-      <button class="del-x" style="background:none;border:none;font-size:22px;color:var(--t3);cursor:pointer" onclick="aiOnbClose()">×</button>
+      <button class="del-x" style="background:var(--bg-elev);border:none;width:32px;height:32px;border-radius:50%;font-size:18px;color:var(--t3);cursor:pointer;display:flex;align-items:center;justify-content:center" onclick="aiOnbClose()" aria-label="Close">×</button>
     </div>
-    <div id="ai-onb-scroll" style="max-height:50vh;overflow-y:auto;padding-right:4px;margin-bottom:12px">${bubbles}</div>
+    <div id="ai-onb-scroll" style="max-height:55vh;overflow-y:auto;padding-right:4px;margin-bottom:12px">${bubbles}</div>
     ${footer}
   `);
 
@@ -6161,14 +6634,11 @@ async function aiOnbSend(text) {
 
 async function aiOnbCall(history, systemPrompt) {
   const model = DB.settings.anthropicModel || "claude-haiku-4-5-20251001";
-  const data = await api("/anthropic/messages", {
-    method: "POST",
-    body: JSON.stringify({
-      model,
-      max_tokens: 700,
-      system: systemPrompt,
-      messages: history,
-    }),
+  const data = await aiCall({
+    model,
+    max_tokens: 700,
+    system: systemPrompt,
+    messages: history,
   });
   if (data && data.error) throw new Error(data.error.message || data.error);
   return data.content?.map(c => c.text).join("\n") || "";
@@ -6218,15 +6688,51 @@ function aiOnbPlanReviewHtml(plan) {
   }
 
   const taglineHtml = plan.todayTagline
-    ? `<div style="margin-top:14px;padding:12px;background:var(--bg-elev);border-radius:10px;border-left:3px solid #7c3aed">
-         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin-bottom:4px">Your tagline</div>
-         <div style="font-size:14px;font-style:italic">"${esc(plan.todayTagline)}"</div>
+    ? `<div style="margin-top:14px;padding:14px;background:var(--bg-elev);border-radius:12px;border-left:3px solid var(--accent)">
+         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.10em;color:var(--t3);font-weight:700;margin-bottom:6px">Your tagline</div>
+         <div style="font-size:15px;font-style:italic;font-weight:500;color:var(--t1)">"${esc(plan.todayTagline)}"</div>
        </div>`
     : "";
 
+  // V2: budget preview — show the AI's seeded income / savings target /
+  // expenses as a read-only summary. User can edit on the Money tab after
+  // accepting; the goal here is just to set expectations.
+  const budgetHtml = (plan.budget && (plan.budget.income || (plan.budget.expenses||[]).length))
+    ? `
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.10em;color:var(--t3);font-weight:700;margin:14px 0 6px">Starter budget</div>
+      <div style="background:var(--bg-elev);border-radius:12px;padding:12px 14px;margin-bottom:6px">
+        ${plan.budget.income ? `<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600"><span>Income</span><span style="font-variant-numeric:tabular-nums">${fmt$0(+plan.budget.income||0)}/mo</span></div>` : ""}
+        ${plan.budget.savingsTarget ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--t2);margin-top:4px"><span>Savings target</span><span style="font-variant-numeric:tabular-nums">${fmt$0(+plan.budget.savingsTarget||0)}/mo</span></div>` : ""}
+        ${(plan.budget.expenses||[]).length ? `
+          <div style="margin-top:8px;padding-top:8px;border-top:0.5px solid var(--sep)">
+            ${plan.budget.expenses.slice(0,8).map(e => `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--t2);margin:3px 0"><span>${esc(e.name||"")}</span><span style="font-variant-numeric:tabular-nums">${fmt$0(+e.amount||0)}</span></div>`).join("")}
+          </div>` : ""}
+      </div>` : "";
+
+  // V2: savings buckets preview
+  const savingsHtml = Array.isArray(plan.savings) && plan.savings.length ? `
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.10em;color:var(--t3);font-weight:700;margin:14px 0 6px">Savings buckets</div>
+    ${plan.savings.slice(0,5).map(s => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-elev);border-radius:12px;margin-bottom:6px">
+        <div style="font-size:20px">${esc(s.emoji || "💰")}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600">${esc(s.name||"")}</div>
+          <div style="font-size:11px;color:var(--t3)">Target: <span style="font-variant-numeric:tabular-nums">${fmt$0(+s.target||0)}</span></div>
+        </div>
+      </div>
+    `).join("")}` : "";
+
+  // V2: debt strategy chip — just informational, can be changed later
+  const debtHtml = (plan.debtStrategy === "avalanche" || plan.debtStrategy === "snowball")
+    ? `<div style="font-size:12px;color:var(--t3);margin-top:14px;padding:10px 14px;background:var(--bg-elev);border-radius:10px"><b style="color:var(--t1)">${plan.debtStrategy === "avalanche" ? "Avalanche" : "Snowball"}</b> debt payoff · <span style="opacity:0.8">${plan.debtStrategy === "avalanche" ? "highest interest first (mathematically optimal)" : "smallest balance first (motivation wins)"}</span></div>`
+    : "";
+
   return `
-    ${habitsHtml ? `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin:10px 0 6px">Habits</div>${habitsHtml}` : ""}
-    ${goalsHtml ? `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin:14px 0 6px">Goals</div>${goalsHtml}` : ""}
+    ${habitsHtml ? `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.10em;color:var(--t3);font-weight:700;margin:10px 0 6px">Habits</div>${habitsHtml}` : ""}
+    ${goalsHtml ? `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.10em;color:var(--t3);font-weight:700;margin:14px 0 6px">Goals</div>${goalsHtml}` : ""}
+    ${budgetHtml}
+    ${savingsHtml}
+    ${debtHtml}
     ${taglineHtml}
   `;
 }
@@ -6300,6 +6806,46 @@ async function aiOnbAcceptPlan() {
     });
   }
   if (p.todayTagline) DB.user.tagline = String(p.todayTagline).slice(0, 60);
+
+  // V2 finance seeding: AI now emits budget / debt-strategy / savings buckets
+  // so a fresh user has a real starting state, not an empty Money tab.
+  if (p.budget && typeof p.budget === "object") {
+    if (Number.isFinite(+p.budget.income) && +p.budget.income > 0) {
+      DB.budget.income = Math.round(+p.budget.income);
+    }
+    if (Number.isFinite(+p.budget.savingsTarget) && +p.budget.savingsTarget >= 0) {
+      DB.settings.monthlySavingsTarget = Math.round(+p.budget.savingsTarget);
+    }
+    if (Array.isArray(p.budget.expenses)) {
+      const seeded = p.budget.expenses
+        .filter(e => e && typeof e.name === "string" && Number.isFinite(+e.amount))
+        .slice(0, 12) // cap to avoid an absurd list
+        .map(e => ({ id: uid(), name: String(e.name).slice(0, 40), amount: Math.max(0, Math.round(+e.amount)) }));
+      if (seeded.length) DB.budget.expenses = seeded;
+    }
+  }
+
+  // Debt strategy preference. Only honor known values.
+  if (p.debtStrategy === "avalanche" || p.debtStrategy === "snowball") {
+    DB.settings.debtPayoffStrategy = p.debtStrategy;
+  }
+
+  // Savings buckets — seed each with a target so the Goals tab is alive.
+  if (Array.isArray(p.savings)) {
+    for (const s of p.savings.slice(0, 5)) {
+      if (!s || typeof s.name !== "string" || !Number.isFinite(+s.target) || +s.target <= 0) continue;
+      DB.savings.push({
+        id: uid(),
+        name: String(s.name).slice(0, 40),
+        emoji: s.emoji || "💰",
+        color: COLORS[DB.savings.length % COLORS.length],
+        current: Math.max(0, Math.round(+s.current || 0)),
+        target: Math.max(1, Math.round(+s.target)),
+        log: [],
+      });
+    }
+  }
+
   DB.user.onboardedAt = Date.now();
   DB.user.onboardedVia = "ai";
 
@@ -6307,7 +6853,7 @@ async function aiOnbAcceptPlan() {
   _aiOnb = null;
   _lockSheet = false;
   closeSheet();
-  toast("Plan added — welcome to Ascend!");
+  toast("Plan added — welcome to Life Hack!");
   applyTheme();
   render();
 }
@@ -6501,8 +7047,8 @@ function computeSmartPlays() {
       priority: 95,
       emoji: "🔥",
       title: `Prioritize ${debt.name}`,
-      body: `${(+debt.apr).toFixed(1)}% APR on ${fmt$0(debt.balance)}. Paying this off is a guaranteed return — beats any reasonable market expectation.`,
-      why: "Debt with APR above ~7% mathematically dominates investing: it's a guaranteed return at that rate. Stocks average 7-10% historically but with risk. Crush the high-APR debt first, then invest.",
+      body: `${(+debt.apr).toFixed(1)}% APR on ${fmt$0(debt.balance)}. Paying it off effectively locks in that rate as savings, with no market exposure.`,
+      why: "Debt at ~7%+ APR is typically expensive to carry: paying it down avoids the interest cost at that rate, with no market volatility. Historical stock returns average 7-10% but vary year to year. Many people find it psychologically and mathematically helpful to clear high-APR debt before scaling investments. Educational — not advice.",
       actionLabel: "Open debts",
       actionFn: "showTab('money')",
     });
@@ -12342,6 +12888,7 @@ function init() {
     fetchInsight, getMonthlyInsight, runAiInsight,
     billsToIcs, exportBillsIcs,
     yearReview, yearReviewSheet, shareCardSvg, downloadShareCard, shareStreakCard,
+    yearReviewShareSvg, downloadYearReviewCard, shareYearReviewCard,
     backendHoldings, syncHoldings,
     runOnboarding, onboardingStep1, onboardingStep2, onboardingStep3, onboardingStep4, finishOnboarding,
     aiOnboardingStart, aiOnboardingRender, aiOnbSend, aiOnbToggleHabit, aiOnbToggleGoal,

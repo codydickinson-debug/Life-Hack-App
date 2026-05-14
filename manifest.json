@@ -1,22 +1,52 @@
 {
-  "name": "Ascend — Habits, Goals & Money",
-  "short_name": "Ascend",
-  "description": "Your daily habits, life goals, and money — in one private, encrypted, offline-first place.",
-  "start_url": "./index.html",
+  "id": "/?source=pwa",
+  "name": "Life Hack — Money, Habits & Goals",
+  "short_name": "Life Hack",
+  "description": "Personal-finance on easy mode. Track spending, set savings goals, build money habits, plan retirement, and link your accounts — all encrypted locally, no ads, no data sales.",
+  "start_url": "./index.html?source=pwa",
   "scope": "./",
   "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
   "orientation": "portrait",
   "background_color": "#F7F7F5",
   "theme_color": "#F7F7F5",
-  "categories": ["productivity", "lifestyle", "finance"],
+  "lang": "en-US",
+  "dir": "ltr",
+  "categories": ["finance", "productivity", "lifestyle"],
+  "iarc_rating_id": "",
+  "prefer_related_applications": false,
   "icons": [
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
     { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
-    { "name": "Today", "short_name": "Today", "description": "Open today's habits and safe-to-spend", "url": "./index.html?tab=today" },
-    { "name": "Add spend", "short_name": "+Spend", "description": "Log a transaction", "url": "./index.html?tab=money&action=add-spend" },
-    { "name": "Goals", "short_name": "Goals", "description": "Open goals tab", "url": "./index.html?tab=goals" }
-  ]
+    { "name": "Today",      "short_name": "Today",  "description": "Open today's habits and safe-to-spend",   "url": "./index.html?tab=today",                  "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Add spend",  "short_name": "+Spend", "description": "Log a transaction",                       "url": "./index.html?tab=money&action=add-spend", "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Goals",      "short_name": "Goals",  "description": "Open goals tab",                          "url": "./index.html?tab=goals",                  "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] },
+    { "name": "Money",      "short_name": "Money",  "description": "Spending, bills, accounts",               "url": "./index.html?tab=money",                  "icons": [{ "src": "icon-192.png", "sizes": "192x192" }] }
+  ],
+  "screenshots": [
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "form_factor": "narrow",
+      "label": "Placeholder — replace with 1290x2796 (6.7\" iPhone) screenshots before App Store submission"
+    }
+  ],
+  "share_target": {
+    "action": "./index.html",
+    "method": "GET",
+    "params": {
+      "text": "shared_text",
+      "url":  "shared_url",
+      "title":"shared_title"
+    }
+  },
+  "handle_links": "preferred",
+  "edge_side_panel": {
+    "preferred_width": 480
+  }
 }
