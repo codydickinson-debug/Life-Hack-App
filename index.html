@@ -11033,13 +11033,28 @@ function _tourEnsureChrome() {
     }
     #tour-tooltip .dots { display: flex; gap: 5px; justify-content: center; margin: 10px 0 8px; }
     #tour-tooltip .dots div { width: 5px; height: 5px; border-radius: 50%; background: var(--text); transition: opacity .15s, transform .15s; }
-    #tour-tooltip .row { display: flex; gap: 6px; }
+    #tour-tooltip .row { display: flex; gap: 8px; align-items: stretch; }
     #tour-tooltip .row button {
-      flex: 1; padding: 8px 10px; border-radius: 10px; border: none;
-      font-size: 13px; font-weight: 600; cursor: pointer;
+      border-radius: 12px; border: none; cursor: pointer;
+      font-weight: 600; transition: transform .08s ease, box-shadow .15s ease;
     }
-    #tour-tooltip .row .back { background: var(--bg-elev, #eee); color: var(--text); }
-    #tour-tooltip .row .next { background: var(--text); color: var(--card, #fff); flex: 2; }
+    #tour-tooltip .row button:active { transform: scale(0.97); }
+    /* Back/Skip is a quiet secondary action — visually recessive so the
+       eye lands on Next. */
+    #tour-tooltip .row .back {
+      flex: 0 0 auto; padding: 12px 14px; font-size: 13px;
+      background: transparent; color: var(--t3, #888);
+    }
+    #tour-tooltip .row .back:hover { color: var(--text); }
+    /* Next/Done is the primary action. Big, purple gradient, full-width
+       remainder — impossible to miss. */
+    #tour-tooltip .row .next {
+      flex: 1 1 auto; padding: 14px 18px; font-size: 15px; font-weight: 700;
+      background: linear-gradient(135deg, #7c3aed 0%, #ec4899 100%);
+      color: #fff;
+      box-shadow: 0 6px 18px -4px rgba(124,58,237,0.5);
+    }
+    #tour-tooltip .row .next:hover { box-shadow: 0 8px 22px -4px rgba(124,58,237,0.7); }
   `;
   document.head.appendChild(style);
   const overlay = document.createElement("div");
@@ -11166,7 +11181,7 @@ function _tourRender() {
   // When there's a target the spotlight pulses and a hint tells the user
   // they can tap it. When there isn't, hide the hint to avoid confusion.
   const hint = hasTarget
-    ? `<div class="hint">↑ Tap the highlight to continue</div>`
+    ? `<div class="hint">↑ Tap the highlight, or just hit Next →</div>`
     : "";
   const tooltip = document.getElementById("tour-tooltip");
   tooltip.innerHTML = `
