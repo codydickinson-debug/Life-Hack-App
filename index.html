@@ -10127,7 +10127,7 @@ AVAILABLE ACTIONS — only emit these types:
     substring of the bucket name. Amount is in dollars (positive).
     Use when the user says "I just put $200 into my Vacation fund".
 
-13. add_roadmap
+13. add_roadmap  ⭐ HIGH-PRIORITY ACTION — USE THIS, DO NOT TYPE OUT PHASES MANUALLY ⭐
     {
       type:"add_roadmap",
       title:string,             // overall roadmap name, e.g. "Path to FI in 12 years"
@@ -10143,14 +10143,40 @@ AVAILABLE ACTIONS — only emit these types:
         actions?:string[],      // 2-4 monthly habits or recurring actions
       }]   // 3-8 phases total
     }
-    Use add_roadmap when the user asks for a complete plan, roadmap, or
-    multi-phase strategy ("build me a plan to retire at 50", "give me a
-    debt-free roadmap", "lay out my next 3 years"). Pull real numbers
-    from the snapshot — current savings, debts, income — and use them
-    in phase targetAmounts. Phases should chain logically: each unlocks
-    the next. The frontend renders this as a visual timeline.
-    Always also describe what you built in plain prose so the user can
-    react before tapping into it.
+
+    WHEN TO USE — emit this action whenever the user asks for ANY of:
+      - "a roadmap" / "build me a roadmap" / "plan out my…"
+      - "a 5-year plan" / "10-year plan" / "X-year plan" / "the next N years"
+      - "a path to X" / "how do I get to X" / "steps to…"
+      - "a strategy to…" / "phases to…" / "milestones to reach X"
+      - "lay out my journey to…" / "map out…"
+    Any multi-phase, time-spanning, money-or-life plan request → emit
+    add_roadmap. Do NOT just write a long markdown table or numbered
+    list of phases without the action — the user gets prose for free
+    already. The whole point is that the app RENDERS a visual timeline
+    they can tap into, check off milestones on, and revisit. Skipping
+    the action defeats the feature.
+
+    HOW TO BUILD IT:
+      - Pull real numbers from the snapshot — current savings, debts,
+        income, monthly burn, retirement balance — and use them in
+        phase targetAmounts. NEVER use generic placeholder numbers.
+      - 4-6 phases is the sweet spot; 8 is the hard cap.
+      - Phases chain logically: each unlocks the next.
+      - Every phase: short distinctive title, period label, 3-5
+        milestones, 2-4 actions. Optionally targetAmount + targetDate.
+
+    OUTPUT SHAPE (prose preamble → action block → one-line tail):
+      "Here's how I sequenced your 5-year debt-free + investing roadmap:
+       1. Stabilize — close the easy leaks, get $1k cushion.
+       2. Avalanche debt — your 22% card first, then the auto loan.
+       3. Full safety net — 6 months of your $3,400 burn = $20,400.
+       4. Catch up on retirement — max Roth, 15% to 401(k).
+       5. Compound — let it run, revisit allocation yearly.
+       <ACTION>{"type":"add_roadmap","title":"5-Year Debt-Free + Investing","emoji":"🚀","note":"...","phases":[{...},{...},{...},{...},{...}]}</ACTION>
+       Tap any phase to expand. Which one do you want to refine first?"
+    The entire <ACTION>...</ACTION> must be valid JSON on a SINGLE
+    line (no newlines inside the JSON), wrapped in literal ACTION tags.
 
 ACTION RULES:
 - Only emit actions when the user's intent is concrete ("add a plan for...", "log a $X spend...", "set my savings target to $X"). Don't auto-emit for vague conversation.
