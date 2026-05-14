@@ -1523,6 +1523,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
       <div id="tb-tagline" style="font-size:11px;color:var(--t3);font-style:italic;margin-top:1px;display:none"></div>
     </div>
     <div style="display:flex;align-items:center">
+      <button class="tb-btn" id="tb-search" title="Search" onclick="globalSearchSheet()" aria-label="Search">🔍</button>
       <button class="tb-priv" id="tb-priv" title="Privacy mode" onclick="togglePrivacyMode()" aria-label="Privacy mode">👁</button>
       <button class="tb-btn" id="tb-action" title="Settings" onclick="openSettings()">⚙︎</button>
     </div>
@@ -3081,6 +3082,97 @@ const ACCENT_COLORS = [
   { id: "pink",    hex: "#E64178", label: "Pink" },
   { id: "teal",    hex: "#36B0CC", label: "Teal" },
 ];
+// Global search — find anything across the app. Habits, wins, calendar notes,
+// transactions, goals, savings — typed into one input.
+function _computeSearchResults(query) {
+  const q = (query || "").trim().toLowerCase();
+  if (!q) {
+    return `<div class="muted" style="font-size:13px;padding:14px 4px;text-align:center">Type to search habits, wins, notes, transactions, and goals across your whole history.</div>`;
+  }
+  const habits = (DB.habits || []).filter(h => (h.name || "").toLowerCase().includes(q));
+  const wins = (DB.wins || []).filter(w => (w.text || "").toLowerCase().includes(q));
+  const notes = Object.entries(DB.calendarNotes || {})
+    .filter(([, t]) => (t || "").toLowerCase().includes(q))
+    .sort((a, b) => b[0].localeCompare(a[0]));
+  const spend = (DB.spend || []).filter(t =>
+    (((t.category || "") + " " + (t.note || "") + " " + (t.merchant_name || "")).toLowerCase()).includes(q)
+  ).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  const goals = (DB.goals || []).filter(g => (((g.title || "") + " " + (g.note || "")).toLowerCase()).includes(q));
+  const savings = (DB.savings || []).filter(s => (s.name || "").toLowerCase().includes(q));
+  const total = habits.length + wins.length + notes.length + spend.length + goals.length + savings.length;
+  if (!total) return `<div class="muted" style="font-size:13px;padding:14px 4px;text-align:center">No matches for "${esc(q)}".</div>`;
+  const sect = (label, count, rowsHtml) => count ? `
+    <div class="section-h" style="margin-top:14px;margin-bottom:8px"><span class="lbl">${label} (${count})</span></div>
+    <div class="list">${rowsHtml}</div>
+  ` : "";
+  let html = `<div style="font-size:11px;color:var(--t3);margin:6px 0 4px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">${total} match${total === 1 ? '' : 'es'}</div>`;
+  html += sect("Habits", habits.length, habits.map(h => `
+    <div class="row tappable" onclick="closeSheet();setTimeout(()=>habitDetailSheet('${h.id}'),120)">
+      <div class="lead">${h.emoji || '✦'}</div>
+      <div class="body"><div class="t1">${esc(h.name)}</div><div class="t2">🔥 ${streakOf(h)} day streak</div></div>
+      <div class="trail chev"></div>
+    </div>
+  `).join(""));
+  html += sect("Wins", wins.length, wins.slice(0, 12).map(w => `
+    <div class="row tappable" onclick="closeSheet();setTimeout(()=>calendarDaySheet(${jsAttr(w.date)}),120)">
+      <div class="lead">⭐</div>
+      <div class="body"><div class="t1">${esc(w.text)}</div><div class="t2">${w.date || ''}</div></div>
+      <div class="trail chev"></div>
+    </div>
+  `).join(""));
+  html += sect("Notes", notes.length, notes.slice(0, 12).map(([d, t]) => `
+    <div class="row tappable" onclick="closeSheet();setTimeout(()=>calendarDaySheet(${jsAttr(d)}),120)">
+      <div class="lead">📝</div>
+      <div class="body">
+        <div class="t1" style="font-size:13px;font-weight:400">${esc(t.slice(0, 80))}${t.length > 80 ? '…' : ''}</div>
+        <div class="t2">${d}</div>
+      </div>
+      <div class="trail chev"></div>
+    </div>
+  `).join(""));
+  html += sect("Spending", spend.length, spend.slice(0, 12).map(t => `
+    <div class="row tappable" onclick="closeSheet();setTimeout(()=>calendarDaySheet(${jsAttr(t.date)}),120)">
+      <div class="lead">${(+t.amount) < 0 ? '💵' : '💳'}</div>
+      <div class="body">
+        <div class="t1">${esc(t.category || 'Other')} <span class="muted" style="font-weight:400" data-priv="amount">${fmt$0(Math.abs(+t.amount || 0))}</span></div>
+        <div class="t2">${t.date || ''}${t.note ? ' · ' + esc(t.note) : ''}${t.merchant_name ? ' · ' + esc(t.merchant_name) : ''}</div>
+      </div>
+      <div class="trail chev"></div>
+    </div>
+  `).join(""));
+  html += sect("Goals", goals.length, goals.map(g => `
+    <div class="row tappable" onclick="closeSheet();setTimeout(()=>addGoalSheet(DB.goals.find(x=>x.id==='${g.id}')),120)">
+      <div class="lead">🎯</div>
+      <div class="body"><div class="t1">${esc(g.title)}</div><div class="t2">${esc((TIERS.find(t => t.id === g.tier) || {}).label || g.tier)} tier${g.done ? ' · ✓ done' : ''}</div></div>
+      <div class="trail chev"></div>
+    </div>
+  `).join(""));
+  html += sect("Savings goals", savings.length, savings.map(s => `
+    <div class="row tappable" onclick="closeSheet();setTimeout(()=>logSavingSheet('${s.id}'),120)">
+      <div class="lead">${s.emoji || '💰'}</div>
+      <div class="body"><div class="t1">${esc(s.name)}</div><div class="t2"><span data-priv="amount">${fmt$0(s.current)}</span> of <span data-priv="amount">${fmt$0(s.target)}</span></div></div>
+      <div class="trail chev"></div>
+    </div>
+  `).join(""));
+  return html;
+}
+function globalSearchOnInput(value) {
+  const out = document.getElementById("g-search-results");
+  if (out) out.innerHTML = _computeSearchResults(value);
+}
+function globalSearchSheet() {
+  openSheet(`
+    <h2 style="margin-bottom:6px">Search</h2>
+    <input id="g-search-input" placeholder="Search habits, wins, notes, spending…" autocomplete="off" autocorrect="off" autocapitalize="off"
+      oninput="globalSearchOnInput(this.value)"
+      style="background:var(--card);padding:14px;border-radius:var(--r);font-size:16px;width:100%;border:1px solid var(--sep);box-sizing:border-box;color:var(--t1);margin-bottom:8px" />
+    <div style="font-size:11px;color:var(--t3);margin-bottom:4px">Tap any result to jump straight to it.</div>
+    <div id="g-search-results">${_computeSearchResults("")}</div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  setTimeout(() => { const i = document.getElementById("g-search-input"); if (i) i.focus(); }, 250);
+}
+
 // Quick-reference tips sheet — answers the most common 'how do I…?' questions
 // without making the user dig through the tabs. Replaces the lack of a real
 // help page in a mainstream app.
@@ -17332,6 +17424,7 @@ function init() {
     customizeTabsSheet, toggleTabVisibility, showAllTabs, isTabHidden, applyHiddenTabs,
     setAccentColor, applyAccent, ACCENT_COLORS,
     helpTipsSheet, sendFeedbackSheet,
+    globalSearchSheet, globalSearchOnInput, _computeSearchResults,
     openSettings, applyTheme, toggleNotifications, scheduleReminder, exportData, importData, openSheet, closeSheet, toast,
     connectBank, syncNow, disconnectItem, backendLinkToken, backendExchange, backendSync, backendListItems, backendRemoveItem,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
