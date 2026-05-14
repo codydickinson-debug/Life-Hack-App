@@ -1143,8 +1143,46 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 .wr-banner .wr-cta { background: rgba(255,255,255,.18); color: #fff; padding: 6px 12px; border-radius: var(--r-pill); font-size: 12px; font-weight: 600; }
 
 /* Stocks tab — host wrapper. The StockAnalyzer's own static/style.css is
-   loaded dynamically and styles everything inside #stk-host. */
-#stk-host { color-scheme: dark; }
+   loaded dynamically and styles everything inside #stk-host. The CSS was
+   originally written against `body { display: grid; ... }`, which doesn't
+   apply to our wrapper div — so we re-apply the layout here. Without this
+   the sidebar takes its 240px column and the rest of the row stays empty,
+   leaving a black gap on the right. */
+#stk-host {
+  color-scheme: dark;
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  min-height: calc(100dvh - 130px);
+  background: #0a0a0c;
+  color: #f4f4f6;
+  width: 100%;
+}
+/* Sidebar was sticky at viewport top:0 in the standalone page. Inside our
+   wrapper, anchor it to the top of #stk-host instead. */
+#stk-host > .sidebar {
+  position: sticky;
+  top: 0;
+  height: auto;
+  max-height: 100dvh;
+  overflow-y: auto;
+  align-self: start;
+}
+#stk-host > .main {
+  min-width: 0;  /* prevents content from forcing the column wider than 1fr */
+}
+/* Phone: stack sidebar above main (parallels the stockanalyzer's own
+   900px-breakpoint rule, but scoped to our wrapper so we don't depend on
+   the standalone stylesheet's specificity). */
+@media (max-width: 900px) {
+  #stk-host {
+    grid-template-columns: 1fr;
+  }
+  #stk-host > .sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--sep);
+    max-height: none;
+  }
+}
 
 /* Net-worth scanner — confirmation list rows */
 .holdings-row {
