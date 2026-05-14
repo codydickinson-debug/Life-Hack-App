@@ -3242,6 +3242,20 @@ function renderToday() {
         </div>
       `}
 
+    ${(() => {
+      const k = todayKey();
+      const curMood = (DB.moods || {})[k] || "";
+      const moodEms = ["😞","😕","😐","🙂","😄"];
+      return `
+        <div class="section-h"><span class="lbl">How's today?</span>${curMood ? `<button class="act" style="font-size:11.5px;color:var(--t3)" onclick="setDayMood(${jsAttr(k)},'${curMood}')">Clear</button>` : ''}</div>
+        <div style="display:flex;gap:6px;margin-bottom:14px">
+          ${moodEms.map(em => `
+            <button onclick="setDayMood(${jsAttr(k)},'${em}')" style="flex:1;background:${curMood===em?'var(--bg-elev)':'var(--card)'};border:1.5px solid ${curMood===em?'var(--blue)':'var(--sep)'};border-radius:var(--r);padding:10px 0;font-size:22px;cursor:pointer;transition:transform .15s ease,border-color .15s ease">${em}</button>
+          `).join("")}
+        </div>
+      `;
+    })()}
+
     <!-- ===== AMBIENT: daily quote ===== -->
     <div class="section-h"><span class="lbl">Reminder</span><span style="display:flex;gap:14px"><button class="act" onclick="pinQuoteToToday()" title="Save to today's note">📌 Save</button><button class="act" onclick="shuffleQuote()" title="Get another quote">↻ Shuffle</button></span></div>
     <div class="list">
