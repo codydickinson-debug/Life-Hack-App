@@ -2472,19 +2472,83 @@ function renderHeader() {
 }
 
 /* ================ HABITS ================ */
+// Is a given date key inside any of the habit's paused ranges?
+// Pauses are stored as h.pauses = [{from:'YYYY-MM-DD', to:'YYYY-MM-DD'}]
+// inclusive on both ends. Open-ended pauses use to: '' (still active).
+function _inPauseRange(h, k) {
+  const arr = h && Array.isArray(h.pauses) ? h.pauses : [];
+  for (const p of arr) {
+    if (!p || !p.from) continue;
+    if (k < p.from) continue;
+    if (!p.to) return true; // ongoing pause
+    if (k <= p.to) return true;
+  }
+  return false;
+}
+// Is the habit currently paused (today falls in an active pause)?
+function isHabitPaused(h) {
+  return _inPauseRange(h, todayKey());
+}
 function streakOf(h) {
   let n = 0;
   let d = new Date();
-  // walk back; allow today to be missing without breaking streak
+  // walk back; allow today to be missing without breaking streak. Paused
+  // days are skipped — they count as neither a hit nor a miss, so a vacation
+  // / sickness pause keeps the streak intact when you resume.
   let started = false;
   for (let i=0; i<400; i++) {
     const k = todayKey(d);
+    if (_inPauseRange(h, k)) { d.setDate(d.getDate()-1); continue; }
     const hit = !!h.log[k] && (h.type === "count" ? h.log[k] >= (h.target||1) : !!h.log[k]);
     if (i === 0 && !hit) { d.setDate(d.getDate()-1); continue; }
     if (hit) { n++; started = true; d.setDate(d.getDate()-1); }
     else { break; }
   }
   return n;
+}
+
+// Pause a habit for N days starting today, OR indefinitely if days==0.
+// We close any open pause first so re-pausing doesn't double-stack.
+async function pauseHabit(id, days) {
+  const h = (DB.habits || []).find(x => x.id === id);
+  if (!h) return;
+  if (!Array.isArray(h.pauses)) h.pauses = [];
+  // Close any open-ended pause so we don't stack
+  for (const p of h.pauses) { if (!p.to) p.to = todayKey(); }
+  const from = todayKey();
+  let to = "";
+  if (days && +days > 0) {
+    const end = new Date(); end.setDate(end.getDate() + (+days - 1));
+    to = todayKey(end);
+  }
+  h.pauses.push({ from, to });
+  await save();
+  render();
+  toast(days ? `Paused ${esc(h.name)} for ${days} day${days === 1 ? '' : 's'}` : `Paused ${esc(h.name)} indefinitely`);
+}
+
+// Resume a paused habit. Closes the most recent open pause as of yesterday
+// (so today counts again toward the streak).
+async function resumeHabit(id) {
+  const h = (DB.habits || []).find(x => x.id === id);
+  if (!h || !Array.isArray(h.pauses) || !h.pauses.length) return;
+  const today = todayKey();
+  // Close any open-ended pause as of yesterday
+  const y = new Date(); y.setDate(y.getDate() - 1);
+  const yk = todayKey(y);
+  let modified = false;
+  for (const p of h.pauses) {
+    if (!p.to) { p.to = yk; modified = true; }
+    else if (p.from <= today && today <= p.to) {
+      // pause covers today — truncate it to yesterday
+      p.to = yk;
+      modified = true;
+    }
+  }
+  if (!modified) return;
+  await save();
+  render();
+  toast(`Resumed ${esc(h.name)}`);
 }
 function habitDoneToday(h) {
   const v = h.log[todayKey()];
@@ -2493,8 +2557,11 @@ function habitDoneToday(h) {
 }
 function todayHabitProgress() {
   if (!DB.habits.length) return { done: 0, total: 0, pct: 0 };
-  const done = DB.habits.filter(habitDoneToday).length;
-  return { done, total: DB.habits.length, pct: Math.round(100*done/DB.habits.length) };
+  // Paused habits don't count toward today's progress (they're on hold)
+  const active = DB.habits.filter(h => !isHabitPaused(h));
+  if (!active.length) return { done: 0, total: 0, pct: 0 };
+  const done = active.filter(habitDoneToday).length;
+  return { done, total: active.length, pct: Math.round(100*done/active.length) };
 }
 
 // Habit detail sheet — opens when the user taps a habit's 🔥 streak pill on Today.
@@ -2573,6 +2640,38 @@ function habitDetailSheet(id) {
     </div>
 
     ${firstDate ? `<div class="muted" style="font-size:11.5px;margin-bottom:14px">First check-in: ${firstDate}</div>` : ""}
+
+    ${(() => {
+      // Pause / resume control. Lets the user skip days (vacation, illness)
+      // without breaking the streak.
+      const paused = isHabitPaused(h);
+      if (paused) {
+        // Find the active pause range to show end date
+        const active = (h.pauses || []).find(p => p.from <= todayKey() && (!p.to || todayKey() <= p.to));
+        const endLabel = active && active.to
+          ? `until ${new Date(active.to + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
+          : "indefinitely";
+        return `
+          <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--blue,#007AFF);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">
+            <div style="display:flex;align-items:center;gap:10px">
+              <div style="font-size:20px">⏸</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:13px;font-weight:600">Paused ${esc(endLabel)}</div>
+                <div style="font-size:11.5px;color:var(--t3);margin-top:2px">Streak intact while paused — days don't count for or against</div>
+              </div>
+              <button class="btn sm" style="font-size:11.5px;padding:6px 14px;flex-shrink:0" onclick="resumeHabit(${jsAttr(h.id)});closeSheet();">Resume</button>
+            </div>
+          </div>
+        `;
+      }
+      return `
+        <div style="display:flex;gap:6px;margin-bottom:14px;flex-wrap:wrap">
+          <button class="btn secondary sm" style="flex:1;min-width:80px;font-size:12px;padding:8px 6px;color:var(--t2)" onclick="pauseHabit(${jsAttr(h.id)}, 3);closeSheet();">⏸ Pause 3d</button>
+          <button class="btn secondary sm" style="flex:1;min-width:80px;font-size:12px;padding:8px 6px;color:var(--t2)" onclick="pauseHabit(${jsAttr(h.id)}, 7);closeSheet();">⏸ Pause 7d</button>
+          <button class="btn secondary sm" style="flex:1;min-width:90px;font-size:12px;padding:8px 6px;color:var(--t2)" onclick="pauseHabit(${jsAttr(h.id)}, 0);closeSheet();">⏸ Pause indefinitely</button>
+        </div>
+      `;
+    })()}
 
     <div class="actions">
       <button class="btn secondary" onclick="closeSheet();setTimeout(()=>openCounselor(${jsAttr(`Tell me about my "${h.name}" habit. I have a ${streak}-day streak and did it ${done30} of the last 30 days. What's one specific thing I could do to make this habit stickier?`)}),120)" style="font-size:13px">✨ Ask Cylan</button>
@@ -3704,23 +3803,31 @@ function renderToday() {
 
   const visibleHabits = activeHabitGroup === "all" ? DB.habits : DB.habits.filter(h => (h.group||"other") === activeHabitGroup);
   const habitsHtml = visibleHabits.length ? visibleHabits.map(h => {
+    const paused = isHabitPaused(h);
     const v = h.log[todayKey()] || 0;
     const done = h.type === "count" ? v >= (h.target||1) : !!v;
     const streak = streakOf(h);
-    const sub = h.type === "count"
-      ? `${v||0} / ${h.target||1}${h.unit?" "+esc(h.unit):""}`
-      : (h.log[todayKey()] ? "Done today" : "Not yet today");
+    const sub = paused
+      ? "⏸ Paused — streak preserved"
+      : h.type === "count"
+        ? `${v||0} / ${h.target||1}${h.unit?" "+esc(h.unit):""}`
+        : (h.log[todayKey()] ? "Done today" : "Not yet today");
+    // Paused habits aren't tappable to toggle — tap opens detail sheet so the
+    // user can resume. We also gray the check and skip the active state.
+    const tapAction = paused
+      ? `habitDetailSheet('${h.id}')`
+      : `toggleHabit('${h.id}')`;
     return `
-      <div class="row tappable" onclick="toggleHabit('${h.id}')">
-        <button class="check ${done?'done':''}" aria-label="check">✓</button>
+      <div class="row tappable" onclick="${tapAction}" style="${paused ? 'opacity:0.65' : ''}">
+        <button class="check ${done?'done':''}" aria-label="${paused ? 'paused' : 'check'}" style="${paused ? 'background:var(--bg-elev);color:var(--t3);border-color:var(--sep)' : ''}">${paused ? '⏸' : '✓'}</button>
         <div class="lead">${h.emoji}</div>
         <div class="body">
-          <div class="t1">${esc(h.name)}</div>
+          <div class="t1">${esc(h.name)}${paused ? ` <span style="background:var(--bg-elev);color:var(--t3);border-radius:999px;padding:2px 8px;font-size:10px;margin-left:6px;font-weight:600">PAUSED</span>` : ''}</div>
           <div class="t2">${sub}</div>
-          ${dailyActionContextHtml(h.name)}
+          ${paused ? '' : dailyActionContextHtml(h.name)}
         </div>
         <div class="trail">
-          ${streak ? `<span class="streak-pill" style="cursor:pointer" onclick="event.stopPropagation();habitDetailSheet('${h.id}')">🔥 ${streak}</span>` : ""}
+          ${streak ? `<span class="streak-pill" style="cursor:pointer${paused ? ';opacity:0.65' : ''}" onclick="event.stopPropagation();habitDetailSheet('${h.id}')">🔥 ${streak}</span>` : ""}
           <button class="del-x" onclick="event.stopPropagation();addHabitSheet(DB.habits.find(x=>x.id==='${h.id}'))" title="Edit">⋯</button>
         </div>
       </div>
