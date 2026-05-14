@@ -2436,12 +2436,15 @@ function openSheet(html) {
 function closeSheet() {
   if (_lockSheet) return;
   // If the counselor sheet was open, wipe the chat thread on close so the
-  // user never sees prior messages on a future open. Detected by a data
-  // attribute set inside counselorRender — no extra plumbing through the
-  // generic openSheet/closeSheet API.
+  // user never sees prior messages on a future open — UNLESS the user
+  // pinned this chat via the "Keep chat" toggle in the header (which sets
+  // _counselorState.keep). Detected by a data attribute set inside
+  // counselorRender — no extra plumbing through the generic
+  // openSheet/closeSheet API.
   const sheet = $("#sheet");
   if (sheet && sheet.querySelector("[data-counselor-sheet]")) {
-    if (DB && DB.counselor) {
+    const keep = !!(typeof _counselorState !== "undefined" && _counselorState && _counselorState.keep);
+    if (!keep && DB && DB.counselor) {
       DB.counselor.thread = [];
       try { save(); } catch {}
     }
@@ -3289,12 +3292,27 @@ function _computeSearchResults(query) {
   const goals = (f === "all" || f === "goals") ? (DB.goals || []).filter(g => (((g.title || "") + " " + (g.note || "")).toLowerCase()).includes(q)) : [];
   const savings = (f === "all" || f === "goals") ? (DB.savings || []).filter(s => (s.name || "").toLowerCase().includes(q)) : [];
   const total = habits.length + wins.length + notes.length + spend.length + goals.length + savings.length;
-  if (!total) return `<div class="muted" style="font-size:13px;padding:14px 4px;text-align:center">No matches for "${esc(q)}".</div>`;
+  // Always show an "Ask Cylan" entry at the top so the search bar doubles as
+  // an AI entry point — even when there are no matching records in DB. We
+  // wrap the raw query in a leading phrase so Cylan answers it in-context.
+  const askCylanPrompt = `Tell me about "${q}" — based on my actual data and situation, what should I know or do about this?`;
+  const askCylanRow = `
+    <div class="row tappable" onclick="closeSheet();setTimeout(()=>openCounselor(${jsAttr(askCylanPrompt)}),120)"
+      style="background:linear-gradient(135deg,rgba(124,58,237,0.10),rgba(236,72,153,0.10));border:0.5px solid rgba(124,58,237,0.35);border-radius:var(--r2,14px);margin-bottom:10px">
+      <div class="lead" style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:14px">✨</div>
+      <div class="body">
+        <div class="t1" style="color:var(--purple,#8957d9);font-weight:700">Ask Cylan about "${esc(q.slice(0, 40))}${q.length > 40 ? '…' : ''}"</div>
+        <div class="t2" style="font-size:12px">Get a candid answer that knows your numbers</div>
+      </div>
+      <div class="trail" style="color:var(--purple,#8957d9);font-size:18px">→</div>
+    </div>
+  `;
+  if (!total) return `${askCylanRow}<div class="muted" style="font-size:13px;padding:14px 4px;text-align:center">No matches for "${esc(q)}" in your records.</div>`;
   const sect = (label, count, rowsHtml) => count ? `
     <div class="section-h" style="margin-top:14px;margin-bottom:8px"><span class="lbl">${label} (${count})</span></div>
     <div class="list">${rowsHtml}</div>
   ` : "";
-  let html = `<div style="font-size:11px;color:var(--t3);margin:6px 0 4px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">${total} match${total === 1 ? '' : 'es'}</div>`;
+  let html = askCylanRow + `<div style="font-size:11px;color:var(--t3);margin:6px 0 4px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">${total} match${total === 1 ? '' : 'es'}</div>`;
   html += sect("Habits", habits.length, habits.map(h => `
     <div class="row tappable" onclick="closeSheet();setTimeout(()=>habitDetailSheet('${h.id}'),120)">
       <div class="lead">${h.emoji || '✦'}</div>
@@ -9385,19 +9403,105 @@ const COUNSELOR_SUGGESTIONS = {
   ],
 };
 
+// Follow-up prompts shown beneath each assistant reply so the user always has
+// a one-tap continuation. Per-context lists; we shuffle and take 3 each render
+// so they feel fresh, not stale. These nudge toward "go deeper", "challenge me",
+// "show me the math" — the kinds of follow-ups that turn shallow advice into a
+// real conversation.
+const COUNSELOR_FOLLOWUPS = {
+  default: [
+    "Show me the math.",
+    "What would you do if you were me?",
+    "Give me one specific step I can take today.",
+    "What's the biggest risk in this approach?",
+    "Push back on me — what am I getting wrong?",
+    "Make this simpler.",
+    "What's the next thing I should ask you?",
+    "Why that and not something else?",
+  ],
+  goals: [
+    "Break this into monthly milestones.",
+    "What's a realistic deadline?",
+    "What's the smallest first step?",
+    "How do I stay accountable?",
+    "What if I miss the deadline?",
+    "Sequence this against my other goals.",
+    "What habits would make this easier?",
+  ],
+  planning: [
+    "Make this a 12-month timeline.",
+    "What's the first 30 days?",
+    "Sequence by priority — what comes first?",
+    "What am I underestimating?",
+    "How would you balance this with my other plans?",
+    "What's the realistic version of this?",
+    "Save this as a plan.",
+  ],
+  money: [
+    "Show me the math.",
+    "Where should I cut first?",
+    "Build me a budget around this.",
+    "What's a stretch version of this?",
+    "What's the lazy version of this?",
+    "What if my income dropped 20%?",
+    "How does this compare to people in my situation?",
+  ],
+  stocks: [
+    "Give me 3 specific tickers.",
+    "What allocation should I target?",
+    "Tax-advantaged or taxable first?",
+    "What if the market drops 30% next year?",
+    "How does this fit my current holdings?",
+    "Lump sum or DCA?",
+    "What's the boring/disciplined version?",
+  ],
+};
+
+// Pick N follow-ups for the current context. Shuffled per call so the user
+// sees variety across replies.
+function _pickFollowups(ctx, n = 3) {
+  const pool = (COUNSELOR_FOLLOWUPS[ctx] || COUNSELOR_FOLLOWUPS.default).slice();
+  // Fisher-Yates
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, n);
+}
+
 function counselorRender() {
   if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false };
   const thread = DB.counselor.thread || [];
   const busy = !!(_counselorState && _counselorState.busy);
 
-  const bubbles = thread.map(m => {
+  // Index of the most recent assistant reply — only that bubble gets
+  // follow-up chips so we don't litter the whole transcript with stale
+  // suggestion buttons.
+  const ctx = (_counselorState && _counselorState.context) || "default";
+  let lastAsstIdx = -1;
+  for (let i = thread.length - 1; i >= 0; i--) {
+    if (thread[i].role === "assistant") { lastAsstIdx = i; break; }
+  }
+  const followups = (lastAsstIdx >= 0 && !busy) ? _pickFollowups(ctx, 3) : [];
+
+  const bubbles = thread.map((m, idx) => {
     if (m.role === "assistant") {
+      const isLast = (idx === lastAsstIdx);
+      const followHtml = (isLast && followups.length) ? `
+        <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
+          ${followups.map(t => `
+            <button onclick="counselorSend(${jsAttr(t)})"
+              style="background:rgba(124,58,237,0.08);border:0.5px solid rgba(124,58,237,0.35);color:var(--purple,#8957d9);padding:6px 11px;border-radius:var(--r-pill,999px);font-size:12px;cursor:pointer;font-weight:600;line-height:1.2">${esc(t)}</button>
+          `).join("")}
+        </div>
+      ` : "";
       return `
         <div style="display:flex;gap:8px;margin-bottom:12px;align-items:flex-start">
           <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✨</div>
           <div style="max-width:84%">
             <div style="background:var(--bg-elev);padding:10px 14px;border-radius:16px;border-top-left-radius:4px;font-size:14px;line-height:1.5;color:var(--t1);overflow-wrap:break-word">${_mdLite(m.content || "")}</div>
             ${_renderActionChips(m.actions)}
+            ${followHtml}
           </div>
         </div>`;
     }
@@ -9407,7 +9511,6 @@ function counselorRender() {
       </div>`;
   }).join("");
 
-  const ctx = (_counselorState && _counselorState.context) || "default";
   const suggestions = COUNSELOR_SUGGESTIONS[ctx] || COUNSELOR_SUGGESTIONS.default;
   const introLine = ({
     goals:    "Hey, I'm Cylan. From your <b>Goals</b> tab — let's make these real. Pick what to tackle first or break a big one down.",
@@ -9454,14 +9557,26 @@ function counselorRender() {
     </div>
   `;
 
+  const keep = !!(_counselorState && _counselorState.keep);
+  const subtitleText = keep
+    ? "Your financial counselor · 📌 Keeping this chat"
+    : "Your financial counselor · auto-clears on close";
+  const headerControls = thread.length ? `
+    <button onclick="counselorToggleKeep()" title="${keep ? 'Stop keeping this chat' : 'Keep this chat across opens'}"
+      style="background:${keep ? 'rgba(124,58,237,0.18)' : 'var(--bg-elev)'};border:0.5px solid ${keep ? 'var(--purple,#8957d9)' : 'var(--sep)'};color:${keep ? 'var(--purple,#8957d9)' : 'var(--t2)'};padding:6px 10px;border-radius:var(--r-pill,999px);font-size:11.5px;cursor:pointer;font-weight:600;flex-shrink:0">${keep ? '📌 Kept' : '📌 Keep'}</button>
+    <button onclick="counselorNewChat()" title="Start a new chat"
+      style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t2);padding:6px 10px;border-radius:var(--r-pill,999px);font-size:11.5px;cursor:pointer;font-weight:600;flex-shrink:0">New</button>
+  ` : "";
+
   openSheet(`
-    <div data-counselor-sheet style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px">✨</div>
+    <div data-counselor-sheet style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+      <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">✨</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:15px">Cylan</div>
-        <div style="font-size:11px;color:var(--t3)">Your financial counselor · auto-clears on close</div>
+        <div style="font-size:11px;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${subtitleText}</div>
       </div>
-      <button style="background:none;border:none;font-size:22px;color:var(--t3);cursor:pointer;padding:4px 8px" onclick="closeSheet()" aria-label="Close">×</button>
+      ${headerControls}
+      <button style="background:none;border:none;font-size:22px;color:var(--t3);cursor:pointer;padding:4px 8px;flex-shrink:0" onclick="closeSheet()" aria-label="Close">×</button>
     </div>
     <div id="cns-scroll" style="max-height:55vh;overflow-y:auto;padding-right:4px;margin-bottom:6px">
       ${bubbles}
@@ -9476,6 +9591,30 @@ function counselorRender() {
     const inp = document.getElementById("cns-input");
     if (inp && !busy) inp.focus();
   }, 30);
+}
+
+// Pin / unpin the current chat. When pinned, closeSheet() skips wiping the
+// thread so the user can come back to a meaningful conversation. The flag
+// lives on _counselorState (session memory), not DB — so quitting the app
+// still clears it, matching the privacy expectation of "auto-clears".
+function counselorToggleKeep() {
+  if (!_counselorState) _counselorState = { busy: false };
+  _counselorState.keep = !_counselorState.keep;
+  toast(_counselorState.keep ? "Keeping this chat — won't auto-clear" : "This chat will clear on close");
+  counselorRender();
+}
+
+// Wipe the current thread and re-render the empty starting state.
+async function counselorNewChat() {
+  if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false };
+  if (_counselorState && _counselorState.busy) {
+    toast("Hold on — Cylan is still thinking");
+    return;
+  }
+  DB.counselor.thread = [];
+  if (_counselorState) _counselorState.keep = false;
+  try { await save(); } catch {}
+  counselorRender();
 }
 
 async function counselorSend(text) {
@@ -17997,6 +18136,7 @@ function init() {
     debtConsolidationSheet,
     fetchInsight, getMonthlyInsight, runAiInsight, maybeFireDailyInsight,
     openCounselor, counselorRender, counselorSend, counselorClear, buildCounselorSnapshot,
+    counselorToggleKeep, counselorNewChat,
     _parseAndRunActions, _runCylanAction, _renderActionChips,
     counselorVoiceToggle, negotiateBillWithAI, negotiateBillWithAISeed,
     _whatIfState, whatIfCardHtml, _whatIfUpdate, renderPlanningWhatIfOnly,
