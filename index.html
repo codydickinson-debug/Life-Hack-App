@@ -2765,7 +2765,8 @@ function renderToday() {
           const pct = dayPct(d);
           const done = pct === 100 && DB.habits.length;
           const wd = d.toLocaleDateString("en-US",{weekday:"short"})[0];
-          return `<div class="daychip ${isToday?'today':''} ${done?'done':''}"><div>${wd}</div><div class="n">${d.getDate()}</div></div>`;
+          const k = todayKey(d);
+          return `<div class="daychip ${isToday?'today':''} ${done?'done':''}" onclick="calendarDaySheet('${k}')" role="button" tabindex="0"><div>${wd}</div><div class="n">${d.getDate()}</div></div>`;
         }).join("")}
       </div>
     </div>
