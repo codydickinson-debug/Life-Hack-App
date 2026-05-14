@@ -3029,6 +3029,7 @@ var calendarView = "month";
 // conditional render below. Adding a new toggleable section means adding
 // here + wrapping its render block in `if (!isTodaySectionHidden(id))`.
 const TODAY_TOGGLEABLE_SECTIONS = [
+  { id: "onThisDay",       label: "On this day",            desc: "What happened a week / month / year ago today" },
   { id: "milestoneBanner", label: "Streak milestone alert", desc: "Banner when a habit is days from its next milestone" },
   { id: "safeToSpend",     label: "Safe to spend",          desc: "Daily budget snapshot card" },
   { id: "todaySpent",      label: "Today's spending",       desc: "How much you spent today" },
@@ -3267,6 +3268,46 @@ function renderToday() {
   const startOfWeek = new Date(today); startOfWeek.setDate(today.getDate() - ((today.getDay()+6)%7)); // Mon start
   const days = Array.from({length:7}, (_,i)=>{ const d = new Date(startOfWeek); d.setDate(startOfWeek.getDate()+i); return d; });
 
+  // "On this day" — look back to fixed historical windows (1wk/1mo/3mo/6mo/1yr
+   //  ago) and collect interesting events that happened on that exact date.
+   //  Returns up to 3 most-recent windows with content. Quietly hides if the
+   //  user has no historical data (new install).
+  const onThisDayItems = (() => {
+    const today0 = new Date();
+    const windows = [
+      { label: "1 week ago",   days: 7   },
+      { label: "1 month ago",  days: 30  },
+      { label: "3 months ago", days: 90  },
+      { label: "6 months ago", days: 180 },
+      { label: "1 year ago",   days: 365 },
+    ];
+    const out = [];
+    for (const w of windows) {
+      const d = new Date(today0); d.setDate(today0.getDate() - w.days);
+      const k = todayKey(d);
+      const winsHit = (DB.wins || []).filter(x => x.date === k);
+      const goalsHit = (DB.goals || []).filter(g => g.completedAt && new Date(g.completedAt).toISOString().slice(0,10) === k);
+      const moodHit = (DB.moods || {})[k];
+      const noteHit = (DB.calendarNotes || {})[k];
+      let habitsDone = 0, habitsTotal = 0;
+      if (DB.habits.length) {
+        const elig = DB.habits.filter(h => !h.createdAt || new Date(h.createdAt) <= d);
+        habitsDone = elig.filter(h => h.type === "count" ? (h.log[k] || 0) >= (h.target || 1) : !!h.log[k]).length;
+        habitsTotal = elig.length;
+      }
+      if (!winsHit.length && !goalsHit.length && !moodHit && !noteHit && habitsDone === 0) continue;
+      const items = [];
+      if (goalsHit.length)  items.push(`<span style="margin-right:6px">🎯</span>Completed <b>${esc(goalsHit[0].title)}</b>`);
+      if (winsHit.length)   items.push(`<span style="margin-right:6px">⭐</span>${esc(winsHit[0].text)}`);
+      if (habitsDone === habitsTotal && habitsTotal > 0) items.push(`<span style="margin-right:6px">🔥</span>Perfect day · all ${habitsTotal} habits`);
+      else if (habitsDone > 0) items.push(`<span style="margin-right:6px">✓</span>${habitsDone} of ${habitsTotal} habits done`);
+      if (moodHit && items.length < 2) items.push(`<span style="margin-right:6px">${moodHit}</span>Logged this mood`);
+      if (noteHit && items.length < 2) items.push(`<span style="margin-right:6px">📝</span>${esc(noteHit.slice(0, 60))}${noteHit.length > 60 ? "…" : ""}`);
+      if (items.length) out.push({ label: w.label, dateKey: k, items: items.slice(0, 2) });
+    }
+    return out.slice(0, 3);
+  })();
+
   // Streak-milestone alert — surface habits that are 1–3 days from a 'round'
   // milestone. Motivational dopamine for finishing strong.
   const upcomingMilestones = (() => {
@@ -3413,6 +3454,20 @@ function renderToday() {
       <span><b style="color:var(--t1)">${weekSummary.winsW}</b> wins</span>
       ${weekSummary.spendW > 0 ? `<span><b style="color:var(--t1)" data-priv="amount">${fmt$0(weekSummary.spendW)}</b> spent</span>` : ""}
     </div>
+
+    ${(onThisDayItems.length && !isTodaySectionHidden('onThisDay')) ? `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:14px;margin-bottom:14px">
+        <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;margin-bottom:10px">📜 On this day</div>
+        <div style="display:flex;flex-direction:column;gap:14px">
+          ${onThisDayItems.map(w => `
+            <div onclick="calendarDaySheet('${w.dateKey}')" role="button" tabindex="0" style="cursor:pointer">
+              <div style="font-size:11px;color:var(--t3);margin-bottom:4px">${w.label}</div>
+              ${w.items.map(i => `<div style="font-size:13px;color:var(--t1);line-height:1.45;margin-bottom:2px">${i}</div>`).join("")}
+            </div>
+          `).join("")}
+        </div>
+      </div>
+    ` : ""}
 
     ${(upcomingMilestones.length && !isTodaySectionHidden('milestoneBanner')) ? `
       <div onclick="habitDetailSheet('${upcomingMilestones[0].h.id}')" role="button" tabindex="0"
@@ -6151,6 +6206,85 @@ function renderStats() {
         ` : ""}
       </div>
     ` : ""}
+
+    ${(() => {
+      // Auto-insights — compute notable patterns from existing data and surface
+      // 1–3 of them as bullet rows. Quietly hides when nothing interesting is
+      // computable yet.
+      const insights = [];
+      // 1. Spend trend vs last month
+      const curMo = monthSpend();
+      const lastMo = lastMonthSpend();
+      if (curMo > 0 && lastMo > 0) {
+        const pct = Math.round(((curMo - lastMo) / lastMo) * 100);
+        if (Math.abs(pct) >= 10) {
+          const dir = pct > 0 ? "up" : "down";
+          const color = pct > 0 ? "var(--red)" : "var(--green)";
+          insights.push({ icon: "💸", text: `Spending <b style="color:${color}">${dir} ${Math.abs(pct)}%</b> this month vs last` });
+        }
+      }
+      // 2. Best habit day-of-week
+      if (DB.habits.length) {
+        const byDow = [[],[],[],[],[],[],[]];
+        const today2 = new Date();
+        for (let i = 0; i < 60; i++) {
+          const d = new Date(today2); d.setDate(today2.getDate() - i);
+          const k = todayKey(d);
+          const elig = DB.habits.filter(h => !h.createdAt || new Date(h.createdAt) <= d);
+          if (!elig.length) continue;
+          const done = elig.filter(h => h.type === "count" ? (h.log[k] || 0) >= (h.target || 1) : !!h.log[k]).length;
+          byDow[(d.getDay() + 6) % 7].push(done / elig.length);
+        }
+        const avgs = byDow.map(arr => arr.length ? arr.reduce((a,v)=>a+v,0) / arr.length : 0);
+        const maxAvg = Math.max(...avgs);
+        if (maxAvg > 0.3) {
+          const names = ["Mondays","Tuesdays","Wednesdays","Thursdays","Fridays","Saturdays","Sundays"];
+          const best = avgs.indexOf(maxAvg);
+          insights.push({ icon: "📅", text: `Your strongest habit day is <b style="color:var(--t1)">${names[best]}</b> (${Math.round(maxAvg*100)}% done on average)` });
+        }
+      }
+      // 3. Win streak
+      const wDates = new Set((DB.wins || []).map(w => w.date));
+      let wStreak = 0;
+      for (let i = 0; i < 365; i++) {
+        const d = new Date(); d.setDate(d.getDate() - i);
+        if (wDates.has(todayKey(d))) wStreak++;
+        else break;
+      }
+      if (wStreak >= 3) insights.push({ icon: "⭐", text: `<b style="color:var(--orange)">${wStreak}-day</b> win streak — keep capturing the small stuff` });
+      // 4. Closest savings goal
+      const goalProgressList = (DB.savings || [])
+        .filter(s => (+s.target || 0) > 0 && (+s.current || 0) < (+s.target || 0))
+        .map(s => ({ s, gap: (+s.target || 0) - (+s.current || 0), pct: (+s.current || 0) / (+s.target || 1) }))
+        .sort((a,b) => b.pct - a.pct);
+      if (goalProgressList.length && goalProgressList[0].pct >= 0.5) {
+        const top = goalProgressList[0];
+        insights.push({ icon: top.s.emoji || "🎯", text: `<b style="color:var(--t1)" data-priv="amount">${fmt$0(top.gap)}</b> away from <b>${esc(top.s.name)}</b> (${Math.round(top.pct*100)}% there)` });
+      }
+      // 5. Net worth growth
+      const nwHist = (DB.netWorthHistory || []).slice(-30);
+      if (nwHist.length >= 2) {
+        const a = nwHist[0].total, b = nwHist[nwHist.length-1].total;
+        const delta = b - a;
+        if (Math.abs(delta) >= 100) {
+          const dir = delta > 0 ? "up" : "down";
+          const color = delta > 0 ? "var(--green)" : "var(--red)";
+          insights.push({ icon: "📈", text: `Net worth ${dir} <b style="color:${color}" data-priv="amount">${fmt$0(Math.abs(delta))}</b> over the last 30 days` });
+        }
+      }
+      if (!insights.length) return "";
+      return `
+        <div class="section-h"><span class="lbl">Insights</span><span class="muted" style="font-size:12px">auto-detected</span></div>
+        <div style="background:var(--card);border-radius:var(--r);padding:14px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
+          ${insights.slice(0, 4).map((i, idx) => `
+            <div style="${idx > 0 ? 'margin-top:10px;padding-top:10px;border-top:0.5px solid var(--sep)' : ''};display:flex;align-items:flex-start;gap:10px;font-size:13px;color:var(--t2);line-height:1.45">
+              <span style="font-size:16px;line-height:1.2;flex-shrink:0">${i.icon}</span>
+              <span>${i.text}</span>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    })()}
 
     ${(() => {
       const hist = (DB.netWorthHistory || []).slice(-90);
