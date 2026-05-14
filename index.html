@@ -4252,6 +4252,62 @@ function renderMoney() {
       `;
     })() : "";
 
+    // 6-month spending trend — vertical bar chart so the user can see whether
+    // this month is running high or low compared to their recent average.
+    const spendTrend = (() => {
+      const months = 6;
+      const now = new Date();
+      const series = [];
+      for (let i = months - 1; i >= 0; i--) {
+        const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+        const ym = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+        const total = DB.spend
+          .filter(t => t.date && t.date.startsWith(ym) && (+t.amount || 0) > 0)
+          .reduce((a,t) => a + (+t.amount || 0), 0);
+        series.push({
+          label: d.toLocaleString("en-US", { month: "short" }),
+          total,
+          isCurrent: i === 0,
+        });
+      }
+      return series;
+    })();
+    const trendMax = Math.max(1, ...spendTrend.map(s => s.total));
+    const trendAvg = spendTrend.reduce((a,s) => a + s.total, 0) / Math.max(1, spendTrend.length);
+    const trendHasData = spendTrend.some(s => s.total > 0);
+    const trendHtml = trendHasData ? (() => {
+      const W = 320, H = 120, padX = 10, padY = 12, axisH = 16;
+      const plotW = W - padX * 2;
+      const plotH = H - padY - axisH;
+      const slot = plotW / spendTrend.length;
+      const barW = slot * 0.58;
+      const avgY = padY + plotH - (trendAvg / trendMax) * plotH;
+      const bars = spendTrend.map((s, i) => {
+        const barH = (s.total / trendMax) * plotH;
+        const x = padX + slot * i + (slot - barW) / 2;
+        const y = padY + plotH - barH;
+        const color = s.isCurrent ? "var(--blue)" : "var(--bg-elev2)";
+        return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(2, barH).toFixed(1)}" rx="3" fill="${color}"/>`;
+      }).join("");
+      const labels = spendTrend.map((s, i) => {
+        const x = padX + slot * i + slot / 2;
+        return `<text x="${x.toFixed(1)}" y="${H - 3}" text-anchor="middle" font-size="10.5" fill="${s.isCurrent ? 'var(--t1)' : 'var(--t3)'}" font-weight="${s.isCurrent ? '700' : '500'}">${s.label}</text>`;
+      }).join("");
+      return `
+        <div style="background:var(--card);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+            <div style="font-size:13px;font-weight:600;color:var(--t2)">Last ${spendTrend.length} months</div>
+            <div style="font-size:11.5px;color:var(--t3)">avg <span data-priv="amount">${fmt$0(trendAvg)}</span>/mo</div>
+          </div>
+          <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="width:100%;height:${H}px;display:block">
+            <line x1="${padX}" y1="${avgY.toFixed(1)}" x2="${W - padX}" y2="${avgY.toFixed(1)}" stroke="var(--t3)" stroke-dasharray="3 4" stroke-width="0.75" opacity="0.55"/>
+            ${bars}
+            ${labels}
+          </svg>
+        </div>
+      `;
+    })() : "";
+
     // Spending by category this month — horizontal bar breakdown so the user
     // can see where their money actually went, not just the total.
     const spendByCat = (() => {
@@ -4309,6 +4365,7 @@ function renderMoney() {
         <div class="bh-val">${fmt$0(ms)}</div>
         <div class="bh-sub">${DB.spend.filter(t=>t.date.startsWith(todayKey().slice(0,7))).length} transactions${totalAvail ? ` · ${fmt$0(totalAvail)} available across accounts` : ""}</div>
       </div>
+      ${trendHtml}
       ${breakdownHtml}
       ${accountsHtml}
       ${holdingsHtml}
