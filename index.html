@@ -1561,6 +1561,7 @@ const DEFAULT_DB = {
   dismissedPlays: {},        // { playId: true } — smart-play recommendations user has dismissed
   calendarNotes: {},         // { 'YYYY-MM-DD': 'note text' } — per-day reminders/journal entries shown on Calendar
   moods: {},                 // { 'YYYY-MM-DD': '😄' } — daily mood rating, set from Calendar day sheet
+  hiddenTodaySections: [],   // [string] — Today-tab section ids the user has hidden via Settings → Customize Today
   profile: {                 // optional self-reported info that sharpens smart-play recommendations
     age: 0,                  // 0 = not set; play engine uses 30 as a neutral default when missing
     filingStatus: "single",  // single | married | hoh — for tax-related plays
@@ -2961,6 +2962,78 @@ var calendarMonth = new Date();
 var calendarView = "month";
 
 /* ===== TODAY ===== */
+// Today-section toggle list — drives both the Customize sheet AND the
+// conditional render below. Adding a new toggleable section means adding
+// here + wrapping its render block in `if (!isTodaySectionHidden(id))`.
+const TODAY_TOGGLEABLE_SECTIONS = [
+  { id: "milestoneBanner", label: "Streak milestone alert", desc: "Banner when a habit is days from its next milestone" },
+  { id: "safeToSpend",     label: "Safe to spend",          desc: "Daily budget snapshot card" },
+  { id: "todaySpent",      label: "Today's spending",       desc: "How much you spent today" },
+  { id: "smartPlays",      label: "Smart plays",            desc: "Personalized money next-steps" },
+  { id: "importantDates",  label: "Important dates",        desc: "Tax deadlines and other key dates" },
+  { id: "comingUp",        label: "Coming up · bills",      desc: "Bills due in the next week" },
+  { id: "wealthHealth",    label: "Wealth Health card",     desc: "Overall financial health score" },
+  { id: "moneyReflection", label: "Money reflection",       desc: "Rotating money question prompt" },
+  { id: "weeklyReview",    label: "Weekly review banner",   desc: "Sunday-only reminder to review your week" },
+  { id: "setupChecklist",  label: "Setup checklist",        desc: "Onboarding progress card" },
+  { id: "counselor",       label: "Cylan counselor card",   desc: "Talk-to-AI quick link" },
+  { id: "mood",            label: "How's today? mood",      desc: "5-emoji daily mood picker" },
+  { id: "reminder",        label: "Daily quote",            desc: "Rotating inspirational quote" },
+];
+function isTodaySectionHidden(id) {
+  return (DB.settings && Array.isArray(DB.settings.hiddenTodaySections))
+    ? DB.settings.hiddenTodaySections.includes(id)
+    : ((DB.hiddenTodaySections || []).includes(id)); // fallback to top-level if older save
+}
+async function toggleTodaySection(id) {
+  // Store on DB.settings so all customization lives in one place going forward.
+  if (!DB.settings) DB.settings = {};
+  if (!Array.isArray(DB.settings.hiddenTodaySections)) DB.settings.hiddenTodaySections = [];
+  const list = DB.settings.hiddenTodaySections;
+  const idx = list.indexOf(id);
+  if (idx >= 0) list.splice(idx, 1);
+  else list.push(id);
+  try { await save(); } catch (e) { toast("Couldn't save — please try again"); return; }
+  // Re-render the customize sheet so the toggle state updates, and re-render
+  // Today if it's the active tab.
+  if (activeTab === "today") renderToday();
+  customizeTodaySheet();
+}
+async function showAllTodaySections() {
+  if (!DB.settings) DB.settings = {};
+  DB.settings.hiddenTodaySections = [];
+  try { await save(); } catch (e) { toast("Couldn't save — please try again"); return; }
+  toast("All sections restored");
+  if (activeTab === "today") renderToday();
+  customizeTodaySheet();
+}
+function customizeTodaySheet() {
+  const hidden = (DB.settings && DB.settings.hiddenTodaySections) || [];
+  const rows = TODAY_TOGGLEABLE_SECTIONS.map(s => {
+    const isHidden = hidden.includes(s.id);
+    return `
+      <div class="row tappable" onclick="toggleTodaySection('${s.id}')" role="button" tabindex="0">
+        <div class="body">
+          <div class="t1">${esc(s.label)}</div>
+          <div class="t2">${esc(s.desc)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px">
+          <div style="width:42px;height:24px;background:${isHidden ? 'var(--bg-elev2)' : 'var(--green)'};border-radius:12px;position:relative;transition:background .2s ease">
+            <div style="position:absolute;top:2px;${isHidden ? 'left:2px' : 'right:2px'};width:20px;height:20px;background:#fff;border-radius:50%;transition:left .2s ease, right .2s ease;box-shadow:0 1px 2px rgba(0,0,0,0.2)"></div>
+          </div>
+        </div>
+      </div>
+    `;
+  }).join("");
+  openSheet(`
+    <h2 style="margin-bottom:4px">Customize Today</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Toggle off sections you don't want to see on the Today tab. Habits, wins, and the day snapshot are always shown.</p>
+    <div class="list">${rows}</div>
+    ${hidden.length ? `<button class="btn secondary" style="width:100%;margin-top:14px;font-size:13px" onclick="showAllTodaySections()">Restore all sections</button>` : ""}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Done</button></div>
+  `);
+}
+
 function renderToday() {
   const p = todayHabitProgress();
   const wins = winsToday();
@@ -3115,7 +3188,7 @@ function renderToday() {
       ${weekSummary.spendW > 0 ? `<span><b style="color:var(--t1)" data-priv="amount">${fmt$0(weekSummary.spendW)}</b> spent</span>` : ""}
     </div>
 
-    ${upcomingMilestones.length ? `
+    ${(upcomingMilestones.length && !isTodaySectionHidden('milestoneBanner')) ? `
       <div onclick="habitDetailSheet('${upcomingMilestones[0].h.id}')" role="button" tabindex="0"
         style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--orange);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:12px">
         <div style="width:32px;height:32px;border-radius:50%;background:rgba(237,139,34,0.15);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">🔥</div>
@@ -3160,8 +3233,8 @@ function renderToday() {
     <div class="list">${winsHtml}</div>
 
     <!-- ===== MONEY SNAPSHOT: daily glance ===== -->
-    ${stsHtml}
-    ${(() => {
+    ${isTodaySectionHidden('safeToSpend') ? "" : stsHtml}
+    ${isTodaySectionHidden('todaySpent') ? "" : (() => {
       const today = todayKey();
       const todaySpent = (DB.spend||[]).filter(t => t.date === today && (+t.amount) > 0).reduce((a,t)=>a+(+t.amount||0), 0);
       if (!todaySpent) return "";
@@ -3172,7 +3245,7 @@ function renderToday() {
     })()}
 
     <!-- ===== INSIGHTS: smart plays, dates, bills, wealth, reflection ===== -->
-    ${(() => {
+    ${isTodaySectionHidden('smartPlays') ? "" : (() => {
       const plays = computeSmartPlays();
       if (!plays.length) return "";
       const top = plays.slice(0, 2);
@@ -3194,7 +3267,7 @@ function renderToday() {
       `;
     })()}
 
-    ${(() => {
+    ${isTodaySectionHidden('importantDates') ? "" : (() => {
       const events = computeFinancialCalendar({ horizonMonths: 12 });
       // Surface only events within the next 60 days here — Coming Up + Important Dates
       // overlap less when this section focuses on a tighter window.
@@ -3221,7 +3294,7 @@ function renderToday() {
       `;
     })()}
 
-    ${(() => {
+    ${isTodaySectionHidden('comingUp') ? "" : (() => {
       const bills = upcomingBills();
       if (!bills.length) return "";
       return `
@@ -3245,7 +3318,7 @@ function renderToday() {
       `;
     })()}
 
-    ${(() => {
+    ${isTodaySectionHidden('wealthHealth') ? "" : (() => {
       // Wealth Health score — only show when there's meaningful financial data,
       // otherwise the score is artificially 0 and demotivating for new users.
       const hasMoneyContext = (+(DB.budget?.income) || 0) > 0
@@ -3267,7 +3340,7 @@ function renderToday() {
       `;
     })()}
 
-    ${(() => {
+    ${isTodaySectionHidden('moneyReflection') ? "" : (() => {
       // Money reflection prompt — small card with today's question. Tap to journal.
       // Only show if user has profile filled in (signal they're engaged with the app).
       const profile = DB.profile || {};
@@ -3286,9 +3359,9 @@ function renderToday() {
     })()}
 
     <!-- ===== SETUP / PROMPTS: only when relevant ===== -->
-    ${wrBanner}
+    ${isTodaySectionHidden('weeklyReview') ? "" : wrBanner}
 
-    ${(() => {
+    ${isTodaySectionHidden('setupChecklist') ? "" : (() => {
       // Setup checklist banner — surface for new users with incomplete setup.
       // Auto-hides when complete or when user dismisses.
       if (DB.setupChecklistDismissed) return "";
@@ -3329,7 +3402,7 @@ function renderToday() {
       `;
     })()}
 
-    ${`
+    ${isTodaySectionHidden('counselor') ? "" : `
         <div class="row tappable" onclick="openCounselor()" role="button" tabindex="0"
           style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:center">
           <div style="width:36px;height:36px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;color:var(--purple)">✨</div>
@@ -3341,7 +3414,7 @@ function renderToday() {
         </div>
       `}
 
-    ${(() => {
+    ${isTodaySectionHidden('mood') ? "" : (() => {
       const k = todayKey();
       const curMood = (DB.moods || {})[k] || "";
       const moodEms = ["😞","😕","😐","🙂","😄"];
@@ -3356,15 +3429,17 @@ function renderToday() {
     })()}
 
     <!-- ===== AMBIENT: daily quote ===== -->
-    <div class="section-h"><span class="lbl">Reminder</span><span style="display:flex;gap:14px"><button class="act" onclick="pinQuoteToToday()" title="Save to today's note">📌 Save</button><button class="act" onclick="shuffleQuote()" title="Get another quote">↻ Shuffle</button></span></div>
-    <div class="list">
-      <div class="row">
-        <div class="lead">💭</div>
-        <div class="body">
-          <div class="t1" style="font-style:italic;font-weight:400">${esc(todaysQuote())}</div>
+    ${isTodaySectionHidden('reminder') ? "" : `
+      <div class="section-h"><span class="lbl">Reminder</span><span style="display:flex;gap:14px"><button class="act" onclick="pinQuoteToToday()" title="Save to today's note">📌 Save</button><button class="act" onclick="shuffleQuote()" title="Get another quote">↻ Shuffle</button></span></div>
+      <div class="list">
+        <div class="row">
+          <div class="lead">💭</div>
+          <div class="body">
+            <div class="t1" style="font-style:italic;font-weight:400">${esc(todaysQuote())}</div>
+          </div>
         </div>
       </div>
-    </div>
+    `}
   `;
 }
 
@@ -6981,6 +7056,22 @@ function renderSettings() {
           <div class="trail">${DB.settings.theme===t?'<span style="color:var(--blue);font-size:18px">✓</span>':''}</div>
         </div>
       `).join("")}
+    </div>
+
+    <div class="section-h"><span class="lbl">Customize</span></div>
+    <div class="list">
+      <div class="row tappable" onclick="customizeTodaySheet()">
+        <div class="lead">🎛️</div>
+        <div class="body">
+          <div class="t1">Customize Today</div>
+          <div class="t2">${(() => {
+            const hiddenCount = ((DB.settings && DB.settings.hiddenTodaySections) || []).length;
+            if (hiddenCount === 0) return "Show or hide sections to fit how you use Today";
+            return `${hiddenCount} section${hiddenCount===1?'':'s'} hidden`;
+          })()}</div>
+        </div>
+        <div class="trail chev"></div>
+      </div>
     </div>
 
     <div class="section-h"><span class="lbl">Reminders</span></div>
@@ -16712,6 +16803,7 @@ function init() {
     addExpenseInline, deleteExpense, totalExpenses, leftover,
     addSpend, deleteSpend, monthSpend, spendCategories,
     addWin, deleteWin, winsToday, allWinsSheet, shuffleQuote, pinQuoteToToday, addStarterHabit,
+    customizeTodaySheet, toggleTodaySection, showAllTodaySections, isTodaySectionHidden,
     openSettings, applyTheme, toggleNotifications, scheduleReminder, exportData, importData, openSheet, closeSheet, toast,
     connectBank, syncNow, disconnectItem, backendLinkToken, backendExchange, backendSync, backendListItems, backendRemoveItem,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
