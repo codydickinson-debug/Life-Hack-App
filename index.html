@@ -851,6 +851,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .daychip.today .n { color: var(--bg); }
 .daychip.done .n { color: var(--green); }
 
+/* Daychips inside the dark hero — translucent, light text */
+.hero .daychips { margin: 18px 0 0; gap: 5px; }
+.hero .daychip {
+  background: rgba(255,255,255,0.05);
+  border-color: rgba(255,255,255,0.07);
+  color: rgba(245,245,247,0.55);
+  padding: 9px 0 8px;
+}
+.hero .daychip .n { color: rgba(245,245,247,0.92); }
+.hero .daychip.today { background: rgba(255,255,255,0.94); border-color: rgba(255,255,255,0.94); color: rgba(20,20,22,0.55); }
+.hero .daychip.today .n { color: #0F0F12; }
+.hero .daychip.done .n { color: #5EE0A0; }
+
 /* generic card (used by Stats inline cards) */
 .card {
   background: var(--card);
@@ -2446,16 +2459,15 @@ function renderToday() {
       <div class="h-big">${p.done} / ${p.total} habits</div>
       <div class="h-sub">${p.total ? (p.pct===100 ? "All done — keep the streak alive 🔥" : "You've got this.") : "Add a habit to get started."}</div>
       <div class="h-bar"><div class="h-fill" style="width:${p.pct}%"></div></div>
-    </div>
-
-    <div class="daychips">
-      ${days.map(d=>{
-        const isToday = todayKey(d) === todayKey();
-        const pct = dayPct(d);
-        const done = pct === 100 && DB.habits.length;
-        const wd = d.toLocaleDateString("en-US",{weekday:"short"})[0];
-        return `<div class="daychip ${isToday?'today':''} ${done?'done':''}"><div>${wd}</div><div class="n">${d.getDate()}</div></div>`;
-      }).join("")}
+      <div class="daychips">
+        ${days.map(d=>{
+          const isToday = todayKey(d) === todayKey();
+          const pct = dayPct(d);
+          const done = pct === 100 && DB.habits.length;
+          const wd = d.toLocaleDateString("en-US",{weekday:"short"})[0];
+          return `<div class="daychip ${isToday?'today':''} ${done?'done':''}"><div>${wd}</div><div class="n">${d.getDate()}</div></div>`;
+        }).join("")}
+      </div>
     </div>
 
     <div class="section-h"><span class="lbl">Habits</span><button class="act" onclick="addHabitSheet()">+ Add</button></div>
