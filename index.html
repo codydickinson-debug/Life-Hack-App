@@ -1654,6 +1654,8 @@ const DEFAULT_DB = {
     thread: [],              // [{role:'user'|'assistant', content, t}]
     lastOpenedAt: 0,
     hideLauncher: false,     // user can hide the floating ✨ launcher
+    insights: [],            // [{id, text, savedAt, context}] — user-saved
+                             // standout replies. Survives thread auto-clear.
   },
   plans: [],                 // big-picture life plans (distinct from daily Goals).
                              // {id, title, tier:'short'|'mid'|'long', emoji, note,
@@ -7964,6 +7966,11 @@ function renderSettings() {
         <div class="body"><div class="t1">Run monthly insight</div><div class="t2">Quick monthly review on Haiku 4.5 (cheaper — counts against daily cap)</div></div>
         <div class="trail chev"></div>
       </div>
+      <div class="row tappable" onclick="cylanInsightsSheet()">
+        <div class="lead">📌</div>
+        <div class="body"><div class="t1">Saved Cylan insights</div><div class="t2">${((DB.counselor && DB.counselor.insights) || []).length} pinned${((DB.counselor && DB.counselor.insights) || []).length ? ' · stays even after chat auto-clears' : ''}</div></div>
+        <div class="trail chev"></div>
+      </div>
     </div>
 
     <div class="section-h"><span class="lbl">Bills calendar</span></div>
@@ -9495,12 +9502,22 @@ function counselorRender() {
           `).join("")}
         </div>
       ` : "";
+      // Save-insight pin shown on every assistant bubble. Pre-computes the
+      // saved state so the icon reflects "already pinned" vs "save".
+      const isSaved = _isInsightSaved(m.content || "");
+      const saveBtn = `
+        <button onclick="saveCylanInsight(${jsAttr(m.content || "")}, ${jsAttr(ctx)})" title="${isSaved ? 'Remove from insights' : 'Save to insights'}"
+          style="background:none;border:none;cursor:pointer;font-size:12px;color:${isSaved ? 'var(--purple,#8957d9)' : 'var(--t3)'};padding:4px 6px;margin-top:4px;display:inline-flex;align-items:center;gap:4px;line-height:1.2">
+          <span>${isSaved ? '📌' : '📍'}</span>
+          <span style="font-weight:600">${isSaved ? 'Saved' : 'Save'}</span>
+        </button>`;
       return `
         <div style="display:flex;gap:8px;margin-bottom:12px;align-items:flex-start">
           <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✨</div>
           <div style="max-width:84%">
             <div style="background:var(--bg-elev);padding:10px 14px;border-radius:16px;border-top-left-radius:4px;font-size:14px;line-height:1.5;color:var(--t1);overflow-wrap:break-word">${_mdLite(m.content || "")}</div>
             ${_renderActionChips(m.actions)}
+            ${saveBtn}
             ${followHtml}
           </div>
         </div>`;
@@ -9591,6 +9608,108 @@ function counselorRender() {
     const inp = document.getElementById("cns-input");
     if (inp && !busy) inp.focus();
   }, 30);
+}
+
+// Save a Cylan reply to the Insights archive — survives chat auto-clear so
+// the user keeps the gems even after the rest of the conversation is wiped.
+// Idempotent: re-tapping save on the same text removes it from the archive
+// instead of duplicating.
+async function saveCylanInsight(text, ctx) {
+  if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false, insights: [] };
+  if (!Array.isArray(DB.counselor.insights)) DB.counselor.insights = [];
+  const norm = (text || "").toString().trim();
+  if (!norm) return;
+  const existingIdx = DB.counselor.insights.findIndex(i => i.text === norm);
+  if (existingIdx >= 0) {
+    DB.counselor.insights.splice(existingIdx, 1);
+    await save();
+    counselorRender();
+    toast("Removed from insights");
+    return;
+  }
+  DB.counselor.insights.unshift({
+    id: uid(),
+    text: norm.slice(0, 4000),
+    savedAt: Date.now(),
+    context: ctx || "default",
+  });
+  // Cap so the archive doesn't grow unbounded
+  if (DB.counselor.insights.length > 200) DB.counselor.insights = DB.counselor.insights.slice(0, 200);
+  await save();
+  counselorRender();
+  toast("📌 Saved to insights");
+}
+
+// Is this exact reply text already saved? Used to render the save button as
+// "saved" / "save" so the user can see what they've already pinned.
+function _isInsightSaved(text) {
+  if (!DB.counselor || !Array.isArray(DB.counselor.insights)) return false;
+  const norm = (text || "").toString().trim();
+  return DB.counselor.insights.some(i => i.text === norm);
+}
+
+// Browse + manage saved insights. Standalone sheet so the user can reread
+// the gems Cylan has said without re-running an AI call.
+function cylanInsightsSheet() {
+  const list = (DB.counselor && DB.counselor.insights) || [];
+  const rows = list.length ? list.map(i => `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r2,14px);padding:14px;margin-bottom:10px;position:relative">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">✨</div>
+        <div style="font-size:11px;color:var(--t3);font-weight:600">${esc(_relTime(i.savedAt))}${i.context && i.context !== 'default' ? ' · ' + esc(i.context) : ''}</div>
+        <div style="flex:1"></div>
+        <button onclick="_copyInsightText(${jsAttr(i.id)})" title="Copy" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:14px;padding:4px 6px">📋</button>
+        <button onclick="_removeInsight(${jsAttr(i.id)})" title="Remove" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:14px;padding:4px 6px">🗑️</button>
+      </div>
+      <div style="font-size:14px;line-height:1.55;color:var(--t1);white-space:pre-wrap;overflow-wrap:break-word">${_mdLite(i.text || "")}</div>
+    </div>
+  `).join("") : `
+    <div class="muted" style="text-align:center;padding:30px 14px;line-height:1.5;font-size:13px">
+      No saved insights yet.<br><br>
+      Open Cylan, tap 📌 next to any reply you want to remember, and it'll show up here.<br>
+      Insights survive the chat auto-clear.
+    </div>
+  `;
+  openSheet(`
+    <h2 style="margin-bottom:4px">Cylan Insights</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:12px">Standout replies you've pinned. They stay here even after the chat clears.</p>
+    ${list.length ? `<div style="font-size:11px;color:var(--t3);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">${list.length} insight${list.length === 1 ? '' : 's'}</div>` : ''}
+    ${rows}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+// Copy a single insight to clipboard
+async function _copyInsightText(id) {
+  const list = (DB.counselor && DB.counselor.insights) || [];
+  const found = list.find(i => i.id === id);
+  if (!found) return;
+  try {
+    await navigator.clipboard.writeText(found.text);
+    toast("Copied to clipboard");
+  } catch {
+    toast("Couldn't copy — try selecting manually");
+  }
+}
+
+// Remove a single insight
+async function _removeInsight(id) {
+  if (!DB.counselor || !Array.isArray(DB.counselor.insights)) return;
+  DB.counselor.insights = DB.counselor.insights.filter(i => i.id !== id);
+  await save();
+  cylanInsightsSheet();
+}
+
+// Small relative-time helper (used in insights list)
+function _relTime(t) {
+  if (!t) return "";
+  const sec = Math.max(0, Math.floor((Date.now() - t) / 1000));
+  if (sec < 60) return "just now";
+  if (sec < 3600) return Math.floor(sec / 60) + "m ago";
+  if (sec < 86400) return Math.floor(sec / 3600) + "h ago";
+  const days = Math.floor(sec / 86400);
+  if (days < 30) return days + "d ago";
+  return new Date(t).toLocaleDateString();
 }
 
 // Pin / unpin the current chat. When pinned, closeSheet() skips wiping the
@@ -18152,6 +18271,7 @@ function init() {
     fetchInsight, getMonthlyInsight, runAiInsight, maybeFireDailyInsight,
     openCounselor, counselorRender, counselorSend, counselorClear, buildCounselorSnapshot,
     counselorToggleKeep, counselorNewChat,
+    saveCylanInsight, cylanInsightsSheet, _copyInsightText, _removeInsight,
     _parseAndRunActions, _runCylanAction, _renderActionChips,
     counselorVoiceToggle, negotiateBillWithAI, negotiateBillWithAISeed,
     _whatIfState, whatIfCardHtml, _whatIfUpdate, renderPlanningWhatIfOnly,
