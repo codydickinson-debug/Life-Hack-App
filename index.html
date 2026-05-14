@@ -4042,7 +4042,7 @@ function renderSettings() {
     <div class="list">
       <div class="row tappable" onclick="aiOnboardingStart()">
         <div class="lead">✨</div>
-        <div class="body"><div class="t1">Retake AI setup</div><div class="t2">Talk to Ascend AI to refresh your habits, goals, and tagline</div></div>
+        <div class="body"><div class="t1">Retake AI setup</div><div class="t2">Talk to Life Hack AI to refresh your plan, habits, goals, and budget</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="exportData()">
@@ -5837,15 +5837,27 @@ function _onbShell(stepNum, body, footer) {
 
 function onboardingStep1() {
   _onbState.step = 1;
+  // V2: If a backend is configured, skip the splash entirely and drop the
+  // user into the AI chat. This is the magic-moment first impression —
+  // they go from blank app to "this app knows me" in 30 seconds, no
+  // forms. The manual splash is preserved as the fallback when backend
+  // isn't configured (and as a "Skip AI" escape hatch inside the chat).
+  if (_backendReady()) {
+    _lockSheet = false;
+    closeSheet();
+    aiOnboardingStart({ name: _onbState.name, fromOnboarding: true });
+    return;
+  }
+  // Fallback splash — same as before for users without backend access.
   _onbShell(1, `
-    <h2 style="text-align:center;margin-bottom:4px">Ascend</h2>
-    <div style="text-align:center;font-size:11px;letter-spacing:1.2px;text-transform:uppercase;font-weight:700;color:var(--t3);margin-bottom:6px">Goals made easy · Life Hack</div>
-    <p class="muted" style="text-align:center;margin-bottom:18px;font-size:14px">Track your habits, plan your money, and build a life you actually want.</p>
-    <label style="font-size:12px;color:var(--t3);font-weight:600;margin-bottom:6px;display:block">What should we call you?</label>
+    <h2 style="text-align:center;margin-bottom:4px;font-size:32px;letter-spacing:-0.02em">Life Hack</h2>
+    <div style="text-align:center;font-size:11px;letter-spacing:1.6px;text-transform:uppercase;font-weight:700;background:var(--grad-hero);-webkit-background-clip:text;background-clip:text;color:transparent;margin-bottom:6px">Money on easy mode</div>
+    <p class="muted" style="text-align:center;margin-bottom:18px;font-size:14px">Track your money, build the habits, hit your goals — all in one private, encrypted app.</p>
+    <label style="font-size:12px;color:var(--t3);font-weight:700;letter-spacing:0.04em;margin-bottom:6px;display:block">What should we call you?</label>
     <input id="onb-name" placeholder="Your first name" autofocus value="${esc(_onbState.name)}" />
+    <p class="muted" style="font-size:11px;margin-top:10px;text-align:center;line-height:1.5">AI-guided setup needs a backend — configure one in Settings later to unlock it.</p>
   `, `
-    <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="(()=>{const n=$('#onb-name').value.trim();_onbState.name=n;closeSheet();aiOnboardingStart({name:n,fromOnboarding:true});})()">✨ Talk to Ascend AI (~3 min)</button>
-    <button class="btn secondary" style="width:100%;margin-top:8px" onclick="(()=>{_onbState.name=$('#onb-name').value.trim();onboardingStep2();})()">Quick setup instead</button>
+    <button class="btn" style="width:100%" onclick="(()=>{_onbState.name=$('#onb-name').value.trim();onboardingStep2();})()">Continue</button>
   `);
 }
 
@@ -5936,18 +5948,20 @@ function finishOnboarding() {
    Anthropic key never touches the browser. Falls back gracefully when
    the backend isn't configured. */
 
-const AI_ONBOARDING_SYSTEM = `You are Ascend AI, the warm onboarding coach for the Ascend app (a personal-development tool that tracks habits, goals, and money). Tagline: "Goals made easy".
+const AI_ONBOARDING_SYSTEM = `You are Life Hack AI, the warm onboarding coach for Life Hack — an app that combines money management with daily habits. Tagline: "Money on easy mode".
 
-Your job is a short 3-7 turn conversation to learn the user, then propose a tailored starter plan. Be warm, casual, brief (1-2 sentences per reply, no preamble, no "as an AI" disclaimers).
+Your job is a short 4-8 turn conversation to learn the user, then propose a tailored starter plan that includes habits, goals, AND a finance setup (budget categories, recurring expenses if they mentioned any, debt strategy). Be warm, casual, brief (1-2 sentences per reply, no preamble, no "as an AI" disclaimers).
 
-Conversation arc (skip topics they say they don't care about):
+Conversation arc (skip topics they say don't apply):
 1. Name (skip if already provided)
-2. The ONE area they most want to improve right now (Money, Health, Mind/Learning, Career, Relationships, Faith)
-3. What "winning" looks like for them in ~5 years
-4. Their smallest realistic move this week
-5. Time/day they can realistically commit (5 min? 30 min? 1 hour?)
+2. The ONE area they most want to improve right now (Money is the default focus; others are valid: Health, Mind/Learning, Career, Relationships, Faith)
+3. ROUGH monthly take-home income range — purely so you can size their goals/budget realistically. Use ranges: "Under $2k", "$2-4k", "$4-7k", "$7-12k", "$12k+", "Prefer not to say". Don't ask for an exact number.
+4. Current financial situation in one of: "Mostly debt I want to pay off", "I'm saving but want more", "Mix of both", "Trying to invest more", "Just starting out".
+5. Smallest realistic financial move they can make THIS week.
+6. Their 5-year vision (free-form).
+7. Time/day they can realistically commit to checking the app (1 min? 5 min? 15 min?).
 
-After 4-6 user turns, generate the plan. Don't drag it out.
+After 5-7 user turns, generate the plan. Don't drag it out. If they answer tersely, skip questions — adapt.
 
 Output: respond with STRICT JSON only. No markdown fences, no commentary outside the JSON.
 
@@ -5961,39 +5975,61 @@ WHILE CONVERSING:
 
 WHEN DONE:
 {
-  "say": "warm closing line like 'Here's what I'm thinking…'",
+  "say": "warm closing line like 'Here's what I'm thinking for you…'",
   "quickReplies": [],
   "done": true,
   "plan": {
     "habits": [
-      {"name": "Workout", "emoji": "💪", "type": "check", "group": "health"},
-      {"name": "Drink water", "emoji": "💧", "type": "count", "target": 64, "unit": "oz", "group": "health"}
+      {"name": "Log every spend", "emoji": "💰", "type": "check", "group": "money"},
+      {"name": "Workout", "emoji": "💪", "type": "check", "group": "health"}
     ],
     "shortGoal": {"title": "Save $500 this month", "note": "Auto-transfer on payday"},
     "longGoal": {"title": "Be financially free by 40", "note": "$1M invested"},
-    "todayTagline": "Discipline > motivation"
+    "todayTagline": "Discipline > motivation",
+    "budget": {
+      "income": 4000,
+      "savingsTarget": 600,
+      "expenses": [
+        {"name": "Rent", "amount": 1400},
+        {"name": "Groceries", "amount": 400},
+        {"name": "Transport", "amount": 200}
+      ]
+    },
+    "debtStrategy": "avalanche",
+    "savings": [
+      {"name": "Emergency fund", "emoji": "🛡️", "target": 6000, "current": 0},
+      {"name": "House down payment", "emoji": "🏠", "target": 25000, "current": 0}
+    ]
   }
 }
 
 Plan rules:
-- 3-5 habits, anchored to what they said matters most
-- Emojis from this set: 💪 💧 📖 🚶 🧘 ✍️ 🌙 🙏 💰 🎯 🛌 📝 🎨 🎵 💼 🍎 ☀️ 🏃 🧠 ☕
-- type "check" for yes/no, "count" for measurable (requires target and unit)
-- group: one of "health", "mind", "money", "faith", "misc"
+- 3-5 habits, anchored to what they said matters most. For money-focused users, include 1-2 money habits ("Log every spend", "Weekly money check-in", "No-spend day"). For other primary areas, money habits are optional.
+- Emojis from this set: 💪 💧 📖 🚶 🧘 ✍️ 🌙 🙏 💰 🎯 🛌 📝 🎨 🎵 💼 🍎 ☀️ 🏃 🧠 ☕ 💸 🛡️ 🏠 🚗 ✈️ 🎓 📈 💎 🪴 ⏰
+- habit.type: "check" for yes/no, "count" for measurable (requires target and unit)
+- habit.group: one of "health", "mind", "money", "faith", "misc"
 - shortGoal: actionable in 1-8 weeks, concrete
 - longGoal: their 5-year vision as a concrete goal
 - todayTagline: 3-8 word motto matching their vibe
 
-Never invent specific numbers (dollars, weights) unless they told you. Never ask two questions in one turn. Never break the JSON format.`;
+Finance-specific:
+- budget.income: midpoint of the user's stated range (e.g. they said "$4-7k" → use 5500). Always use a clean round number.
+- budget.savingsTarget: 10-20% of income. Be conservative if they have debt.
+- budget.expenses: best-effort guesses based on their income range. Use general categories (Rent/Mortgage, Groceries, Transport, Utilities, Subscriptions, Fun). If they mentioned specific bills, include those by name.
+- debtStrategy: "avalanche" if they're optimization-minded; "snowball" if they need motivation wins. Default "avalanche".
+- savings: 1-3 buckets matching their situation. Emergency fund is almost always first.
+- Skip any sub-field that doesn't apply (e.g., omit "savings" if they're 100% debt-focused right now).
+
+Never invent specific numbers the user didn't give you (exact dollars, weights, ages). Use the range they chose. Never ask two questions in one turn. Never break the JSON format.`;
 
 let _aiOnb = null;
 
 function aiOnboardingStart(opts = {}) {
   if (!_backendReady()) {
     openSheet(`
-      <h2 style="margin-bottom:8px">✨ Talk to Ascend AI</h2>
+      <h2 style="margin-bottom:8px">✨ Life Hack AI setup</h2>
       <p style="font-size:14px;color:var(--t2);line-height:1.5;margin-bottom:14px">
-        The AI setup uses your private backend, which has to be configured first. Once you add the Worker URL + Enrollment Key in <b>Settings → Backend</b>, you can come back here.
+        The AI-guided setup uses your private backend, which has to be configured first. Once you add the Worker URL + Enrollment Key in <b>Settings → Backend</b>, come back here.
       </p>
       <button class="btn" style="width:100%;margin-bottom:8px" onclick="closeSheet();showTab('settings')">Open Settings</button>
       <button class="btn secondary" style="width:100%" onclick="closeSheet();${opts.fromOnboarding ? 'runOnboarding()' : ''}">${opts.fromOnboarding ? 'Use the quick setup instead' : 'Close'}</button>
@@ -6010,10 +6046,13 @@ function aiOnboardingStart(opts = {}) {
     fromOnboarding: !!opts.fromOnboarding,
   };
 
-  // Seed first message — no API call needed for the opener.
+  // Seed first message — no API call needed for the opener. The opener
+  // is finance-anchored (matches Life Hack's positioning) but still
+  // surfaces non-money areas via quick-reply chips for users who want
+  // a habit-first or holistic setup.
   const opener = _aiOnb.knownName
-    ? `Hey ${_aiOnb.knownName}! I'm Ascend AI. I'll ask a few quick questions to set things up the way that fits you — about 3 minutes. Which area of life matters most to you right now?`
-    : `Hey! I'm Ascend AI. I'll ask a few quick questions to set things up the way that fits you — about 3 minutes. What should I call you?`;
+    ? `Hey ${_aiOnb.knownName} 👋 I'm Life Hack AI. Quick chat to learn what would help — about 2 minutes. What's the ONE thing about your money or life you want to feel better about?`
+    : `Hey 👋 I'm Life Hack AI. Quick chat to set things up — about 2 minutes. What should I call you?`;
   const openerChips = _aiOnb.knownName
     ? ["💰 Money", "💪 Health", "🧠 Mind", "💼 Career", "❤️ Relationships", "🙏 Faith"]
     : [];
@@ -6033,14 +6072,14 @@ function aiOnboardingRender() {
     if (m.role === "assistant") {
       const text = m.parsed?.say || m.content || "";
       return `
-        <div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-start">
-          <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✨</div>
-          <div style="background:var(--bg-elev);padding:10px 14px;border-radius:16px;border-top-left-radius:4px;max-width:80%;font-size:14px;line-height:1.45">${esc(text)}</div>
+        <div style="display:flex;gap:10px;margin-bottom:12px;align-items:flex-start">
+          <div style="width:30px;height:30px;border-radius:50%;background:var(--grad-hero);color:#fff;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;box-shadow:0 4px 12px rgba(124,58,237,0.30)">✨</div>
+          <div style="background:var(--bg-elev);padding:12px 16px;border-radius:18px;border-top-left-radius:6px;max-width:80%;font-size:14.5px;line-height:1.5;color:var(--t1)">${esc(text)}</div>
         </div>`;
     }
     return `
-      <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
-        <div style="background:var(--blue,#007AFF);color:#fff;padding:10px 14px;border-radius:16px;border-top-right-radius:4px;max-width:80%;font-size:14px;line-height:1.45">${esc(m.content)}</div>
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+        <div style="background:var(--grad-hero);color:#fff;padding:12px 16px;border-radius:18px;border-top-right-radius:6px;max-width:80%;font-size:14.5px;line-height:1.5;box-shadow:0 4px 12px rgba(124,58,237,0.25)">${esc(m.content)}</div>
       </div>`;
   }).join("");
 
@@ -6076,15 +6115,15 @@ function aiOnboardingRender() {
   }
 
   openSheet(`
-    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-      <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px">✨</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;padding-bottom:14px;border-bottom:0.5px solid var(--sep)">
+      <div style="width:36px;height:36px;border-radius:50%;background:var(--grad-hero);color:#fff;display:flex;align-items:center;justify-content:center;font-size:16px;box-shadow:0 6px 18px rgba(124,58,237,0.30)">✨</div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:15px">Ascend AI</div>
-        <div style="font-size:11px;color:var(--t3)">${o.plan ? "Plan ready" : o.asking ? "Thinking…" : "Setting things up · ~3 min"}</div>
+        <div style="font-weight:800;font-size:16px;letter-spacing:-0.01em">Life Hack AI</div>
+        <div style="font-size:11px;color:var(--t3);font-weight:600;letter-spacing:0.04em">${o.plan ? "Plan ready" : o.asking ? "Thinking…" : "Setting things up · ~2 min"}</div>
       </div>
-      <button class="del-x" style="background:none;border:none;font-size:22px;color:var(--t3);cursor:pointer" onclick="aiOnbClose()">×</button>
+      <button class="del-x" style="background:var(--bg-elev);border:none;width:32px;height:32px;border-radius:50%;font-size:18px;color:var(--t3);cursor:pointer;display:flex;align-items:center;justify-content:center" onclick="aiOnbClose()" aria-label="Close">×</button>
     </div>
-    <div id="ai-onb-scroll" style="max-height:50vh;overflow-y:auto;padding-right:4px;margin-bottom:12px">${bubbles}</div>
+    <div id="ai-onb-scroll" style="max-height:55vh;overflow-y:auto;padding-right:4px;margin-bottom:12px">${bubbles}</div>
     ${footer}
   `);
 
@@ -6218,15 +6257,51 @@ function aiOnbPlanReviewHtml(plan) {
   }
 
   const taglineHtml = plan.todayTagline
-    ? `<div style="margin-top:14px;padding:12px;background:var(--bg-elev);border-radius:10px;border-left:3px solid #7c3aed">
-         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin-bottom:4px">Your tagline</div>
-         <div style="font-size:14px;font-style:italic">"${esc(plan.todayTagline)}"</div>
+    ? `<div style="margin-top:14px;padding:14px;background:var(--bg-elev);border-radius:12px;border-left:3px solid var(--accent)">
+         <div style="font-size:10px;text-transform:uppercase;letter-spacing:.10em;color:var(--t3);font-weight:700;margin-bottom:6px">Your tagline</div>
+         <div style="font-size:15px;font-style:italic;font-weight:500;color:var(--t1)">"${esc(plan.todayTagline)}"</div>
        </div>`
     : "";
 
+  // V2: budget preview — show the AI's seeded income / savings target /
+  // expenses as a read-only summary. User can edit on the Money tab after
+  // accepting; the goal here is just to set expectations.
+  const budgetHtml = (plan.budget && (plan.budget.income || (plan.budget.expenses||[]).length))
+    ? `
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.10em;color:var(--t3);font-weight:700;margin:14px 0 6px">Starter budget</div>
+      <div style="background:var(--bg-elev);border-radius:12px;padding:12px 14px;margin-bottom:6px">
+        ${plan.budget.income ? `<div style="display:flex;justify-content:space-between;font-size:13px;font-weight:600"><span>Income</span><span style="font-variant-numeric:tabular-nums">${fmt$0(+plan.budget.income||0)}/mo</span></div>` : ""}
+        ${plan.budget.savingsTarget ? `<div style="display:flex;justify-content:space-between;font-size:13px;color:var(--t2);margin-top:4px"><span>Savings target</span><span style="font-variant-numeric:tabular-nums">${fmt$0(+plan.budget.savingsTarget||0)}/mo</span></div>` : ""}
+        ${(plan.budget.expenses||[]).length ? `
+          <div style="margin-top:8px;padding-top:8px;border-top:0.5px solid var(--sep)">
+            ${plan.budget.expenses.slice(0,8).map(e => `<div style="display:flex;justify-content:space-between;font-size:12px;color:var(--t2);margin:3px 0"><span>${esc(e.name||"")}</span><span style="font-variant-numeric:tabular-nums">${fmt$0(+e.amount||0)}</span></div>`).join("")}
+          </div>` : ""}
+      </div>` : "";
+
+  // V2: savings buckets preview
+  const savingsHtml = Array.isArray(plan.savings) && plan.savings.length ? `
+    <div style="font-size:11px;text-transform:uppercase;letter-spacing:.10em;color:var(--t3);font-weight:700;margin:14px 0 6px">Savings buckets</div>
+    ${plan.savings.slice(0,5).map(s => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-elev);border-radius:12px;margin-bottom:6px">
+        <div style="font-size:20px">${esc(s.emoji || "💰")}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:14px;font-weight:600">${esc(s.name||"")}</div>
+          <div style="font-size:11px;color:var(--t3)">Target: <span style="font-variant-numeric:tabular-nums">${fmt$0(+s.target||0)}</span></div>
+        </div>
+      </div>
+    `).join("")}` : "";
+
+  // V2: debt strategy chip — just informational, can be changed later
+  const debtHtml = (plan.debtStrategy === "avalanche" || plan.debtStrategy === "snowball")
+    ? `<div style="font-size:12px;color:var(--t3);margin-top:14px;padding:10px 14px;background:var(--bg-elev);border-radius:10px"><b style="color:var(--t1)">${plan.debtStrategy === "avalanche" ? "Avalanche" : "Snowball"}</b> debt payoff · <span style="opacity:0.8">${plan.debtStrategy === "avalanche" ? "highest interest first (mathematically optimal)" : "smallest balance first (motivation wins)"}</span></div>`
+    : "";
+
   return `
-    ${habitsHtml ? `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin:10px 0 6px">Habits</div>${habitsHtml}` : ""}
-    ${goalsHtml ? `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin:14px 0 6px">Goals</div>${goalsHtml}` : ""}
+    ${habitsHtml ? `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.10em;color:var(--t3);font-weight:700;margin:10px 0 6px">Habits</div>${habitsHtml}` : ""}
+    ${goalsHtml ? `<div style="font-size:11px;text-transform:uppercase;letter-spacing:.10em;color:var(--t3);font-weight:700;margin:14px 0 6px">Goals</div>${goalsHtml}` : ""}
+    ${budgetHtml}
+    ${savingsHtml}
+    ${debtHtml}
     ${taglineHtml}
   `;
 }
@@ -6300,6 +6375,46 @@ async function aiOnbAcceptPlan() {
     });
   }
   if (p.todayTagline) DB.user.tagline = String(p.todayTagline).slice(0, 60);
+
+  // V2 finance seeding: AI now emits budget / debt-strategy / savings buckets
+  // so a fresh user has a real starting state, not an empty Money tab.
+  if (p.budget && typeof p.budget === "object") {
+    if (Number.isFinite(+p.budget.income) && +p.budget.income > 0) {
+      DB.budget.income = Math.round(+p.budget.income);
+    }
+    if (Number.isFinite(+p.budget.savingsTarget) && +p.budget.savingsTarget >= 0) {
+      DB.settings.monthlySavingsTarget = Math.round(+p.budget.savingsTarget);
+    }
+    if (Array.isArray(p.budget.expenses)) {
+      const seeded = p.budget.expenses
+        .filter(e => e && typeof e.name === "string" && Number.isFinite(+e.amount))
+        .slice(0, 12) // cap to avoid an absurd list
+        .map(e => ({ id: uid(), name: String(e.name).slice(0, 40), amount: Math.max(0, Math.round(+e.amount)) }));
+      if (seeded.length) DB.budget.expenses = seeded;
+    }
+  }
+
+  // Debt strategy preference. Only honor known values.
+  if (p.debtStrategy === "avalanche" || p.debtStrategy === "snowball") {
+    DB.settings.debtPayoffStrategy = p.debtStrategy;
+  }
+
+  // Savings buckets — seed each with a target so the Goals tab is alive.
+  if (Array.isArray(p.savings)) {
+    for (const s of p.savings.slice(0, 5)) {
+      if (!s || typeof s.name !== "string" || !Number.isFinite(+s.target) || +s.target <= 0) continue;
+      DB.savings.push({
+        id: uid(),
+        name: String(s.name).slice(0, 40),
+        emoji: s.emoji || "💰",
+        color: COLORS[DB.savings.length % COLORS.length],
+        current: Math.max(0, Math.round(+s.current || 0)),
+        target: Math.max(1, Math.round(+s.target)),
+        log: [],
+      });
+    }
+  }
+
   DB.user.onboardedAt = Date.now();
   DB.user.onboardedVia = "ai";
 
@@ -6307,7 +6422,7 @@ async function aiOnbAcceptPlan() {
   _aiOnb = null;
   _lockSheet = false;
   closeSheet();
-  toast("Plan added — welcome to Ascend!");
+  toast("Plan added — welcome to Life Hack!");
   applyTheme();
   render();
 }
