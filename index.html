@@ -1943,7 +1943,14 @@ async function pinQuoteToToday() {
     toast("Already saved to today's note");
     return;
   }
-  DB.calendarNotes[k] = existing ? (existing + "\n\n" + q) : q;
+  const combined = existing ? (existing + "\n\n" + q) : q;
+  // Enforce the same 500-char cap saveCalendarNote uses, otherwise this path
+  // can silently exceed the limit and next save truncates older content.
+  if (combined.length > 500) {
+    toast("Note is full — clear some space first");
+    return;
+  }
+  DB.calendarNotes[k] = combined;
   try {
     await save();
     toast("Quote saved to today's note");
@@ -2564,17 +2571,19 @@ function setHabitCount(id, val) {
 // Calendar day-detail sheet so users can retroactively mark habits done on
 // days they forgot.
 async function toggleHabitForDate(id, dateKey) {
-  const h = DB.habits.find(x => x.id === id);
+  const h = (DB.habits || []).find(x => x.id === id);
   if (!h) return;
   // Snapshot prior state so we can revert on save failure.
   const prior = h.log[dateKey];
+  let nowDone = false;
   if (h.type === "count") {
     const cur = h.log[dateKey] || 0;
-    if (cur >= (h.target || 1)) delete h.log[dateKey];
-    else h.log[dateKey] = (h.target || 1);
+    if (cur >= (h.target || 1)) { delete h.log[dateKey]; nowDone = false; }
+    else { h.log[dateKey] = (h.target || 1); nowDone = true; }
   } else {
     h.log[dateKey] = !h.log[dateKey];
-    if (!h.log[dateKey]) delete h.log[dateKey];
+    if (!h.log[dateKey]) { delete h.log[dateKey]; nowDone = false; }
+    else { nowDone = true; }
   }
   try {
     await save();
@@ -2583,6 +2592,7 @@ async function toggleHabitForDate(id, dateKey) {
     toast("Couldn't save — please try again");
     return;
   }
+  toast(nowDone ? `✓ ${h.name}` : `Cleared ${h.name}`);
   if (activeTab === "calendar") renderCalendar();
   if (activeTab === "today") renderToday();
 }
@@ -2845,8 +2855,11 @@ function spendCategories() {
 
 /* ================ WINS ================ */
 function addWin(text) {
-  if (!text || !text.trim()) return;
-  DB.wins.unshift({ id: uid(), date: todayKey(), text: text.trim() });
+  const t = (text || "").trim();
+  if (!t) return;
+  // Cap at 200 chars to match addWinForDate so the same field has the same
+  // limit no matter which entry path the user takes.
+  DB.wins.unshift({ id: uid(), date: todayKey(), text: t.slice(0, 200) });
   save(); render();
 }
 
@@ -2854,8 +2867,9 @@ function addWin(text) {
 // Lets a brand-new user kick off their habit tracking in one tap.
 async function addStarterHabit(name, emoji, group, isCount, target, unit) {
   if (!DB.habits) DB.habits = [];
-  // Prevent duplicates if the user double-taps a starter button.
-  if (DB.habits.some(h => h.name === name)) {
+  // Prevent duplicates if the user double-taps a starter button (case-insensitive).
+  const want = name.toLowerCase().trim();
+  if (DB.habits.some(h => (h.name || "").toLowerCase().trim() === want)) {
     toast(`${name} already in your habits`);
     return;
   }
@@ -6840,8 +6854,9 @@ function allNotesSheet() {
 
 async function setDayMood(dateKey, emoji) {
   if (!DB.moods) DB.moods = {};
+  const wasCleared = DB.moods[dateKey] === emoji;
   // Tapping the same emoji again clears the mood.
-  if (DB.moods[dateKey] === emoji) delete DB.moods[dateKey];
+  if (wasCleared) delete DB.moods[dateKey];
   else DB.moods[dateKey] = emoji;
   try {
     await save();
@@ -6849,14 +6864,32 @@ async function setDayMood(dateKey, emoji) {
     toast("Couldn't save mood — please try again");
     return;
   }
+  toast(wasCleared ? "Mood cleared" : `Mood set ${emoji}`);
   if (activeTab === "calendar") renderCalendar();
   if (activeTab === "today") renderToday();
-  // Re-open the day sheet only if it's currently visible so the button state
-  // refreshes. Skipping the re-open from Today is more pleasant (no flash).
+  // Update mood buttons + title emoji in-place if the day sheet is open —
+  // avoids the close/reopen flash on every tap. Falls back gracefully if the
+  // sheet markup has been restructured.
   const sheet = document.getElementById("sheet");
   if (sheet && sheet.classList.contains("show")) {
-    closeSheet();
-    setTimeout(() => calendarDaySheet(dateKey), 120);
+    try {
+      const newMood = DB.moods[dateKey] || "";
+      // Update each mood button's selected styling.
+      const moodBtns = sheet.querySelectorAll('button[onclick^="setDayMood"]');
+      moodBtns.forEach(b => {
+        // Parse the emoji from the onclick: setDayMood('YYYY-MM-DD','😄')
+        const m = b.getAttribute("onclick").match(/setDayMood\([^,]+,\s*'(.+?)'\)/);
+        const btnEm = m ? m[1] : "";
+        if (!btnEm || b.textContent.trim() !== btnEm) return; // skip the clear button
+        if (btnEm === newMood) {
+          b.style.background = "var(--bg-elev)";
+          b.style.border = "1.5px solid var(--blue)";
+        } else {
+          b.style.background = "var(--card)";
+          b.style.border = "1.5px solid var(--sep)";
+        }
+      });
+    } catch {}
   }
 }
 
@@ -6890,7 +6923,7 @@ function calendarDaySheet(dateKey) {
   // (backfill). For future dates the checks are display-only.
   const isToday2 = dateKey === todayKey();
   const isFuture2 = dateKey > todayKey();
-  const eligibleHabits = DB.habits.filter(h => !h.createdAt || new Date(h.createdAt) <= d);
+  const eligibleHabits = (DB.habits || []).filter(h => !h.createdAt || new Date(h.createdAt) <= d);
   const habitRows = eligibleHabits.map(h => {
     const v = h.log[dateKey] || 0;
     const done = h.type === "count" ? v >= (h.target || 1) : !!v;
@@ -6984,7 +7017,7 @@ function calendarDaySheet(dateKey) {
     <div class="section-h" style="margin-top:0"><span class="lbl">How ${dateKey === todayKey() ? 'is' : 'was'} this day?</span>${currentMood ? `<button class="act" style="font-size:11.5px;color:var(--t3)" onclick="setDayMood(${jsAttr(dateKey)},'${currentMood}')">Clear</button>` : ''}</div>
     <div style="display:flex;gap:8px;justify-content:space-between;margin-bottom:14px">
       ${moodEmojis.map(em => `
-        <button onclick="setDayMood(${jsAttr(dateKey)},'${em}')" style="flex:1;background:${currentMood===em?'var(--bg-elev)':'transparent'};border:1.5px solid ${currentMood===em?'var(--blue)':'var(--sep)'};border-radius:var(--r);padding:10px;font-size:24px;cursor:pointer;transition:transform .15s ease,border-color .15s ease">${em}</button>
+        <button onclick="setDayMood(${jsAttr(dateKey)},'${em}')" style="flex:1;background:${currentMood===em?'var(--bg-elev)':'var(--card)'};border:1.5px solid ${currentMood===em?'var(--blue)':'var(--sep)'};border-radius:var(--r);padding:10px;font-size:24px;cursor:pointer;transition:transform .15s ease,border-color .15s ease">${em}</button>
       `).join("")}
     </div>
   `;
@@ -7071,13 +7104,8 @@ function renderCalendar() {
       if (eligible.length) {
         const done = eligible.filter(h => h.type === "count" ? (h.log[k] || 0) >= (h.target || 1) : !!h.log[k]).length;
         pct = done / eligible.length;
-        if (done === eligible.length) {
-          monthHabitDone += done;
-          monthHabitPossible += eligible.length;
-        } else {
-          monthHabitDone += done;
-          monthHabitPossible += eligible.length;
-        }
+        monthHabitDone += done;
+        monthHabitPossible += eligible.length;
       }
     }
     cells.push({
@@ -7192,12 +7220,12 @@ function renderCalendar() {
     <div class="lg-title">Calendar</div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin:-4px 0 6px">
-      <button class="tb-btn" onclick="calendarPrevMonth()" aria-label="${prevAria}" style="background:var(--bg-elev);width:34px;height:34px;border-radius:50%;font-size:18px;color:var(--t1)">‹</button>
+      <button class="tb-btn" onclick="calendarPrevMonth()" aria-label="${prevAria}" style="background:var(--bg-elev);width:44px;height:44px;border-radius:50%;font-size:20px;color:var(--t1)">‹</button>
       <div style="text-align:center">
         <div style="font-size:17px;font-weight:700;color:var(--t1);line-height:1.1">${headerLabel}</div>
-        ${!isCurrentMonth ? `<button class="act" style="font-size:11.5px;margin-top:2px" onclick="calendarToday()">Jump to today</button>` : ""}
+        ${!isCurrentMonth ? `<button class="act" style="font-size:11.5px;margin-top:2px;padding:4px 8px" onclick="calendarToday()">Jump to today</button>` : ""}
       </div>
-      <button class="tb-btn" onclick="calendarNextMonth()" aria-label="${nextAria}" style="background:var(--bg-elev);width:34px;height:34px;border-radius:50%;font-size:18px;color:var(--t1)">›</button>
+      <button class="tb-btn" onclick="calendarNextMonth()" aria-label="${nextAria}" style="background:var(--bg-elev);width:44px;height:44px;border-radius:50%;font-size:20px;color:var(--t1)">›</button>
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 14px">
       <div style="display:inline-flex;background:var(--bg-elev);border-radius:var(--r-pill,999px);padding:3px;gap:2px">
