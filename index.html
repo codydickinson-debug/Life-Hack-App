@@ -4855,7 +4855,23 @@ function renderStats() {
     const daysTracking = firstDate
       ? Math.max(1, Math.ceil((new Date() - new Date(firstDate + "T00:00:00")) / (1000 * 60 * 60 * 24)))
       : 0;
-    return { daysTracking, totalHabitDones, totalWins, totalSaved };
+    // Perfect days this month — days where every habit that existed on that day was done.
+    let perfectDays = 0, monthDaysSoFar = 0;
+    if (DB.habits.length) {
+      const nowD = new Date();
+      const monthStart = new Date(nowD.getFullYear(), nowD.getMonth(), 1);
+      for (let d = new Date(monthStart); d <= nowD; d.setDate(d.getDate() + 1)) {
+        monthDaysSoFar++;
+        const k = todayKey(d);
+        const eligible = DB.habits.filter(h => !h.createdAt || new Date(h.createdAt) <= d);
+        if (!eligible.length) continue;
+        const allDone = eligible.every(h => h.type === "count"
+          ? ((+h.log[k] || 0) >= (+h.target || 1))
+          : !!h.log[k]);
+        if (allDone) perfectDays++;
+      }
+    }
+    return { daysTracking, totalHabitDones, totalWins, totalSaved, perfectDays, monthDaysSoFar };
   })();
 
   $("#page-stats").innerHTML = `
@@ -4882,6 +4898,11 @@ function renderStats() {
             <div style="font-size:10.5px;color:var(--t3);margin-top:4px;line-height:1.2">total<br>saved</div>
           </div>
         </div>
+        ${journey.monthDaysSoFar > 0 && DB.habits.length ? `
+          <div style="font-size:11.5px;color:var(--t3);margin-top:14px;padding-top:12px;border-top:0.5px solid var(--sep);text-align:center">
+            <b style="color:${journey.perfectDays > 0 ? 'var(--orange)' : 'var(--t2)'}">${journey.perfectDays}</b> perfect day${journey.perfectDays===1?'':'s'} this month <span style="color:var(--t3)">(100% habits)</span> · <b style="color:var(--t1)">${Math.round(journey.perfectDays/journey.monthDaysSoFar*100)}%</b> of days
+          </div>
+        ` : ""}
       </div>
     ` : ""}
 
