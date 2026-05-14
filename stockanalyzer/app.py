@@ -359,9 +359,20 @@ def _ai_check_quota(ip: str):
         return True, entry["count"], cap
 
 
+def _ai_api_key() -> str:
+    """Resolve the Anthropic key from any of the conventional env var names.
+    Accepts ANTHROPIC_API_KEY (preferred) or ANTHROPIC_KEY (Cloudflare Worker
+    naming) so operators don't have to think about which one we expect."""
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY"):
+        v = os.environ.get(name, "").strip()
+        if v:
+            return v
+    return ""
+
+
 @app.route("/api/ai/messages", methods=["POST"])
 def api_ai_messages():
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    api_key = _ai_api_key()
     if not api_key:
         return jsonify({"error": "AI is not configured on this deployment."}), 503
 
@@ -421,10 +432,16 @@ def api_ai_messages():
 
 @app.route("/api/ai/health")
 def api_ai_health():
-    """Public health check — does NOT reveal the key itself."""
-    api_key = os.environ.get("ANTHROPIC_API_KEY", "").strip()
+    """Public health check — does NOT reveal the key itself, only which env var
+    name is providing it (helps the operator diagnose name mismatches)."""
+    key_source = None
+    for name in ("ANTHROPIC_API_KEY", "ANTHROPIC_KEY"):
+        if os.environ.get(name, "").strip():
+            key_source = name
+            break
     return jsonify({
-        "configured": bool(api_key),
+        "configured": key_source is not None,
+        "key_source": key_source,
         "daily_cap": int(os.environ.get("ANTHROPIC_DAILY_CAP", "50") or "50"),
         "allowlist_count": len([m for m in os.environ.get("AI_MODEL_ALLOWLIST", "").split(",") if m.strip()]),
     })
