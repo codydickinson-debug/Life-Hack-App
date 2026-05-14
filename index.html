@@ -2599,6 +2599,17 @@ function addWin(text) {
   DB.wins.unshift({ id: uid(), date: todayKey(), text: text.trim() });
   save(); render();
 }
+// Variant that lets the caller backfill a win for a specific date — used by the
+// Calendar day-detail sheet so users can log wins they forgot to capture earlier.
+async function addWinForDate(dateKey, text) {
+  if (!text || !text.trim()) return;
+  if (!DB.wins) DB.wins = [];
+  DB.wins.unshift({ id: uid(), date: dateKey, text: text.trim() });
+  await save();
+  toast("Win added");
+  if (activeTab === "calendar") renderCalendar();
+  if (activeTab === "today") renderToday();
+}
 function deleteWin(id) { DB.wins = DB.wins.filter(w => w.id !== id); save(); render(); }
 function winsToday() { return DB.wins.filter(w => w.date === todayKey()); }
 
@@ -6035,9 +6046,20 @@ function calendarDaySheet(dateKey) {
     <div class="list">${rows}</div>
   ` : (emptyMsg ? `<div class="muted" style="font-size:12.5px;margin:8px 0 4px">${emptyMsg}</div>` : "");
 
+  // Don't surface 'log a win' for future dates — only today + past.
+  const dateKeyIso = dateKey;
+  const todayKIso = todayKey();
+  const isPastOrToday = dateKeyIso <= todayKIso;
+  const quickActions = isPastOrToday ? `
+    <div style="display:flex;gap:8px;margin:-6px 0 16px;flex-wrap:wrap">
+      <button class="btn sm secondary" style="flex:1;min-width:120px;font-size:12.5px" onclick="(()=>{const t=prompt('Win:');if(t)addWinForDate(${jsAttr(dateKey)},t).then(()=>{closeSheet();setTimeout(()=>calendarDaySheet(${jsAttr(dateKey)}),120);});})()">⭐ Log a win</button>
+      ${dateKeyIso === todayKIso ? `<button class="btn sm secondary" style="flex:1;min-width:120px;font-size:12.5px" onclick="closeSheet();setTimeout(()=>quickAddSpendSheet(),120)">💸 Log spending</button>` : ""}
+    </div>
+  ` : "";
   openSheet(`
     <h2 style="margin-bottom:4px">${titleLbl}</h2>
     <p class="muted" style="font-size:12.5px;margin-bottom:14px">Everything tracked on this day</p>
+    ${quickActions}
     <div class="section-h" style="margin-top:0"><span class="lbl">Note / reminder</span></div>
     <textarea id="cal-note-input" placeholder="Capture a thought, reminder, or journal entry for this day…" maxlength="500"
       style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r2);padding:12px 14px;font-size:14px;width:100%;min-height:72px;box-sizing:border-box;color:var(--t1);font-family:inherit;resize:vertical">${esc(existingNote)}</textarea>
@@ -15621,7 +15643,7 @@ function init() {
   Object.assign(window, {
     DB, save, load, clone, todayKey, fmt$, fmt$0, esc, uid,
     showTab, render, renderToday, renderGoals, renderPlanning, renderMoney, renderStocks, renderStats, renderSettings, renderHeader,
-    renderCalendar, calendarPrevMonth, calendarNextMonth, calendarToday, calendarDaySheet, saveCalendarNote, calendarSetView, calendarJumpToMonth,
+    renderCalendar, calendarPrevMonth, calendarNextMonth, calendarToday, calendarDaySheet, saveCalendarNote, calendarSetView, calendarJumpToMonth, addWinForDate,
     PLAN_TIERS, PLAN_TEMPLATES, planById, plansByTier, addPlan, togglePlan, deletePlan,
     updatePlanProgress, addPlanSheet, planTemplatesSheet, logPlanProgressSheet,
     stocksApi, stocksAnalyze, stocksFetchNews, renderStocksResults,
