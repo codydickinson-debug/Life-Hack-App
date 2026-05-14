@@ -1518,6 +1518,7 @@ const DEFAULT_DB = {
   dismissedDeposits: [],     // plaid_ids of deposits the user explicitly Skipped — prevents re-surfacing on next sync
   dismissedPlays: {},        // { playId: true } — smart-play recommendations user has dismissed
   calendarNotes: {},         // { 'YYYY-MM-DD': 'note text' } — per-day reminders/journal entries shown on Calendar
+  moods: {},                 // { 'YYYY-MM-DD': '😄' } — daily mood rating, set from Calendar day sheet
   profile: {                 // optional self-reported info that sharpens smart-play recommendations
     age: 0,                  // 0 = not set; play engine uses 30 as a neutral default when missing
     filingStatus: "single",  // single | married | hoh — for tax-related plays
@@ -6199,6 +6200,18 @@ function calendarJumpToMonth(y, m) {
   renderCalendar();
 }
 
+async function setDayMood(dateKey, emoji) {
+  if (!DB.moods) DB.moods = {};
+  // Tapping the same emoji again clears the mood.
+  if (DB.moods[dateKey] === emoji) delete DB.moods[dateKey];
+  else DB.moods[dateKey] = emoji;
+  await save();
+  if (activeTab === "calendar") renderCalendar();
+  // Re-open sheet so the new state is visible immediately.
+  closeSheet();
+  setTimeout(() => calendarDaySheet(dateKey), 120);
+}
+
 async function saveCalendarNote(dateKey) {
   const ta = document.getElementById("cal-note-input");
   if (!ta) return;
@@ -6303,10 +6316,21 @@ function calendarDaySheet(dateKey) {
       ${dateKeyIso === todayKIso ? `<button class="btn sm secondary" style="flex:1;min-width:120px;font-size:12.5px" onclick="closeSheet();setTimeout(()=>quickAddSpendSheet(),120)">💸 Log spending</button>` : ""}
     </div>
   ` : "";
+  const moodEmojis = ["😞", "😕", "😐", "🙂", "😄"];
+  const currentMood = (DB.moods || {})[dateKey] || "";
+  const moodPicker = `
+    <div class="section-h" style="margin-top:0"><span class="lbl">How ${dateKey === todayKey() ? 'is' : 'was'} this day?</span>${currentMood ? `<button class="act" style="font-size:11.5px;color:var(--t3)" onclick="setDayMood(${jsAttr(dateKey)},'${currentMood}')">Clear</button>` : ''}</div>
+    <div style="display:flex;gap:8px;justify-content:space-between;margin-bottom:14px">
+      ${moodEmojis.map(em => `
+        <button onclick="setDayMood(${jsAttr(dateKey)},'${em}')" style="flex:1;background:${currentMood===em?'var(--bg-elev)':'transparent'};border:1.5px solid ${currentMood===em?'var(--blue)':'var(--sep)'};border-radius:var(--r);padding:10px;font-size:24px;cursor:pointer;transition:transform .15s ease,border-color .15s ease">${em}</button>
+      `).join("")}
+    </div>
+  `;
   openSheet(`
-    <h2 style="margin-bottom:4px">${titleLbl}</h2>
+    <h2 style="margin-bottom:4px">${titleLbl}${currentMood ? ` <span style="margin-left:6px">${currentMood}</span>` : ''}</h2>
     <p class="muted" style="font-size:12.5px;margin-bottom:14px">Everything tracked on this day</p>
     ${quickActions}
+    ${moodPicker}
     <div class="section-h" style="margin-top:0"><span class="lbl">Note / reminder</span></div>
     <textarea id="cal-note-input" placeholder="Capture a thought, reminder, or journal entry for this day…" maxlength="500"
       style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r2);padding:12px 14px;font-size:14px;width:100%;min-height:72px;box-sizing:border-box;color:var(--t1);font-family:inherit;resize:vertical">${esc(existingNote)}</textarea>
@@ -15890,7 +15914,7 @@ function init() {
   Object.assign(window, {
     DB, save, load, clone, todayKey, fmt$, fmt$0, esc, uid,
     showTab, render, renderToday, renderGoals, renderPlanning, renderMoney, renderStocks, renderStats, renderSettings, renderHeader,
-    renderCalendar, calendarPrevMonth, calendarNextMonth, calendarToday, calendarDaySheet, saveCalendarNote, calendarSetView, calendarJumpToMonth, addWinForDate, toggleHabitForDate, habitDetailSheet,
+    renderCalendar, calendarPrevMonth, calendarNextMonth, calendarToday, calendarDaySheet, saveCalendarNote, calendarSetView, calendarJumpToMonth, addWinForDate, toggleHabitForDate, habitDetailSheet, setDayMood,
     PLAN_TIERS, PLAN_TEMPLATES, planById, plansByTier, addPlan, togglePlan, deletePlan,
     updatePlanProgress, addPlanSheet, planTemplatesSheet, logPlanProgressSheet,
     stocksApi, stocksAnalyze, stocksFetchNews, renderStocksResults,
