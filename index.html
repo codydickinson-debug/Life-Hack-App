@@ -174,7 +174,27 @@ input::placeholder, textarea::placeholder { color: var(--t4); }
   max-width: 480px;
   margin: 0 auto;
   position: relative;
-  background: var(--bg);
+  background:
+    radial-gradient(820px 360px at 50% -120px, rgba(137, 87, 217, 0.11), transparent 62%),
+    radial-gradient(660px 280px at 0% -60px, rgba(54, 176, 204, 0.09), transparent 62%),
+    radial-gradient(560px 320px at 100% -20px, rgba(230, 65, 120, 0.07), transparent 62%),
+    var(--bg);
+}
+@media (prefers-color-scheme: dark) {
+  :root.theme-auto #app {
+    background:
+      radial-gradient(820px 360px at 50% -120px, rgba(137, 87, 217, 0.22), transparent 62%),
+      radial-gradient(660px 280px at 0% -60px, rgba(54, 176, 204, 0.16), transparent 62%),
+      radial-gradient(560px 320px at 100% -20px, rgba(230, 65, 120, 0.12), transparent 62%),
+      var(--bg);
+  }
+}
+:root.theme-dark #app {
+  background:
+    radial-gradient(820px 360px at 50% -120px, rgba(137, 87, 217, 0.22), transparent 62%),
+    radial-gradient(660px 280px at 0% -60px, rgba(54, 176, 204, 0.16), transparent 62%),
+    radial-gradient(560px 320px at 100% -20px, rgba(230, 65, 120, 0.12), transparent 62%),
+    var(--bg);
 }
 
 #topbar {
@@ -182,7 +202,7 @@ input::placeholder, textarea::placeholder { color: var(--t4); }
   align-items: center;
   justify-content: space-between;
   padding: calc(var(--sa-top) + 12px) 20px 10px;
-  background: var(--bg);
+  background: transparent;
   position: sticky;
   top: 0;
   z-index: 5;
@@ -290,6 +310,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   margin: 8px 0 20px;
   line-height: 1.1;
   color: var(--t1);
+  background: linear-gradient(135deg, var(--t1) 0%, var(--t1) 55%, var(--purple) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 .section-h {
   display: flex; align-items: baseline; justify-content: space-between;
