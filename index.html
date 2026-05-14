@@ -1552,6 +1552,7 @@ const DEFAULT_DB = {
     autoLockMinutes: 0,      // when encrypted: minutes hidden before APP_KEY clears (0 = off)
     monthlySavingsTarget: 0, // factored into safe-to-spend (per-month dollars set aside)
     celebrationsEnabled: true, // confetti on streak milestones / goal completion
+    accentColor: "",          // hex string — overrides the default blue accent across the app. Empty = use default.
   },
   categoryRules: [],
   allocations: [],
@@ -3008,6 +3009,29 @@ async function showAllTodaySections() {
   if (activeTab === "today") renderToday();
   customizeTodaySheet();
 }
+// Accent color — overrides the --blue CSS variable across the app. Default
+// (empty string) restores the stylesheet's blue (#2F6FEB).
+const ACCENT_COLORS = [
+  { id: "default", hex: "",        label: "Blue (default)" },
+  { id: "purple",  hex: "#8957D9", label: "Purple" },
+  { id: "green",   hex: "#2EB875", label: "Green" },
+  { id: "orange",  hex: "#ED8B22", label: "Orange" },
+  { id: "pink",    hex: "#E64178", label: "Pink" },
+  { id: "teal",    hex: "#36B0CC", label: "Teal" },
+];
+function applyAccent() {
+  const c = (DB.settings && DB.settings.accentColor) || "";
+  if (c) document.documentElement.style.setProperty("--blue", c);
+  else document.documentElement.style.removeProperty("--blue");
+}
+async function setAccentColor(hex) {
+  if (!DB.settings) DB.settings = {};
+  DB.settings.accentColor = hex || "";
+  try { await save(); } catch (e) { toast("Couldn't save — please try again"); return; }
+  applyAccent();
+  if (activeTab === "settings") renderSettings();
+}
+
 // Tab visibility — Today and Money are core and always shown. Everything else
 // can be hidden by users who don't use that part of the app.
 const HIDEABLE_TABS = [
@@ -7127,6 +7151,20 @@ function renderSettings() {
           <div class="trail">${DB.settings.theme===t?'<span style="color:var(--blue);font-size:18px">✓</span>':''}</div>
         </div>
       `).join("")}
+      <div class="row" style="padding:14px;flex-direction:column;align-items:stretch;gap:10px">
+        <div style="display:flex;align-items:baseline;justify-content:space-between">
+          <div class="t1" style="margin:0">Accent color</div>
+          <div class="t2" style="font-size:11.5px">Used for links, active states, accents</div>
+        </div>
+        <div style="display:flex;gap:10px;justify-content:space-between">
+          ${ACCENT_COLORS.map(c => {
+            const isSelected = ((DB.settings.accentColor || "") === c.hex);
+            const swatchBg = c.hex || "#2F6FEB";
+            return `<button onclick="setAccentColor('${c.hex}')" aria-label="${esc(c.label)}" title="${esc(c.label)}"
+              style="flex:1;aspect-ratio:1/1;border-radius:50%;background:${swatchBg};border:${isSelected ? '3px solid var(--t1)' : '2px solid var(--sep)'};cursor:pointer;padding:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:14px">${isSelected ? '✓' : ''}</button>`;
+          }).join("")}
+        </div>
+      </div>
     </div>
 
     <div class="section-h"><span class="lbl">Customize</span></div>
@@ -16888,6 +16926,7 @@ function init() {
     addWin, deleteWin, winsToday, allWinsSheet, shuffleQuote, pinQuoteToToday, addStarterHabit,
     customizeTodaySheet, toggleTodaySection, showAllTodaySections, isTodaySectionHidden,
     customizeTabsSheet, toggleTabVisibility, showAllTabs, isTabHidden, applyHiddenTabs,
+    setAccentColor, applyAccent, ACCENT_COLORS,
     openSettings, applyTheme, toggleNotifications, scheduleReminder, exportData, importData, openSheet, closeSheet, toast,
     connectBank, syncNow, disconnectItem, backendLinkToken, backendExchange, backendSync, backendListItems, backendRemoveItem,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
@@ -16979,6 +17018,9 @@ function init() {
 
   applyPrivacyMode();
   autoLockSetup();
+  // Apply accent color before first render so the initial paint uses the
+  // user's color choice instead of flashing the default blue first.
+  applyAccent();
   render();
   // Apply user's hidden-tabs preference after initial render so the bottom
   // nav reflects their customization choices.
