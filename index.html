@@ -3112,10 +3112,11 @@ function renderMoney() {
     ${cashflowBlock}
     ${counselorTeaser}
     <div class="sub-tabs">
-      <button class="sub-tab ${moneySub==='savings'?'active':''}" onclick="moneySub='savings';renderMoney()">Savings</button>
-      <button class="sub-tab ${moneySub==='wealth'?'active':''}"  onclick="moneySub='wealth';renderMoney()">Wealth</button>
-      <button class="sub-tab ${moneySub==='budget'?'active':''}"  onclick="moneySub='budget';renderMoney()">Budget</button>
-      <button class="sub-tab ${moneySub==='spend'?'active':''}"   onclick="moneySub='spend';renderMoney()">Spend</button>
+      <button class="sub-tab ${moneySub==='savings'?'active':''}"  onclick="moneySub='savings';renderMoney()">Savings</button>
+      <button class="sub-tab ${moneySub==='wealth'?'active':''}"   onclick="moneySub='wealth';renderMoney()">Wealth</button>
+      <button class="sub-tab ${moneySub==='forecast'?'active':''}" onclick="moneySub='forecast';renderMoney()">Forecast</button>
+      <button class="sub-tab ${moneySub==='budget'?'active':''}"   onclick="moneySub='budget';renderMoney()">Budget</button>
+      <button class="sub-tab ${moneySub==='spend'?'active':''}"    onclick="moneySub='spend';renderMoney()">Spend</button>
     </div>
   `;
   let body = "";
@@ -3154,6 +3155,110 @@ function renderMoney() {
           </div>
         `;
       }).join("") : `<div class="empty"><div class="e-emoji">💰</div><div class="e-title">No savings goals</div><div class="e-sub">Track buckets like emergency fund, vehicle, retirement, big purchases.</div></div>`}
+    `;
+  }
+  else if (moneySub === "forecast") {
+    // ===== FORECAST sub-tab — projections + what-if comparisons =====
+    const profile = DB.profile || {};
+    const retire = DB.retirement || {};
+    const currentAge = +profile.age || 30;
+    let targetAge = +retire.targetAge || 65;
+    if (targetAge <= currentAge) targetAge = currentAge + 1;
+    const invested = currentInvested() || 0;
+    const baseMonthly = Math.max(0, +retire.monthlyContribution || +DB.settings.monthlySavingsTarget || 500);
+    const annualReturn = Math.max(0, +retire.annualReturn || 7);
+
+    // Three comparable scenarios — base contribution, +$200/mo, +$500/mo.
+    const SCEN_COLORS = ["var(--blue)", "var(--purple)", "var(--green)"];
+    const scenarios = [
+      { label: "Current pace",  monthly: baseMonthly,         color: SCEN_COLORS[0] },
+      { label: "+$200/mo more", monthly: baseMonthly + 200,   color: SCEN_COLORS[1] },
+      { label: "+$500/mo more", monthly: baseMonthly + 500,   color: SCEN_COLORS[2] },
+    ];
+    scenarios.forEach(s => {
+      s.points = projectRetirement({ currentAge, targetAge, currentBalance: invested, monthlyContribution: s.monthly, annualReturn });
+      s.final  = s.points[s.points.length - 1].balance;
+    });
+
+    // Per-savings-goal completion timelines — three pace scenarios.
+    // Pace 1 = whatever the user is averaging today (derived from log if available, else $100/mo).
+    // Pace 2 = 1.5× that. Pace 3 = 2×.
+    const savingsForecasts = (DB.savings || []).map(s => {
+      const remaining = Math.max(0, (+s.target || 0) - (+s.current || 0));
+      const log = s.log || [];
+      let basePace = 100;
+      if (log.length >= 2) {
+        const sorted = [...log].sort((a,b) => new Date(a.date) - new Date(b.date));
+        const months = Math.max(1, (new Date(sorted[sorted.length-1].date) - new Date(sorted[0].date)) / (1000*60*60*24*30));
+        const sum = log.reduce((a,l) => a + (+l.amount || 0), 0);
+        basePace = Math.max(10, Math.round(sum / months));
+      }
+      const paces = [basePace, Math.round(basePace * 1.5), basePace * 2];
+      const mFmt = (m) => {
+        if (!isFinite(m) || m <= 0) return "—";
+        const yr = Math.floor(m / 12), mo = m % 12;
+        return yr > 0 ? `${yr}y ${mo}mo` : `${mo}mo`;
+      };
+      return {
+        id: s.id,
+        name: s.name,
+        emoji: s.emoji,
+        color: s.color,
+        remaining,
+        rows: paces.map((p, i) => ({
+          color: SCEN_COLORS[i],
+          rate: p,
+          label: mFmt(p > 0 ? Math.ceil(remaining / p) : Infinity),
+        })),
+      };
+    });
+
+    body = `
+      <div style="background:var(--card);border-radius:var(--r);padding:18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
+        <div style="font-size:13px;font-weight:600;color:var(--t2);margin-bottom:2px">What-if: monthly contribution</div>
+        <div style="font-size:11.5px;color:var(--t3);margin-bottom:6px">Where your invested balance lands at age ${targetAge} (${annualReturn}% annual return)</div>
+        ${comparisonProjectionChart(scenarios)}
+        <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--t3);margin-top:4px">
+          <span>Age ${currentAge} · today</span><span>Age ${targetAge}</span>
+        </div>
+        <div style="margin-top:14px;display:flex;flex-direction:column;gap:8px">
+          ${scenarios.map(s => `
+            <div style="display:flex;align-items:center;justify-content:space-between;font-size:13px;padding:4px 0">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="width:12px;height:3px;border-radius:2px;background:${s.color}"></span>
+                <span style="color:var(--t2)">${s.label}</span>
+                <span style="color:var(--t3);font-size:11.5px" data-priv="amount">${fmt$0(s.monthly)}/mo</span>
+              </div>
+              <span style="font-weight:700;color:var(--t1)" data-priv="amount">${fmt$0(s.final)}</span>
+            </div>
+          `).join("")}
+        </div>
+        <button class="btn secondary" style="width:100%;margin-top:14px;font-size:12px" onclick="retirementSheet()">Adjust assumptions →</button>
+      </div>
+
+      <div class="section-h"><span class="lbl">Savings goals — time to target</span></div>
+      ${savingsForecasts.length ? `
+        <div class="list">
+          ${savingsForecasts.map(f => `
+            <div class="row tappable" onclick="logSavingSheet('${f.id}')">
+              <div class="lead" style="font-size:22px">${f.emoji || "💰"}</div>
+              <div class="body">
+                <div class="t1">${esc(f.name)}</div>
+                <div class="t2"><span data-priv="amount">${fmt$0(f.remaining)}</span> remaining</div>
+                <div style="display:flex;gap:14px;margin-top:8px;flex-wrap:wrap">
+                  ${f.rows.map(r => `
+                    <div style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--t2)">
+                      <span style="width:10px;height:3px;border-radius:2px;background:${r.color}"></span>
+                      <span><b style="color:var(--t1)">${r.label}</b> at <span data-priv="amount">${fmt$0(r.rate)}</span>/mo</span>
+                    </div>
+                  `).join("")}
+                </div>
+              </div>
+              <div class="trail chev"></div>
+            </div>
+          `).join("")}
+        </div>
+      ` : `<div class="empty"><div class="e-emoji">🎯</div><div class="e-title">No savings goals yet</div><div class="e-sub">Add a goal on the Savings tab to see how long it'll take to hit at different contribution rates.</div></div>`}
     `;
   }
   else if (moneySub === "budget") {
@@ -7764,6 +7869,32 @@ function projectRetirement({ currentAge, targetAge, currentBalance, monthlyContr
     }
   }
   return points;
+}
+
+// Multi-line comparison chart. Draws N polylines on one SVG, shared y-scale,
+// so different what-if scenarios are visually comparable. Y-floor is absolute 0,
+// matching retirementChart so the visual stays honest at low balances.
+function comparisonProjectionChart(scenarios, w=320, h=140) {
+  if (!scenarios.length || !scenarios[0].points.length) return "";
+  const allVals = scenarios.flatMap(s => s.points.map(p => p.balance));
+  const max = Math.max(1, ...allVals);
+  const n = scenarios[0].points.length;
+  const stepX = n > 1 ? w / (n - 1) : 0;
+  const lines = scenarios.map(s => {
+    const pts = s.points.map((p, i) => `${(i*stepX).toFixed(1)},${(h - (p.balance / max) * h).toFixed(1)}`).join(" ");
+    return `<polyline fill="none" stroke="${s.color}" stroke-width="2.25" points="${pts}" stroke-linejoin="round" stroke-linecap="round"/>`;
+  }).join("");
+  // Subtle horizontal gridlines at 25/50/75% so users can eyeball magnitudes.
+  const gridY = [0.25, 0.5, 0.75].map(f => {
+    const y = (h * f).toFixed(1);
+    return `<line x1="0" y1="${y}" x2="${w}" y2="${y}" stroke="var(--sep-2)" stroke-dasharray="2 4" stroke-width="0.5"/>`;
+  }).join("");
+  return `
+    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:${h}px;display:block;margin-top:8px">
+      ${gridY}
+      ${lines}
+    </svg>
+  `;
 }
 
 // SVG line/area chart for the projection. Same visual style as netWorthSparkline
