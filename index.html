@@ -1144,6 +1144,107 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   background: var(--card); border: 1px solid var(--sep);
   border-radius: var(--r2, 10px); margin-top: 10px; line-height: 1.45;
 }
+
+/* Investment-mix selector inside the what-if card */
+.whatif-port {
+  background: var(--card); border: 1px solid var(--sep);
+  border-radius: var(--r2, 10px); padding: 12px;
+  margin-bottom: 14px;
+}
+.whatif-port-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+.whatif-section-title { font-size: 13px; font-weight: 800; letter-spacing: -0.005em; color: var(--t1); }
+.whatif-blended-pill {
+  font-size: 11.5px; font-weight: 700; color: #fff;
+  padding: 4px 10px; border-radius: 999px;
+  background: linear-gradient(135deg,#7c3aed,#ec4899);
+}
+.whatif-blended-pill span { font-size: 13px; font-weight: 800; }
+.whatif-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.wi-preset-chip {
+  background: var(--bg-elev); color: var(--t2);
+  border: 1px solid var(--sep); border-radius: 999px;
+  padding: 6px 10px; font-size: 11.5px; font-weight: 600;
+  cursor: pointer; transition: all .12s ease;
+}
+.wi-preset-chip:hover { color: var(--t1); border-color: var(--accent, #7c3aed); }
+.wi-preset-chip.active {
+  background: var(--accent, #7c3aed); color: #fff; border-color: var(--accent, #7c3aed);
+}
+.whatif-port-rows { display: flex; flex-direction: column; gap: 4px; }
+.whatif-port-row {
+  display: flex; align-items: center; gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px dashed var(--sep);
+}
+.whatif-port-row:last-child { border-bottom: none; }
+.whatif-port-emoji { font-size: 18px; flex-shrink: 0; width: 24px; text-align: center; }
+.whatif-port-label { flex: 1; min-width: 0; font-size: 12.5px; font-weight: 600; color: var(--t1); }
+.whatif-port-fields { display: flex; align-items: center; gap: 4px; }
+.whatif-port-fields input {
+  width: 48px; padding: 5px 6px;
+  background: var(--bg-elev); border: 1px solid var(--sep);
+  border-radius: 6px; font-size: 12px; font-weight: 600;
+  color: var(--t1); text-align: right;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+}
+.whatif-port-fields input:focus { outline: 2px solid var(--accent, #7c3aed); border-color: transparent; }
+.whatif-port-fields .muted { font-size: 11px; color: var(--t3); }
+.whatif-port-at { font-size: 11px; color: var(--t3); margin: 0 2px; }
+.whatif-port-totalrow {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; flex-wrap: wrap; margin-top: 8px;
+  font-size: 11px; color: var(--t3);
+}
+.whatif-port-totalrow strong { color: var(--t1); }
+
+/* Savings opportunities card */
+.savings-card {
+  background: var(--card); border: 1px solid var(--sep);
+  border-left: 4px solid #f59e0b;
+  border-radius: var(--r); padding: 16px;
+  margin-bottom: 14px;
+}
+.savings-head { margin-bottom: 12px; }
+.savings-title { font-size: 16px; font-weight: 800; letter-spacing: -0.01em; color: var(--t1); }
+.savings-sub { font-size: 12px; color: var(--t3); margin-top: 2px; line-height: 1.4; }
+.savings-list { display: flex; flex-direction: column; gap: 8px; }
+.savings-op {
+  display: flex; gap: 10px; align-items: center;
+  padding: 10px 12px;
+  background: var(--bg-elev); border-radius: var(--r2, 10px);
+  border: 1px solid transparent;
+  transition: border-color .12s ease;
+}
+.savings-op:hover { border-color: rgba(245,158,11,0.3); }
+.savings-emoji { font-size: 22px; flex-shrink: 0; }
+.savings-body { flex: 1; min-width: 0; cursor: pointer; }
+.savings-op-title { font-size: 13.5px; font-weight: 700; color: var(--t1); line-height: 1.3; }
+.savings-op-sub   { font-size: 11.5px; color: var(--t2); margin-top: 2px; line-height: 1.4; }
+.savings-cta { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; flex-shrink: 0; }
+.savings-amount { font-size: 13px; font-weight: 800; color: var(--green); letter-spacing: -0.01em; white-space: nowrap; }
+.savings-add {
+  background: var(--bg); color: var(--t1);
+  border: 1px solid var(--sep); border-radius: 999px;
+  padding: 4px 10px; font-size: 11px; font-weight: 700;
+  cursor: pointer; white-space: nowrap;
+  transition: all .12s ease;
+}
+.savings-add:hover { background: var(--green); color: #fff; border-color: var(--green); }
+.savings-foot {
+  margin-top: 12px; padding-top: 12px;
+  border-top: 1px dashed var(--sep);
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; flex-wrap: wrap;
+}
+.savings-total { font-size: 13px; color: var(--t2); }
+.savings-total strong { color: var(--green); font-size: 14px; }
+.savings-ai-btn {
+  background: linear-gradient(135deg,#7c3aed,#ec4899); color: #fff;
+  border: none; border-radius: 999px;
+  padding: 8px 14px; font-size: 12.5px; font-weight: 700;
+  cursor: pointer; white-space: nowrap;
+}
+.savings-ai-btn:hover { box-shadow: 0 4px 14px rgba(124,58,237,0.4); }
 .whatif-math {
   margin-top: 12px;
   border-top: 1px dashed var(--sep);
@@ -3221,6 +3322,7 @@ function renderPlanning() {
     ${counselorCta}
     ${cardRecsCallout}
     ${whatIfCardHtml()}
+    ${savingsOpportunitiesCardHtml()}
     ${sections}
   `;
   // Populate the what-if cells with their initial values (they ship as "…"
@@ -3237,13 +3339,75 @@ function renderPlanning() {
    Pure local-math; no API calls. Uses existing projectRetirement and
    payoffSchedule for the heavy lifting. */
 
-let _whatIfState = { extraSavings: 200, extraDebt: 0 };
+// Nominal long-run returns (pre-inflation). These are starting defaults the
+// user can edit. Educational averages; not predictions.
+const ASSET_DEFAULTS = [
+  { id: "stocks", emoji: "📈", label: "Stocks (S&P 500)", rate: 11.0 },
+  { id: "bonds",  emoji: "🏦", label: "Bonds",            rate: 4.0  },
+  { id: "cash",   emoji: "💰", label: "Cash / HYSA",      rate: 4.5  },
+  { id: "crypto", emoji: "🪙", label: "Crypto",           rate: 20.0 },
+];
+const PORTFOLIO_PRESETS = {
+  conservative: { label: "🛡️ Conservative", alloc: { stocks: 20, bonds: 60, cash: 20, crypto: 0 } },
+  balanced:     { label: "⚖️ Balanced",     alloc: { stocks: 60, bonds: 30, cash: 10, crypto: 0 } },
+  aggressive:   { label: "🚀 Aggressive",   alloc: { stocks: 85, bonds: 10, cash: 5,  crypto: 0 } },
+  stocks:       { label: "📈 All Stocks",   alloc: { stocks: 100, bonds: 0, cash: 0,  crypto: 0 } },
+};
+
+let _whatIfState = {
+  extraSavings: 200,
+  extraDebt: 0,
+  portfolio: {
+    preset: "balanced",
+    rows: ASSET_DEFAULTS.map(a => ({
+      id: a.id, emoji: a.emoji, label: a.label, rate: a.rate,
+      alloc: PORTFOLIO_PRESETS.balanced.alloc[a.id] || 0,
+    })),
+  },
+};
+
+function _whatIfBlendedReturn() {
+  const rows = _whatIfState.portfolio.rows;
+  const totalAlloc = rows.reduce((s, r) => s + (+r.alloc || 0), 0);
+  if (totalAlloc <= 0) return 0;
+  return rows.reduce((s, r) => s + (+r.alloc || 0) * (+r.rate || 0), 0) / totalAlloc;
+}
+
+function _whatIfApplyPreset(name) {
+  const preset = PORTFOLIO_PRESETS[name];
+  if (!preset) {
+    _whatIfState.portfolio.preset = "custom";
+  } else {
+    _whatIfState.portfolio.preset = name;
+    _whatIfState.portfolio.rows.forEach(r => {
+      r.alloc = preset.alloc[r.id] || 0;
+    });
+  }
+  // Re-render so allocation/rate inputs reflect the new values
+  renderPlanningWhatIfOnly();
+}
+
+function _whatIfSetCell(rowId, key, value) {
+  const row = _whatIfState.portfolio.rows.find(r => r.id === rowId);
+  if (!row) return;
+  row[key] = +value || 0;
+  _whatIfState.portfolio.preset = "custom";
+  // Lightweight updates — refresh blended display + preset chips + projections
+  const bd = document.getElementById("wi-blended");
+  if (bd) bd.textContent = _whatIfBlendedReturn().toFixed(1) + "%";
+  document.querySelectorAll(".wi-preset-chip").forEach(c => {
+    c.classList.toggle("active", c.dataset.preset === "custom");
+  });
+  _whatIfUpdate("saving", _whatIfState.extraSavings);
+}
 
 function _whatIfBaseline() {
   const baseMonthly = +DB.retirement?.monthlyContribution || +DB.settings.monthlySavingsTarget || 0;
   let invested = 0;
   try { invested = currentInvested(); } catch {}
-  const annualReturn = +DB.retirement?.annualReturn || 7;
+  // Default to user's portfolio mix; fall back to settings/7%.
+  const blended = _whatIfBlendedReturn();
+  const annualReturn = blended > 0 ? blended : (+DB.retirement?.annualReturn || 7);
   const age = +DB.profile?.age || 30;
   return { baseMonthly, invested, annualReturn, age };
 }
@@ -3288,15 +3452,61 @@ function whatIfCardHtml() {
   const debtStrategy = DB.settings.debtPayoffStrategy || "avalanche";
   const totalDebt = (DB.liabilities || []).reduce((s, l) => s + (+l.balance || 0), 0)
     + (debtAccounts ? debtAccounts().reduce((s, a) => s + (+a.balance_current || 0), 0) : 0);
+  const port = _whatIfState.portfolio;
+  const blended = _whatIfBlendedReturn();
+
+  // Portfolio mix: preset chips + 3-4 asset rows with editable allocation +
+  // rate. Only shown when there's investing context. The blended return pill
+  // updates live on every cell edit via _whatIfSetCell().
+  const portfolioBlock = hasInvestSignal ? `
+    <div class="whatif-port">
+      <div class="whatif-port-head">
+        <div class="whatif-section-title">📊 How you're invested</div>
+        <div class="whatif-blended-pill">Blended <span id="wi-blended">${blended.toFixed(1)}%</span> / yr</div>
+      </div>
+      <div class="whatif-presets">
+        ${Object.entries(PORTFOLIO_PRESETS).map(([id, p]) => `
+          <button class="wi-preset-chip ${port.preset === id ? "active" : ""}"
+                  data-preset="${id}" onclick="_whatIfApplyPreset(${jsAttr(id)})">${esc(p.label)}</button>
+        `).join("")}
+        <button class="wi-preset-chip ${port.preset === "custom" ? "active" : ""}" data-preset="custom"
+                onclick="_whatIfApplyPreset('custom')">Custom</button>
+      </div>
+      <div class="whatif-port-rows">
+        ${port.rows.map(r => `
+          <div class="whatif-port-row">
+            <div class="whatif-port-emoji">${r.emoji}</div>
+            <div class="whatif-port-label">${esc(r.label)}</div>
+            <div class="whatif-port-fields">
+              <input type="number" inputmode="numeric" min="0" max="100" step="5" value="${r.alloc}"
+                aria-label="${esc(r.label)} allocation %"
+                oninput="_whatIfSetCell(${jsAttr(r.id)}, 'alloc', this.value)" />
+              <span class="muted">%</span>
+              <span class="whatif-port-at">@</span>
+              <input type="number" inputmode="decimal" min="0" max="60" step="0.5" value="${r.rate}"
+                aria-label="${esc(r.label)} expected return"
+                oninput="_whatIfSetCell(${jsAttr(r.id)}, 'rate', this.value)" />
+              <span class="muted">%</span>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+      <div class="whatif-port-totalrow">
+        <span>Total allocated: <strong>${port.rows.reduce((s,r)=>s+(+r.alloc||0),0)}%</strong></span>
+        <span class="muted">Crypto rate is volatile — treat as a wide range, not a promise.</span>
+      </div>
+    </div>
+  ` : "";
 
   return `
     <div class="whatif-card">
       <div class="whatif-head">
         <div>
           <div class="whatif-title">🔮 What if…</div>
-          <div class="whatif-sub">Drag the sliders. See how it changes your future.</div>
+          <div class="whatif-sub">Pick your mix, drag the sliders. See it move your future.</div>
         </div>
       </div>
+      ${portfolioBlock}
       ${hasInvestSignal ? `
         <div class="whatif-row">
           <div class="whatif-label">Save an extra <strong id="wi-saving-label">${fmt$0(extraS)}</strong> / month</div>
@@ -3326,8 +3536,12 @@ function whatIfCardHtml() {
               <ul>
                 <li><b>Starting balance:</b> ${fmt$0(b.invested)} — sum of your investment accounts (Plaid brokerage/retirement + manual investments + crypto).</li>
                 <li><b>Monthly contribution:</b> ${fmt$0(b.baseMonthly)} base + slider — your retirement contribution from Settings, or your monthly savings target if that's unset.</li>
-                <li><b>Annual return:</b> ${b.annualReturn}% <span class="muted">real</span> (post-inflation). Long-run global stock average is ~6–7% real; adjust in <button onclick="retirementSheet&&retirementSheet()" class="whatif-inline-btn">Retirement settings</button>.</li>
-                <li><b>Formula:</b> balance compounds monthly — each month grows by <code>1 + (return/12)</code>, then contribution is added.</li>
+                <li><b>Annual return:</b> ${b.annualReturn.toFixed(1)}% — <span class="muted">nominal</span> (before inflation). Computed as a weighted blend of your mix:
+                  ${port.rows.filter(r => +r.alloc > 0).map(r => `<code>${r.alloc}%×${r.rate}%</code>`).join(" + ")}
+                  ÷ ${port.rows.reduce((s,r)=>s+(+r.alloc||0),0)}%.
+                  Defaults — S&amp;P 500 ~11%, bonds ~4%, HYSA ~4.5%, crypto highly variable. Edit any cell to use your own number.</li>
+                <li><b>Formula:</b> balance compounds monthly — each month grows by <code>1 + (annual_return / 12)</code>, then contribution is added.</li>
+                <li><b>Inflation:</b> not subtracted here. $1M in 20 years is worth less than $1M today. A rough rule of thumb: subtract 3% from the blended rate to estimate "real" purchasing power.</li>
               </ul>
             </div>
           ` : ""}
@@ -3416,6 +3630,195 @@ function renderPlanningWhatIfOnly() {
     existing.replaceWith(fresh);
     _whatIfUpdate("saving", _whatIfState.extraSavings);
   }
+}
+
+/* ===== SAVINGS OPPORTUNITIES =====
+   Personalized "where could you save?" suggestions. Heuristic-based from
+   the user's actual spending — no API call needed to render. Each suggestion
+   has a one-tap "Add to plan" button that bumps the extra-savings slider in
+   the what-if simulator so the user sees the lifetime impact instantly. */
+
+const DISCRETIONARY_KEYWORDS = [
+  "food and drink", "food_and_drink", "food", "dining", "restaurant", "restaurants",
+  "entertainment", "shopping", "online_shopping", "amazon", "general_merchandise",
+  "personal care", "personal_care",
+];
+
+function findSavingsOpportunities() {
+  const ops = [];
+
+  // 1) Top discretionary categories — last 30 days. Suggest 10% trim on the
+  //    two biggest. Skip suggestions under $20/mo (signal-to-noise).
+  const cutoff = new Date(Date.now() - 30 * 86400000).toISOString().slice(0, 10);
+  const last30 = (DB.spend || []).filter(t => t.date && t.date >= cutoff && +t.amount > 0);
+  const byCat = {};
+  for (const t of last30) {
+    const k = (t.category || "Other").toLowerCase();
+    byCat[k] = (byCat[k] || 0) + (+t.amount || 0);
+  }
+  const top = Object.entries(byCat)
+    .filter(([k]) => DISCRETIONARY_KEYWORDS.some(d => k.includes(d)))
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 2);
+  for (const [cat, total] of top) {
+    const cut = Math.round(total * 0.10);
+    if (cut < 20) continue;
+    const emoji = /food|dining|restaurant/.test(cat) ? "🍽️"
+                : /shop|amazon|merchandise/.test(cat) ? "🛍️"
+                : /entertain/.test(cat) ? "🎬"
+                : "💸";
+    ops.push({
+      icon: emoji,
+      title: `Trim ${cat} by 10%`,
+      sub: `${fmt$0(Math.round(total))} spent on ${cat} in the last 30 days. 10% cut = ${fmt$0(cut)} back each month.`,
+      monthlySaving: cut,
+      action: { type: "showMoney" },
+    });
+  }
+
+  // 2) Subscription audit — only if total is non-trivial.
+  try {
+    const subs = (typeof detectSubscriptions === "function" ? detectSubscriptions() : [])
+      .filter(s => s.status === "active");
+    const totalSubs = subs.reduce((s, x) => s + (+x.monthly_cost || 0), 0);
+    if (totalSubs >= 25) {
+      ops.push({
+        icon: "🔁",
+        title: `Audit your ${subs.length} active subscriptions`,
+        sub: `Paying ${fmt$0(totalSubs)}/mo across recurring charges. Cutting 30% is realistic for most people.`,
+        monthlySaving: Math.round(totalSubs * 0.30),
+        action: { type: "subAudit" },
+      });
+    }
+  } catch {}
+
+  // 3) Recurring bills you could negotiate.
+  const recurringExp = (DB.recurring || []).filter(r => r.kind === "expense" && (+r.amount || 0) >= 30);
+  const recurringTotal = recurringExp.reduce((s, r) => s + (+r.amount || 0), 0);
+  if (recurringExp.length > 0 && recurringTotal >= 40) {
+    ops.push({
+      icon: "🗣️",
+      title: "Negotiate one of your bills",
+      sub: `${recurringExp.length} recurring expense${recurringExp.length === 1 ? "" : "s"} = ${fmt$0(Math.round(recurringTotal))}/mo. A 30-minute call typically saves 10–20%.`,
+      monthlySaving: Math.round(recurringTotal * 0.12),
+      action: { type: "negotiate" },
+    });
+  }
+
+  // 4) Credit-card optimization — always relevant once spending exists.
+  const monthSpend = last30.reduce((s, t) => s + (+t.amount || 0), 0);
+  if (monthSpend >= 500) {
+    ops.push({
+      icon: "💳",
+      title: "Match a credit card to your spend",
+      sub: `${fmt$0(Math.round(monthSpend))}/mo on cards earning 0% rewards? The right card returns 2–5% on these categories.`,
+      monthlySaving: Math.round(monthSpend * 0.02),
+      action: { type: "cards" },
+    });
+  }
+
+  // 5) High-yield savings nudge — if user has cash in low-yield accounts.
+  const cashAccounts = (DB.accounts || []).filter(a => a.type === "depository" && (a.subtype === "checking" || a.subtype === "savings"));
+  const cashTotal = cashAccounts.reduce((s, a) => s + (+a.balance_current || 0), 0);
+  if (cashTotal >= 5000) {
+    // 4% HYSA vs 0% checking: monthly interest on excess cash. Assume keep 1 month of expenses in checking.
+    const oneMonthBuffer = Math.max(2000, +DB.budget?.income || 3000);
+    const excess = Math.max(0, cashTotal - oneMonthBuffer);
+    const monthlyInterest = Math.round((excess * 0.04) / 12);
+    if (monthlyInterest >= 15) {
+      ops.push({
+        icon: "🏦",
+        title: "Park excess cash in a high-yield savings account",
+        sub: `~${fmt$0(Math.round(excess))} sitting outside your checking buffer. A 4% HYSA earns ~${fmt$0(monthlyInterest)}/mo on that idle cash.`,
+        monthlySaving: monthlyInterest,
+        action: { type: "wealthHealth" },
+      });
+    }
+  }
+
+  // Return top 5 by dollar impact
+  return ops.sort((a, b) => b.monthlySaving - a.monthlySaving).slice(0, 5);
+}
+
+// Bump the savings slider by `delta` dollars (cap at slider max). Used by the
+// "Add to plan" buttons on each opportunity card. Triggers a smooth in-place
+// update of the what-if numbers and a fun toast confirmation.
+function _applySavingToPlan(delta) {
+  const next = Math.min(2000, Math.max(0, (_whatIfState.extraSavings || 0) + (+delta || 0)));
+  _whatIfState.extraSavings = next;
+  // Sync the slider DOM element and projection cells
+  const slider = document.getElementById("wi-saving-slider");
+  if (slider) slider.value = next;
+  const lbl = document.getElementById("wi-saving-label");
+  if (lbl) lbl.textContent = "$" + next.toLocaleString();
+  _whatIfUpdate("saving", next);
+  // Smooth scroll the what-if card into view so the user sees the change
+  const card = document.querySelector(".whatif-card");
+  if (card) try { card.scrollIntoView({ behavior: "smooth", block: "center" }); } catch {}
+  toast(`+${fmt$0(delta)}/mo added to your plan`);
+}
+
+// Maps an opportunity's `action.type` to an in-app destination so users can
+// actually go do the thing the suggestion proposes (not just read about it).
+function _opportunityAction(type) {
+  switch (type) {
+    case "subAudit":     return typeof subscriptionAuditSheet === "function" ? subscriptionAuditSheet() : showTab("money");
+    case "negotiate":    return typeof negotiationToolkitSheet === "function" ? negotiationToolkitSheet() : showTab("money");
+    case "cards":        return typeof cardRecommendationsSheet === "function" ? cardRecommendationsSheet() : showTab("money");
+    case "wealthHealth": return typeof wealthHealthSheet === "function" ? wealthHealthSheet() : showTab("money");
+    case "showMoney":
+    default:             return showTab("money");
+  }
+}
+
+function savingsOpportunitiesCardHtml() {
+  const ops = findSavingsOpportunities();
+  // Empty state when there's not enough data — still surface the AI button so
+  // the counselor can talk through ideas conversationally.
+  if (!ops.length) {
+    if (!_backendReady() && !((DB.spend||[]).length || (DB.recurring||[]).length)) return "";
+    return `
+      <div class="savings-card">
+        <div class="savings-head">
+          <div class="savings-title">💡 Where could you save?</div>
+          <div class="savings-sub">Log a couple weeks of spending and I'll point at the biggest leaks.</div>
+        </div>
+        <button class="savings-ai-btn" onclick="openCounselor('Where could I be saving more money right now? Look at my snapshot and give me 3 specific ideas with monthly dollar impact. Be candid about what I am paying for that I probably don\\'t need.', 'planning')">
+          ✨ Find savings with the AI counselor
+        </button>
+      </div>
+    `;
+  }
+  const totalPotential = ops.reduce((s, o) => s + o.monthlySaving, 0);
+  return `
+    <div class="savings-card">
+      <div class="savings-head">
+        <div class="savings-title">💡 Where could you save?</div>
+        <div class="savings-sub">Personalized ideas based on your last 30 days. Tap "Add to plan" to see the lifetime impact.</div>
+      </div>
+      <div class="savings-list">
+        ${ops.map((op, i) => `
+          <div class="savings-op">
+            <div class="savings-emoji">${op.icon}</div>
+            <div class="savings-body" ${op.action ? `onclick="_opportunityAction(${jsAttr(op.action.type)})"` : ""}>
+              <div class="savings-op-title">${esc(op.title)}</div>
+              <div class="savings-op-sub">${esc(op.sub)}</div>
+            </div>
+            <div class="savings-cta">
+              <div class="savings-amount">+${fmt$0(op.monthlySaving)}/mo</div>
+              <button class="savings-add" onclick="_applySavingToPlan(${op.monthlySaving})">Add to plan</button>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+      <div class="savings-foot">
+        <div class="savings-total">Potential: <strong>+${fmt$0(totalPotential)}/mo</strong></div>
+        <button class="savings-ai-btn" onclick="openCounselor('Look at my spending and recurring charges in my snapshot. Give me 3 specific savings ideas BEYOND what the heuristic list already shows, with real monthly dollar impact and what to do this week. Be candid.', 'planning')">
+          ✨ Find more with AI
+        </button>
+      </div>
+    </div>
+  `;
 }
 
 /* ===== MONEY ===== */
@@ -14867,6 +15270,9 @@ function init() {
     openCounselor, counselorRender, counselorSend, counselorClear, buildCounselorSnapshot,
     counselorVoiceToggle, negotiateBillWithAI, negotiateBillWithAISeed,
     _whatIfState, whatIfCardHtml, _whatIfUpdate, renderPlanningWhatIfOnly,
+    _whatIfBlendedReturn, _whatIfApplyPreset, _whatIfSetCell,
+    PORTFOLIO_PRESETS, ASSET_DEFAULTS,
+    findSavingsOpportunities, savingsOpportunitiesCardHtml, _applySavingToPlan, _opportunityAction,
     scanReceiptFile, _resizeImage, aiApi,
     billsToIcs, exportBillsIcs,
     yearReview, yearReviewSheet, shareCardSvg, downloadShareCard, shareStreakCard,
