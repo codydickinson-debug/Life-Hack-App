@@ -3064,7 +3064,7 @@ function renderToday() {
             <button class="btn sm secondary" style="font-size:11px;padding:4px 10px" onclick="runAiInsight()">Refresh</button>
           </div>
           <div style="font-size:13.5px;line-height:1.55;color:var(--t1);white-space:pre-wrap">${esc(last.response)}</div>
-          <div style="font-size:11px;color:var(--t4);margin-top:8px">Refreshed daily · Tap "Talk to your counselor" below to dig deeper.</div>
+          <div style="font-size:11px;color:var(--t4);margin-top:8px">Refreshed daily · Tap "Talk to Cylan" below to dig deeper.</div>
         </div>
       `;
     })()}
@@ -3074,8 +3074,8 @@ function renderToday() {
           style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:center">
           <div style="width:36px;height:36px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;color:var(--purple)">✨</div>
           <div class="body">
-            <div class="t1" style="margin:0">Talk to your financial counselor</div>
-            <div class="t2">Budget, debt, investing — ask anything about your money</div>
+            <div class="t1" style="margin:0">Talk to Cylan</div>
+            <div class="t2">Your financial counselor — budget, debt, investing, anything money</div>
           </div>
           <div class="trail chev"></div>
         </div>
@@ -3184,7 +3184,7 @@ function renderGoals() {
       style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;align-items:center;cursor:pointer">
       <div style="width:32px;height:32px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;color:var(--purple);margin-right:10px">✨</div>
       <div class="body">
-        <div class="t1" style="margin:0;font-size:13.5px">Ask the counselor to prioritize my goals</div>
+        <div class="t1" style="margin:0;font-size:13.5px">Ask Cylan to prioritize my goals</div>
       </div>
       <div class="trail chev"></div>
     </div>
@@ -3426,7 +3426,7 @@ function renderPlanning() {
       style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:center;cursor:pointer">
       <div style="width:36px;height:36px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;color:var(--purple);margin-right:12px">✨</div>
       <div class="body">
-        <div class="t1" style="margin:0">Build my plan with the counselor</div>
+        <div class="t1" style="margin:0">Build my plan with Cylan</div>
         <div class="t2">Talk through priorities, timelines, what to tackle first</div>
       </div>
       <div class="trail chev"></div>
@@ -4062,8 +4062,8 @@ function renderMoney() {
       style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:12px 14px;margin-bottom:12px;align-items:center;cursor:pointer">
       <div style="width:32px;height:32px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;color:var(--purple);margin-right:10px">✨</div>
       <div class="body">
-        <div class="t1" style="margin:0;font-size:13.5px">Talk to your financial counselor</div>
-        <div class="t2" style="font-size:11.5px">Budget, debt, investing — ask anything</div>
+        <div class="t1" style="margin:0;font-size:13.5px">Talk to Cylan</div>
+        <div class="t2" style="font-size:11.5px">Your financial counselor — budget, debt, investing</div>
       </div>
       <div class="trail chev"></div>
     </div>
@@ -5631,17 +5631,17 @@ function renderStats() {
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <div style="display:flex;align-items:center;gap:8px">
               <div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px">✨</div>
-              <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Financial Counselor</div>
+              <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Cylan</div>
             </div>
             <button class="btn sm secondary" style="font-size:11px;padding:4px 10px" onclick="runAiInsight()">${last?'Refresh':'Monthly review'}</button>
           </div>
           ${last ? `
             <div style="font-size:13.5px;line-height:1.55;color:var(--t1);white-space:pre-wrap">${esc(last.response)}</div>
             <div style="font-size:11px;color:var(--t4);margin-top:8px">${last.date} · ${esc(last.model||"")}</div>
-            <button class="btn" style="width:100%;margin-top:12px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-size:13px" onclick="openCounselor()">✨ Talk to your counselor</button>
+            <button class="btn" style="width:100%;margin-top:12px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-size:13px" onclick="openCounselor()">✨ Talk to Cylan</button>
           ` : `
             <div style="font-size:13.5px;color:var(--t1);line-height:1.5;margin-bottom:10px">Get a candid review of your spending, goals, and next moves — like a fee-only planner who knows your numbers.</div>
-            <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="openCounselor()">✨ Talk to your counselor</button>
+            <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="openCounselor()">✨ Talk to Cylan</button>
             <div style="font-size:11px;color:var(--t4);margin-top:8px;text-align:center">Educational guidance — not licensed advice</div>
           `}
         </div>
@@ -5909,7 +5909,7 @@ function renderStocks() {
           style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:10px 12px;align-items:center;cursor:pointer;margin:0">
           <div style="width:30px;height:30px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;color:var(--purple);margin-right:10px">✨</div>
           <div class="body">
-            <div class="t1" style="margin:0;font-size:13px">Ask the counselor about investing</div>
+            <div class="t1" style="margin:0;font-size:13px">Ask Cylan about investing</div>
             <div class="t2" style="font-size:11px;margin-top:1px">Allocation, ETFs, risk — frameworks, not stock picks</div>
           </div>
           <div class="trail chev"></div>
@@ -6555,7 +6555,7 @@ function renderSettings() {
       }).join("") : `<div class="row"><div class="body"><div class="t2 muted">No rules yet — paychecks will just appear in transactions.</div></div></div>`}
     </div>
 
-    <div class="section-h"><span class="lbl">AI counselor (Claude)</span></div>
+    <div class="section-h"><span class="lbl">Cylan (powered by Claude)</span></div>
     <div class="list">
       <div class="row">
         <div class="lead">🛡️</div>
@@ -6563,7 +6563,7 @@ function renderSettings() {
       </div>
       <div class="row">
         <div class="lead">⚙︎</div>
-        <div class="body"><div class="t1">Counselor model</div><div class="t2">Sonnet 4.6 = balanced. Haiku 4.5 = cheap. Opus 4.7 = deepest reasoning.</div></div>
+        <div class="body"><div class="t1">Cylan's model</div><div class="t2">Sonnet 4.6 = balanced. Haiku 4.5 = cheap. Opus 4.7 = deepest reasoning.</div></div>
         <select style="background:var(--bg-elev);padding:8px;border-radius:8px;font-size:11px;max-width:170px"
           onchange="DB.settings.anthropicModel=this.value;save()">
           <option value="claude-haiku-4-5-20251001" ${DB.settings.anthropicModel==='claude-haiku-4-5-20251001'?'selected':''}>Haiku 4.5</option>
@@ -6573,7 +6573,7 @@ function renderSettings() {
       </div>
       <div class="row tappable" onclick="closeSheet&&closeSheet();openCounselor()">
         <div class="lead">✨</div>
-        <div class="body"><div class="t1">Talk to the counselor</div><div class="t2">Persistent chat — budget, debt, investing, life decisions</div></div>
+        <div class="body"><div class="t1">Talk to Cylan</div><div class="t2">Your financial counselor — budget, debt, investing, life decisions</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="runAiInsight()">
@@ -6754,7 +6754,7 @@ function renderSettings() {
     <div class="list">
       <div class="row tappable" onclick="aiOnboardingStart()">
         <div class="lead">✨</div>
-        <div class="body"><div class="t1">Retake AI setup</div><div class="t2">Talk to Ascend AI to refresh your habits, goals, and tagline</div></div>
+        <div class="body"><div class="t1">Retake AI setup</div><div class="t2">Talk to Cylan to refresh your habits, goals, and tagline</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="exportData()">
@@ -7700,7 +7700,7 @@ async function getMonthlyInsight() {
     open_goals: goals,
   };
 
-  const system = `You are Ascend Counselor — a sharp, candid personal-finance counselor giving ${DB.user.name||"the user"} a quick monthly review based on their actual numbers. Be warm but direct. Reference real numbers and merchants. Skip generic advice. Prefer short paragraphs over bullet lists. Keep it under 220 words. End with one sentence of encouragement. Educational guidance, not licensed financial advice.`;
+  const system = `You are Cylan — a sharp, candid personal-finance counselor inside the Ascend app, giving ${DB.user.name||"the user"} a quick monthly review based on their actual numbers. Be warm but direct. Reference real numbers and merchants. Skip generic advice. Prefer short paragraphs over bullet lists. Keep it under 220 words. End with one sentence of encouragement. Educational guidance, not licensed financial advice.`;
 
   const model = "claude-haiku-4-5-20251001";
   const data = await aiApi({
@@ -7731,7 +7731,7 @@ async function getMonthlyInsight() {
    always answering against current numbers. Uses feature="counselor" so the
    worker rate-limits it independently from the monthly insight feature. */
 
-const COUNSELOR_SYSTEM = `You are Ascend Counselor — a senior personal-finance counselor embedded in the Ascend app. You combine the disciplined planning instincts of a fee-only Certified Financial Planner (CFP) with the framework thinking of a CFA portfolio strategist. You are the user's trusted, candid guide for money decisions.
+const COUNSELOR_SYSTEM = `You are Cylan — a senior personal-finance counselor embedded in the Ascend app. You combine the disciplined planning instincts of a fee-only Certified Financial Planner (CFP) with the framework thinking of a CFA portfolio strategist. You are the user's trusted, candid guide for money decisions.
 
 YOUR SCOPE:
 - Personal financial planning: cash flow, emergency fund, debt strategy (avalanche vs snowball), insurance gaps, big-life-event prep (marriage, kids, home, retirement).
@@ -7764,7 +7764,7 @@ ASCEND FEATURES YOU CAN REFER TO (only these — do not invent features):
 - Settings (backend / AI / privacy / encryption)
 
 IDENTITY:
-If asked who you are: "I'm Ascend's financial counselor — CFP-level planning meets index-fund discipline, all kept inside your app." If the conversation drifts to high-stakes regulated topics (specific tax filings, specific securities trades, legal contracts), be clear you're an educational guide and recommend a licensed pro.`;
+If asked who you are: "I'm Cylan — your financial counselor inside Ascend. CFP-level planning meets index-fund discipline." Always sign off as Cylan when it feels natural (don't force it into every reply, but own the name when introductions or sign-offs come up). If the conversation drifts to high-stakes regulated topics (specific tax filings, specific securities trades, legal contracts), be clear you're an educational guide and recommend a licensed pro.`;
 
 function buildCounselorSnapshot() {
   const monthKey = todayKey().slice(0, 7);
@@ -7974,11 +7974,11 @@ function counselorRender() {
   const ctx = (_counselorState && _counselorState.context) || "default";
   const suggestions = COUNSELOR_SUGGESTIONS[ctx] || COUNSELOR_SUGGESTIONS.default;
   const introLine = ({
-    goals:    "Open from your <b>Goals</b> tab — let's make these real. Pick what to tackle first or break a big one down.",
-    planning: "Open from your <b>Plan</b> tab — let's map your short, mid, and long-term roadmap. I'll talk priorities, sequencing, and what's actually realistic.",
-    money:    "Open from your <b>Money</b> tab — let's tighten cash flow, find leaks, and lock in a plan that sticks.",
-    stocks:   "Open from your <b>Stocks</b> tab — I'll talk investing frameworks (allocation, ETFs, risk), but I won't pick specific tickers for you.",
-    default:  "I'm a financial counselor who knows your numbers. Ask me anything — planning, debt, investing, big decisions. I'll be candid and reference your actual situation.",
+    goals:    "Hey, I'm Cylan. From your <b>Goals</b> tab — let's make these real. Pick what to tackle first or break a big one down.",
+    planning: "Hey, I'm Cylan. From your <b>Plan</b> tab — let's map your short, mid, and long-term roadmap. I'll talk priorities, sequencing, and what's actually realistic.",
+    money:    "Hey, I'm Cylan. From your <b>Money</b> tab — let's tighten cash flow, find leaks, and lock in a plan that sticks.",
+    stocks:   "Hey, I'm Cylan. From your <b>Stocks</b> tab — I'll talk investing frameworks (allocation, ETFs, risk), but I won't pick specific tickers for you.",
+    default:  "I'm Cylan — your financial counselor inside Ascend. I know your numbers. Ask me anything — planning, debt, investing, big decisions. I'll be candid and reference your actual situation.",
   })[ctx];
   const suggested = !thread.length ? `
     <div style="padding:6px 2px 4px">
@@ -8022,8 +8022,8 @@ function counselorRender() {
     <div data-counselor-sheet style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
       <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px">✨</div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:15px">Financial Counselor</div>
-        <div style="font-size:11px;color:var(--t3)">Educational guidance · CFP-style planning · auto-clears on close</div>
+        <div style="font-weight:700;font-size:15px">Cylan</div>
+        <div style="font-size:11px;color:var(--t3)">Your financial counselor · auto-clears on close</div>
       </div>
       <button style="background:none;border:none;font-size:22px;color:var(--t3);cursor:pointer;padding:4px 8px" onclick="closeSheet()" aria-label="Close">×</button>
     </div>
@@ -9035,7 +9035,7 @@ function onboardingStep1() {
     <label style="font-size:12px;color:var(--t3);font-weight:600;margin-bottom:6px;display:block">What should we call you?</label>
     <input id="onb-name" placeholder="Your first name" autofocus value="${esc(_onbState.name)}" />
   `, `
-    <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="(()=>{const n=$('#onb-name').value.trim();_onbState.name=n;closeSheet();aiOnboardingStart({name:n,fromOnboarding:true});})()">✨ Talk to Ascend AI (~3 min)</button>
+    <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="(()=>{const n=$('#onb-name').value.trim();_onbState.name=n;closeSheet();aiOnboardingStart({name:n,fromOnboarding:true});})()">✨ Set up with Cylan (~3 min)</button>
     <button class="btn secondary" style="width:100%;margin-top:8px" onclick="(()=>{_onbState.name=$('#onb-name').value.trim();onboardingStep2();})()">Quick setup instead</button>
   `);
 }
@@ -9127,7 +9127,7 @@ function finishOnboarding() {
    Anthropic key never touches the browser. Falls back gracefully when
    the backend isn't configured. */
 
-const AI_ONBOARDING_SYSTEM = `You are Ascend AI, the warm onboarding coach for the Ascend app (a personal-development tool that tracks habits, goals, and money). Tagline: "Goals made easy".
+const AI_ONBOARDING_SYSTEM = `You are Cylan, the warm onboarding coach for the Ascend app (a personal-development tool that tracks habits, goals, and money). Tagline: "Goals made easy". After onboarding, you'll keep helping the user as their financial counselor — same Cylan, different mode.
 
 Your job is a short 3-7 turn conversation to learn the user, then propose a tailored starter plan. Be warm, casual, brief (1-2 sentences per reply, no preamble, no "as an AI" disclaimers).
 
@@ -9195,8 +9195,8 @@ function aiOnboardingStart(opts = {}) {
 
   // Seed first message — no API call needed for the opener.
   const opener = _aiOnb.knownName
-    ? `Hey ${_aiOnb.knownName}! I'm Ascend AI. I'll ask a few quick questions to set things up the way that fits you — about 3 minutes. Which area of life matters most to you right now?`
-    : `Hey! I'm Ascend AI. I'll ask a few quick questions to set things up the way that fits you — about 3 minutes. What should I call you?`;
+    ? `Hey ${_aiOnb.knownName}! I'm Cylan, your financial counselor inside Ascend. I'll ask a few quick questions to set things up the way that fits you — about 3 minutes. Which area of life matters most to you right now?`
+    : `Hey! I'm Cylan, your financial counselor inside Ascend. I'll ask a few quick questions to set things up the way that fits you — about 3 minutes. What should I call you?`;
   const openerChips = _aiOnb.knownName
     ? ["💰 Money", "💪 Health", "🧠 Mind", "💼 Career", "❤️ Relationships", "🙏 Faith"]
     : [];
@@ -9262,7 +9262,7 @@ function aiOnboardingRender() {
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
       <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px">✨</div>
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:15px">Ascend AI</div>
+        <div style="font-weight:700;font-size:15px">Cylan</div>
         <div style="font-size:11px;color:var(--t3)">${o.plan ? "Plan ready" : o.asking ? "Thinking…" : "Setting things up · ~3 min"}</div>
       </div>
       <button class="del-x" style="background:none;border:none;font-size:22px;color:var(--t3);cursor:pointer" onclick="aiOnbClose()">×</button>
