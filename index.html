@@ -10212,68 +10212,241 @@ function finishOnboarding() {
 }
 
 /* ================ POST-ONBOARDING TOUR ================
-   30-second walkthrough that fires once after either onboarding path
-   (manual or Cylan). DB.user.tutorialSeenAt gates auto-trigger; Settings
-   has a manual replay entry. Steps describe tabs without switching to
-   them — the sheet covers most of the screen on mobile, so switching
-   underneath would be invisible. */
+   Spotlight-style guided walkthrough. Each step optionally switches to
+   a specific tab and/or highlights a specific DOM element by selector.
+   Spotlight is implemented with a single absolutely-positioned div and
+   a massive box-shadow that dims everything outside the cutout — no
+   clip-path or overlay stacking gymnastics required. Tooltips anchor
+   above/below the spotlight based on viewport space; for steps without
+   a target, the tooltip centers and the spotlight is hidden.
+
+   Each step has an "Ask Cylan" button that hands off to openCounselor
+   with a context-aware seed prompt so users can ask anything about
+   what they're currently looking at. */
 const TUTORIAL_STEPS = [
   { emoji: "👋", title: "Welcome to Ascend",
-    body: "A 30-second tour of how the tabs fit together. Skip anytime." },
-  { emoji: "☀︎", title: "Today",
-    body: "Your daily home. Check off habits, log wins, and see your reminder. Tap a streak pill to open habit detail." },
-  { emoji: "▤", title: "Calendar",
-    body: "Habits, wins, bills, and savings together by day. Switch to Year view for a 12-month heatmap." },
-  { emoji: "◎  ✦", title: "Goals & Plan",
-    body: "Goals = your direction (daily → short-term → life). Plan surfaces Smart Plays: personalized next moves based on your situation." },
-  { emoji: "$  ↗", title: "Money & Stocks",
-    body: "Spend, budget, net worth. Connect a bank for auto-import via Plaid, or stay manual. Stocks tab tracks your portfolio with live quotes." },
-  { emoji: "▦", title: "Stats",
-    body: "Streaks, completion rates, and trends. Open it weekly to see what's working." },
-  { emoji: "🔒", title: "Encrypt your data",
-    body: "By default everything is stored as plaintext on this device. Set a passphrase in Settings to encrypt habits, transactions, and bank tokens at rest." },
-  { emoji: "✨", title: "Meet Cylan",
-    body: "Tap the ✨ button anywhere to chat with Cylan — your in-app financial counselor. Budget, debt, investing — ask anything." },
-  { emoji: "✓", title: "You're set",
-    body: "Replay this tour any time from Settings → Take the tour." },
+    body: "A guided tour of how Ascend works. We'll visit each tab, highlight what's where, and answer any question you have along the way.",
+    askPrompt: "Give me a one-paragraph overview of what Ascend is, who it's for, and how to get the most out of it in the first week." },
+
+  { emoji: "🧭", title: "Seven tabs at the bottom", tab: "today", target: "#tabbar",
+    body: "This is your navigation. Today, Calendar, Goals, Plan, Money, Stocks, Stats. Tap any tab any time — we'll visit each next.",
+    askPrompt: "What does each of the seven Ascend tabs do? Give me a one-line description per tab so I know which one to use for what." },
+
+  { emoji: "＋", title: "Quick add — log spend or wins fast", tab: "today", target: "#fab",
+    body: "The + button is always here. Tap it to log spending, add a win, or quick-add a habit — from any tab.",
+    askPrompt: "What kinds of things should I be logging in Ascend day-to-day, and how do I make it stick?" },
+
+  { emoji: "☀︎", title: "Today — your daily home", tab: "today",
+    body: "Check off habits, see your streak, log wins. Day chips at the top jump to that day in Calendar. The 'Talk to Cylan' card opens your AI counselor.",
+    askPrompt: "How should I structure my Today tab to actually use it every morning? Give me a 60-second daily routine." },
+
+  { emoji: "▤", title: "Calendar — habits + life over time", tab: "calendar",
+    body: "All your habits, wins, bills, savings, and mood — together by day. Tap any day for details. Switch to Year view for a 12-month heatmap of completion.",
+    askPrompt: "How can I use the Calendar tab to spot patterns in my habits and mood?" },
+
+  { emoji: "◎", title: "Goals — your direction", tab: "goals",
+    body: "Goals nest from daily → short-term → life. Example: 'pay off credit card' (short-term) ladders up to 'be debt-free in 3 years' (life). Each step you take feeds the bigger picture.",
+    askPrompt: "Help me set up my first three goals — one daily, one short-term, one life-tier. Use my situation." },
+
+  { emoji: "✦", title: "Plan — Smart Plays for your money", tab: "planning",
+    body: "Personalized next moves based on YOUR numbers: investment mix, savings opportunities, account-priority pyramid, retirement & FIRE projections, real-estate/refi analyzers, college planner, and more.",
+    askPrompt: "What's the single highest-impact Smart Play I should do this month given my situation?" },
+
+  { emoji: "$", title: "Money — everything financial", tab: "money",
+    body: "Spend tracking, budget, net worth, debt payoff strategies, sinking funds, subscription audit, tax planning. Connect a bank with Plaid for auto-import, or stay 100% manual — both work.",
+    askPrompt: "Walk me through how to set up the Money tab from scratch. What should I do in week 1, 2, 3?" },
+
+  { emoji: "↗", title: "Stocks — research workbench", tab: "stocks",
+    body: "Live quotes, market scans across S&P 500, REITs, crypto, ETFs, bonds. This is research, not a brokerage — you decide what to buy elsewhere.",
+    askPrompt: "Given my situation, suggest 3 specific ETFs or stocks I should research first and explain why." },
+
+  { emoji: "▦", title: "Stats — what's actually working", tab: "stats",
+    body: "Streaks, completion rates, year review, share cards. Open it weekly to see momentum and adjust if a habit isn't sticking.",
+    askPrompt: "What stats should I check weekly to know if my habits are actually working?" },
+
+  { emoji: "✨", title: "Meet Cylan — your financial counselor", tab: "today", target: "#counselor-fab",
+    body: "This button is your 24/7 in-app counselor. CFP-level planning meets index-fund discipline. Ask anything about budgeting, debt, investing, picking specific ETFs, tax-advantaged accounts, retirement.",
+    askPrompt: "Introduce yourself. What kinds of questions are you best at answering, and what should I ask first?" },
+
+  { emoji: "🔒", title: "Encrypt your data", tab: "settings",
+    body: "By default everything lives unencrypted in this browser. Anyone with device access could read it. Set a passphrase below to AES-encrypt your habits, transactions, and bank tokens at rest. Forgotten passphrase = unrecoverable (no backdoor).",
+    askPrompt: "Should I set a passphrase on Ascend? What are the tradeoffs and what happens if I forget it?" },
+
+  { emoji: "🎉", title: "You're ready to roll", tab: "today",
+    body: "Replay this tour any time from Settings → Take the tour. Tap ✨ on any screen to ask Cylan. Tap + to log anything fast.",
+    askPrompt: "I just finished the tour. What are the 3 things I should do right now to set myself up for success?" },
 ];
 let _tutStep = 0;
 
-function startTutorial() {
-  _tutStep = 0;
-  tutorialShow();
+function _tourEnsureChrome() {
+  if (document.getElementById("tour-overlay")) return;
+  const style = document.createElement("style");
+  style.id = "tour-style";
+  style.textContent = `
+    #tour-spotlight {
+      position: fixed; left: 0; top: 0; width: 0; height: 0;
+      border-radius: 14px; z-index: 9998; pointer-events: none;
+      box-shadow:
+        0 0 0 9999px rgba(0,0,0,0.62),
+        0 0 0 4px rgba(124,58,237,0.85),
+        0 0 28px rgba(124,58,237,0.45);
+      transition: left .32s cubic-bezier(.4,0,.2,1),
+                  top .32s cubic-bezier(.4,0,.2,1),
+                  width .32s cubic-bezier(.4,0,.2,1),
+                  height .32s cubic-bezier(.4,0,.2,1);
+      display: none;
+    }
+    #tour-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.62);
+      z-index: 9997; display: none;
+    }
+    #tour-tooltip {
+      position: fixed; z-index: 9999;
+      background: var(--card, #fff); color: var(--text, #111);
+      border-radius: 18px; box-shadow: 0 14px 40px rgba(0,0,0,0.28);
+      padding: 20px 18px 16px; max-width: 360px; width: calc(100vw - 32px);
+      display: none;
+    }
+    #tour-tooltip .e { font-size: 38px; line-height: 1; margin-bottom: 8px; }
+    #tour-tooltip .t { font-size: 19px; font-weight: 700; margin-bottom: 6px; line-height: 1.25; }
+    #tour-tooltip .b { font-size: 14px; line-height: 1.5; color: var(--t2, #555); }
+    #tour-tooltip .dots { display: flex; gap: 5px; justify-content: center; margin: 14px 0 12px; }
+    #tour-tooltip .dots div { width: 5px; height: 5px; border-radius: 50%; background: var(--text); transition: opacity .15s, transform .15s; }
+    #tour-tooltip .ask {
+      width: 100%; margin: 4px 0 10px; padding: 10px 12px;
+      background: linear-gradient(135deg, #7c3aed, #ec4899); color: #fff;
+      border: none; border-radius: 12px; font-size: 13px; font-weight: 600;
+      cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+    }
+    #tour-tooltip .row { display: flex; gap: 8px; }
+    #tour-tooltip .row button {
+      flex: 1; padding: 10px 12px; border-radius: 12px; border: none;
+      font-size: 14px; font-weight: 600; cursor: pointer;
+    }
+    #tour-tooltip .row .back { background: var(--bg-elev, #eee); color: var(--text); }
+    #tour-tooltip .row .next { background: var(--text); color: var(--card, #fff); flex: 2; }
+  `;
+  document.head.appendChild(style);
+  const overlay = document.createElement("div");
+  overlay.id = "tour-overlay";
+  const spotlight = document.createElement("div");
+  spotlight.id = "tour-spotlight";
+  const tooltip = document.createElement("div");
+  tooltip.id = "tour-tooltip";
+  document.body.append(overlay, spotlight, tooltip);
+  // Tap the dim overlay to dismiss the tour (also marks as seen).
+  overlay.addEventListener("click", tutorialFinish);
 }
 
-function tutorialShow() {
+function startTutorial() {
+  _tourEnsureChrome();
+  _tutStep = 0;
+  _tourGo();
+}
+
+function _tourGo() {
+  const s = TUTORIAL_STEPS[_tutStep];
+  // Close any in-app sheet first — would otherwise cover the tour overlay.
+  try { if (typeof closeSheet === "function") { _lockSheet = false; closeSheet(); } } catch {}
+  if (s.tab && typeof showTab === "function") showTab(s.tab);
+  // Wait one frame so the new tab is laid out before we measure target.
+  setTimeout(() => { _tourRender(); _tourPosition(); }, 90);
+}
+
+function _tourRender() {
   const s = TUTORIAL_STEPS[_tutStep];
   const isLast = _tutStep === TUTORIAL_STEPS.length - 1;
   const isFirst = _tutStep === 0;
-  const dots = TUTORIAL_STEPS.map((_, i) => `<div style="width:6px;height:6px;border-radius:50%;background:var(--text);opacity:${i===_tutStep?1:.25};transition:opacity .15s"></div>`).join("");
-  openSheet(`
-    <div style="padding:24px 22px 22px;text-align:center">
-      <div style="font-size:42px;line-height:1;margin-bottom:14px">${s.emoji}</div>
-      <div style="font-size:22px;font-weight:700;margin-bottom:8px">${esc(s.title)}</div>
-      <div style="color:var(--t2,#666);font-size:15px;line-height:1.5;max-width:340px;margin:0 auto">${esc(s.body)}</div>
-      <div style="display:flex;gap:6px;margin:22px 0 18px;justify-content:center">${dots}</div>
-      <div style="display:flex;gap:8px">
-        <button class="btn secondary" style="flex:1" onclick="${isFirst ? "tutorialFinish()" : "tutorialBack()"}">${isFirst ? "Skip" : "Back"}</button>
-        <button class="btn" style="flex:2" onclick="${isLast ? "tutorialFinish()" : "tutorialNext()"}">${isLast ? "Done" : "Next"}</button>
-      </div>
+  const dots = TUTORIAL_STEPS.map((_, i) =>
+    `<div style="opacity:${i===_tutStep?1:.22};transform:scale(${i===_tutStep?1.6:1})"></div>`
+  ).join("");
+  const tooltip = document.getElementById("tour-tooltip");
+  tooltip.innerHTML = `
+    <div class="e">${s.emoji}</div>
+    <div class="t">${esc(s.title)}</div>
+    <div class="b">${esc(s.body)}</div>
+    <button class="ask" onclick="tutorialAsk()">✨ Ask Cylan about this</button>
+    <div class="dots">${dots}</div>
+    <div class="row">
+      <button class="back" onclick="${isFirst ? "tutorialFinish()" : "tutorialBack()"}">${isFirst ? "Skip" : "Back"}</button>
+      <button class="next" onclick="${isLast ? "tutorialFinish()" : "tutorialNext()"}">${isLast ? "Done" : "Next"}</button>
     </div>
-  `);
+  `;
+  tooltip.style.display = "block";
 }
 
-function tutorialNext() { if (_tutStep < TUTORIAL_STEPS.length - 1) { _tutStep++; tutorialShow(); } }
-function tutorialBack() { if (_tutStep > 0) { _tutStep--; tutorialShow(); } }
+function _tourPosition() {
+  const s = TUTORIAL_STEPS[_tutStep];
+  const spotlight = document.getElementById("tour-spotlight");
+  const overlay = document.getElementById("tour-overlay");
+  const tooltip = document.getElementById("tour-tooltip");
+  const vw = window.innerWidth, vh = window.innerHeight;
+  let r = null;
+  if (s.target) {
+    const el = document.querySelector(s.target);
+    if (el) r = el.getBoundingClientRect();
+  }
+  if (r && r.width > 0 && r.height > 0) {
+    // Pad the spotlight slightly so the highlighted element gets some breathing room.
+    const pad = 6;
+    spotlight.style.left   = Math.max(2, r.left - pad) + "px";
+    spotlight.style.top    = Math.max(2, r.top - pad) + "px";
+    spotlight.style.width  = (r.width + pad*2) + "px";
+    spotlight.style.height = (r.height + pad*2) + "px";
+    spotlight.style.display = "block";
+    overlay.style.display = "none"; // spotlight's box-shadow provides the dimming
+    // Place tooltip above or below the spotlight, whichever has more room.
+    const tr = tooltip.getBoundingClientRect();
+    const spaceBelow = vh - (r.bottom + pad);
+    const spaceAbove = (r.top - pad);
+    let top;
+    if (spaceBelow > tr.height + 24 || spaceBelow >= spaceAbove) {
+      top = Math.min(vh - tr.height - 12, r.bottom + pad + 14);
+    } else {
+      top = Math.max(12, r.top - pad - tr.height - 14);
+    }
+    let left = r.left + r.width/2 - tr.width/2;
+    left = Math.max(12, Math.min(vw - tr.width - 12, left));
+    tooltip.style.left = left + "px";
+    tooltip.style.top  = top + "px";
+    tooltip.style.transform = "";
+  } else {
+    spotlight.style.display = "none";
+    overlay.style.display = "block";
+    tooltip.style.left = "50%";
+    tooltip.style.top  = "50%";
+    tooltip.style.transform = "translate(-50%, -50%)";
+  }
+}
+
+function tutorialNext() { if (_tutStep < TUTORIAL_STEPS.length - 1) { _tutStep++; _tourGo(); } }
+function tutorialBack() { if (_tutStep > 0) { _tutStep--; _tourGo(); } }
 function tutorialFinish() {
-  DB.user.tutorialSeenAt = Date.now();
-  save();
-  closeSheet();
+  if (DB && DB.user) {
+    DB.user.tutorialSeenAt = Date.now();
+    try { save(); } catch {}
+  }
+  ["tour-overlay","tour-spotlight","tour-tooltip"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  });
+}
+
+function tutorialAsk() {
+  const s = TUTORIAL_STEPS[_tutStep];
+  // Close the tour chrome so the counselor sheet is visible. Don't mark
+  // tutorialSeenAt — user can replay from Settings if they bail mid-tour.
+  ["tour-overlay","tour-spotlight","tour-tooltip"].forEach(id => {
+    const el = document.getElementById(id);
+    if (el) el.style.display = "none";
+  });
+  const seed = s.askPrompt || `Tell me more about the "${s.title}" feature in Ascend.`;
+  if (typeof openCounselor === "function") openCounselor(seed, "default");
 }
 
 function maybeStartTutorial() {
   if (DB.user && !DB.user.tutorialSeenAt) {
-    setTimeout(startTutorial, 350);
+    setTimeout(startTutorial, 400);
   }
 }
 
@@ -17147,7 +17320,7 @@ function init() {
     yearReview, yearReviewSheet, shareCardSvg, downloadShareCard, shareStreakCard,
     backendHoldings, syncHoldings,
     runOnboarding, onboardingStep1, onboardingStep2, onboardingStep3, onboardingStep4, finishOnboarding,
-    startTutorial, tutorialNext, tutorialBack, tutorialFinish,
+    startTutorial, tutorialNext, tutorialBack, tutorialFinish, tutorialAsk,
     aiOnboardingStart, aiOnboardingRender, aiOnbSend, aiOnbToggleHabit, aiOnbToggleGoal,
     aiOnbAcceptPlan, aiOnbRestart, aiOnbClose,
     safeToSpend, recurringMonthlyTotal,
