@@ -2896,6 +2896,21 @@ function renderToday() {
   const startOfWeek = new Date(today); startOfWeek.setDate(today.getDate() - ((today.getDay()+6)%7)); // Mon start
   const days = Array.from({length:7}, (_,i)=>{ const d = new Date(startOfWeek); d.setDate(startOfWeek.getDate()+i); return d; });
 
+  // Streak-milestone alert — surface habits that are 1–3 days from a 'round'
+  // milestone. Motivational dopamine for finishing strong.
+  const upcomingMilestones = (() => {
+    const MS = [7, 14, 30, 60, 100, 180, 365, 500, 1000];
+    return DB.habits
+      .map(h => {
+        const s = streakOf(h);
+        const next = MS.find(m => m > s) || (Math.ceil((s + 1) / 500) * 500);
+        const daysTo = next - s;
+        return { h, streak: s, next, daysTo };
+      })
+      .filter(x => x.streak >= 1 && x.daysTo > 0 && x.daysTo <= 3)
+      .sort((a, b) => a.daysTo - b.daysTo);
+  })();
+
   // Wins streak — consecutive days back from today where at least one win was logged.
   // Surfaces in the section header so the user gets immediate dopamine for showing up.
   const winsStreak = (() => {
@@ -3027,6 +3042,18 @@ function renderToday() {
       <span><b style="color:var(--t1)">${weekSummary.winsW}</b> wins</span>
       ${weekSummary.spendW > 0 ? `<span><b style="color:var(--t1)" data-priv="amount">${fmt$0(weekSummary.spendW)}</b> spent</span>` : ""}
     </div>
+
+    ${upcomingMilestones.length ? `
+      <div onclick="habitDetailSheet('${upcomingMilestones[0].h.id}')" role="button" tabindex="0"
+        style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--orange);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:12px">
+        <div style="width:32px;height:32px;border-radius:50%;background:rgba(237,139,34,0.15);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">🔥</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;color:var(--t1);font-weight:600;line-height:1.2">${upcomingMilestones[0].daysTo} day${upcomingMilestones[0].daysTo===1?'':'s'} from a <span style="color:var(--orange)">${upcomingMilestones[0].next}-day ${esc(upcomingMilestones[0].h.name)}</span> streak</div>
+          ${upcomingMilestones.length > 1 ? `<div style="font-size:11.5px;color:var(--t3);margin-top:2px">+ ${upcomingMilestones.length - 1} other milestone${upcomingMilestones.length-1===1?'':'s'} coming up</div>` : ''}
+        </div>
+        <div style="font-size:18px;color:var(--t3)">›</div>
+      </div>
+    ` : ""}
 
     <!-- ===== DO TODAY: habits, wins (the daily action lives here) ===== -->
     <div class="hero">
