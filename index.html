@@ -3106,16 +3106,17 @@ function _computeSearchResults(query) {
   }
   // Record this query in recent (debounced — only record when length > 2 to avoid every keystroke).
   if (q.length >= 3) _recordSearch(q);
-  const habits = (DB.habits || []).filter(h => (h.name || "").toLowerCase().includes(q));
-  const wins = (DB.wins || []).filter(w => (w.text || "").toLowerCase().includes(q));
-  const notes = Object.entries(DB.calendarNotes || {})
+  const f = _searchFilter || "all";
+  const habits = (f === "all" || f === "habits") ? (DB.habits || []).filter(h => (h.name || "").toLowerCase().includes(q)) : [];
+  const wins = (f === "all" || f === "wins") ? (DB.wins || []).filter(w => (w.text || "").toLowerCase().includes(q)) : [];
+  const notes = (f === "all" || f === "notes") ? Object.entries(DB.calendarNotes || {})
     .filter(([, t]) => (t || "").toLowerCase().includes(q))
-    .sort((a, b) => b[0].localeCompare(a[0]));
-  const spend = (DB.spend || []).filter(t =>
+    .sort((a, b) => b[0].localeCompare(a[0])) : [];
+  const spend = (f === "all" || f === "spend") ? (DB.spend || []).filter(t =>
     (((t.category || "") + " " + (t.note || "") + " " + (t.merchant_name || "")).toLowerCase()).includes(q)
-  ).sort((a, b) => (b.date || "").localeCompare(a.date || ""));
-  const goals = (DB.goals || []).filter(g => (((g.title || "") + " " + (g.note || "")).toLowerCase()).includes(q));
-  const savings = (DB.savings || []).filter(s => (s.name || "").toLowerCase().includes(q));
+  ).sort((a, b) => (b.date || "").localeCompare(a.date || "")) : [];
+  const goals = (f === "all" || f === "goals") ? (DB.goals || []).filter(g => (((g.title || "") + " " + (g.note || "")).toLowerCase()).includes(q)) : [];
+  const savings = (f === "all" || f === "goals") ? (DB.savings || []).filter(s => (s.name || "").toLowerCase().includes(q)) : [];
   const total = habits.length + wins.length + notes.length + spend.length + goals.length + savings.length;
   if (!total) return `<div class="muted" style="font-size:13px;padding:14px 4px;text-align:center">No matches for "${esc(q)}".</div>`;
   const sect = (label, count, rowsHtml) => count ? `
@@ -3173,6 +3174,32 @@ function _computeSearchResults(query) {
   `).join(""));
   return html;
 }
+// Search-scope filter — 'all' or one of the entity types. Persists in-memory
+// only (reset per session) so the user always starts a fresh search from All.
+var _searchFilter = "all";
+function setSearchFilter(filter) {
+  _searchFilter = filter;
+  const input = document.getElementById("g-search-input");
+  const query = input ? input.value : "";
+  // Re-render chips + results.
+  const chipsEl = document.getElementById("g-search-chips");
+  if (chipsEl) chipsEl.innerHTML = _renderSearchChips();
+  globalSearchOnInput(query);
+}
+function _renderSearchChips() {
+  const filters = [
+    { id: "all",     label: "All" },
+    { id: "habits",  label: "Habits" },
+    { id: "wins",    label: "Wins" },
+    { id: "notes",   label: "Notes" },
+    { id: "spend",   label: "Spending" },
+    { id: "goals",   label: "Goals" },
+  ];
+  return filters.map(f => {
+    const active = _searchFilter === f.id;
+    return `<button onclick="setSearchFilter('${f.id}')" style="background:${active?'var(--blue)':'var(--bg-elev)'};color:${active?'#fff':'var(--t1)'};border:none;padding:6px 12px;border-radius:var(--r-pill,999px);font-size:11.5px;font-weight:600;cursor:pointer;white-space:nowrap">${f.label}</button>`;
+  }).join("");
+}
 function globalSearchOnInput(value) {
   const out = document.getElementById("g-search-results");
   if (out) out.innerHTML = _computeSearchResults(value);
@@ -3204,11 +3231,15 @@ async function clearRecentSearches() {
   if (out) out.innerHTML = _computeSearchResults("");
 }
 function globalSearchSheet() {
+  // Reset filter to All every time the user re-opens the sheet, so a stale
+  // filter doesn't surprise them next session.
+  _searchFilter = "all";
   openSheet(`
     <h2 style="margin-bottom:6px">Search</h2>
     <input id="g-search-input" placeholder="Search habits, wins, notes, spending…" autocomplete="off" autocorrect="off" autocapitalize="off"
       oninput="globalSearchOnInput(this.value)"
-      style="background:var(--card);padding:14px;border-radius:var(--r);font-size:16px;width:100%;border:1px solid var(--sep);box-sizing:border-box;color:var(--t1);margin-bottom:8px" />
+      style="background:var(--card);padding:14px;border-radius:var(--r);font-size:16px;width:100%;border:1px solid var(--sep);box-sizing:border-box;color:var(--t1);margin-bottom:10px" />
+    <div id="g-search-chips" style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:6px;margin-bottom:6px">${_renderSearchChips()}</div>
     <div style="font-size:11px;color:var(--t3);margin-bottom:4px">Tap any result to jump straight to it.</div>
     <div id="g-search-results">${_computeSearchResults("")}</div>
     <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
@@ -17669,7 +17700,7 @@ function init() {
     customizeTabsSheet, toggleTabVisibility, showAllTabs, isTabHidden, applyHiddenTabs,
     setAccentColor, applyAccent, ACCENT_COLORS,
     helpTipsSheet, sendFeedbackSheet,
-    globalSearchSheet, globalSearchOnInput, _computeSearchResults, _recordSearch, clearRecentSearches,
+    globalSearchSheet, globalSearchOnInput, _computeSearchResults, _recordSearch, clearRecentSearches, setSearchFilter, _renderSearchChips,
     openSettings, applyTheme, toggleNotifications, scheduleReminder, exportData, importData, openSheet, closeSheet, toast,
     connectBank, syncNow, disconnectItem, backendLinkToken, backendExchange, backendSync, backendListItems, backendRemoveItem,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
