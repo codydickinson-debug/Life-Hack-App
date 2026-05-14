@@ -4395,6 +4395,8 @@ function renderGoals() {
       <div class="e-emoji">🎯</div>
       <div class="e-title">No ${TIERS.find(t=>t.id===activeTier).label.toLowerCase()} goals yet</div>
       <div class="e-sub">Daily = recurring focuses. Short-term = this month/quarter. Life = the big stuff.</div>
+      <button class="btn" style="margin-top:14px;max-width:240px" onclick="addGoalSheet()">+ Custom goal</button>
+      <button class="btn secondary" style="margin-top:8px;max-width:240px;font-size:13px" onclick="goalTemplatesSheet()">📚 Browse templates</button>
     </div>
   `;
 
