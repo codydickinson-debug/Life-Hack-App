@@ -5950,6 +5950,22 @@ function renderMoney() {
             </div>
             <div class="trail chev"></div>
           </div>
+          ${(() => {
+            // Only render the row when there are actually suggestions, to
+            // avoid teasing a feature that does nothing.
+            const dismissed = ((DB.settings || {}).dismissedRecurring || []);
+            const nSuggested = detectRecurringSuggestions().filter(s => !dismissed.includes(s.key)).length;
+            return nSuggested ? `
+              <div class="row tappable" onclick="detectedRecurringSheet()" role="button" tabindex="0">
+                <div class="lead">🔎</div>
+                <div class="body">
+                  <div class="t1">Detected recurring <span style="background:var(--purple,#8957d9);color:#fff;border-radius:999px;padding:2px 8px;font-size:10px;margin-left:6px;font-weight:700">${nSuggested}</span></div>
+                  <div class="t2">Charges that look periodic but aren't tracked yet · tap to review</div>
+                </div>
+                <div class="trail chev"></div>
+              </div>
+            ` : "";
+          })()}
           <div class="row tappable" onclick="moneyPersonalityIntroSheet()" role="button" tabindex="0">
             <div class="lead">🎭</div>
             <div class="body">
@@ -13918,6 +13934,160 @@ function moneyPromptSheet() {
    Most people cancel 15-30% of recurring spend after a serious audit.
 */
 
+// Heuristic detector for recurring expenses the user hasn't told the app
+// about yet. Scans DB.spend over the last 120 days, groups by lowercase
+// merchant_name or note, and surfaces clusters that look periodic.
+// Returns an array of { key, name, amount, cadence, count, lastDate,
+// recentTxIds, monthlyEstimate } sorted by monthlyEstimate descending.
+// Filtered against existing DB.recurring so we don't suggest dupes.
+function detectRecurringSuggestions() {
+  const spend = DB.spend || [];
+  if (spend.length < 3) return [];
+  const now = new Date();
+  const cutoff = new Date(now); cutoff.setDate(cutoff.getDate() - 120);
+  const cutoffKey = todayKey(cutoff);
+  // Group by normalized key
+  const groups = new Map();
+  for (const t of spend) {
+    if (!t.date || t.date < cutoffKey) continue;
+    const amt = +t.amount || 0;
+    if (amt <= 0) continue; // outflows only
+    const rawKey = ((t.merchant_name || "") + " " + (t.note || "")).trim().toLowerCase();
+    if (!rawKey) continue;
+    // Use just the merchant if it exists, else first 3 words of note
+    const key = (t.merchant_name || "").trim().toLowerCase()
+      || rawKey.split(/\s+/).slice(0, 3).join(" ");
+    if (!key || key.length < 3) continue;
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(t);
+  }
+  // Pre-existing recurring names to exclude
+  const existingNames = new Set(((DB.recurring || []).map(r => (r.name || "").trim().toLowerCase())));
+  const suggestions = [];
+  for (const [key, txs] of groups.entries()) {
+    if (txs.length < 3) continue;
+    if (existingNames.has(key)) continue;
+    // Amount stability: median ± 20% should hold most entries
+    const amts = txs.map(t => +t.amount).sort((a, b) => a - b);
+    const median = amts[Math.floor(amts.length / 2)];
+    const tolerated = amts.filter(a => Math.abs(a - median) <= median * 0.30).length;
+    if (tolerated < Math.max(3, Math.floor(amts.length * 0.6))) continue;
+    // Cadence: median gap between dates (sorted ascending)
+    const sortedByDate = [...txs].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+    const gaps = [];
+    for (let i = 1; i < sortedByDate.length; i++) {
+      const d1 = new Date(sortedByDate[i - 1].date + "T00:00:00");
+      const d2 = new Date(sortedByDate[i].date + "T00:00:00");
+      const days = Math.round((d2 - d1) / 86400000);
+      if (days >= 1 && days <= 60) gaps.push(days);
+    }
+    if (gaps.length < 2) continue;
+    gaps.sort((a, b) => a - b);
+    const medGap = gaps[Math.floor(gaps.length / 2)];
+    let cadence;
+    if (medGap >= 5 && medGap <= 10) cadence = "weekly";
+    else if (medGap >= 11 && medGap <= 18) cadence = "biweekly";
+    else if (medGap >= 24 && medGap <= 35) cadence = "monthly";
+    else continue; // doesn't look periodic
+    // Last seen — skip suggestions where most recent tx is older than 2x cadence
+    // (probably cancelled)
+    const lastDate = sortedByDate[sortedByDate.length - 1].date;
+    const daysSinceLast = Math.round((new Date() - new Date(lastDate + "T00:00:00")) / 86400000);
+    if (daysSinceLast > medGap * 2.5) continue;
+    // Compute a display name (most common merchant_name, or capitalized key)
+    let displayName = "";
+    const nameCounts = {};
+    for (const t of txs) {
+      const n = (t.merchant_name || "").trim();
+      if (n) nameCounts[n] = (nameCounts[n] || 0) + 1;
+    }
+    const sortedNames = Object.entries(nameCounts).sort((a, b) => b[1] - a[1]);
+    if (sortedNames.length) displayName = sortedNames[0][0];
+    else displayName = key.replace(/\b\w/g, c => c.toUpperCase());
+    const perMonth = ({ weekly: 4.33, biweekly: 2.17, monthly: 1, yearly: 1/12 })[cadence] || 1;
+    suggestions.push({
+      key, name: displayName, amount: median, cadence,
+      count: txs.length,
+      lastDate,
+      recentTxIds: sortedByDate.slice(-3).map(t => t.id),
+      monthlyEstimate: median * perMonth,
+      categoryGuess: (txs.find(t => t.category) || {}).category || "Other",
+    });
+  }
+  return suggestions.sort((a, b) => b.monthlyEstimate - a.monthlyEstimate);
+}
+
+// One-tap "add as recurring" — pre-fills the existing DB.recurring schema
+// using a suggestion from detectRecurringSuggestions and removes it from the
+// active suggestions on next render.
+async function adoptRecurringSuggestion(key) {
+  const sug = detectRecurringSuggestions().find(s => s.key === key);
+  if (!sug) { toast("Suggestion no longer matches"); return; }
+  if (!DB.recurring) DB.recurring = [];
+  DB.recurring.push({
+    id: uid(), name: sug.name, amount: Math.round(sug.amount * 100) / 100,
+    cadence: sug.cadence, category: sug.categoryGuess,
+    kind: "expense",
+    dayOfMonth: new Date(sug.lastDate + "T00:00:00").getDate(),
+    createdAt: Date.now(),
+  });
+  await save();
+  toast("✓ Added " + sug.name + " · " + fmt$0(sug.amount) + "/" + ({ weekly: "wk", biweekly: "2wk", monthly: "mo" })[sug.cadence]);
+  // Refresh whichever sheet is open
+  if (document.querySelector("[data-sub-audit-sheet]")) subscriptionAuditSheet();
+  if (document.querySelector("[data-detected-recurring-sheet]")) detectedRecurringSheet();
+  render();
+}
+
+// Reject a suggestion — adds the key to a denylist so we don't surface it
+// again. Lets the user dismiss false positives.
+async function dismissRecurringSuggestion(key) {
+  if (!DB.settings) DB.settings = {};
+  if (!Array.isArray(DB.settings.dismissedRecurring)) DB.settings.dismissedRecurring = [];
+  if (!DB.settings.dismissedRecurring.includes(key)) DB.settings.dismissedRecurring.push(key);
+  await save();
+  toast("Won't suggest that one again");
+  if (document.querySelector("[data-sub-audit-sheet]")) subscriptionAuditSheet();
+  if (document.querySelector("[data-detected-recurring-sheet]")) detectedRecurringSheet();
+}
+
+// Standalone sheet listing all detected suggestions — opened from Money tab
+// when there are any. Filtered against dismissed list.
+function detectedRecurringSheet() {
+  const dismissed = ((DB.settings || {}).dismissedRecurring || []);
+  const list = detectRecurringSuggestions().filter(s => !dismissed.includes(s.key));
+  const body = list.length ? list.map(s => `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:8px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:14px">${esc(s.name)}</div>
+          <div style="font-size:11px;color:var(--t3);margin-top:2px">${esc(s.categoryGuess)} · seen ${s.count}× · ${esc(s.cadence)}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-weight:600" data-priv="amount">${fmt$0(s.amount)}/${({weekly:"wk",biweekly:"2wk",monthly:"mo"})[s.cadence]}</div>
+          <div style="font-size:11px;color:var(--t3)" data-priv="amount">~${fmt$0(s.monthlyEstimate)}/mo</div>
+        </div>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn sm" style="flex:1;font-size:11.5px;padding:8px" onclick="adoptRecurringSuggestion(${jsAttr(s.key)})">+ Add as recurring</button>
+        <button class="btn secondary sm" style="flex:0 0 auto;font-size:11.5px;padding:8px 12px;color:var(--t3)" onclick="dismissRecurringSuggestion(${jsAttr(s.key)})">Dismiss</button>
+      </div>
+    </div>
+  `).join("") : `
+    <div class="empty" style="padding:30px 14px">
+      <div class="e-emoji">🔎</div>
+      <div class="e-title">Nothing new detected</div>
+      <div class="e-sub">Once you've logged at least 3 charges with the same merchant or note over a month, we'll flag them here.</div>
+    </div>
+  `;
+  openSheet(`
+    <div data-detected-recurring-sheet><h2 style="margin-bottom:4px">Detected recurring</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Charges that look periodic but aren't tracked yet. Tap to add or dismiss.</p>
+    ${body}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Done</button></div></div>
+  `);
+}
+
 function subscriptionAuditSheet() {
   // Pull from BOTH user-managed recurring expenses AND Plaid-detected subs.
   const recurring = (DB.recurring || []).filter(r => r.kind === "expense");
@@ -13995,9 +14165,24 @@ function subscriptionAuditSheet() {
     ? recurring.map(rowFor).join("")
     : `<div class="empty"><div class="e-emoji">🔍</div><div class="e-title">Nothing to audit yet</div><div class="e-sub">Add recurring expenses in Settings → Recurring transactions first.</div></div>`;
 
+  // Detected suggestions banner: charges that look periodic but aren't tracked
+  const dismissed = ((DB.settings || {}).dismissedRecurring || []);
+  const suggestions = detectRecurringSuggestions().filter(s => !dismissed.includes(s.key));
+  const detectedBanner = suggestions.length ? `
+    <div style="background:linear-gradient(135deg,rgba(124,58,237,0.10),rgba(236,72,153,0.06));border:0.5px solid rgba(124,58,237,0.35);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;cursor:pointer" onclick="closeSheet();setTimeout(()=>detectedRecurringSheet(),120)">
+      <div style="font-size:20px;flex-shrink:0">🔎</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:600;font-size:13px;color:var(--t1)">${suggestions.length} potential recurring ${suggestions.length === 1 ? 'charge' : 'charges'} detected</div>
+        <div style="font-size:11.5px;color:var(--t3);margin-top:2px">~${fmt$0(suggestions.reduce((a, s) => a + s.monthlyEstimate, 0))}/mo · tap to review</div>
+      </div>
+      <div style="color:var(--purple,#8957d9);font-size:18px;flex-shrink:0">→</div>
+    </div>
+  ` : "";
+
   openSheet(`
-    <h2>🔍 Subscription audit</h2>
+    <div data-sub-audit-sheet><h2>🔍 Subscription audit</h2>
     <p class="muted" style="font-size:12px;margin-bottom:14px">For each recurring expense, decide: <b>keep</b> (worth it), <b>negotiate</b> (call to lower), or <b>cancel</b> (not used). Most people save 15-30% after a serious audit.</p>
+    ${detectedBanner}
 
     <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:12px">
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;font-size:12px">
@@ -14026,7 +14211,7 @@ function subscriptionAuditSheet() {
     </p>
     <div class="actions" style="margin-top:14px">
       <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
-    </div>
+    </div></div>
   `);
 }
 
