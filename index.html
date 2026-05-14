@@ -3553,11 +3553,11 @@ function renderMoney() {
       ${savingsForecasts.length ? `
         <div class="list">
           ${savingsForecasts.map(f => `
-            <div class="row tappable" onclick="logSavingSheet('${f.id}')">
+            <div class="row tappable" onclick="goalForecastSheet(${jsAttr(f.id)})">
               <div class="lead" style="font-size:22px">${f.emoji || "💰"}</div>
               <div class="body">
                 <div class="t1">${esc(f.name)}</div>
-                <div class="t2"><span data-priv="amount">${fmt$0(f.remaining)}</span> remaining</div>
+                <div class="t2"><span data-priv="amount">${fmt$0(f.remaining)}</span> remaining · tap to play with rates</div>
                 <div style="display:flex;gap:14px;margin-top:8px;flex-wrap:wrap">
                   ${f.rows.map(r => `
                     <div style="display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--t2)">
@@ -8265,6 +8265,128 @@ function comparisonProjectionChart(scenarios, w=320, h=140) {
       ${gridY}
       ${lines}
     </svg>
+  `;
+}
+
+// Interactive single-goal forecast — opens a sheet with a slider for monthly
+// contribution that live-updates the projected completion date and chart.
+function goalForecastSheet(id) {
+  const goal = (DB.savings || []).find(s => s.id === id);
+  if (!goal) return;
+  // Derive a default monthly rate from the goal's contribution log when available,
+  // else fall back to $100/mo so the chart has something meaningful to show.
+  const log = goal.log || [];
+  let basePace = 100;
+  if (log.length >= 2) {
+    const sorted = [...log].sort((a,b) => new Date(a.date) - new Date(b.date));
+    const months = Math.max(1, (new Date(sorted[sorted.length-1].date) - new Date(sorted[0].date)) / (1000*60*60*24*30));
+    const sum = log.reduce((a,l) => a + (+l.amount || 0), 0);
+    basePace = Math.max(25, Math.round(sum / months / 25) * 25);
+  }
+  basePace = Math.min(3000, Math.max(25, basePace));
+  openSheet(`
+    <h2 style="margin-bottom:2px">${esc(goal.emoji || "💰")} ${esc(goal.name)}</h2>
+    <p class="muted" style="font-size:13px;margin-bottom:16px"><span data-priv="amount">${fmt$0(goal.current)}</span> of <span data-priv="amount">${fmt$0(goal.target)}</span></p>
+    <div id="goal-forecast-output">${_goalForecastBody(goal, basePace)}</div>
+    <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-top:14px">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px">
+        <span style="font-size:12px;color:var(--t2);font-weight:600">If I save</span>
+        <span id="goal-forecast-rate" style="font-size:18px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt$0(basePace)}/mo</span>
+      </div>
+      <input id="goal-forecast-slider" type="range" min="25" max="3000" step="25" value="${basePace}"
+        oninput="window._onGoalForecastSlider(${jsAttr(id)}, this.value)"
+        style="width:100%;accent-color:var(--blue)" />
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-top:4px">
+        <span>$25/mo</span><span>$3,000/mo</span>
+      </div>
+      <div style="display:flex;gap:6px;margin-top:12px">
+        ${[100, 250, 500, 1000].map(v => `<button class="btn sm secondary" style="flex:1;font-size:11.5px;padding:6px 0" onclick="window._onGoalForecastSlider(${jsAttr(id)}, ${v});document.getElementById('goal-forecast-slider').value=${v}">$${v}</button>`).join("")}
+      </div>
+    </div>
+  `);
+}
+
+// Live-update handler — called by the slider's oninput and by quick-set buttons.
+function _onGoalForecastSlider(id, rate) {
+  const goal = (DB.savings || []).find(s => s.id === id);
+  if (!goal) return;
+  const r = Number(rate) || 0;
+  const out = document.getElementById("goal-forecast-output");
+  const lbl = document.getElementById("goal-forecast-rate");
+  if (out) out.innerHTML = _goalForecastBody(goal, r);
+  if (lbl) lbl.textContent = "$" + r.toLocaleString() + "/mo";
+}
+
+// Render the projection card body for a single goal at a given monthly rate.
+// Pure function — given the goal + rate, returns the HTML to slot into the sheet.
+function _goalForecastBody(goal, monthlyRate) {
+  const remaining = Math.max(0, (+goal.target || 0) - (+goal.current || 0));
+  if (remaining <= 0) {
+    return `
+      <div style="background:var(--card);border-radius:var(--r);padding:18px;border:0.5px solid var(--sep);text-align:center">
+        <div style="font-size:36px;margin-bottom:6px">🎉</div>
+        <div style="font-weight:600;font-size:16px;margin-bottom:4px">Goal already met!</div>
+        <div style="font-size:13px;color:var(--t3)">You're at or past your target. Time to set a new one?</div>
+      </div>
+    `;
+  }
+  const months = monthlyRate > 0 ? Math.ceil(remaining / monthlyRate) : Infinity;
+  const targetDate = new Date();
+  targetDate.setMonth(targetDate.getMonth() + (isFinite(months) ? months : 0));
+  const monthLabel = (m) => {
+    if (!isFinite(m) || m <= 0) return "Never";
+    const yr = Math.floor(m / 12), mo = m % 12;
+    if (yr > 0 && mo > 0) return `${yr}y ${mo}mo`;
+    if (yr > 0) return `${yr}y`;
+    return `${mo}mo`;
+  };
+  const dateLabel = isFinite(months) ? targetDate.toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "—";
+  // Build cumulative balance series — show at least 12 months so the chart has shape even for fast goals.
+  const span = Math.max(12, Math.min(isFinite(months) ? months : 120, 120));
+  const points = [];
+  let bal = +goal.current || 0;
+  const target = +goal.target || 0;
+  for (let i = 0; i <= span; i++) {
+    points.push({ month: i, balance: Math.min(bal, target || bal + 1) });
+    bal += monthlyRate;
+  }
+  const maxY = Math.max(target, points[points.length-1].balance, 1);
+  const w = 320, h = 140;
+  const stepX = span > 0 ? w / span : 0;
+  const pts = points.map((p, i) => `${(i*stepX).toFixed(1)},${(h - (p.balance / maxY) * h).toFixed(1)}`).join(" ");
+  const targetY = (h - (target / maxY) * h).toFixed(1);
+  // Mark the completion point if it lands within the visible span.
+  const completionX = isFinite(months) && months <= span ? (months * stepX).toFixed(1) : null;
+  const fillId = "gfc-fill-" + Math.random().toString(36).slice(2, 8);
+  const goalColor = goal.color || "#2EB875";
+  return `
+    <div style="background:var(--card);border-radius:var(--r);padding:18px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
+      <div style="display:flex;align-items:flex-start;justify-content:space-between;gap:12px">
+        <div>
+          <div style="font-size:11.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;margin-bottom:2px">Hit goal in</div>
+          <div style="font-size:34px;font-weight:700;letter-spacing:-0.028em;color:var(--t1);line-height:1.05">${monthLabel(months)}</div>
+        </div>
+        <div style="text-align:right">
+          <div style="font-size:11.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;margin-bottom:2px">Target date</div>
+          <div style="font-size:18px;font-weight:600;color:var(--t2)">${dateLabel}</div>
+        </div>
+      </div>
+      <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:${h}px;display:block;margin-top:14px">
+        <defs>
+          <linearGradient id="${fillId}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${goalColor}" stop-opacity="0.32"/>
+            <stop offset="100%" stop-color="${goalColor}" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <line x1="0" y1="${targetY}" x2="${w}" y2="${targetY}" stroke="var(--t3)" stroke-dasharray="3 3" stroke-width="0.75" opacity="0.6"/>
+        <polygon fill="url(#${fillId})" points="0,${h} ${pts} ${w},${h}"/>
+        <polyline fill="none" stroke="${goalColor}" stroke-width="2.5" points="${pts}" stroke-linejoin="round" stroke-linecap="round"/>
+        ${completionX ? `<circle cx="${completionX}" cy="${targetY}" r="5" fill="${goalColor}" stroke="var(--card)" stroke-width="2"/>` : ""}
+      </svg>
+      <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-top:6px">
+        <span>Today</span><span>${dateLabel}</span>
+      </div>
+    </div>
   `;
 }
 
@@ -13903,6 +14025,7 @@ function init() {
     toggleHabit, setHabitCount, addHabitSheet, deleteHabit, streakOf, habitDoneToday, todayHabitProgress,
     toggleGoal, toggleStep, addGoalSheet, deleteGoal, addStepInline, deleteStep, goalProgress,
     addSavingSheet, logSavingSheet, deleteSaving, totalSaved, totalTarget,
+    goalForecastSheet, _onGoalForecastSlider, _goalForecastBody,
     addExpenseInline, deleteExpense, totalExpenses, leftover,
     addSpend, deleteSpend, monthSpend, spendCategories,
     addWin, deleteWin, winsToday,
