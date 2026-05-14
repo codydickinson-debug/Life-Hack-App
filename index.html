@@ -2341,6 +2341,26 @@ function applyTheme() {
 }
 applyTheme();
 
+/* ================ BUILD INFO ================ */
+// Why: with three people deploying to the same Vercel project from two
+// computers + Cody, we need a quick way to confirm which build is loaded.
+// BUILD_ID matches the service worker's cache hash (first 4 bytes of
+// SHA-256 over index.html), so "the build I see in Settings" lines up
+// with "the cache the SW is serving" without any build-step coordination.
+var BUILD_ID = null;
+var BUILD_DATE = "";
+try { BUILD_DATE = new Date(document.lastModified).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }); } catch {}
+(async () => {
+  try {
+    const r = await fetch("./index.html", { cache: "no-store" });
+    const buf = await r.arrayBuffer();
+    const digest = await crypto.subtle.digest("SHA-256", buf);
+    BUILD_ID = Array.from(new Uint8Array(digest).slice(0, 4))
+      .map((b) => b.toString(16).padStart(2, "0")).join("");
+    if (activeTab === "settings") renderSettings();
+  } catch {}
+})();
+
 /* ================ TABS ================ */
 var activeTab = "today";
 function showTab(name) {
@@ -7596,6 +7616,7 @@ function renderSettings() {
     <div class="section-h"><span class="lbl">About</span></div>
     <div class="list">
       <div class="row"><div class="lead">★</div><div class="body"><div class="t1">Ascend · Goals made easy</div><div class="t2">v3.0 · ${DB.items?.length ? `${DB.items.length} bank${DB.items.length===1?"":"s"} connected` : "saved on this device"}</div></div></div>
+      <div class="row"><div class="lead">🔖</div><div class="body"><div class="t1">Build</div><div class="t2"><code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace">${BUILD_ID || "computing…"}</code>${BUILD_DATE ? ` · ${esc(BUILD_DATE)}` : ""}</div></div></div>
     </div>
     <div style="height:30px"></div>
   `;
