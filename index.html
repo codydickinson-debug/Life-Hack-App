@@ -4624,13 +4624,35 @@ function renderStats() {
 
     <div class="section-h"><span class="lbl">Streaks</span></div>
     <div class="list">
-      ${topStreaks.length ? topStreaks.map(({h,s}) => `
-        <div class="row">
-          <div class="lead">${h.emoji}</div>
-          <div class="body"><div class="t1">${esc(h.name)}</div><div class="t2">${s} day${s===1?'':'s'} in a row</div></div>
-          <div class="trail">${s ? `<span class="streak-pill">🔥 ${s}</span>` : '<span class="muted">—</span>'}</div>
-        </div>
-      `).join("") : `<div class="row"><div class="body"><div class="t2 muted">Add habits to start tracking streaks.</div></div></div>`}
+      ${topStreaks.length ? topStreaks.map(({h,s}) => {
+        // Next "round" milestone — 7, 14, 30, 60, 100, 180, 365... so the user
+        // always has a visible near-term target with a date.
+        const MILESTONES = [7, 14, 30, 60, 100, 180, 365, 500, 1000];
+        const nm = MILESTONES.find(m => m > s) || (Math.ceil((s+1)/500) * 500);
+        const daysTo = nm - s;
+        const d = new Date();
+        d.setDate(d.getDate() + daysTo);
+        const dateLbl = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+        const pct = Math.round(100 * s / nm);
+        const sub = s > 0
+          ? `${s} day${s===1?'':'s'} · <b style="color:var(--t1);font-weight:600">${nm}-day</b> milestone in ${daysTo}d (${dateLbl})`
+          : `No streak yet · check it off today to start`;
+        return `
+          <div class="row" style="align-items:flex-start;padding-top:12px;padding-bottom:12px">
+            <div class="lead">${h.emoji}</div>
+            <div class="body">
+              <div class="t1">${esc(h.name)}</div>
+              <div class="t2" style="margin-bottom:6px">${sub}</div>
+              ${s > 0 ? `
+                <div style="height:4px;background:var(--bg-elev);border-radius:2px;overflow:hidden">
+                  <div style="height:100%;width:${pct}%;background:var(--orange);border-radius:2px;transition:width 0.4s ease"></div>
+                </div>
+              ` : ""}
+            </div>
+            <div class="trail">${s ? `<span class="streak-pill">🔥 ${s}</span>` : '<span class="muted">—</span>'}</div>
+          </div>
+        `;
+      }).join("") : `<div class="row"><div class="body"><div class="t2 muted">Add habits to start tracking streaks.</div></div></div>`}
     </div>
 
     <div class="section-h"><span class="lbl">This month</span></div>
