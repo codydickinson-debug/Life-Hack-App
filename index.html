@@ -3098,6 +3098,30 @@ const ACCENT_COLORS = [
 ];
 // Global search — find anything across the app. Habits, wins, calendar notes,
 // transactions, goals, savings — typed into one input.
+// Spend category auto-suggest — pattern-match the user's note input against
+// past transactions and surface the 1-2 most likely categories as chips.
+// Pure history lookup, no AI required, instant feedback.
+function suggestSpendCategory(noteValue) {
+  const suggestEl = document.getElementById("sp-suggest");
+  if (!suggestEl) return;
+  const q = (noteValue || "").trim().toLowerCase();
+  if (q.length < 2) { suggestEl.style.display = "none"; suggestEl.innerHTML = ""; return; }
+  // Tally categories from past transactions whose note/merchant matches the prefix.
+  const tally = {};
+  (DB.spend || []).forEach(t => {
+    const hay = (((t.note || "") + " " + (t.merchant_name || "")).toLowerCase()).trim();
+    if (!hay) return;
+    if (hay.includes(q) || q.includes(hay.slice(0, Math.min(hay.length, 4)))) {
+      const cat = t.category || "Other";
+      tally[cat] = (tally[cat] || 0) + 1;
+    }
+  });
+  const ranked = Object.entries(tally).sort((a,b) => b[1] - a[1]).slice(0, 3);
+  if (!ranked.length) { suggestEl.style.display = "none"; suggestEl.innerHTML = ""; return; }
+  suggestEl.style.display = "block";
+  suggestEl.innerHTML = `Past matches: ` + ranked.map(([cat, n]) => `<button onclick="(()=>{const sel=document.getElementById('sp-cat');if(sel){[...sel.options].forEach(o => {if(o.value===${jsAttr(cat)})sel.value=o.value;});}})()" style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t1);padding:2px 8px;border-radius:var(--r-pill,999px);font-size:11px;margin-left:4px;cursor:pointer">${esc(cat)} <span style="color:var(--t3)">${n}×</span></button>`).join("");
+}
+
 // Add-win sheet — replaces the bare prompt('Win:') with a real input field +
 // optional voice-to-text via the Web Speech API when supported.
 let _winRecognition = null;
@@ -6404,8 +6428,9 @@ function renderMoney() {
         <input id="sp-amt" type="number" inputmode="decimal" placeholder="Amount $" />
         <div class="grid2">
           <select id="sp-cat">${cats.map(c=>`<option>${esc(c)}</option>`).join("")}</select>
-          <input id="sp-note" placeholder="Note (optional)" />
+          <input id="sp-note" placeholder="Note (optional)" oninput="suggestSpendCategory(this.value)" />
         </div>
+        <div id="sp-suggest" style="display:none;font-size:11px;color:var(--t3);margin-top:-4px;padding:0 2px"></div>
         <button class="btn" onclick="(()=>{const a=Number($('#sp-amt').value);if(!a){toast('Amount?');return;}addSpend(a,$('#sp-cat').value,$('#sp-note').value);renderMoney();toast('Logged '+fmt$0(a));})()">Log expense</button>
       </div>
       <div class="section-h"><span class="lbl">Recent</span><span class="muted" style="font-size:12px">${filteredSpend().length}${(DB.spendSearch||"").trim()?` of ${DB.spend.length}`:""} total</span></div>
@@ -17819,6 +17844,7 @@ function init() {
     addSpend, deleteSpend, monthSpend, spendCategories,
     addWin, deleteWin, winsToday, allWinsSheet, shuffleQuote, pinQuoteToToday, addStarterHabit,
     addWinSheet, startWinVoice, _saveWinFromSheet, _stopWinRecognition,
+    suggestSpendCategory,
     customizeTodaySheet, toggleTodaySection, showAllTodaySections, isTodaySectionHidden,
     customizeTabsSheet, toggleTabVisibility, showAllTabs, isTabHidden, applyHiddenTabs,
     setAccentColor, applyAccent, ACCENT_COLORS,
