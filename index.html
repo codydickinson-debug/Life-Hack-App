@@ -3996,6 +3996,58 @@ function renderToday() {
     return out.slice(0, 3);
   })();
 
+  // Daily Pulse — a single contextual nudge above the THIS WEEK row.
+  // Picks one signal from across the app (plan deadline, net-worth change,
+  // wins streak, mood). Habits are intentionally NOT in this rotation —
+  // they have their own milestone banner farther down the page.
+  const dailyPulse = (() => {
+    // 1) Plan deadline near (≤30d) with $ remaining
+    const plans = (DB.plans || []).filter(p => !p.completed && p.target_date && +p.target_amount > 0);
+    for (const p of plans.sort((a, b) => new Date(a.target_date) - new Date(b.target_date))) {
+      const tdays = Math.round((new Date(p.target_date + "T00:00:00").getTime() - Date.now()) / 86400000);
+      const remaining = (+p.target_amount || 0) - (+p.current_amount || 0);
+      if (tdays >= 0 && tdays <= 30 && remaining > 0) {
+        return { emoji: p.emoji || "🎯",
+          text: `${p.title} — ${fmt$0(remaining)} to go in ${tdays}d`,
+          onclick: `showTab('planning')` };
+      }
+    }
+    // 2) Net worth up this month (only if we have history)
+    const hist = DB.netWorthHistory || [];
+    if (hist.length >= 2) {
+      const monthAgo = new Date(); monthAgo.setMonth(monthAgo.getMonth() - 1);
+      const cutoffK = todayKey(monthAgo);
+      const past = hist.filter(h => h.date && h.date <= cutoffK);
+      if (past.length) {
+        const change = (hist[hist.length - 1].total || 0) - (past[past.length - 1].total || 0);
+        if (change >= 100) {
+          return { emoji: "📈",
+            text: `Net worth up ${fmt$0(change)} this month`,
+            onclick: `showTab('money')` };
+        }
+      }
+    }
+    // 3) Wins streak (3+ consecutive days)
+    const wDates = new Set((DB.wins || []).map(w => w.date));
+    let wStreak = 0;
+    for (let i = 0; i < 30; i++) {
+      const d = new Date(); d.setDate(d.getDate() - i);
+      if (wDates.has(todayKey(d))) wStreak++; else break;
+    }
+    if (wStreak >= 3) {
+      return { emoji: "⭐",
+        text: `${wStreak}-day winning streak — keep capturing them`,
+        onclick: `allWinsSheet()` };
+    }
+    // 4) Mood not logged today
+    if (!(DB.moods || {})[todayKey()] && (DB.habits || []).length > 0) {
+      return { emoji: "💭",
+        text: `Quick check-in: how's the day going?`,
+        onclick: `showTab('calendar')` };
+    }
+    return null;
+  })();
+
   // Streak-milestone alert — surface habits that are 1–3 days from a 'round'
   // milestone. Motivational dopamine for finishing strong.
   const upcomingMilestones = (() => {
@@ -4144,6 +4196,13 @@ function renderToday() {
   $("#page-today").innerHTML = `
     <div class="lg-title">Today</div>
     <div class="muted" style="margin:-12px 0 6px;font-size:14px">${dateLabel()}</div>
+    ${dailyPulse ? `
+      <button onclick="${dailyPulse.onclick}" style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--orange);border-radius:var(--r);padding:10px 14px;margin:8px 0 12px;display:flex;align-items:center;gap:10px;width:100%;text-align:left;cursor:pointer;font:inherit;transition:transform .1s ease">
+        <span style="font-size:18px;flex-shrink:0;line-height:1">${dailyPulse.emoji}</span>
+        <span style="flex:1;min-width:0;font-size:13px;color:var(--t1);line-height:1.35">${esc(dailyPulse.text)}</span>
+        <span style="color:var(--t3);font-size:14px;flex-shrink:0">›</span>
+      </button>
+    ` : ""}
     <div style="display:flex;gap:16px;font-size:12px;color:var(--t3);margin:0 0 16px;flex-wrap:wrap;align-items:baseline">
       <span style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;color:var(--t3)">This week</span>
       ${weekSummary.habitPossible ? `<button onclick="showTab('stats')" style="background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer"><b style="color:var(--t1)">${weekSummary.habitDones}/${weekSummary.habitPossible}</b> habits</button>` : ""}
