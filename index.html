@@ -4716,6 +4716,59 @@ function renderStats() {
       </div>
     ` : ""}
 
+    ${DB.habits.length ? (() => {
+      // Day-of-week completion pattern — average % habits done per weekday across
+      // the last 90 days. Reveals patterns like "Sundays are weak" so the user
+      // knows when to reinforce, not just whether they're consistent overall.
+      const LOOKBACK = 90;
+      const byDow = [[], [], [], [], [], [], []]; // Mon=0 .. Sun=6
+      const today = new Date();
+      for (let i = 0; i < LOOKBACK; i++) {
+        const d = new Date(today); d.setDate(today.getDate() - i);
+        const k = todayKey(d);
+        const dow = (d.getDay() + 6) % 7;
+        const done = DB.habits.filter(h => h.type === "count" ? (h.log[k] || 0) >= (h.target || 1) : !!h.log[k]).length;
+        byDow[dow].push(done / Math.max(1, DB.habits.length));
+      }
+      const dowAvg = byDow.map(arr => arr.length ? arr.reduce((a,v)=>a+v,0) / arr.length : 0);
+      const maxAvg = Math.max(...dowAvg, 0.05);
+      const todayDow = (today.getDay() + 6) % 7;
+      const dowLabels = ["M","T","W","T","F","S","S"];
+      const dowNames = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+      const sortedDows = dowAvg.map((v,i)=>({v,i})).sort((a,b)=>b.v-a.v);
+      const best = sortedDows[0], worst = sortedDows[sortedDows.length-1];
+      const hasData = dowAvg.some(v => v > 0);
+      const insight = hasData
+        ? `Strongest: <b style="color:var(--t1)">${dowNames[best.i]}</b> (${Math.round(best.v*100)}%) · weakest: <b style="color:var(--t1)">${dowNames[worst.i]}</b> (${Math.round(worst.v*100)}%)`
+        : `Pattern fills in as you check off habits across more days`;
+      const W=320, H=140, padX=10, padY=12, axisH=18;
+      const plotW = W - padX*2;
+      const plotH = H - padY - axisH;
+      const slot = plotW / 7;
+      const barW = slot * 0.6;
+      const bars = dowAvg.map((v, i) => {
+        const barH = (v / maxAvg) * plotH;
+        const x = padX + slot*i + (slot-barW)/2;
+        const y = padY + plotH - barH;
+        const color = i === todayDow ? "var(--blue)" : "var(--bg-elev2)";
+        return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(2,barH).toFixed(1)}" rx="3" fill="${color}"/>`;
+      }).join("");
+      const labels = dowLabels.map((lbl, i) => {
+        const x = padX + slot*i + slot/2;
+        return `<text x="${x.toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="11" font-weight="${i===todayDow?'700':'500'}" fill="${i===todayDow?'var(--t1)':'var(--t3)'}">${lbl}</text>`;
+      }).join("");
+      return `
+        <div class="section-h"><span class="lbl">By day of week</span><span class="muted" style="font-size:12px">last 90 days</span></div>
+        <div style="background:var(--card);border-radius:var(--r);padding:18px;border:0.5px solid var(--sep);box-shadow:var(--sh-1);margin-bottom:14px">
+          <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="width:100%;height:${H}px;display:block">
+            ${bars}
+            ${labels}
+          </svg>
+          <div style="font-size:11.5px;color:var(--t3);margin-top:8px;line-height:1.4">${insight}</div>
+        </div>
+      `;
+    })() : ""}
+
     <div class="section-h"><span class="lbl">Streaks</span></div>
     <div class="list">
       ${topStreaks.length ? topStreaks.map(({h,s}) => {
