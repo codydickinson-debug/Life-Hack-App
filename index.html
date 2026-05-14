@@ -2466,6 +2466,19 @@ function renderToday() {
   const startOfWeek = new Date(today); startOfWeek.setDate(today.getDate() - ((today.getDay()+6)%7)); // Mon start
   const days = Array.from({length:7}, (_,i)=>{ const d = new Date(startOfWeek); d.setDate(startOfWeek.getDate()+i); return d; });
 
+  // Wins streak — consecutive days back from today where at least one win was logged.
+  // Surfaces in the section header so the user gets immediate dopamine for showing up.
+  const winsStreak = (() => {
+    const dates = new Set((DB.wins || []).map(w => w.date));
+    let n = 0;
+    for (let i = 0; i < 365; i++) {
+      const d = new Date(today); d.setDate(today.getDate() - i);
+      if (dates.has(todayKey(d))) n++;
+      else break;
+    }
+    return n;
+  })();
+
   // For week dot: how many habits done that day vs total
   const dayPct = (d) => {
     if (!DB.habits.length) return 0;
@@ -2578,7 +2591,7 @@ function renderToday() {
     ` : ""}
     <div class="list">${habitsHtmlFiltered}</div>
 
-    <div class="section-h"><span class="lbl">Wins today</span><button class="act" onclick="(()=>{const t=prompt('Win:');if(t)addWin(t);})()">+ Add</button></div>
+    <div class="section-h"><span class="lbl">Wins today${winsStreak >= 2 ? ` <span style="color:var(--orange);font-weight:700;margin-left:6px">🔥 ${winsStreak}d streak</span>` : ''}</span><button class="act" onclick="(()=>{const t=prompt('Win:');if(t)addWin(t);})()">+ Add</button></div>
     <div class="list">${winsHtml}</div>
 
     <!-- ===== MONEY SNAPSHOT: daily glance ===== -->
