@@ -1742,6 +1742,45 @@ async function api(path, opts = {}) {
   }
 }
 
+/* ================ AI PROXY CLIENT ================
+   Calls the same-origin /api/ai/messages endpoint backed by stockanalyzer/app.py.
+   Anthropic key lives only in Vercel env vars (ANTHROPIC_API_KEY). The user
+   does NOT have to configure a Cloudflare Worker; AI works out of the box
+   for every device. Power users with their own Cloudflare backend can still
+   use it for Plaid sync — that path is unaffected.
+
+   On 503 ("AI is not configured on this deployment"), if the user happens to
+   have a Cloudflare Worker URL configured, fall back to /anthropic/messages
+   on that Worker. Otherwise surface the error so the user knows ops needs to
+   set ANTHROPIC_API_KEY in Vercel. */
+async function aiApi(payload) {
+  let r;
+  try {
+    r = await fetch("/api/ai/messages", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+  } catch (netErr) {
+    // Network failure to same-origin proxy — try the user's Worker if any.
+    if (DB.settings.backendUrl) return await api("/anthropic/messages", { method: "POST", body: JSON.stringify(payload) });
+    throw new Error("Network error reaching AI: " + (netErr.message || "fetch failed"));
+  }
+  const text = await r.text();
+  let body; try { body = JSON.parse(text); } catch { body = { raw: text }; }
+  if (r.status === 503 && DB.settings.backendUrl) {
+    // Operator hasn't set ANTHROPIC_API_KEY on Vercel; fall back to user's Worker.
+    return await api("/anthropic/messages", { method: "POST", body: JSON.stringify(payload) });
+  }
+  if (!r.ok) {
+    const errMsg = (typeof body.error === "string"
+      ? body.error
+      : body.error && body.error.message) || `HTTP ${r.status}`;
+    throw new Error(errMsg);
+  }
+  return body;
+}
+
 async function backendLinkToken() {
   return api("/link/token", { method: "POST", body: JSON.stringify({ userId: ensureUserId() }) });
 }
@@ -2316,12 +2355,7 @@ function renderToday() {
     })()}
     ${stsHtml}
 
-    ${(() => {
-      // Financial Counselor entry point on Today — high-visibility CTA so users
-      // discover the always-on counselor without hunting for the floating FAB.
-      // Only shown when the backend is configured (so the tap is actionable).
-      if (!_backendReady()) return "";
-      return `
+    ${`
         <div onclick="openCounselor()" role="button" tabindex="0"
           style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border-radius:var(--r);padding:14px 16px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:12px;box-shadow:var(--sh-1)">
           <div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">✨</div>
@@ -2331,8 +2365,7 @@ function renderToday() {
           </div>
           <div style="font-size:20px;opacity:.85">→</div>
         </div>
-      `;
-    })()}
+      `}
 
     ${(() => {
       // Wealth Health score — only show when there's meaningful financial data,
@@ -2562,12 +2595,10 @@ function renderGoals() {
       <button class="add-row" style="margin:0" onclick="addGoalSheet()"><span class="plus">+</span> New goal</button>
       <button class="add-row" style="margin:0" onclick="goalTemplatesSheet()"><span class="plus">★</span> From template</button>
     </div>
-    ${_backendReady() ? `
-      <button onclick="openCounselor('Help me prioritize my goals. What should I focus on first given my current situation?')"
-        style="width:100%;margin-bottom:14px;padding:11px 14px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;border-radius:var(--r-pill,999px);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
-        <span>✨</span><span>Ask the counselor to prioritize my goals</span>
-      </button>
-    ` : ""}
+    <button onclick="openCounselor('Help me prioritize my goals. What should I focus on first given my current situation?')"
+      style="width:100%;margin-bottom:14px;padding:11px 14px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;border-radius:var(--r-pill,999px);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
+      <span>✨</span><span>Ask the counselor to prioritize my goals</span>
+    </button>
     ${goalsHtml}
   `;
 }
@@ -2631,7 +2662,7 @@ function renderMoney() {
   // Cashflow forecast (only when there's enough signal)
   const hasMoneyData = (+DB.budget?.income || 0) > 0 || (DB.recurring || []).length > 0 || (DB.spend || []).length > 0;
   const cashflowBlock = hasMoneyData ? cashflowCardHtml() : "";
-  const counselorTeaser = _backendReady() ? `
+  const counselorTeaser = `
     <button onclick="openCounselor()"
       style="width:100%;margin-bottom:12px;padding:12px 14px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;border-radius:var(--r);font-size:13.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:10px;text-align:left;box-shadow:var(--sh-1)">
       <span style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">✨</span>
@@ -2641,7 +2672,7 @@ function renderMoney() {
       </span>
       <span style="font-size:18px;opacity:.8">→</span>
     </button>
-  ` : "";
+  `;
   const hdr = `
     <div class="lg-title">Money</div>
     ${cashflowBlock}
@@ -3556,12 +3587,9 @@ function renderStats() {
     })()}
 
     ${(() => {
-      // AI insights now flow through the backend Worker, so the gate is "backend ready",
-      // not "browser has an Anthropic key". Hide the card unless the user opted into
-      // advanced features OR they have a previous insight cached.
-      const ready = _backendReady();
+      // AI counselor card — always visible (same-origin /api/ai/messages, no
+      // per-user backend config required).
       const last = (DB.insights||[])[0];
-      if (!DB.settings.advancedFeaturesEnabled && !last) return "";
       return `
         <div class="card" style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:14px;border:1px solid var(--sep)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
@@ -3569,9 +3597,9 @@ function renderStats() {
               <div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px">✨</div>
               <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Financial Counselor</div>
             </div>
-            ${ready ? `<button class="btn sm secondary" style="font-size:11px;padding:4px 10px" onclick="runAiInsight()">${last?'Refresh':'Monthly review'}</button>` : ''}
+            <button class="btn sm secondary" style="font-size:11px;padding:4px 10px" onclick="runAiInsight()">${last?'Refresh':'Monthly review'}</button>
           </div>
-          ${ready ? (last ? `
+          ${last ? `
             <div style="font-size:13.5px;line-height:1.55;color:var(--t1);white-space:pre-wrap">${esc(last.response)}</div>
             <div style="font-size:11px;color:var(--t4);margin-top:8px">${last.date} · ${esc(last.model||"")}</div>
             <button class="btn" style="width:100%;margin-top:12px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-size:13px" onclick="openCounselor()">✨ Talk to your counselor</button>
@@ -3579,8 +3607,6 @@ function renderStats() {
             <div style="font-size:13.5px;color:var(--t1);line-height:1.5;margin-bottom:10px">Get a candid review of your spending, goals, and next moves — like a fee-only planner who knows your numbers.</div>
             <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="openCounselor()">✨ Talk to your counselor</button>
             <div style="font-size:11px;color:var(--t4);margin-top:8px;text-align:center">Educational guidance — not licensed advice</div>
-          `) : `
-            <div style="font-size:13px;color:var(--t3)">Connect the backend Worker in Settings to enable the AI counselor.</div>
           `}
         </div>
       `;
@@ -5038,24 +5064,19 @@ function debtConsolidationSheet() {
    Worker injects the key, enforces a per-user daily cap, and forwards.
    Legacy DB.settings.anthropicKey is ignored — clearing it is fine. */
 async function fetchInsight(prompt, context) {
-  if (!DB.settings.backendUrl) throw new Error("AI insights now require the backend Worker. Set the backend URL in Settings.");
   const model = DB.settings.anthropicModel || "claude-haiku-4-5-20251001";
-  const data = await api("/anthropic/messages", {
-    method: "POST",
-    body: JSON.stringify({
-      model,
-      max_tokens: 800,
-      messages: [{
-        role: "user",
-        content: prompt + "\n\nData:\n```json\n" + JSON.stringify(context, null, 2) + "\n```",
-      }],
-    }),
+  const data = await aiApi({
+    model,
+    max_tokens: 800,
+    messages: [{
+      role: "user",
+      content: prompt + "\n\nData:\n```json\n" + JSON.stringify(context, null, 2) + "\n```",
+    }],
   });
   if (data && data.error) throw new Error(data.error.message || data.error);
   return data.content?.map(c => c.text).join("\n") || "(no response)";
 }
 async function getMonthlyInsight() {
-  if (!DB.settings.backendUrl) throw new Error("AI insights require the backend Worker. Set the backend URL in Settings.");
   const monthKey = todayKey().slice(0,7);
   const recent = (DB.spend||[]).filter(t => t.date.startsWith(monthKey));
   // Aggregate by category to keep payload small + private
@@ -5086,18 +5107,15 @@ async function getMonthlyInsight() {
   const system = `You are Ascend Counselor — a sharp, candid personal-finance counselor giving ${DB.user.name||"the user"} a quick monthly review based on their actual numbers. Be warm but direct. Reference real numbers and merchants. Skip generic advice. Prefer short paragraphs over bullet lists. Keep it under 220 words. End with one sentence of encouragement. Educational guidance, not licensed financial advice.`;
 
   const model = "claude-haiku-4-5-20251001";
-  const data = await api("/anthropic/messages", {
-    method: "POST",
-    body: JSON.stringify({
-      model,
-      max_tokens: 700,
-      feature: "insight",
-      system,
-      messages: [{
-        role: "user",
-        content: "Here's my month so far:\n```json\n" + JSON.stringify(ctx, null, 2) + "\n```\n\nWhat do you see?",
-      }],
-    }),
+  const data = await aiApi({
+    model,
+    max_tokens: 700,
+    feature: "insight",
+    system,
+    messages: [{
+      role: "user",
+      content: "Here's my month so far:\n```json\n" + JSON.stringify(ctx, null, 2) + "\n```\n\nWhat do you see?",
+    }],
   });
   if (data && data.error) throw new Error(data.error.message || data.error);
   const txt = data.content?.map(c => c.text).join("\n") || "(no response)";
@@ -5252,17 +5270,10 @@ function buildCounselorSnapshot() {
 let _counselorState = null; // { busy: boolean }
 
 function openCounselor(seedPrompt) {
-  if (!_backendReady()) {
-    openSheet(`
-      <h2 style="margin-bottom:8px">✨ Financial Counselor</h2>
-      <p style="font-size:14px;color:var(--t2);line-height:1.5;margin-bottom:14px">
-        The counselor uses your private backend, which has to be configured first. Add your Worker URL + Enrollment Key in <b>Settings → Backend</b>, then come back.
-      </p>
-      <button class="btn" style="width:100%;margin-bottom:8px" onclick="closeSheet();showTab('settings')">Open Settings</button>
-      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
-    `);
-    return;
-  }
+  // No backend-required gate — the counselor uses the same-origin /api/ai/messages
+  // proxy by default. If the operator hasn't set ANTHROPIC_API_KEY in Vercel, the
+  // proxy returns 503 and aiApi() will fall back to the user's Worker if set, else
+  // surface a clear error to the user via the chat bubble.
   if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false };
   DB.counselor.lastOpenedAt = Date.now();
   _counselorState = { busy: false };
@@ -5400,15 +5411,12 @@ async function counselorSend(text) {
     const messages = recent.map(m => ({ role: m.role, content: m.content }));
 
     const model = DB.settings.anthropicModel || "claude-sonnet-4-6";
-    const data = await api("/anthropic/messages", {
-      method: "POST",
-      body: JSON.stringify({
-        model,
-        max_tokens: 1200,
-        feature: "counselor",
-        system,
-        messages,
-      }),
+    const data = await aiApi({
+      model,
+      max_tokens: 1200,
+      feature: "counselor",
+      system,
+      messages,
     });
     if (data && data.error) throw new Error(data.error.message || data.error);
     const reply = (data.content || []).map(c => c.text).join("\n") || "(no response)";
@@ -6018,11 +6026,6 @@ function showLockScreen() {
 
 
 async function runAiInsight() {
-  if (!DB.settings.backendUrl) {
-    toast("AI insights now require the backend Worker");
-    showTab("settings");
-    return;
-  }
   toast("Asking Claude…");
   try {
     const r = await getMonthlyInsight();
@@ -6445,17 +6448,9 @@ Never invent specific numbers (dollars, weights) unless they told you. Never ask
 let _aiOnb = null;
 
 function aiOnboardingStart(opts = {}) {
-  if (!_backendReady()) {
-    openSheet(`
-      <h2 style="margin-bottom:8px">✨ Talk to Ascend AI</h2>
-      <p style="font-size:14px;color:var(--t2);line-height:1.5;margin-bottom:14px">
-        The AI setup uses your private backend, which has to be configured first. Once you add the Worker URL + Enrollment Key in <b>Settings → Backend</b>, you can come back here.
-      </p>
-      <button class="btn" style="width:100%;margin-bottom:8px" onclick="closeSheet();showTab('settings')">Open Settings</button>
-      <button class="btn secondary" style="width:100%" onclick="closeSheet();${opts.fromOnboarding ? 'runOnboarding()' : ''}">${opts.fromOnboarding ? 'Use the quick setup instead' : 'Close'}</button>
-    `);
-    return;
-  }
+  // AI onboarding now flows through same-origin /api/ai/messages; no per-user
+  // backend config needed. If ANTHROPIC_API_KEY isn't set on the deployment,
+  // aiOnbCall will surface a clear error and the user can use quick setup.
   _lockSheet = true;
   _aiOnb = {
     messages: [],
@@ -6617,14 +6612,12 @@ async function aiOnbSend(text) {
 
 async function aiOnbCall(history, systemPrompt) {
   const model = DB.settings.anthropicModel || "claude-haiku-4-5-20251001";
-  const data = await api("/anthropic/messages", {
-    method: "POST",
-    body: JSON.stringify({
-      model,
-      max_tokens: 700,
-      system: systemPrompt,
-      messages: history,
-    }),
+  const data = await aiApi({
+    model,
+    max_tokens: 700,
+    feature: "onboarding",
+    system: systemPrompt,
+    messages: history,
   });
   if (data && data.error) throw new Error(data.error.message || data.error);
   return data.content?.map(c => c.text).join("\n") || "";
