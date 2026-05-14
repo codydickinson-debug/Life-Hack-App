@@ -10849,7 +10849,27 @@ function _tourEnsureChrome() {
                   top .32s cubic-bezier(.4,0,.2,1),
                   width .32s cubic-bezier(.4,0,.2,1),
                   height .32s cubic-bezier(.4,0,.2,1);
+      animation: tour-pulse 1.8s ease-in-out infinite;
       display: none;
+    }
+    /* Active hint loop: the inner purple ring breathes so the eye keeps
+       being pulled back to the highlighted element if it lingers. */
+    @keyframes tour-pulse {
+      0%, 100% {
+        box-shadow:
+          0 0 0 9999px rgba(0,0,0,0.62),
+          0 0 0 4px rgba(124,58,237,0.85),
+          0 0 28px rgba(124,58,237,0.45);
+      }
+      50% {
+        box-shadow:
+          0 0 0 9999px rgba(0,0,0,0.62),
+          0 0 0 6px rgba(124,58,237,1),
+          0 0 42px rgba(124,58,237,0.7);
+      }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      #tour-spotlight { animation: none; }
     }
     #tour-overlay {
       position: fixed; inset: 0; background: rgba(0,0,0,0.62);
@@ -10866,6 +10886,12 @@ function _tourEnsureChrome() {
     #tour-tooltip .e { font-size: 26px; line-height: 1; margin-bottom: 4px; }
     #tour-tooltip .t { font-size: 16px; font-weight: 700; margin-bottom: 4px; line-height: 1.25; }
     #tour-tooltip .b { font-size: 13px; line-height: 1.45; color: var(--t2, #555); }
+    #tour-tooltip .hint {
+      margin-top: 10px; padding: 6px 10px;
+      background: rgba(124,58,237,0.10); color: #7c3aed;
+      border-radius: 8px; font-size: 11px; font-weight: 600;
+      text-align: center; letter-spacing: 0.02em;
+    }
     #tour-tooltip .dots { display: flex; gap: 5px; justify-content: center; margin: 10px 0 8px; }
     #tour-tooltip .dots div { width: 5px; height: 5px; border-radius: 50%; background: var(--text); transition: opacity .15s, transform .15s; }
     #tour-tooltip .row { display: flex; gap: 6px; }
@@ -10933,15 +10959,20 @@ function _tourAttachAdvanceListener(el) {
   _tourClearAdvanceListener();
   if (!el) return;
   const stepAtAttach = _tutStep;
+  const isLast = stepAtAttach === TUTORIAL_STEPS.length - 1;
   const handler = () => {
     // Don't double-advance: clear ourselves, then wait briefly so the
     // user sees the result of their tap (habit ticks, win prompt opens,
     // tab switches) before the next step blows the tooltip away.
     _tourClearAdvanceListener();
     setTimeout(() => {
-      // Only advance if we're still on the step the listener was for —
-      // user might have tapped Next manually in the meantime.
-      if (_tutStep === stepAtAttach && _tutStep < TUTORIAL_STEPS.length - 1) {
+      // Stale-fire guard: user might have tapped Next/Back manually.
+      if (_tutStep !== stepAtAttach) return;
+      if (isLast) {
+        // Tapping the Cylan FAB on the last step ends the tour AND
+        // opens the counselor — natural end-of-tutorial transition.
+        tutorialFinish();
+      } else {
         tutorialNext();
       }
     }, 320);
@@ -10961,12 +10992,27 @@ function _tourGo() {
   if (s.tab && typeof showTab === "function") showTab(s.tab);
   // Wait one frame so the new tab is laid out before we measure target.
   setTimeout(() => {
-    _tourRender();
-    _tourPosition();
+    // Scroll the target into view if it's off-screen — without this the
+    // spotlight would land on empty space below the fold and the user
+    // wouldn't know what to tap.
     if (s.target) {
       const el = document.querySelector(s.target);
-      if (el) _tourAttachAdvanceListener(el);
+      if (el && typeof el.scrollIntoView === "function") {
+        const r = el.getBoundingClientRect();
+        const offScreen = r.top < 80 || r.bottom > window.innerHeight - 120;
+        if (offScreen) el.scrollIntoView({ behavior: "smooth", block: "center" });
+      }
     }
+    // One more frame so the smooth scroll has time to settle before we
+    // measure where the spotlight should land.
+    setTimeout(() => {
+      _tourRender();
+      _tourPosition();
+      if (s.target) {
+        const el = document.querySelector(s.target);
+        if (el) _tourAttachAdvanceListener(el);
+      }
+    }, s.target ? 260 : 0);
   }, 90);
 }
 
@@ -10974,15 +11020,22 @@ function _tourRender() {
   const s = TUTORIAL_STEPS[_tutStep];
   const isLast = _tutStep === TUTORIAL_STEPS.length - 1;
   const isFirst = _tutStep === 0;
+  const hasTarget = !!s.target;
   const dots = TUTORIAL_STEPS.map((_, i) =>
     `<div style="opacity:${i===_tutStep?1:.22};transform:scale(${i===_tutStep?1.6:1})"></div>`
   ).join("");
+  // When there's a target the spotlight pulses and a hint tells the user
+  // they can tap it. When there isn't, hide the hint to avoid confusion.
+  const hint = hasTarget
+    ? `<div class="hint">↑ Tap the highlight to continue</div>`
+    : "";
   const tooltip = document.getElementById("tour-tooltip");
   tooltip.innerHTML = `
     <div class="counter">${_tutStep + 1} of ${TUTORIAL_STEPS.length}</div>
     <div class="e">${s.emoji}</div>
     <div class="t">${esc(s.title)}</div>
     <div class="b">${esc(s.body)}</div>
+    ${hint}
     <div class="dots">${dots}</div>
     <div class="row">
       <button class="back" onclick="${isFirst ? "tutorialFinish()" : "tutorialBack()"}">${isFirst ? "Skip" : "Back"}</button>
@@ -11052,6 +11105,7 @@ function _tourTearDownChrome() {
 }
 
 function tutorialFinish() {
+  const wasOnLast = _tutStep === TUTORIAL_STEPS.length - 1;
   _tourTearDownChrome();
   // Restore the user's real data BEFORE marking seen + saving, so we
   // never persist demo data to disk.
@@ -11061,6 +11115,8 @@ function tutorialFinish() {
     try { save(); } catch {}
   }
   try { if (typeof render === "function") render(); } catch {}
+  // Quiet acknowledgement so the tour ending doesn't feel abrupt.
+  if (typeof toast === "function") toast(wasOnLast ? "You're set — start playing." : "Tour closed");
 }
 
 function tutorialAsk() {
