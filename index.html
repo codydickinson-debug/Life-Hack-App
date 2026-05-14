@@ -2558,6 +2558,7 @@ function habitDetailSheet(id) {
     ${firstDate ? `<div class="muted" style="font-size:11.5px;margin-bottom:14px">First check-in: ${firstDate}</div>` : ""}
 
     <div class="actions">
+      <button class="btn secondary" onclick="closeSheet();setTimeout(()=>openCounselor(${jsAttr(`Tell me about my "${h.name}" habit. I have a ${streak}-day streak and did it ${done30} of the last 30 days. What's one specific thing I could do to make this habit stickier?`)}),120)" style="font-size:13px">✨ Ask Cylan</button>
       <button class="btn secondary" onclick="closeSheet();setTimeout(()=>addHabitSheet(DB.habits.find(x=>x.id==='${h.id}')),120)">Edit</button>
       <button class="btn" onclick="closeSheet()">Close</button>
     </div>
@@ -6388,15 +6389,22 @@ function renderStats() {
         }
       }
       if (!insights.length) return "";
+      // Strip HTML tags from insight text for the AI prompt — just the plain
+      // sentence so Cylan gets the meaning without markup.
+      const plainText = (s) => s.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
       return `
-        <div class="section-h"><span class="lbl">Insights</span><span class="muted" style="font-size:12px">auto-detected</span></div>
+        <div class="section-h"><span class="lbl">Insights</span><span class="muted" style="font-size:12px">auto-detected · tap to dig in</span></div>
         <div style="background:var(--card);border-radius:var(--r);padding:14px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
-          ${insights.slice(0, 4).map((i, idx) => `
-            <div style="${idx > 0 ? 'margin-top:10px;padding-top:10px;border-top:0.5px solid var(--sep)' : ''};display:flex;align-items:flex-start;gap:10px;font-size:13px;color:var(--t2);line-height:1.45">
-              <span style="font-size:16px;line-height:1.2;flex-shrink:0">${i.icon}</span>
-              <span>${i.text}</span>
-            </div>
-          `).join("")}
+          ${insights.slice(0, 4).map((i, idx) => {
+            const seed = `Tell me more about this — ${plainText(i.text)}. What's behind it and what should I do?`;
+            return `
+              <div onclick="openCounselor(${jsAttr(seed)})" role="button" tabindex="0" style="${idx > 0 ? 'margin-top:10px;padding-top:10px;border-top:0.5px solid var(--sep)' : ''};display:flex;align-items:flex-start;gap:10px;font-size:13px;color:var(--t2);line-height:1.45;cursor:pointer">
+                <span style="font-size:16px;line-height:1.2;flex-shrink:0">${i.icon}</span>
+                <span style="flex:1">${i.text}</span>
+                <span style="color:var(--purple);font-size:11.5px;flex-shrink:0;font-weight:600">✨ Ask</span>
+              </div>
+            `;
+          }).join("")}
         </div>
       `;
     })()}
