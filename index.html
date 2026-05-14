@@ -2400,6 +2400,17 @@ $("#topbar").addEventListener("click", (e) => {
 $("#content").addEventListener("scroll", () => {
   $("#topbar").classList.toggle("scrolled", $("#content").scrollTop > 4);
 });
+// Keyboard shortcut: Cmd/Ctrl + K opens global search (when not already in an
+// input). Standard mainstream pattern; no UI hint shown on mobile since most
+// users won't have a physical keyboard, but power-desktop users will discover.
+document.addEventListener("keydown", (e) => {
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+    const tag = (document.activeElement && document.activeElement.tagName) || "";
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    e.preventDefault();
+    try { globalSearchSheet(); } catch {}
+  }
+});
 
 /* ================ TOAST ================ */
 let toastT;
@@ -3087,6 +3098,66 @@ const ACCENT_COLORS = [
 ];
 // Global search — find anything across the app. Habits, wins, calendar notes,
 // transactions, goals, savings — typed into one input.
+// Add-win sheet — replaces the bare prompt('Win:') with a real input field +
+// optional voice-to-text via the Web Speech API when supported.
+let _winRecognition = null;
+function _stopWinRecognition() {
+  try { if (_winRecognition) { _winRecognition.stop(); _winRecognition = null; } } catch {}
+  const b = document.getElementById("win-voice-btn");
+  if (b) { b.textContent = "🎤"; b.style.background = "var(--bg-elev)"; }
+}
+function startWinVoice() {
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { toast("Voice input isn't supported on this device"); return; }
+  if (_winRecognition) { _stopWinRecognition(); return; }
+  const r = new SR();
+  r.lang = navigator.language || "en-US";
+  r.continuous = false;
+  r.interimResults = true;
+  r.onresult = (e) => {
+    let txt = "";
+    for (let i = e.resultIndex; i < e.results.length; i++) txt += e.results[i][0].transcript;
+    const input = document.getElementById("win-input");
+    if (input) input.value = txt;
+  };
+  r.onerror = () => { _stopWinRecognition(); toast("Voice input error — try again"); };
+  r.onend = () => _stopWinRecognition();
+  _winRecognition = r;
+  r.start();
+  const b = document.getElementById("win-voice-btn");
+  if (b) { b.textContent = "⏹"; b.style.background = "var(--red)"; }
+  toast("Listening… speak your win");
+}
+async function _saveWinFromSheet() {
+  const input = document.getElementById("win-input");
+  if (!input) return;
+  const text = (input.value || "").trim().slice(0, 200);
+  if (!text) { toast("Type or speak a win"); return; }
+  _stopWinRecognition();
+  if (!DB.wins) DB.wins = [];
+  DB.wins.unshift({ id: uid(), date: todayKey(), text });
+  try { await save(); toast("Win added ⭐"); } catch (e) { DB.wins.shift(); toast("Couldn't save — please try again"); return; }
+  closeSheet();
+  render();
+}
+function addWinSheet() {
+  const hasVoice = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  openSheet(`
+    <h2 style="margin-bottom:4px">Capture a win</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">One short line. The little stuff adds up.</p>
+    <div style="display:flex;gap:8px;align-items:stretch">
+      <input id="win-input" placeholder="e.g. Closed first MCA deal" maxlength="200" autocomplete="off"
+        style="flex:1;background:var(--card);padding:14px;border-radius:var(--r);font-size:16px;border:1px solid var(--sep);box-sizing:border-box;color:var(--t1)" />
+      ${hasVoice ? `<button id="win-voice-btn" onclick="startWinVoice()" title="Voice input" style="background:var(--bg-elev);border:1px solid var(--sep);border-radius:var(--r);width:54px;font-size:20px;cursor:pointer;color:var(--t1)">🎤</button>` : ""}
+    </div>
+    <div class="actions" style="margin-top:14px">
+      <button class="btn secondary" onclick="_stopWinRecognition();closeSheet()">Cancel</button>
+      <button class="btn" onclick="_saveWinFromSheet()">Add win</button>
+    </div>
+  `);
+  setTimeout(() => { const i = document.getElementById("win-input"); if (i) i.focus(); }, 250);
+}
+
 function _computeSearchResults(query) {
   const q = (query || "").trim().toLowerCase();
   if (!q) {
@@ -3705,7 +3776,7 @@ function renderToday() {
     ` : ""}
     <div class="list">${habitsHtmlFiltered}</div>
 
-    <div class="section-h"><span class="lbl">Wins today${winsStreak >= 2 ? ` <span style="color:var(--orange);font-weight:700;margin-left:6px">🔥 ${winsStreak}d streak</span>` : ''}</span><span style="display:flex;gap:14px"><button class="act" onclick="allWinsSheet()" style="${(DB.wins || []).length ? '' : 'display:none'}">All</button><button class="act" onclick="(()=>{const t=prompt('Win:');if(t)addWin(t);})()">+ Add</button></span></div>
+    <div class="section-h"><span class="lbl">Wins today${winsStreak >= 2 ? ` <span style="color:var(--orange);font-weight:700;margin-left:6px">🔥 ${winsStreak}d streak</span>` : ''}</span><span style="display:flex;gap:14px"><button class="act" onclick="allWinsSheet()" style="${(DB.wins || []).length ? '' : 'display:none'}">All</button><button class="act" onclick="addWinSheet()">+ Add</button></span></div>
     <div class="list">${winsHtml}</div>
 
     <!-- ===== MONEY SNAPSHOT: daily glance ===== -->
@@ -17696,6 +17767,7 @@ function init() {
     addExpenseInline, deleteExpense, totalExpenses, leftover,
     addSpend, deleteSpend, monthSpend, spendCategories,
     addWin, deleteWin, winsToday, allWinsSheet, shuffleQuote, pinQuoteToToday, addStarterHabit,
+    addWinSheet, startWinVoice, _saveWinFromSheet, _stopWinRecognition,
     customizeTodaySheet, toggleTodaySection, showAllTodaySections, isTodaySectionHidden,
     customizeTabsSheet, toggleTabVisibility, showAllTabs, isTabHidden, applyHiddenTabs,
     setAccentColor, applyAccent, ACCENT_COLORS,
