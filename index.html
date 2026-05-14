@@ -3273,8 +3273,8 @@ function allWinsSheet() {
       <h2>All wins</h2>
       <div class="empty" style="padding:30px 16px;text-align:center">
         <div class="e-emoji">⭐</div>
-        <div class="e-title">No wins yet</div>
-        <div class="e-sub">Capture small victories as they happen — they add up.</div>
+        <div class="e-title">Your wins archive starts here</div>
+        <div class="e-sub">Tiny victories compound. Cooked dinner. Said no to a $400 sale. Called Mom.</div>
       </div>
       <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
     `);
@@ -4120,8 +4120,8 @@ function renderToday() {
   ` : `
     <div class="empty">
       <div class="e-emoji">☀️</div>
-      <div class="e-title">No habits yet</div>
-      <div class="e-sub">Start with one of these, or add your own.</div>
+      <div class="e-title">Pick a habit to start</div>
+      <div class="e-sub">One of these, or write your own. You can always change it later.</div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin:16px auto 0;max-width:320px">
         <button class="btn secondary" style="font-size:13px;padding:10px" onclick="addStarterHabit('Workout','💪','health')">💪 Workout</button>
         <button class="btn secondary" style="font-size:13px;padding:10px" onclick="addStarterHabit('Drink water','💧','health',true,64,'oz')">💧 Water</button>
@@ -4639,9 +4639,9 @@ function renderGoals() {
   }).join("") : `
     <div class="empty">
       <div class="e-emoji">🎯</div>
-      <div class="e-title">No ${TIERS.find(t=>t.id===activeTier).label.toLowerCase()} goals yet</div>
-      <div class="e-sub">Daily = recurring focuses. Short-term = this month/quarter. Life = the big stuff.</div>
-      <button class="btn" style="margin-top:14px;max-width:240px" onclick="addGoalSheet()">+ Custom goal</button>
+      <div class="e-title">What's your next ${TIERS.find(t=>t.id===activeTier).label.toLowerCase()} goal?</div>
+      <div class="e-sub">Daily = the recurring stuff. Short-term = this quarter. Life = the big picture.</div>
+      <button class="btn" style="margin-top:14px;max-width:240px" onclick="addGoalSheet()">Write my own</button>
       <button class="btn secondary" style="margin-top:8px;max-width:240px;font-size:13px" onclick="goalTemplatesSheet()">📚 Browse templates</button>
     </div>
   `;
@@ -6049,7 +6049,7 @@ function renderMoney() {
             </div>
           </div>
         `;
-      }).join("") : `<div class="empty"><div class="e-emoji">💰</div><div class="e-title">No savings goals</div><div class="e-sub">Track buckets like emergency fund, vehicle, retirement, big purchases.</div></div>`}
+      }).join("") : `<div class="empty"><div class="e-emoji">💰</div><div class="e-title">Start a savings bucket</div><div class="e-sub">Emergency fund, truck down payment, retirement, that trip you keep putting off — name it and watch it grow.</div></div>`}
     `;
   }
   else if (moneySub === "forecast") {
@@ -7010,15 +7010,15 @@ function renderMoney() {
     ` : (DB.settings.advancedFeaturesEnabled ? (DB.settings.backendUrl ? `
       <div class="empty" style="padding:18px 16px;background:var(--card);border-radius:var(--r);margin-bottom:12px">
         <div class="e-emoji">🏦</div>
-        <div class="e-title">No banks connected</div>
-        <div class="e-sub">Connect your bank to auto-pull transactions and balances.</div>
-        <button class="btn" style="margin-top:10px;max-width:240px" onclick="connectBank()">Connect bank</button>
+        <div class="e-title">Link your first bank</div>
+        <div class="e-sub">Auto-import transactions and balances. Read-only — Ascend never moves money.</div>
+        <button class="btn" style="margin-top:10px;max-width:240px" onclick="connectBank()">Connect a bank</button>
       </div>
     ` : `
       <div class="empty" style="padding:18px 16px;background:var(--card);border-radius:var(--r);margin-bottom:12px">
         <div class="e-emoji">🔌</div>
-        <div class="e-title">Bank sync not set up</div>
-        <div class="e-sub">Configure the backend in Settings to enable bank connections.</div>
+        <div class="e-title">Bank sync not turned on</div>
+        <div class="e-sub">Add your backend URL in Settings → Advanced features to unlock bank connections.</div>
       </div>
     `) : "");
     const holdingsHtml = (DB.holdings && DB.holdings.length) ? `
@@ -7385,7 +7385,7 @@ function renderMoney() {
           </div>
         `).join("") : ((DB.spendSearch||"").trim()
           ? `<div class="row"><div class="body"><div class="t2 muted">No matches.</div></div></div>`
-          : `<div class="empty"><div class="e-emoji">💳</div><div class="e-title">No transactions yet</div><div class="e-sub">Log one with the form above, or connect a bank in Settings → Bank sync to auto-import.</div></div>`)}
+          : `<div class="empty"><div class="e-emoji">💳</div><div class="e-title">Log your first spend</div><div class="e-sub">Tap the form above for a quick entry, or connect a bank in Settings to auto-import everything.</div></div>`)}
       </div>
     `;
   }
@@ -7400,9 +7400,9 @@ function renderStats() {
       <div class="lg-title">Stats</div>
       <div class="empty" style="padding:30px 18px;background:var(--card);border-radius:var(--r);margin-top:14px">
         <div class="e-emoji">📊</div>
-        <div class="e-title">Stats fill in as you use the app</div>
-        <div class="e-sub">Check off a habit, log a transaction, set a savings goal — your patterns show up here.</div>
-        <button class="btn" style="margin-top:14px;max-width:240px" onclick="showTab('today')">Go to Today</button>
+        <div class="e-title">Your patterns show up here</div>
+        <div class="e-sub">Streaks, completion rates, year reviews. Give it a few days of habit checks and wins — Stats will start telling you something.</div>
+        <button class="btn" style="margin-top:14px;max-width:240px" onclick="showTab('today')">Start on Today</button>
       </div>
     `;
     return;
