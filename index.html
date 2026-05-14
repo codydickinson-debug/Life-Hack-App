@@ -999,6 +999,27 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 #fab:active { transform: scale(.92); }
 #fab:hover { background: var(--blue); color: #fff; }
 
+/* Counselor launcher — sits just above the spend FAB, on every tab.
+   Smaller + gradient so it's clearly secondary to the primary action FAB. */
+#counselor-fab {
+  position: fixed;
+  right: max(20px, env(safe-area-inset-right));
+  bottom: calc(var(--tab-h) + 14px + 56px + 10px);
+  width: 48px; height: 48px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #7c3aed, #ec4899);
+  color: #fff;
+  font-size: 22px; line-height: 1;
+  box-shadow: var(--sh-pop);
+  z-index: 6;
+  display: flex; align-items: center; justify-content: center;
+  border: none; cursor: pointer;
+  transition: transform .12s ease, box-shadow .15s ease;
+}
+#counselor-fab:active { transform: scale(.9); }
+#counselor-fab:hover { box-shadow: 0 6px 24px rgba(124,58,237,.45); }
+#counselor-fab.hidden { display: none; }
+
 /* Cashflow chart card */
 .cf-card { background: var(--card); border-radius: var(--r); border: 0.5px solid var(--sep); padding: 16px; margin-bottom: 14px; box-shadow: var(--sh-1); }
 .cf-card .cf-h { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 8px; }
@@ -1087,6 +1108,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
     <button class="tab" data-tab="stats"><span class="ic">▦</span><span>Stats</span></button>
   </nav>
 
+  <button id="counselor-fab" aria-label="Talk to financial counselor" title="Financial counselor" onclick="openCounselor()">✨</button>
   <button id="fab" aria-label="Quick add spend" onclick="quickAddSpendSheet()">+</button>
 </div>
 
@@ -1125,7 +1147,9 @@ const DEFAULT_DB = {
     paycheckMin: 500,        // min deposit to count as a paycheck (Plaid amount < -500)
     // anthropicKey removed — the real key now lives only on the backend Worker.
     // Init() actively scrubs any legacy value that may still be in localStorage.
-    anthropicModel: "claude-haiku-4-5-20251001",
+    // Default Sonnet 4.6 — Counselor chat needs reasoning quality. Monthly insight
+    // hardcodes Haiku 4.5 separately for cost.
+    anthropicModel: "claude-sonnet-4-6",
     debtPayoffStrategy: "avalanche", // avalanche (highest APR first) | snowball (smallest balance first)
     debtExtraPayment: 0,     // extra $/month above minimums for payoff plan
     advancedFeaturesEnabled: false,  // gates Plaid bank sync, AI insights, paycheck rules, debt payoff in Settings
@@ -1178,6 +1202,11 @@ const DEFAULT_DB = {
   holdings: [],              // [{account_id, ticker, name, type, quantity, institution_value, cost_basis}]
   debtMeta: {},              // { account_id: { apr, minPayment } }
   insights: [],              // [{date, prompt_summary, response, model}]
+  counselor: {               // persistent financial-counselor chat
+    thread: [],              // [{role:'user'|'assistant', content, t}]
+    lastOpenedAt: 0,
+    hideLauncher: false,     // user can hide the floating ✨ launcher
+  },
   assets: [],                // [{id, name, type:'home'|'vehicle'|'crypto'|'cash'|'investment'|'other', value, note, updatedAt}]
   liabilities: [],           // [{id, name, type:'student'|'auto'|'mortgage'|'personal'|'medical'|'other', balance, apr, minPayment, note, updatedAt}]
   recurring: [],             // user-managed recurring tx: [{id, name, amount, category, cadence:'weekly'|'biweekly'|'monthly'|'yearly', dayOfMonth, kind:'expense'|'income', nextDate, createdAt}]
@@ -1224,9 +1253,10 @@ function _parseDb(raw) {
   if (isLockedEnvelope(p)) return { __locked: true, __salt: p.salt };
   if (!p || typeof p !== "object" || Array.isArray(p)) throw new Error("not an object");
   return Object.assign(clone(DEFAULT_DB), p, {
-    settings: Object.assign({}, DEFAULT_DB.settings, p.settings || {}),
-    budget:   Object.assign({}, DEFAULT_DB.budget,   p.budget   || {}),
-    user:     Object.assign({}, DEFAULT_DB.user,     p.user     || {}),
+    settings:  Object.assign({}, DEFAULT_DB.settings,  p.settings  || {}),
+    budget:    Object.assign({}, DEFAULT_DB.budget,    p.budget    || {}),
+    user:      Object.assign({}, DEFAULT_DB.user,      p.user      || {}),
+    counselor: Object.assign({}, DEFAULT_DB.counselor, p.counselor || {}),
   });
 }
 function load() {
@@ -1410,6 +1440,17 @@ function sanitizeDb() {
     if (Array.isArray(DB.budget?.expenses)) {
       if (DB.budget.expenses.length > 200) DB.budget.expenses.length = 200;
       for (const e of DB.budget.expenses) if (e && typeof e.name === "string") e.name = sanitizeText(e.name, TEXT_MAX);
+    }
+    // counselor thread — cap at 80 turns; each message body capped at 8000 chars
+    if (DB.counselor && Array.isArray(DB.counselor.thread)) {
+      if (DB.counselor.thread.length > 80) {
+        DB.counselor.thread = DB.counselor.thread.slice(-80);
+      }
+      for (const m of DB.counselor.thread) {
+        if (m && typeof m.content === "string" && m.content.length > 8000) {
+          m.content = m.content.slice(0, 8000);
+        }
+      }
     }
   } catch { /* never let sanitization failure block a save */ }
 }
@@ -2276,6 +2317,24 @@ function renderToday() {
     ${stsHtml}
 
     ${(() => {
+      // Financial Counselor entry point on Today — high-visibility CTA so users
+      // discover the always-on counselor without hunting for the floating FAB.
+      // Only shown when the backend is configured (so the tap is actionable).
+      if (!_backendReady()) return "";
+      return `
+        <div onclick="openCounselor()" role="button" tabindex="0"
+          style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border-radius:var(--r);padding:14px 16px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:12px;box-shadow:var(--sh-1)">
+          <div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">✨</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:14px;font-weight:700;line-height:1.2">Talk to your financial counselor</div>
+            <div style="font-size:12px;opacity:.88;margin-top:2px">Budget, debt, investing — ask anything about your money</div>
+          </div>
+          <div style="font-size:20px;opacity:.85">→</div>
+        </div>
+      `;
+    })()}
+
+    ${(() => {
       // Wealth Health score — only show when there's meaningful financial data,
       // otherwise the score is artificially 0 and demotivating for new users.
       const hasMoneyContext = (+(DB.budget?.income) || 0) > 0
@@ -2503,6 +2562,12 @@ function renderGoals() {
       <button class="add-row" style="margin:0" onclick="addGoalSheet()"><span class="plus">+</span> New goal</button>
       <button class="add-row" style="margin:0" onclick="goalTemplatesSheet()"><span class="plus">★</span> From template</button>
     </div>
+    ${_backendReady() ? `
+      <button onclick="openCounselor('Help me prioritize my goals. What should I focus on first given my current situation?')"
+        style="width:100%;margin-bottom:14px;padding:11px 14px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;border-radius:var(--r-pill,999px);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:8px">
+        <span>✨</span><span>Ask the counselor to prioritize my goals</span>
+      </button>
+    ` : ""}
     ${goalsHtml}
   `;
 }
@@ -2566,9 +2631,21 @@ function renderMoney() {
   // Cashflow forecast (only when there's enough signal)
   const hasMoneyData = (+DB.budget?.income || 0) > 0 || (DB.recurring || []).length > 0 || (DB.spend || []).length > 0;
   const cashflowBlock = hasMoneyData ? cashflowCardHtml() : "";
+  const counselorTeaser = _backendReady() ? `
+    <button onclick="openCounselor()"
+      style="width:100%;margin-bottom:12px;padding:12px 14px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;border-radius:var(--r);font-size:13.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:10px;text-align:left;box-shadow:var(--sh-1)">
+      <span style="width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">✨</span>
+      <span style="flex:1">
+        <div style="font-size:13.5px;font-weight:700">Talk to your financial counselor</div>
+        <div style="font-size:11px;opacity:.85;font-weight:500">Budget, debt, investing — ask anything</div>
+      </span>
+      <span style="font-size:18px;opacity:.8">→</span>
+    </button>
+  ` : "";
   const hdr = `
     <div class="lg-title">Money</div>
     ${cashflowBlock}
+    ${counselorTeaser}
     <div class="sub-tabs">
       <button class="sub-tab ${moneySub==='savings'?'active':''}" onclick="moneySub='savings';renderMoney()">Savings</button>
       <button class="sub-tab ${moneySub==='wealth'?'active':''}"  onclick="moneySub='wealth';renderMoney()">Wealth</button>
@@ -3486,16 +3563,24 @@ function renderStats() {
       const last = (DB.insights||[])[0];
       if (!DB.settings.advancedFeaturesEnabled && !last) return "";
       return `
-        <div class="card" style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:14px">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
-            <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">AI insight</div>
-            ${ready ? `<button class="btn sm secondary" style="font-size:11px;padding:4px 10px" onclick="runAiInsight()">${last?'Refresh':'Get insight'}</button>` : ''}
+        <div class="card" style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:14px;border:1px solid var(--sep)">
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+            <div style="display:flex;align-items:center;gap:8px">
+              <div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px">✨</div>
+              <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Financial Counselor</div>
+            </div>
+            ${ready ? `<button class="btn sm secondary" style="font-size:11px;padding:4px 10px" onclick="runAiInsight()">${last?'Refresh':'Monthly review'}</button>` : ''}
           </div>
           ${ready ? (last ? `
-            <div style="font-size:13px;line-height:1.5;color:var(--t2);white-space:pre-wrap">${esc(last.response)}</div>
+            <div style="font-size:13.5px;line-height:1.55;color:var(--t1);white-space:pre-wrap">${esc(last.response)}</div>
             <div style="font-size:11px;color:var(--t4);margin-top:8px">${last.date} · ${esc(last.model||"")}</div>
-          ` : `<div style="font-size:13px;color:var(--t3)">Tap "Get insight" for a Claude-powered review of your spending and goals this month.</div>`) : `
-            <div style="font-size:13px;color:var(--t3)">Connect the backend Worker in Settings to enable AI insights.</div>
+            <button class="btn" style="width:100%;margin-top:12px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-size:13px" onclick="openCounselor()">✨ Talk to your counselor</button>
+          ` : `
+            <div style="font-size:13.5px;color:var(--t1);line-height:1.5;margin-bottom:10px">Get a candid review of your spending, goals, and next moves — like a fee-only planner who knows your numbers.</div>
+            <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="openCounselor()">✨ Talk to your counselor</button>
+            <div style="font-size:11px;color:var(--t4);margin-top:8px;text-align:center">Educational guidance — not licensed advice</div>
+          `) : `
+            <div style="font-size:13px;color:var(--t3)">Connect the backend Worker in Settings to enable the AI counselor.</div>
           `}
         </div>
       `;
@@ -3848,25 +3933,30 @@ function renderSettings() {
       }).join("") : `<div class="row"><div class="body"><div class="t2 muted">No rules yet — paychecks will just appear in transactions.</div></div></div>`}
     </div>
 
-    <div class="section-h"><span class="lbl">AI insights (Claude)</span></div>
+    <div class="section-h"><span class="lbl">AI counselor (Claude)</span></div>
     <div class="list">
       <div class="row">
         <div class="lead">🛡️</div>
-        <div class="body"><div class="t1">Anthropic key</div><div class="t2">Now stored on your Worker as the ANTHROPIC_KEY secret — never in this browser. Set with <code>wrangler secret put ANTHROPIC_KEY</code>.</div></div>
+        <div class="body"><div class="t1">Anthropic key</div><div class="t2">Stored on your Worker as the ANTHROPIC_KEY secret — never in this browser. Set with <code>wrangler secret put ANTHROPIC_KEY</code>.</div></div>
       </div>
       <div class="row">
         <div class="lead">⚙︎</div>
-        <div class="body"><div class="t1">Model</div><div class="t2">Haiku is cheapest (~$0.001/insight)</div></div>
+        <div class="body"><div class="t1">Counselor model</div><div class="t2">Sonnet 4.6 = balanced. Haiku 4.5 = cheap. Opus 4.7 = deepest reasoning.</div></div>
         <select style="background:var(--bg-elev);padding:8px;border-radius:8px;font-size:11px;max-width:170px"
           onchange="DB.settings.anthropicModel=this.value;save()">
           <option value="claude-haiku-4-5-20251001" ${DB.settings.anthropicModel==='claude-haiku-4-5-20251001'?'selected':''}>Haiku 4.5</option>
-          <option value="claude-sonnet-4-6"  ${DB.settings.anthropicModel==='claude-sonnet-4-6'?'selected':''}>Sonnet 4.6</option>
-          <option value="claude-opus-4-6"    ${DB.settings.anthropicModel==='claude-opus-4-6'?'selected':''}>Opus 4.6</option>
+          <option value="claude-sonnet-4-6"  ${DB.settings.anthropicModel==='claude-sonnet-4-6'?'selected':''}>Sonnet 4.6 (default)</option>
+          <option value="claude-opus-4-7"    ${DB.settings.anthropicModel==='claude-opus-4-7'?'selected':''}>Opus 4.7</option>
         </select>
       </div>
-      <div class="row tappable" onclick="runAiInsight()">
+      <div class="row tappable" onclick="closeSheet&&closeSheet();openCounselor()">
         <div class="lead">✨</div>
-        <div class="body"><div class="t1">Run insight now</div><div class="t2">Reviews this month's spend, savings, goals (counts against daily cap on Worker)</div></div>
+        <div class="body"><div class="t1">Talk to the counselor</div><div class="t2">Persistent chat — budget, debt, investing, life decisions</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="runAiInsight()">
+        <div class="lead">📊</div>
+        <div class="body"><div class="t1">Run monthly insight</div><div class="t2">Quick monthly review on Haiku 4.5 (cheaper — counts against daily cap)</div></div>
         <div class="trail chev"></div>
       </div>
     </div>
@@ -4965,6 +5055,7 @@ async function fetchInsight(prompt, context) {
   return data.content?.map(c => c.text).join("\n") || "(no response)";
 }
 async function getMonthlyInsight() {
+  if (!DB.settings.backendUrl) throw new Error("AI insights require the backend Worker. Set the backend URL in Settings.");
   const monthKey = todayKey().slice(0,7);
   const recent = (DB.spend||[]).filter(t => t.date.startsWith(monthKey));
   // Aggregate by category to keep payload small + private
@@ -4992,14 +5083,379 @@ async function getMonthlyInsight() {
     open_goals: goals,
   };
 
-  const prompt = `You are a sharp, candid personal-finance and life coach helping the user (named ${esc(DB.user.name||"the user")}). Read their data below and give them 3-5 specific, actionable observations and 1-2 concrete next steps. Be warm but direct. Skip generic advice. Reference actual numbers and merchants from the data. Keep it under 250 words. No bullet points unless truly useful — prefer short paragraphs. End with a single sentence of encouragement.`;
-  const txt = await fetchInsight(prompt, ctx);
-  // Cache
+  const system = `You are Ascend Counselor — a sharp, candid personal-finance counselor giving ${DB.user.name||"the user"} a quick monthly review based on their actual numbers. Be warm but direct. Reference real numbers and merchants. Skip generic advice. Prefer short paragraphs over bullet lists. Keep it under 220 words. End with one sentence of encouragement. Educational guidance, not licensed financial advice.`;
+
+  const model = "claude-haiku-4-5-20251001";
+  const data = await api("/anthropic/messages", {
+    method: "POST",
+    body: JSON.stringify({
+      model,
+      max_tokens: 700,
+      feature: "insight",
+      system,
+      messages: [{
+        role: "user",
+        content: "Here's my month so far:\n```json\n" + JSON.stringify(ctx, null, 2) + "\n```\n\nWhat do you see?",
+      }],
+    }),
+  });
+  if (data && data.error) throw new Error(data.error.message || data.error);
+  const txt = data.content?.map(c => c.text).join("\n") || "(no response)";
+
   if (!DB.insights) DB.insights = [];
-  DB.insights.unshift({ date: todayKey(), prompt_summary: "monthly spending review", response: txt, model: DB.settings.anthropicModel });
+  DB.insights.unshift({ date: todayKey(), prompt_summary: "monthly spending review", response: txt, model });
   DB.insights = DB.insights.slice(0, 12);
   await save();
   return txt;
+}
+
+/* ================ FINANCIAL COUNSELOR (Anthropic via backend proxy) ================
+   A persistent, context-aware financial counselor available throughout the app.
+   Educational guidance only — never substitutes for a licensed CFP/CPA/broker.
+   Chat thread persists in DB.counselor.thread. The system prompt is rebuilt
+   every turn with a fresh snapshot of the user's finances so the counselor is
+   always answering against current numbers. Uses feature="counselor" so the
+   worker rate-limits it independently from the monthly insight feature. */
+
+const COUNSELOR_SYSTEM = `You are Ascend Counselor — a senior personal-finance counselor embedded in the Ascend app. You combine the disciplined planning instincts of a fee-only Certified Financial Planner (CFP) with the framework thinking of a CFA portfolio strategist. You are the user's trusted, candid guide for money decisions.
+
+YOUR SCOPE:
+- Personal financial planning: cash flow, emergency fund, debt strategy (avalanche vs snowball), insurance gaps, big-life-event prep (marriage, kids, home, retirement).
+- Goal architecture: turning vague wishes into a sequenced plan with milestones tied to their actual numbers.
+- Investing education: tax-advantaged accounts (401k match, Roth IRA, traditional IRA, HSA, 529, taxable brokerage), asset allocation by horizon and risk tolerance, low-cost index funds vs active management, dollar-cost averaging, rebalancing, diversification, sequence-of-returns risk, safe withdrawal frameworks (4% rule, bucket strategy).
+- Stock-market literacy: how to evaluate ETFs (expense ratio, holdings concentration, tracking error), why total-market indexing usually beats stock-picking over decades, position sizing, when concentrated stock makes sense and when it's dangerous.
+
+YOUR GUARDRAILS:
+- You are an EDUCATOR and PLANNER, not a licensed fiduciary advisor or registered broker. Speak in frameworks the user can apply themselves.
+- Do NOT recommend specific tickers to buy or sell ("buy AAPL today"). If asked about a specific stock, explain how to evaluate it — fundamentals, valuation, role in the portfolio, downside risk — and remind the user the call is theirs.
+- Do NOT give specific tax-filing or legal advice. For complex situations, recommend a CPA or estate attorney.
+- Do NOT promise returns. Speak in historical ranges with appropriate uncertainty.
+- For health/insurance specifics, defer to licensed agents.
+- Always be clear when something is your reasoned framework vs. the user's decision to make.
+
+YOUR STYLE:
+- Warm, direct, candid. Like a fee-only planner who has known the user for years. No fluff, no preamble, no "as an AI" disclaimers, no hedging filler.
+- Reference the user's real numbers from the SNAPSHOT below. If they ask about something the snapshot doesn't cover, ask one short clarifying question.
+- Prefer short paragraphs over bullet lists. Use lists only when comparing 3+ options.
+- Plain English. Define jargon the first time (e.g., "expense ratio — the annual % a fund charges").
+- Keep replies under ~220 words unless the user explicitly asks for a deep dive.
+- When you recommend an action, end with a forward-pulling question like "Want me to walk you through the first step?" or "Want to look at how this fits your current goals?".
+
+ASCEND FEATURES YOU CAN REFER TO (only these — do not invent features):
+- Today tab (habits, daily action, AI insight card)
+- Goals tab (life / short-term / daily goal tiers; child goals can chain to a parent goal)
+- Money tab (spend, savings buckets, recurring, sinking funds, subscription audit, debt payoff, net worth, smart plays, account-priority pyramid, retirement projector, FIRE projector, tax planning, real-estate / refi / rental analyzer, college planner, charitable giving, money personality, reading list, learn lessons)
+- Stocks tab (research workbench — not a brokerage)
+- Settings (backend / AI / privacy / encryption)
+
+IDENTITY:
+If asked who you are: "I'm Ascend's financial counselor — CFP-level planning meets index-fund discipline, all kept inside your app." If the conversation drifts to high-stakes regulated topics (specific tax filings, specific securities trades, legal contracts), be clear you're an educational guide and recommend a licensed pro.`;
+
+function buildCounselorSnapshot() {
+  const monthKey = todayKey().slice(0, 7);
+  const recent = (DB.spend || []).filter(t => t.date && t.date.startsWith(monthKey));
+  const byCat = {};
+  for (const t of recent) {
+    if (+t.amount <= 0) continue;
+    const k = t.category || "Other";
+    byCat[k] = (byCat[k] || 0) + (+t.amount || 0);
+  }
+  const topCats = Object.entries(byCat).sort((a,b)=>b[1]-a[1]).slice(0,10)
+    .map(([category, amount]) => ({ category, amount: Math.round(amount) }));
+  const incomeThisMonth = recent.filter(t => +t.amount < 0).reduce((s,t)=>s+Math.abs(+t.amount||0), 0);
+
+  let sts;
+  try { sts = safeToSpend(); } catch { sts = { mtd: 0, remaining: 0, perDay: 0, onTrack: true }; }
+
+  const monthlyIncomeRecurring = recurringMonthlyTotal("income");
+  const monthlyExpenseRecurring = recurringMonthlyTotal("expense");
+
+  const savingsBuckets = (DB.savings||[]).map(s => ({
+    name: s.name,
+    current: Math.round(+s.current||0),
+    target: Math.round(+s.target||0),
+  }));
+
+  const openGoals = (DB.goals||[]).filter(g => !g.done).slice(0,12).map(g => ({
+    title: g.title,
+    tier: g.tier,
+    has_steps: Array.isArray(g.steps) && g.steps.length > 0,
+  }));
+
+  const accounts = (DB.accounts||[]).slice(0,20).map(a => ({
+    type: a.type, subtype: a.subtype,
+    balance: Math.round(+a.balance_current||0),
+  }));
+
+  const manualAssets = (DB.assets||[]).slice(0,20).map(a => ({
+    type: a.type, value: Math.round(+a.value||0),
+  }));
+  const manualLiabs = (DB.liabilities||[]).slice(0,20).map(l => ({
+    type: l.type,
+    balance: Math.round(+l.balance||0),
+    apr: l.apr ?? null,
+    min_payment: l.minPayment ?? null,
+  }));
+
+  const holdings = (DB.holdings||[]).slice(0,20).map(h => ({
+    ticker: h.ticker || null,
+    type: h.type || null,
+    value: Math.round(+h.institution_value||0),
+  }));
+
+  let activeSubs = [];
+  try {
+    activeSubs = detectSubscriptions()
+      .filter(s => s.status === "active")
+      .slice(0,10)
+      .map(s => ({ merchant: s.merchant, monthly: Math.round(s.monthly_cost*100)/100 }));
+  } catch {}
+
+  let investedTotal = 0;
+  try { investedTotal = currentInvested(); } catch {}
+
+  return {
+    today: todayKey(),
+    name: DB.user.name || null,
+    profile: {
+      age: DB.profile?.age || null,
+      filing_status: DB.profile?.filingStatus || null,
+      state: DB.profile?.state || null,
+      employer_offers_401k_match: !!DB.profile?.employerMatch,
+      hsa_eligible: !!DB.profile?.hsaEligible,
+    },
+    risk_tolerance: DB.investing?.riskTolerance || "moderate",
+    retirement_target_age: DB.retirement?.targetAge || 65,
+    monthly_savings_target: +DB.settings.monthlySavingsTarget || 0,
+    debt_strategy_pref: DB.settings.debtPayoffStrategy || "avalanche",
+    extra_debt_payment_monthly: +DB.settings.debtExtraPayment || 0,
+    cash_flow: {
+      income_recurring_monthly: Math.round(monthlyIncomeRecurring),
+      expense_recurring_monthly: Math.round(monthlyExpenseRecurring),
+      income_this_month: Math.round(incomeThisMonth),
+      spend_month_to_date: Math.round(sts.mtd),
+      safe_to_spend_remaining: Math.round(sts.remaining),
+      safe_to_spend_per_day: Math.round(sts.perDay),
+      on_track: !!sts.onTrack,
+    },
+    top_spend_categories_this_month: topCats,
+    savings_buckets: savingsBuckets,
+    open_goals: openGoals,
+    accounts,
+    manual_assets: manualAssets,
+    manual_liabilities: manualLiabs,
+    investments: { total_invested: Math.round(investedTotal), holdings },
+    active_subscriptions: activeSubs,
+  };
+}
+
+let _counselorState = null; // { busy: boolean }
+
+function openCounselor(seedPrompt) {
+  if (!_backendReady()) {
+    openSheet(`
+      <h2 style="margin-bottom:8px">✨ Financial Counselor</h2>
+      <p style="font-size:14px;color:var(--t2);line-height:1.5;margin-bottom:14px">
+        The counselor uses your private backend, which has to be configured first. Add your Worker URL + Enrollment Key in <b>Settings → Backend</b>, then come back.
+      </p>
+      <button class="btn" style="width:100%;margin-bottom:8px" onclick="closeSheet();showTab('settings')">Open Settings</button>
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
+    `);
+    return;
+  }
+  if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false };
+  DB.counselor.lastOpenedAt = Date.now();
+  _counselorState = { busy: false };
+  counselorRender();
+  if (seedPrompt && typeof seedPrompt === "string" && seedPrompt.trim()) {
+    setTimeout(() => counselorSend(seedPrompt), 60);
+  }
+}
+
+const COUNSELOR_SUGGESTED = [
+  { icon: "📊", text: "Review my finances overall — what should I focus on first?" },
+  { icon: "🎯", text: "Help me prioritize my goals" },
+  { icon: "💸", text: "Where is my money leaking this month?" },
+  { icon: "🏦", text: "Should I pay off debt or invest first?" },
+  { icon: "📈", text: "How should I think about investing for someone in my situation?" },
+  { icon: "🏝️", text: "Am I on track for retirement?" },
+  { icon: "🛡️", text: "Help me build an emergency fund plan" },
+  { icon: "💰", text: "Design a budget I can actually stick to" },
+];
+
+function counselorRender() {
+  if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false };
+  const thread = DB.counselor.thread || [];
+  const busy = !!(_counselorState && _counselorState.busy);
+
+  const bubbles = thread.map(m => {
+    if (m.role === "assistant") {
+      return `
+        <div style="display:flex;gap:8px;margin-bottom:12px;align-items:flex-start">
+          <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✨</div>
+          <div style="background:var(--bg-elev);padding:10px 14px;border-radius:16px;border-top-left-radius:4px;max-width:84%;font-size:14px;line-height:1.5;color:var(--t1);overflow-wrap:break-word">${_mdLite(m.content || "")}</div>
+        </div>`;
+    }
+    return `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
+        <div style="background:var(--blue,#007AFF);color:#fff;padding:10px 14px;border-radius:16px;border-top-right-radius:4px;max-width:84%;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:break-word">${esc(m.content || "")}</div>
+      </div>`;
+  }).join("");
+
+  const suggested = !thread.length ? `
+    <div style="padding:6px 2px 4px">
+      <div style="font-size:13px;color:var(--t2);line-height:1.45;margin-bottom:12px">
+        I'm a financial counselor who knows your numbers. Ask me anything — planning, debt, investing, big decisions. I'll be candid and reference your actual situation.
+        <div style="font-size:11px;color:var(--t4);margin-top:6px">Educational guidance, not licensed advice. I won't pick specific stocks for you.</div>
+      </div>
+      <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin:6px 0 8px">Try asking</div>
+      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
+        ${COUNSELOR_SUGGESTED.map(s => `
+          <button onclick="counselorSend(${jsAttr(s.text)})"
+            style="text-align:left;padding:10px 12px;background:var(--bg-elev);border:none;border-radius:12px;color:var(--t1);font-size:13.5px;cursor:pointer;display:flex;gap:10px;align-items:center;line-height:1.35">
+            <span style="font-size:16px;flex-shrink:0">${s.icon}</span>
+            <span style="flex:1">${esc(s.text)}</span>
+            <span style="color:var(--t3);font-size:18px;flex-shrink:0">→</span>
+          </button>
+        `).join("")}
+      </div>
+    </div>
+  ` : "";
+
+  const footer = busy ? `
+    <div style="text-align:center;color:var(--t3);font-size:13px;padding:12px">Thinking…</div>
+  ` : `
+    <div style="display:flex;gap:8px;align-items:flex-end;padding-top:8px;border-top:1px solid var(--sep)">
+      <textarea id="cns-input" rows="1" placeholder="Ask anything about your money…"
+        style="flex:1;background:var(--bg-elev);padding:10px 14px;border-radius:18px;font-size:15px;border:none;outline:none;color:var(--t1);resize:none;max-height:120px;line-height:1.4;font-family:inherit"
+        oninput="this.style.height='auto';this.style.height=Math.min(120,this.scrollHeight)+'px'"
+        onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();const v=this.value;this.value='';this.style.height='auto';counselorSend(v);}"></textarea>
+      <button class="btn" style="border-radius:50%;width:44px;height:44px;padding:0;flex-shrink:0;font-size:18px"
+        onclick="(()=>{const el=document.getElementById('cns-input');if(!el)return;const v=el.value;el.value='';el.style.height='auto';counselorSend(v);})()" aria-label="Send">→</button>
+    </div>
+  `;
+
+  openSheet(`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px">✨</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:15px">Financial Counselor</div>
+        <div style="font-size:11px;color:var(--t3)">Educational guidance · CFP-style planning</div>
+      </div>
+      ${thread.length ? `<button style="background:none;border:none;font-size:12px;color:var(--t3);cursor:pointer;padding:6px 10px;font-weight:600" onclick="counselorClear()" title="Clear conversation">Clear</button>` : ""}
+      <button style="background:none;border:none;font-size:22px;color:var(--t3);cursor:pointer;padding:4px 8px" onclick="closeSheet()" aria-label="Close">×</button>
+    </div>
+    <div id="cns-scroll" style="max-height:55vh;overflow-y:auto;padding-right:4px;margin-bottom:6px">
+      ${bubbles}
+      ${suggested}
+    </div>
+    ${footer}
+  `);
+
+  setTimeout(() => {
+    const scroll = document.getElementById("cns-scroll");
+    if (scroll) scroll.scrollTop = scroll.scrollHeight;
+    const inp = document.getElementById("cns-input");
+    if (inp && !busy) inp.focus();
+  }, 30);
+}
+
+async function counselorSend(text) {
+  text = (text || "").toString().trim();
+  if (!text) return;
+  if (!_counselorState) _counselorState = { busy: false };
+  if (_counselorState.busy) return;
+  if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false };
+
+  // Mark busy synchronously so a rapid double-tap can't queue two requests
+  // through the (await save()) tick.
+  _counselorState.busy = true;
+
+  // Bound a single message to keep tokens reasonable
+  if (text.length > 4000) text = text.slice(0, 4000);
+
+  DB.counselor.thread.push({ role: "user", content: text, t: Date.now() });
+  if (DB.counselor.thread.length > 60) DB.counselor.thread = DB.counselor.thread.slice(-60);
+  await save();
+  counselorRender();
+
+  try {
+    const snapshot = buildCounselorSnapshot();
+    let snapshotJson = JSON.stringify(snapshot);
+    // The worker caps body.system at 8000 chars; static prompt is ~3kb, so
+    // ~4500 chars is the safe ceiling for the snapshot. If the user has a
+    // large portfolio, drop the lowest-priority fields first.
+    if (snapshotJson.length > 4500) {
+      const trimmed = { ...snapshot };
+      delete trimmed.active_subscriptions;
+      if (JSON.stringify(trimmed).length > 4500) delete trimmed.investments;
+      if (JSON.stringify(trimmed).length > 4500) delete trimmed.manual_assets;
+      if (JSON.stringify(trimmed).length > 4500) delete trimmed.manual_liabilities;
+      snapshotJson = JSON.stringify(trimmed);
+    }
+    const system = COUNSELOR_SYSTEM + "\n\nUSER SNAPSHOT (current right now):\n```json\n" + snapshotJson + "\n```";
+
+    // Send the last 24 turns — enough for continuity, bounded for cost.
+    const recent = DB.counselor.thread.slice(-24);
+    const messages = recent.map(m => ({ role: m.role, content: m.content }));
+
+    const model = DB.settings.anthropicModel || "claude-sonnet-4-6";
+    const data = await api("/anthropic/messages", {
+      method: "POST",
+      body: JSON.stringify({
+        model,
+        max_tokens: 1200,
+        feature: "counselor",
+        system,
+        messages,
+      }),
+    });
+    if (data && data.error) throw new Error(data.error.message || data.error);
+    const reply = (data.content || []).map(c => c.text).join("\n") || "(no response)";
+
+    DB.counselor.thread.push({ role: "assistant", content: reply, t: Date.now() });
+    await save();
+  } catch (e) {
+    DB.counselor.thread.push({
+      role: "assistant",
+      content: "I hit a snag reaching the backend: " + (e.message || "unknown error") + ". If this keeps happening, check the daily AI cap in Settings or your worker's logs.",
+      t: Date.now(),
+    });
+    await save();
+  } finally {
+    _counselorState.busy = false;
+    counselorRender();
+  }
+}
+
+function counselorClear() {
+  if (!DB.counselor) return;
+  if (!confirm("Clear this conversation? Your snapshot and money data stay put.")) return;
+  DB.counselor.thread = [];
+  save();
+  counselorRender();
+}
+
+// Minimal-safe markdown: escape first, then upgrade **bold**, *italic*, `code`,
+// bullet rows, and line breaks. Anything not whitelisted stays escaped.
+function _mdLite(s) {
+  let out = esc(s);
+  // code spans first so ** inside `` isn't picked up
+  out = out.replace(/`([^`\n]+)`/g, '<code style="background:rgba(127,127,127,.18);padding:1px 5px;border-radius:4px;font-size:.92em">$1</code>');
+  // headings (### / ## / #) at line start
+  out = out.replace(/(^|\n)#{1,3}\s+([^\n]+)/g, '$1<div style="font-weight:700;margin-top:6px">$2</div>');
+  // **bold**
+  out = out.replace(/\*\*([^*\n]+)\*\*/g, '<b>$1</b>');
+  // *italic* — only when flanked by whitespace/start to avoid eating bullet stars
+  out = out.replace(/(^|[\s(])\*([^*\n]+)\*/g, '$1<i>$2</i>');
+  // bullets — group consecutive "- " lines into a <ul>
+  out = out.replace(/(?:^|\n)((?:- [^\n]+\n?)+)/g, (_m, block) => {
+    const items = block.trim().split(/\n/).map(l => l.replace(/^- /, "")).map(li => `<li>${li}</li>`).join("");
+    return `\n<ul style="margin:6px 0 6px 18px;padding:0">${items}</ul>`;
+  });
+  // remaining line breaks
+  out = out.replace(/\n/g, "<br>");
+  return out;
 }
 
 /* ================ CALENDAR EXPORT (.ics) ================ */
@@ -12340,6 +12796,7 @@ function init() {
     debtAccounts, setDebtMeta, payoffSchedule, debtMetaSheet, debtSettingsSheet,
     debtConsolidationSheet,
     fetchInsight, getMonthlyInsight, runAiInsight,
+    openCounselor, counselorRender, counselorSend, counselorClear, buildCounselorSnapshot,
     billsToIcs, exportBillsIcs,
     yearReview, yearReviewSheet, shareCardSvg, downloadShareCard, shareStreakCard,
     backendHoldings, syncHoldings,
