@@ -2702,6 +2702,73 @@ function addWin(text) {
   DB.wins.unshift({ id: uid(), date: todayKey(), text: text.trim() });
   save(); render();
 }
+
+// All-wins archive sheet — full history grouped by month so the user can scroll
+// back and re-read everything they've captured. Tap any month for a quick count.
+function allWinsSheet() {
+  const wins = (DB.wins || []).slice().sort((a,b) => (b.date || "").localeCompare(a.date || ""));
+  if (!wins.length) {
+    openSheet(`
+      <h2>All wins</h2>
+      <div class="empty" style="padding:30px 16px;text-align:center">
+        <div class="e-emoji">⭐</div>
+        <div class="e-title">No wins yet</div>
+        <div class="e-sub">Capture small victories as they happen — they add up.</div>
+      </div>
+      <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+    `);
+    return;
+  }
+  // Group by year-month
+  const groups = {};
+  wins.forEach(w => {
+    const ym = (w.date || "").slice(0, 7);
+    if (!groups[ym]) groups[ym] = [];
+    groups[ym].push(w);
+  });
+  const ymKeys = Object.keys(groups).sort((a,b) => b.localeCompare(a));
+  const monthLabel = (ym) => {
+    const [yr, mo] = ym.split("-").map(Number);
+    return new Date(yr, mo - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" });
+  };
+  const longestStreak = (() => {
+    const dates = new Set(wins.map(w => w.date));
+    if (!dates.size) return 0;
+    let best = 0, cur = 0;
+    const sorted = [...dates].sort();
+    let prev = null;
+    sorted.forEach(d => {
+      if (!prev) { cur = 1; }
+      else {
+        const a = new Date(prev + "T00:00:00"), b = new Date(d + "T00:00:00");
+        const diff = Math.round((b - a) / 86400000);
+        cur = diff === 1 ? cur + 1 : 1;
+      }
+      if (cur > best) best = cur;
+      prev = d;
+    });
+    return best;
+  })();
+  openSheet(`
+    <h2 style="margin-bottom:4px">All wins</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">${wins.length} captured across ${ymKeys.length} month${ymKeys.length===1?'':'s'} · longest streak <b style="color:var(--orange)">${longestStreak} day${longestStreak===1?'':'s'}</b></p>
+    ${ymKeys.map(ym => `
+      <div class="section-h" style="margin-top:18px"><span class="lbl">${monthLabel(ym)}</span><span class="muted" style="font-size:12px">${groups[ym].length}</span></div>
+      <div class="list">
+        ${groups[ym].map(w => `
+          <div class="row">
+            <div class="lead">⭐</div>
+            <div class="body">
+              <div class="t1">${esc(w.text)}</div>
+              <div class="t2">${w.date || ""}</div>
+            </div>
+          </div>
+        `).join("")}
+      </div>
+    `).join("")}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
 // Variant that lets the caller backfill a win for a specific date — used by the
 // Calendar day-detail sheet so users can log wins they forgot to capture earlier.
 async function addWinForDate(dateKey, text) {
@@ -2896,7 +2963,7 @@ function renderToday() {
     ` : ""}
     <div class="list">${habitsHtmlFiltered}</div>
 
-    <div class="section-h"><span class="lbl">Wins today${winsStreak >= 2 ? ` <span style="color:var(--orange);font-weight:700;margin-left:6px">🔥 ${winsStreak}d streak</span>` : ''}</span><button class="act" onclick="(()=>{const t=prompt('Win:');if(t)addWin(t);})()">+ Add</button></div>
+    <div class="section-h"><span class="lbl">Wins today${winsStreak >= 2 ? ` <span style="color:var(--orange);font-weight:700;margin-left:6px">🔥 ${winsStreak}d streak</span>` : ''}</span><span style="display:flex;gap:14px"><button class="act" onclick="allWinsSheet()" style="${(DB.wins || []).length ? '' : 'display:none'}">All</button><button class="act" onclick="(()=>{const t=prompt('Win:');if(t)addWin(t);})()">+ Add</button></span></div>
     <div class="list">${winsHtml}</div>
 
     <!-- ===== MONEY SNAPSHOT: daily glance ===== -->
@@ -15760,7 +15827,7 @@ function init() {
     goalForecastSheet, _onGoalForecastSlider, _goalForecastBody,
     addExpenseInline, deleteExpense, totalExpenses, leftover,
     addSpend, deleteSpend, monthSpend, spendCategories,
-    addWin, deleteWin, winsToday,
+    addWin, deleteWin, winsToday, allWinsSheet,
     openSettings, applyTheme, toggleNotifications, scheduleReminder, exportData, importData, openSheet, closeSheet, toast,
     connectBank, syncNow, disconnectItem, backendLinkToken, backendExchange, backendSync, backendListItems, backendRemoveItem,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
