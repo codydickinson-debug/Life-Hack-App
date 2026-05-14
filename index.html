@@ -10108,37 +10108,65 @@ function yearReviewSheet() {
 
 
 /* ================ DEMO DATA ================ */
-function loadDemoData() {
-  if (!confirm("Fill the app with realistic demo data? This will overwrite your current data. (You can reset later.)")) return;
+// Internal factory: builds a comprehensive demo DB without prompting,
+// saving, rendering, or toasting. Exists separately from loadDemoData so
+// the guided tour can swap it in temporarily without touching disk.
+// Pass currentDB to preserve user identity, backend wiring, and theme.
+function _buildDemoData(currentDB) {
   const today = new Date();
   const tk = (d) => { const x = new Date(d); return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0"); };
   const back = (n) => { const x = new Date(today); x.setDate(x.getDate()-n); return tk(x); };
 
   const fresh = clone(DEFAULT_DB);
-  fresh.user.name = DB.user.name || "Dylan";
-  fresh.user.userId = DB.user.userId || ("u_" + uid() + uid());
+  fresh.user.name = currentDB.user.name || "Dylan";
+  fresh.user.userId = currentDB.user.userId || ("u_" + uid() + uid());
   // Preserve the device's enrollment with the backend across demo reset, otherwise the user
   // would need to re-paste the enrollment key after demo mode.
-  fresh.user.clientSecret = DB.user.clientSecret || "";
+  fresh.user.clientSecret = currentDB.user.clientSecret || "";
   // Carry over backend/AI settings if user already set them
   fresh.settings = Object.assign({}, fresh.settings, {
-    backendUrl: DB.settings.backendUrl || "",
-    apiKey: DB.settings.apiKey || "",
-    anthropicModel: DB.settings.anthropicModel || fresh.settings.anthropicModel,
-    theme: DB.settings.theme || "auto",
-    privacyMode: !!DB.settings.privacyMode,
-    autoLockMinutes: +DB.settings.autoLockMinutes || 0,
-    celebrationsEnabled: DB.settings.celebrationsEnabled !== false,
-    monthlySavingsTarget: +DB.settings.monthlySavingsTarget || 0,
+    backendUrl: currentDB.settings.backendUrl || "",
+    apiKey: currentDB.settings.apiKey || "",
+    anthropicModel: currentDB.settings.anthropicModel || fresh.settings.anthropicModel,
+    theme: currentDB.settings.theme || "auto",
+    privacyMode: !!currentDB.settings.privacyMode,
+    autoLockMinutes: +currentDB.settings.autoLockMinutes || 0,
+    celebrationsEnabled: currentDB.settings.celebrationsEnabled !== false,
+    monthlySavingsTarget: +currentDB.settings.monthlySavingsTarget || 0,
   });
 
+  // Habits — 35-day rolling logs so streaks, heatmaps, and Stats look populated.
+  // Pattern per habit is realistic, not 100%, so completion-rate stats vary.
+  const habitDays = (rate, n = 35) => {
+    const log = {};
+    for (let d = 0; d < n; d++) {
+      // Deterministic-ish pattern: skip ~(1 - rate) of days, weighted to weekends
+      const dow = new Date(today.getTime() - d*86400000).getDay();
+      const isWeekend = dow === 0 || dow === 6;
+      const skip = Math.random() > rate || (isWeekend && Math.random() > 0.65);
+      if (!skip) log[back(d)] = true;
+    }
+    return log;
+  };
+  const habitCounts = (target, rate, n = 35) => {
+    const log = {};
+    for (let d = 0; d < n; d++) {
+      if (Math.random() > rate) continue;
+      // Realistic partials: 50% hit target, rest fall short by 10-50%
+      const val = Math.random() > 0.5 ? target : Math.round(target * (0.5 + Math.random() * 0.4));
+      log[back(d)] = val;
+    }
+    return log;
+  };
   fresh.habits = [
-    { id:"h1", name:"Workout",      emoji:"\u{1F4AA}", type:"check", group:"health", color:"#34C759", createdAt:Date.now(), log:{ [back(0)]:true, [back(1)]:true, [back(2)]:true, [back(3)]:true, [back(5)]:true, [back(6)]:true } },
-    { id:"h2", name:"Read Bible",   emoji:"\u{1F4D6}", type:"check", group:"faith",  color:"#AF52DE", createdAt:Date.now(), log:{ [back(0)]:true, [back(1)]:true, [back(2)]:true, [back(3)]:true, [back(4)]:true, [back(5)]:true, [back(6)]:true, [back(7)]:true, [back(8)]:true } },
-    { id:"h3", name:"Drink water",  emoji:"\u{1F4A7}", type:"count", target:64, unit:"oz", group:"health", color:"#5AC8FA", createdAt:Date.now(), log:{ [back(0)]:32, [back(1)]:64, [back(2)]:48, [back(3)]:64 } },
-    { id:"h4", name:"Read & learn", emoji:"\u{1F4DA}", type:"check", group:"mind",   color:"#5856D6", createdAt:Date.now(), log:{ [back(1)]:true, [back(2)]:true, [back(3)]:true, [back(5)]:true, [back(6)]:true } },
-    { id:"h5", name:"Log savings",  emoji:"\u{1F4B0}", type:"count", target:41, unit:"$", group:"money", color:"#FF9500", createdAt:Date.now(), log:{ [back(1)]:41, [back(2)]:41, [back(4)]:50 } },
-    { id:"h6", name:"Prayer",       emoji:"\u{1F64F}", type:"check", group:"faith",  color:"#AF52DE", createdAt:Date.now(), log:{ [back(0)]:true, [back(1)]:true, [back(2)]:true, [back(3)]:true } },
+    { id:"h1", name:"Workout",       emoji:"\u{1F4AA}", type:"check", group:"health", color:"#34C759", createdAt:Date.now(), log: habitDays(0.78) },
+    { id:"h2", name:"Read Bible",    emoji:"\u{1F4D6}", type:"check", group:"faith",  color:"#AF52DE", createdAt:Date.now(), log: habitDays(0.90) },
+    { id:"h3", name:"Drink water",   emoji:"\u{1F4A7}", type:"count", target:64, unit:"oz", group:"health", color:"#5AC8FA", createdAt:Date.now(), log: habitCounts(64, 0.85) },
+    { id:"h4", name:"Read & learn",  emoji:"\u{1F4DA}", type:"check", group:"mind",   color:"#5856D6", createdAt:Date.now(), log: habitDays(0.70) },
+    { id:"h5", name:"Log savings",   emoji:"\u{1F4B0}", type:"count", target:41, unit:"$", group:"money", color:"#FF9500", createdAt:Date.now(), log: habitCounts(41, 0.60) },
+    { id:"h6", name:"Prayer",        emoji:"\u{1F64F}", type:"check", group:"faith",  color:"#AF52DE", createdAt:Date.now(), log: habitDays(0.88) },
+    { id:"h7", name:"Sleep < 11pm",  emoji:"\u{1F319}", type:"check", group:"health", color:"#5856D6", createdAt:Date.now(), log: habitDays(0.72) },
+    { id:"h8", name:"Walk 10k steps",emoji:"\u{1F6B6}", type:"count", target:10000, unit:"steps", group:"health", color:"#34C759", createdAt:Date.now(), log: habitCounts(10000, 0.80) },
   ];
   fresh.goals = [
     { id:"g1", title:"Hit the gym 5x/week",   note:"Morning sessions only",         tier:"daily",  steps:[], done:false, createdAt:Date.now() },
@@ -10266,10 +10294,64 @@ function loadDemoData() {
     { id:"rc4", name:"Paycheck", amount: 2000, cadence: "biweekly", dayOfMonth: 1,  category: "Income", kind: "income",  createdAt: Date.now() },
   ];
   fresh.reflections = [
-    { id:"rf1", date: back(0),  text:"Logged a real workout. Felt good. Slow morning otherwise — start water earlier tomorrow.", createdAt: Date.now() },
-    { id:"rf2", date: back(7),  text:"Saw the truck fund cross $1k. Small but it's moving. Keep the auto transfer on Fridays.", createdAt: Date.now() },
-    { id:"rf3", date: back(14), text:"Skipped the gym twice this week. Sleep early Sunday → Monday workout → momentum.",       createdAt: Date.now() },
+    { id:"rf1", date: back(0),  text:"Logged a real workout. Felt good. Slow morning otherwise — start water earlier tomorrow.",      createdAt: Date.now() },
+    { id:"rf2", date: back(2),  text:"Closed my first MCA deal today. Took 11 calls but the pattern works. Repeatable.",              createdAt: Date.now() },
+    { id:"rf3", date: back(5),  text:"Ate out 4x this week. The dining-out line on the budget is bleeding. Meal-prep Sunday.",       createdAt: Date.now() },
+    { id:"rf4", date: back(7),  text:"Saw the truck fund cross $1k. Small but it's moving. Keep the auto transfer on Fridays.",      createdAt: Date.now() },
+    { id:"rf5", date: back(10), text:"Roth IRA auto-contribution hit. $1,166 in. Compound math is on my side — just don't touch it.", createdAt: Date.now() },
+    { id:"rf6", date: back(14), text:"Skipped the gym twice this week. Sleep early Sunday → Monday workout → momentum.",             createdAt: Date.now() },
+    { id:"rf7", date: back(21), text:"Read 'I Will Teach You To Be Rich' chapter 3. Set up the Roth IRA auto. Done is better than perfect.", createdAt: Date.now() },
   ];
+
+  // 21 days of mood entries — varied so the Calendar / Stats trend shows
+  // realistic ups and downs, not a flat line of 😀.
+  const moodPool = ["\u{1F600}","\u{1F60A}","\u{1F642}","\u{1F610}","\u{1F614}","\u{1F62A}","\u{1F60D}","\u{1F60E}"];
+  const moodWeights = [0.30, 0.30, 0.18, 0.10, 0.06, 0.03, 0.02, 0.01]; // mostly positive
+  fresh.moods = {};
+  for (let d = 0; d < 21; d++) {
+    const r = Math.random();
+    let acc = 0;
+    for (let i = 0; i < moodPool.length; i++) {
+      acc += moodWeights[i];
+      if (r <= acc) { fresh.moods[back(d)] = moodPool[i]; break; }
+    }
+  }
+
+  // A handful of calendar journal notes — short, realistic, varied days
+  fresh.calendarNotes = {
+    [back(0)]:  "Closed first MCA deal — keep doing what worked: short pitch, ask for the no.",
+    [back(2)]:  "Workout streak day 3. Hit deadlift PR. Sleep was great.",
+    [back(5)]:  "Skipped gym. Stress-ate at Chipotle. Reset tomorrow.",
+    [back(9)]:  "Payday — moved $600 to Truck fund + $583 to Roth. Don't see it, don't spend it.",
+    [back(14)]: "Started reading 'I Will Teach You'. Setting up auto-transfers per chapter 3.",
+    [back(20)]: "Bought new running shoes (budget approved). Streak refresh feels worth it.",
+  };
+
+  // Wins spread over 14 days, not just today — Calendar + Stats look richer
+  fresh.wins = [
+    { id:"w01", date: back(0),  text:"Got up at 6am" },
+    { id:"w02", date: back(0),  text:"Closed first MCA deal" },
+    { id:"w03", date: back(1),  text:"Hit gym 4 days in a row" },
+    { id:"w04", date: back(2),  text:"Made coffee at home — saved $7" },
+    { id:"w05", date: back(3),  text:"Read 2 chapters before bed" },
+    { id:"w06", date: back(4),  text:"Walked the dog twice" },
+    { id:"w07", date: back(6),  text:"Said no to a $400 'sale' I didn't need" },
+    { id:"w08", date: back(7),  text:"Truck fund crossed $1,000" },
+    { id:"w09", date: back(9),  text:"Cooked all meals at home" },
+    { id:"w10", date: back(11), text:"Set up Roth IRA auto-contribution" },
+    { id:"w11", date: back(13), text:"Called Mom" },
+    { id:"w12", date: back(14), text:"Finished Atomic Habits" },
+  ];
+
+  // Reading list progress — a few books read so the Wealth Reading List feels lived-in.
+  fresh.booksRead = {
+    "atomic-habits":          { read: true, at: Date.now() - 14*86400000 },
+    "psychology-of-money":    { read: true, at: Date.now() - 30*86400000 },
+    "i-will-teach-you-rich":  { read: true, at: Date.now() - 7*86400000 },
+    "rich-dad-poor-dad":      { read: false },
+    "intelligent-investor":   { read: false },
+  };
+
   fresh.settings.monthlySavingsTarget = 600;
   fresh.lastSeenWhatsNew = WHATS_NEW_KEY;
   // Link two daily goals to the life goal so the chain shows
@@ -10278,8 +10360,14 @@ function loadDemoData() {
   if (lifeGoal && dailies.length) {
     dailies.slice(0, 2).forEach(d => { d.parentId = lifeGoal.id; });
   }
+  return fresh;
+}
 
-  DB = fresh;
+// Public entry point — confirms with the user, persists, renders.
+// Settings → Load demo data uses this.
+function loadDemoData() {
+  if (!confirm("Fill the app with realistic demo data? This will overwrite your current data. (You can reset later.)")) return;
+  DB = _buildDemoData(DB);
   if (window.applyRulesToAll) applyRulesToAll();
   save();
   showTab("today");
@@ -10545,8 +10633,35 @@ function _tourEnsureChrome() {
   overlay.addEventListener("click", tutorialFinish);
 }
 
+// Demo-overlay state for the tour. The tour temporarily replaces DB with
+// rich demo data so users see populated tabs (habits w/ streaks, moods on
+// the Calendar, spend transactions, etc.) instead of empty empty-states.
+// We also monkey-patch save() to no-op while the overlay is active — demo
+// data must never persist to disk, and any in-render save calls would
+// otherwise leak the overlay into localStorage.
+let _tourBackup = null; // { db, origSave } — null when tour mode is off
+
+function _enterTourMode() {
+  if (_tourBackup) return;
+  let dbSnapshot = null;
+  try { dbSnapshot = JSON.parse(JSON.stringify(DB)); } catch { dbSnapshot = DB; }
+  _tourBackup = { db: dbSnapshot, origSave: save };
+  save = async () => {}; // suppress writes while demo data is in DB
+  DB = _buildDemoData(dbSnapshot);
+  try { if (typeof applyTheme === "function") applyTheme(); } catch {}
+}
+
+function _exitTourMode() {
+  if (!_tourBackup) return;
+  save = _tourBackup.origSave;
+  DB = _tourBackup.db;
+  _tourBackup = null;
+  try { if (typeof applyTheme === "function") applyTheme(); } catch {}
+}
+
 function startTutorial() {
   _tourEnsureChrome();
+  _enterTourMode();
   _tutStep = 0;
   _tourGo();
 }
@@ -10618,35 +10733,48 @@ function _tourPosition() {
     tooltip.style.top  = top + "px";
     tooltip.style.transform = "";
   } else {
+    // No target → don't dim the page. The tab is populated with demo
+    // data and we want the user to *see* it. Dock the tooltip at the
+    // bottom-center as a coachmark so the tab content stays visible.
     spotlight.style.display = "none";
-    overlay.style.display = "block";
+    overlay.style.display = "none";
+    const tr = tooltip.getBoundingClientRect();
     tooltip.style.left = "50%";
-    tooltip.style.top  = "50%";
-    tooltip.style.transform = "translate(-50%, -50%)";
+    tooltip.style.top  = (vh - tr.height - 96) + "px"; // 96px clears the tabbar
+    tooltip.style.transform = "translateX(-50%)";
   }
 }
 
 function tutorialNext() { if (_tutStep < TUTORIAL_STEPS.length - 1) { _tutStep++; _tourGo(); } }
 function tutorialBack() { if (_tutStep > 0) { _tutStep--; _tourGo(); } }
-function tutorialFinish() {
-  if (DB && DB.user) {
-    DB.user.tutorialSeenAt = Date.now();
-    try { save(); } catch {}
-  }
+
+function _tourTearDownChrome() {
   ["tour-overlay","tour-spotlight","tour-tooltip"].forEach(id => {
     const el = document.getElementById(id);
     if (el) el.style.display = "none";
   });
 }
 
+function tutorialFinish() {
+  _tourTearDownChrome();
+  // Restore the user's real data BEFORE marking seen + saving, so we
+  // never persist demo data to disk.
+  _exitTourMode();
+  if (DB && DB.user) {
+    DB.user.tutorialSeenAt = Date.now();
+    try { save(); } catch {}
+  }
+  try { if (typeof render === "function") render(); } catch {}
+}
+
 function tutorialAsk() {
   const s = TUTORIAL_STEPS[_tutStep];
-  // Close the tour chrome so the counselor sheet is visible. Don't mark
-  // tutorialSeenAt — user can replay from Settings if they bail mid-tour.
-  ["tour-overlay","tour-spotlight","tour-tooltip"].forEach(id => {
-    const el = document.getElementById(id);
-    if (el) el.style.display = "none";
-  });
+  _tourTearDownChrome();
+  // Exit tour mode so Cylan reads the user's actual snapshot (real
+  // habits, real goals, real spend) — answering against demo numbers
+  // would be misleading. User can replay the tour from Settings.
+  _exitTourMode();
+  try { if (typeof render === "function") render(); } catch {}
   const seed = s.askPrompt || `Tell me more about the "${s.title}" feature in Ascend.`;
   if (typeof openCounselor === "function") openCounselor(seed, "default");
 }
