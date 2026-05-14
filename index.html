@@ -3104,14 +3104,14 @@ function renderPlanning() {
   `;
 
   const counselorCta = `
-    <div onclick="openCounselor(null, 'planning')" role="button" tabindex="0"
-      style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border-radius:var(--r);padding:14px 16px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:12px;box-shadow:var(--sh-1)">
-      <div style="width:36px;height:36px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">✨</div>
-      <div style="flex:1;min-width:0">
-        <div style="font-size:14px;font-weight:700;line-height:1.2">Build my plan with the counselor</div>
-        <div style="font-size:12px;opacity:.88;margin-top:2px">Talk through priorities, timelines, what to tackle first</div>
+    <div class="row tappable" onclick="openCounselor(null, 'planning')" role="button" tabindex="0"
+      style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:center;cursor:pointer">
+      <div style="width:36px;height:36px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;color:var(--purple);margin-right:12px">✨</div>
+      <div class="body">
+        <div class="t1" style="margin:0">Build my plan with the counselor</div>
+        <div class="t2">Talk through priorities, timelines, what to tackle first</div>
       </div>
-      <div style="font-size:20px;opacity:.85">→</div>
+      <div class="trail chev"></div>
     </div>
   `;
 
@@ -3554,6 +3554,58 @@ function renderMoney() {
       };
     });
 
+    // "Next wealth milestones" — when invested balance crosses round numbers
+    // ($25k / $50k / $100k / etc.) at the current contribution pace + return.
+    // Simulates month-by-month so each crossing has a real date attached.
+    const wealthMilestones = (() => {
+      const invested = currentInvested() || 0;
+      const monthlyR = (annualReturn / 100) / 12;
+      const tiers = [10000, 25000, 50000, 100000, 250000, 500000, 1_000_000, 2_000_000, 5_000_000, 10_000_000];
+      const upcoming = tiers.filter(t => t > invested).slice(0, 5);
+      if (!upcoming.length) return [];
+      const out = [];
+      let bal = invested, m = 0, next = 0;
+      const cap = 50 * 12; // 50 years safety cap
+      while (next < upcoming.length && m < cap) {
+        bal = bal * (1 + monthlyR) + baseMonthly;
+        m++;
+        while (next < upcoming.length && bal >= upcoming[next]) {
+          const d = new Date();
+          d.setMonth(d.getMonth() + m);
+          out.push({
+            amount: upcoming[next],
+            months: m,
+            date: d.toLocaleDateString("en-US", { month: "short", year: "numeric" }),
+          });
+          next++;
+        }
+      }
+      return out;
+    })();
+    const milestoneDurLbl = (months) => {
+      if (!months) return "—";
+      const yr = Math.floor(months / 12), mo = months % 12;
+      if (yr > 0 && mo > 0) return `${yr}y ${mo}mo`;
+      if (yr > 0) return `${yr}y`;
+      return `${mo}mo`;
+    };
+    const milestonesHtml = wealthMilestones.length ? `
+      <div class="section-h"><span class="lbl">Next wealth milestones</span></div>
+      <div style="background:var(--card);border-radius:var(--r);padding:18px;border:0.5px solid var(--sep);box-shadow:var(--sh-1);margin-bottom:14px">
+        <div style="font-size:11.5px;color:var(--t3);margin-bottom:14px">At <span data-priv="amount">${fmt$0(baseMonthly)}</span>/mo · ${annualReturn}% return · from <span data-priv="amount">${fmt$0(currentInvested())}</span> today</div>
+        ${wealthMilestones.map((m, i) => `
+          <div style="display:flex;align-items:center;gap:14px;${i > 0 ? 'border-top:0.5px solid var(--sep);padding-top:12px;margin-top:12px' : ''}">
+            <div style="width:34px;height:34px;border-radius:50%;background:rgba(46,184,117,0.12);color:var(--green);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">${i+1}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:18px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums;line-height:1.1" data-priv="amount">${fmt$0(m.amount)}</div>
+              <div style="font-size:12px;color:var(--t3);margin-top:2px">${milestoneDurLbl(m.months)} from now · ${m.date}</div>
+            </div>
+            <div style="font-size:11px;color:var(--t3);font-weight:600;text-align:right">milestone ${i+1}</div>
+          </div>
+        `).join("")}
+      </div>
+    ` : "";
+
     body = `
       <div style="background:var(--card);border-radius:var(--r);padding:18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
         <div style="font-size:13px;font-weight:600;color:var(--t2);margin-bottom:2px">What-if: monthly contribution</div>
@@ -3576,6 +3628,8 @@ function renderMoney() {
         </div>
         <button class="btn secondary" style="width:100%;margin-top:14px;font-size:12px" onclick="retirementSheet()">Adjust assumptions →</button>
       </div>
+
+      ${milestonesHtml}
 
       <div class="section-h"><span class="lbl">Savings goals — time to target</span></div>
       ${savingsForecasts.length ? `
@@ -4706,15 +4760,15 @@ function renderStocks() {
   page.innerHTML = `
     <div style="margin:-16px -14px 0;display:flex;flex-direction:column;height:calc(100dvh - 130px);background:#0b0d10">
       <div style="padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--sep);flex-shrink:0">
-        <button onclick="openCounselor(null, 'stocks')"
-          style="width:100%;padding:10px 12px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;border-radius:var(--r);font-size:13px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:10px;text-align:left">
-          <span style="width:26px;height:26px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0">✨</span>
-          <span style="flex:1">
-            <div style="font-size:13px;font-weight:700;line-height:1.15">Ask the counselor about investing</div>
-            <div style="font-size:11px;opacity:.85;font-weight:500;margin-top:1px">Allocation, ETFs, risk — frameworks, not stock picks</div>
-          </span>
-          <span style="font-size:16px;opacity:.85">→</span>
-        </button>
+        <div class="row tappable" onclick="openCounselor(null, 'stocks')" role="button" tabindex="0"
+          style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:10px 12px;align-items:center;cursor:pointer;margin:0">
+          <div style="width:30px;height:30px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;color:var(--purple);margin-right:10px">✨</div>
+          <div class="body">
+            <div class="t1" style="margin:0;font-size:13px">Ask the counselor about investing</div>
+            <div class="t2" style="font-size:11px;margin-top:1px">Allocation, ETFs, risk — frameworks, not stock picks</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
       </div>
       <iframe id="stk-iframe" src="/stockanalyzer?v=4" loading="eager"
         style="border:0;flex:1;width:100%;-webkit-overflow-scrolling:touch;background:#0a0a0c"
