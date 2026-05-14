@@ -6369,6 +6369,8 @@ function renderCalendar() {
   const billDates = new Set(upcomingBills(60).map(b => b.next_predicted));
   // Per-day notes
   const noteDates = new Set(Object.keys(DB.calendarNotes || {}));
+  // Per-day mood emojis (date → emoji)
+  const moodMap = DB.moods || {};
 
   // Aggregate month-level stats for the header strip
   let monthHabitDone = 0, monthHabitPossible = 0;
@@ -6421,6 +6423,7 @@ function renderCalendar() {
       hasSavings: savingsDates.has(k),
       hasBill: billDates.has(k) && !winDates.has(k), // bills hidden when other action exists, avoid clutter on past days
       hasNote: noteDates.has(k),
+      mood: moodMap[k] || "",
     });
   }
 
@@ -6448,7 +6451,7 @@ function renderCalendar() {
     ].filter(Boolean).join("");
     return `
       <div class="cal-cell" style="background:${bg};${ring}" onclick="calendarDaySheet('${c.key}')" role="button" tabindex="0">
-        <span class="cal-day">${c.day}</span>
+        <span class="cal-day">${c.day}${c.mood ? `<span style="margin-left:3px;font-size:10px">${c.mood}</span>` : ''}</span>
         ${dots ? `<span class="cal-dots">${dots}</span>` : ""}
       </div>
     `;
