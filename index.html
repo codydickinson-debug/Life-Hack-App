@@ -2368,9 +2368,13 @@ function toast(msg) {
 /* ================ SHEET ================ */
 let _lockSheet = false;  // when true, scrim taps + closeSheet() are no-ops (used during onboarding)
 function openSheet(html) {
-  $("#sheet").innerHTML = `<div class="grabber"></div>${html}`;
-  $("#sheet").classList.add("show");
+  const sheet = $("#sheet");
+  sheet.innerHTML = `<div class="grabber"></div>${html}`;
+  sheet.classList.add("show");
   $("#scrim").classList.add("show");
+  // Reset scroll position — a long previous sheet shouldn't leave the next
+  // one opened halfway down.
+  try { sheet.scrollTop = 0; } catch {}
 }
 function closeSheet() {
   if (_lockSheet) return;
