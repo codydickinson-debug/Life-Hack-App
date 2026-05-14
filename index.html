@@ -4584,6 +4584,63 @@ function renderMoney() {
       `;
     })() : "";
 
+    // Spending by day-of-week — average daily outflow per weekday across the
+    // last 90 days. Reveals which days the user opens their wallet most.
+    const spendDow = (() => {
+      const LOOKBACK = 90;
+      const byDow = [[],[],[],[],[],[],[]]; // Mon=0..Sun=6
+      const today = new Date();
+      for (let i = 0; i < LOOKBACK; i++) {
+        const d = new Date(today); d.setDate(today.getDate() - i);
+        const k = todayKey(d);
+        const sum = DB.spend
+          .filter(t => t.date === k && (+t.amount || 0) > 0)
+          .reduce((a, t) => a + (+t.amount || 0), 0);
+        const dow = (d.getDay() + 6) % 7;
+        byDow[dow].push(sum);
+      }
+      const avg = byDow.map(arr => arr.length ? arr.reduce((a,v) => a+v, 0) / arr.length : 0);
+      const hasData = avg.some(v => v > 0);
+      return { avg, hasData };
+    })();
+    const spendDowHtml = spendDow.hasData ? (() => {
+      const labels = ["M","T","W","T","F","S","S"];
+      const names = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+      const today = new Date();
+      const todayDow = (today.getDay() + 6) % 7;
+      const max = Math.max(...spendDow.avg);
+      const sorted = spendDow.avg.map((v,i) => ({v,i})).sort((a,b) => b.v - a.v);
+      const big = sorted[0], small = sorted[sorted.length-1];
+      const W=320, H=140, padX=10, padY=12, axisH=18;
+      const plotW = W - padX*2;
+      const plotH = H - padY - axisH;
+      const slot = plotW / 7;
+      const barW = slot * 0.6;
+      const bars = spendDow.avg.map((v, i) => {
+        const barH = max > 0 ? (v / max) * plotH : 0;
+        const x = padX + slot*i + (slot - barW)/2;
+        const y = padY + plotH - barH;
+        const color = i === todayDow ? "var(--orange)" : "var(--bg-elev2)";
+        return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(2,barH).toFixed(1)}" rx="3" fill="${color}"/>`;
+      }).join("");
+      const xLabels = labels.map((lbl, i) => {
+        const x = padX + slot*i + slot/2;
+        return `<text x="${x.toFixed(1)}" y="${H-4}" text-anchor="middle" font-size="11" font-weight="${i===todayDow?'700':'500'}" fill="${i===todayDow?'var(--t1)':'var(--t3)'}">${lbl}</text>`;
+      }).join("");
+      return `
+        <div style="background:var(--card);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+            <div style="font-size:13px;font-weight:600;color:var(--t2)">Spend by day of week</div>
+            <div style="font-size:11.5px;color:var(--t3)">avg/day · last 90 days</div>
+          </div>
+          <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet" style="width:100%;height:${H}px;display:block">
+            ${bars}${xLabels}
+          </svg>
+          <div style="font-size:11.5px;color:var(--t3);margin-top:6px;line-height:1.4">Biggest spend day: <b style="color:var(--t1)">${names[big.i]}</b> (<span data-priv="amount">${fmt$0(big.v)}</span>/day avg) · quietest: <b style="color:var(--t1)">${names[small.i]}</b> (<span data-priv="amount">${fmt$0(small.v)}</span>)</div>
+        </div>
+      `;
+    })() : "";
+
     // Spending by category this month — horizontal bar breakdown so the user
     // can see where their money actually went. Each category also carries a
     // trend vs the user's prior 3-month average so they know if they're
@@ -4667,6 +4724,7 @@ function renderMoney() {
         <div class="bh-sub">${DB.spend.filter(t=>t.date.startsWith(todayKey().slice(0,7))).length} transactions${totalAvail ? ` · ${fmt$0(totalAvail)} available across accounts` : ""}</div>
       </div>
       ${trendHtml}
+      ${spendDowHtml}
       ${breakdownHtml}
       ${accountsHtml}
       ${holdingsHtml}
