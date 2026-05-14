@@ -9458,12 +9458,26 @@ AVAILABLE ACTIONS — only emit these types:
     { type:"add_liability", name:string, balance:number, apr?:number, minPayment?:number, debt_type?:"student"|"auto"|"mortgage"|"personal"|"medical"|"other" }
     For recording a debt the user wants to track. APR is percent (e.g. 22.5).
 
+11. complete_goal
+    { type:"complete_goal", title_match:string }
+    Marks the user's goal as done when they tell you they finished it
+    ("I just hit my $1k emergency fund!"). title_match is a case-insensitive
+    substring of the goal title — pick the most distinctive phrase. Only
+    completes if exactly one goal matches; otherwise the app will skip.
+
+12. log_savings
+    { type:"log_savings", bucket_match:string, amount:number }
+    Adds a deposit to a savings bucket. bucket_match is a case-insensitive
+    substring of the bucket name. Amount is in dollars (positive).
+    Use when the user says "I just put $200 into my Vacation fund".
+
 ACTION RULES:
 - Only emit actions when the user's intent is concrete ("add a plan for...", "log a $X spend...", "set my savings target to $X"). Don't auto-emit for vague conversation.
 - ALWAYS confirm in plain English what you did, in addition to emitting the action. E.g. "Added a short-term plan: 'Build $1K emergency fund'. You'll see it on the Plan tab." The action block does the work; the prose tells the human.
 - Emit multiple actions in one reply when it makes sense (e.g. user says "set me up for FI" → add 1-2 plans + a savings target).
 - NEVER emit log_spend without an explicit amount from the user. NEVER guess amounts.
-- NEVER emit actions to delete or modify existing items in this version — only add/create.
+- NEVER emit modify/delete actions on items NOT listed above — only the action types here.
+- complete_goal and log_savings need a clear title_match / bucket_match phrase. If the user names something the app might not have ("my emergency fund"), pick the most distinctive words from what they said and let the app fuzzy-match.
 - If the user's request is ambiguous (which tier? which category?), ask ONE quick clarifying question instead of guessing.`;
 
 function buildCounselorSnapshot() {
@@ -10375,6 +10389,33 @@ function _runCylanAction(action) {
         });
         save();
         return { ok: true, icon: "🏦", label: `Added debt: "${name}" ${fmt$0(balance)}${apr ? ` @ ${apr}%` : ""}`, link: "money" };
+      }
+      case "complete_goal": {
+        const match = (action.title_match || "").toString().trim().toLowerCase();
+        if (!match) return { ok: false, label: "Skipped complete_goal (missing title_match)" };
+        const candidates = (DB.goals || []).filter(g => !g.done && (g.title || "").toLowerCase().includes(match));
+        if (!candidates.length) return { ok: false, label: `No goal matched "${match}"` };
+        if (candidates.length > 1) return { ok: false, label: `Ambiguous: ${candidates.length} goals match "${match}"` };
+        const g = candidates[0];
+        g.done = true;
+        g.completedAt = Date.now();
+        save();
+        return { ok: true, icon: "✓", label: `Marked goal complete: "${g.title}"`, link: "goals" };
+      }
+      case "log_savings": {
+        const match = (action.bucket_match || "").toString().trim().toLowerCase();
+        const amount = +action.amount;
+        if (!match) return { ok: false, label: "Skipped log_savings (missing bucket_match)" };
+        if (!amount || amount <= 0) return { ok: false, label: "Skipped log_savings (bad amount)" };
+        const candidates = (DB.savings || []).filter(s => (s.name || "").toLowerCase().includes(match));
+        if (!candidates.length) return { ok: false, label: `No savings bucket matched "${match}"` };
+        if (candidates.length > 1) return { ok: false, label: `Ambiguous: ${candidates.length} buckets match "${match}"` };
+        const s = candidates[0];
+        s.current = (+s.current || 0) + amount;
+        if (!Array.isArray(s.log)) s.log = [];
+        s.log.unshift({ date: todayKey(), amt: amount });
+        save();
+        return { ok: true, icon: "💰", label: `Deposited ${fmt$0(amount)} into ${s.name} (now ${fmt$0(s.current)})`, link: "money" };
       }
       default:
         return { ok: false, label: `Unknown action type: ${action.type}` };
