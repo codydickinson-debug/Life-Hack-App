@@ -115,7 +115,7 @@ When enabled:
 **To set this up**, follow `DEPLOY.md` — it walks through Plaid signup, Cloudflare Worker deploy, and configuring the iPhone app. Free tier covers personal use indefinitely.
 
 Files involved:
-- `backend/worker.js` — the Cloudflare Worker (~280 lines)
+- `backend/worker.js` — the Cloudflare Worker (~570 lines)
 - `backend/wrangler.toml` — config (you edit the KV id after creating it)
 - `backend/package.json` — for `wrangler` CLI
 
