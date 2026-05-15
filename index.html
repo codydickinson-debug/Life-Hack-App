@@ -5098,6 +5098,26 @@ function renderToday() {
     // wraps it in <span data-priv="amount"> so privacy mode blurs it
     // the same way every other $ on the page is blurred.
 
+    // 0-pre) Runway < 1 month — the most urgent financial signal. Surfaces
+    //   only when the user has both savings AND a fixed-expense estimate so
+    //   the math is real, and only when they DON'T already know (recurring
+    //   data exists so we can compute fixed). Money safety > everything.
+    try {
+      const totalSavings = (DB.savings || []).reduce((s, x) => s + (+x.current || 0), 0)
+                        + (DB.accounts || []).filter(a => a.type === "depository").reduce((s, a) => s + (+a.balance_current || 0), 0);
+      const fixedMonthly = (typeof _playsMonthlyFixed === "function") ? _playsMonthlyFixed() : 0;
+      if (fixedMonthly >= 500 && totalSavings >= 0) {
+        const runwayMonths = totalSavings / fixedMonthly;
+        if (runwayMonths < 1) {
+          return { emoji: "⚠️",
+            text: `Runway under 1 month — savings cover only`,
+            amount: `${runwayMonths.toFixed(1)} months`,
+            suffix: `of fixed expenses`,
+            onclick: `(function(){moneySub='wealth';showTab('money');})()` };
+        }
+      }
+    } catch {}
+
     // 0) Streak about to break: any habit with streak ≥7 not done today
     //    AND not paused. Time-sensitive — leads everything else.
     const tk = todayKey();
