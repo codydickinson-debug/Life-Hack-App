@@ -10584,7 +10584,8 @@ function _stocksRenderPortfolio() {
   }).join("");
 
   hero.innerHTML = `
-    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${plColor};border-radius:var(--r);padding:16px;margin-top:6px;margin-bottom:14px">
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${plColor};border-radius:var(--r);padding:16px;margin-top:6px;margin-bottom:14px;position:relative">
+      <button onclick="event.stopPropagation();sharePortfolioCard()" title="Share" aria-label="Share portfolio" style="position:absolute;top:12px;right:12px;background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t3);font-size:11px;padding:4px 10px;border-radius:999px;cursor:pointer;font-weight:600">Share ↗</button>
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
         <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Portfolio value</div>
         ${missingPrice > 0 ? `<div style="font-size:10px;color:var(--t3)">refresh for live prices</div>` : ""}
@@ -19991,6 +19992,93 @@ async function shareWealthScoreCard() {
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
   toast("Share card downloaded");
+}
+
+// Portfolio share card — 1080×1080 SVG with portfolio value, P&L %,
+// allocation donut, top holdings. Composed in SVG so it's shareable
+// across iOS/Android and the dark theme survives.
+function portfolioShareSvg() {
+  const W = 1080, H = 1080;
+  const holdings = (DB.stocks && DB.stocks.holdings) || {};
+  const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  let mkt = 0, cost = 0;
+  const rows = Object.entries(holdings).filter(([_, h]) => +h.shares > 0).map(([tk, h]) => {
+    const q = cache[tk];
+    const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+    const value = price * (+h.shares || 0);
+    mkt += value; cost += (+h.cost || 0) * (+h.shares || 0);
+    return { tk, value, shares: +h.shares };
+  }).sort((a, b) => b.value - a.value);
+  const pl = mkt - cost;
+  const plPct = cost > 0 ? (pl / cost) * 100 : 0;
+  const plColor = pl >= 0 ? "#34C759" : "#FF3B30";
+  // Donut center
+  const cx = 540, cy = 600, rOut = 200, rIn = 130;
+  const circ = 2 * Math.PI * ((rOut + rIn) / 2);
+  let cum = 0;
+  const top6 = rows.slice(0, 6);
+  const otherVal = rows.slice(6).reduce((s, r) => s + r.value, 0);
+  const allocs = [...top6, ...(otherVal > 0 ? [{ tk: "Other", value: otherVal }] : [])];
+  const colorFor = (a) => a.tk === "Other" ? "#8E8E93" : _stkTickerColor(a.tk);
+  const segs = allocs.map(a => {
+    const pct = mkt > 0 ? a.value / mkt : 0;
+    const dash = (pct * circ).toFixed(2);
+    const gap = (circ - +dash).toFixed(2);
+    const offset = (-cum * circ).toFixed(2);
+    cum += pct;
+    return `<circle cx="${cx}" cy="${cy}" r="${(rOut + rIn) / 2}" fill="none" stroke="${colorFor(a)}" stroke-width="${rOut - rIn}" stroke-dasharray="${dash} ${gap}" stroke-dashoffset="${offset}" transform="rotate(-90 ${cx} ${cy})"/>`;
+  }).join("");
+  // Legend
+  const legendItems = allocs.slice(0, 6).map((a, i) => {
+    const pct = mkt > 0 ? (a.value / mkt) * 100 : 0;
+    const y = 880 + Math.floor(i / 3) * 56;
+    const x = 90 + (i % 3) * 320;
+    return `
+      <g transform="translate(${x} ${y})">
+        <rect x="0" y="0" width="22" height="22" rx="4" fill="${colorFor(a)}"/>
+        <text x="34" y="17" font-size="22" font-weight="700" fill="#f7f7f5">${esc(a.tk)} ${pct.toFixed(0)}%</text>
+      </g>
+    `;
+  }).join("");
+  const fmt = (v) => v >= 1e6 ? "$" + (v/1e6).toFixed(2) + "M" : v >= 1e3 ? "$" + (v/1e3).toFixed(1) + "K" : "$" + Math.round(v);
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+  <defs>
+    <linearGradient id="psbg" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0a0a10"/>
+      <stop offset="100%" stop-color="#1a1a22"/>
+    </linearGradient>
+  </defs>
+  <rect width="${W}" height="${H}" fill="url(#psbg)"/>
+  <text x="${W/2}" y="90" text-anchor="middle" font-size="26" font-weight="600" fill="#9a9a9f" letter-spacing="3">PORTFOLIO · ASCEND</text>
+  <text x="${W/2}" y="200" text-anchor="middle" font-size="100" font-weight="800" fill="#f7f7f5" font-family="-apple-system,system-ui,sans-serif">${esc(fmt(mkt))}</text>
+  <text x="${W/2}" y="260" text-anchor="middle" font-size="34" font-weight="700" fill="${plColor}">${pl >= 0 ? "+" : ""}${plPct.toFixed(1)}% unrealized</text>
+  <!-- Donut -->
+  <circle cx="${cx}" cy="${cy}" r="${(rOut + rIn) / 2}" fill="none" stroke="#2a2a32" stroke-width="${rOut - rIn}"/>
+  ${segs}
+  <text x="${cx}" y="${cy - 6}" text-anchor="middle" font-size="28" fill="#9a9a9f">${rows.length} positions</text>
+  <text x="${cx}" y="${cy + 36}" text-anchor="middle" font-size="56" font-weight="800" fill="#f7f7f5">${rows.length}</text>
+  ${legendItems}
+  <text x="${W/2}" y="${H - 60}" text-anchor="middle" font-size="22" fill="#7a7a7f">life-hack-app.vercel.app</text>
+</svg>`;
+}
+
+async function sharePortfolioCard() {
+  const svg = portfolioShareSvg();
+  const blob = new Blob([svg], { type: "image/svg+xml" });
+  const file = new File([blob], `ascend-portfolio-${todayKey()}.svg`, { type: "image/svg+xml" });
+  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: "My portfolio", text: "Tracking my portfolio on Ascend." });
+      return;
+    } catch {}
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `ascend-portfolio-${todayKey()}.svg`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast("Portfolio share card downloaded");
 }
 
 async function shareStreakCard() {
