@@ -21094,6 +21094,9 @@ function weeklyReviewSheet() {
 /* --- "What's new" sheet (one-time on upgrade) ------------------- */
 const WHATS_NEW_KEY = "v3.2";
 function maybeShowWhatsNew() {
+  // Skip if a PWA shortcut is opening its own action sheet — the user
+  // didn't launch the app to see What's New, they tapped Quick Add.
+  if (window._suppressWhatsNew) return;
   if ((DB.user || {}).onboardedAt && DB.lastSeenWhatsNew !== WHATS_NEW_KEY) {
     setTimeout(() => whatsNewSheet(), 600);
   }
@@ -21170,6 +21173,45 @@ function init() {
     navigator.serviceWorker.register("sw.js").catch(()=>{});
   }
   if (DB.settings.notifications) scheduleReminder();
+
+  // Honor PWA shortcut URL params from manifest.json. The manifest has
+  // entries like ?tab=money&action=add-spend (iPhone home-screen long-press
+  // shortcuts) but we never parsed them — every shortcut just landed on
+  // the default Today tab. Wire them through showTab() and a small action
+  // dispatcher. Whitelist values strictly so a hostile link can't run
+  // arbitrary handlers.
+  try {
+    const params = new URLSearchParams(location.search || "");
+    const tab = params.get("tab");
+    const action = params.get("action");
+    const TAB_WHITELIST = new Set(["today","calendar","goals","planning","money","stocks","stats","settings"]);
+    const ACTION_WHITELIST = {
+      "add-spend":  () => typeof quickAddSpendSheet === "function" && quickAddSpendSheet(),
+      "add-win":    () => typeof addWinSheet === "function" && addWinSheet(),
+      "add-habit":  () => typeof addHabitSheet === "function" && addHabitSheet(),
+      "add-goal":   () => typeof addGoalSheet === "function" && addGoalSheet(),
+      "counselor":  () => typeof openCounselor === "function" && openCounselor(),
+    };
+    if (tab && TAB_WHITELIST.has(tab)) {
+      // Defer one tick so the renderers are wired before showTab fires.
+      setTimeout(() => showTab(tab), 0);
+    }
+    if (action && Object.prototype.hasOwnProperty.call(ACTION_WHITELIST, action)) {
+      // Tell maybeShowWhatsNew to bow out for this session — otherwise its
+      // own delayed openSheet (at ~600ms) clobbers the action sheet we
+      // just opened. The user came here for a specific action; the
+      // What's New sheet can wait for next launch.
+      window._suppressWhatsNew = true;
+      // Defer 250ms — the tab switch above triggers a render and we want
+      // the action sheet to land ON TOP of the resolved tab, not between.
+      setTimeout(ACTION_WHITELIST[action], 250);
+    }
+    // Strip the params from the URL so a back/forward navigation doesn't
+    // re-trigger the shortcut. Use replaceState so we don't add to history.
+    if ((tab || action) && history.replaceState) {
+      try { history.replaceState({}, "", location.pathname + location.hash); } catch {}
+    }
+  } catch {}
 
   Object.assign(window, {
     DB, save, load, clone, todayKey, fmt$, fmt$0, esc, uid,
