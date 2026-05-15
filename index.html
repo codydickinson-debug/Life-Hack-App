@@ -4158,6 +4158,10 @@ function render() {
   if (tab === "stats")    renderStats();
   if (tab === "calendar") renderCalendar();
   if (tab === "settings") renderSettings();
+  // Fire achievement-unlock toasts after the tab renders, so any change
+  // that just happened (habit checked off, goal completed, etc) has a
+  // chance to flip an achievement and celebrate.
+  if (typeof _checkNewAchievements === "function") _checkNewAchievements();
 }
 
 // Calendar month being viewed — defaults to today's month, navigated by calendarPrev/Next.
@@ -13349,6 +13353,40 @@ function debtMetaSheet(accountId) {
 }
 function debtSettingsSheet() { showTab("settings"); }
 
+// Check for newly-unlocked achievements vs the last-seen set; toast each
+// new one (max 2 to avoid spam) and persist the seen set so we don't
+// fire twice. Called after every render so any state change that flips
+// an achievement gets celebrated immediately.
+function _checkNewAchievements() {
+  try {
+    const list = _achievementsList();
+    const earnedIds = new Set(list.filter(a => a.earned).map(a => a.id));
+    if (!DB.settings._achievementsSeen) DB.settings._achievementsSeen = [];
+    const seen = new Set(DB.settings._achievementsSeen);
+    const fresh = [...earnedIds].filter(id => !seen.has(id));
+    if (!fresh.length) return;
+    // First-ever run: seed the seen set so we don't toast 13 at once on a
+    // user who already has tons of data. Only celebrate going-forward.
+    if (!DB.settings._achievementsSeen.length) {
+      DB.settings._achievementsSeen = [...earnedIds];
+      save();
+      return;
+    }
+    const toToast = fresh.slice(0, 2);
+    for (const id of toToast) {
+      const a = list.find(x => x.id === id);
+      if (!a) continue;
+      const delay = toToast.indexOf(id) * 1800;
+      setTimeout(() => {
+        toast(`${a.emoji} Achievement unlocked: ${a.title}`);
+        try { celebrate && celebrate(); } catch {}
+      }, delay);
+    }
+    DB.settings._achievementsSeen = [...earnedIds];
+    save();
+  } catch {}
+}
+
 // ===== ACHIEVEMENTS =====
 // Catalog of unlockable milestones across the app. Each entry computes its
 // unlocked state from DB at render time (no separate persisted "earned at"
@@ -13392,6 +13430,10 @@ function _achievementsList() {
     }
     return false;
   })();
+  // progress is an optional 0..1 fraction representing how close the user
+  // is to unlocking. Booleans (first-X) don't have meaningful progress;
+  // threshold checks (saved $10k, 30-day streak, etc) report a fraction
+  // so the "Next up" card can pick the closest pending achievement.
   return [
     { id: "first-habit",      emoji: "✓",  group: "Start", title: "First habit",        desc: "Add your first habit",                    earned: habits.length > 0 },
     { id: "first-check",      emoji: "🔥", group: "Start", title: "First check-off",    desc: "Mark a habit done once",                  earned: totalHabitDones > 0 },
@@ -13400,20 +13442,20 @@ function _achievementsList() {
     { id: "first-saving",     emoji: "💰", group: "Start", title: "First bucket",       desc: "Create a savings goal",                   earned: savings.length > 0 },
     { id: "first-spend",      emoji: "💸", group: "Start", title: "First spend",        desc: "Log a transaction",                       earned: spend.length > 0 },
     { id: "talked-cornileus", emoji: "✨", group: "Start", title: "Met Cornileus",      desc: "Open the AI counselor",                   earned: !!counselorThreadEver },
-    { id: "streak-7",         emoji: "🔥", group: "Habits", title: "7-day streak",      desc: "Hit a 7-day streak on any habit",          earned: maxStreak >= 7 },
-    { id: "streak-30",        emoji: "🔥", group: "Habits", title: "30-day streak",     desc: "30-day streak on a habit",                 earned: maxStreak >= 30 },
-    { id: "streak-100",       emoji: "🏆", group: "Habits", title: "100-day streak",    desc: "Triple-digit streak — rare territory",     earned: maxStreak >= 100 },
+    { id: "streak-7",         emoji: "🔥", group: "Habits", title: "7-day streak",      desc: "Hit a 7-day streak on any habit",          earned: maxStreak >= 7,   progress: Math.min(1, maxStreak / 7) },
+    { id: "streak-30",        emoji: "🔥", group: "Habits", title: "30-day streak",     desc: "30-day streak on a habit",                 earned: maxStreak >= 30,  progress: Math.min(1, maxStreak / 30) },
+    { id: "streak-100",       emoji: "🏆", group: "Habits", title: "100-day streak",    desc: "Triple-digit streak — rare territory",     earned: maxStreak >= 100, progress: Math.min(1, maxStreak / 100) },
     { id: "perfect-day",      emoji: "🌟", group: "Habits", title: "Perfect day",       desc: "All habits done on a single day",          earned: perfectDayHit },
-    { id: "five-wins",        emoji: "⭐", group: "Habits", title: "5 wins captured",    desc: "Build your wins log",                     earned: wins.length >= 5 },
-    { id: "twenty-wins",      emoji: "🌟", group: "Habits", title: "20 wins captured",   desc: "Compounding momentum",                    earned: wins.length >= 20 },
+    { id: "five-wins",        emoji: "⭐", group: "Habits", title: "5 wins captured",    desc: "Build your wins log",                     earned: wins.length >= 5,  progress: Math.min(1, wins.length / 5) },
+    { id: "twenty-wins",      emoji: "🌟", group: "Habits", title: "20 wins captured",   desc: "Compounding momentum",                    earned: wins.length >= 20, progress: Math.min(1, wins.length / 20) },
     { id: "first-goal-done",  emoji: "🎯", group: "Goals", title: "First goal done",    desc: "Finish what you started",                  earned: goals.some(g => g.done) },
     { id: "first-roadmap",    emoji: "🗺️", group: "Goals", title: "Built a roadmap",   desc: "Cornileus or you laid out a roadmap",      earned: roadmaps.length > 0 },
-    { id: "saved-1k",         emoji: "💵", group: "Money", title: "Saved $1k",          desc: "First $1,000 across all buckets",          earned: totalSavedAmt >= 1000 },
-    { id: "saved-10k",        emoji: "💵", group: "Money", title: "Saved $10k",         desc: "Five figures of cushion",                  earned: totalSavedAmt >= 10000 },
-    { id: "nw-10k",           emoji: "📈", group: "Money", title: "Net worth $10k",     desc: "Crossed the $10,000 line",                 earned: nw >= 10000 },
-    { id: "nw-100k",          emoji: "🏔", group: "Money", title: "Net worth $100k",    desc: "Six figures",                              earned: nw >= 100000 },
+    { id: "saved-1k",         emoji: "💵", group: "Money", title: "Saved $1k",          desc: "First $1,000 across all buckets",          earned: totalSavedAmt >= 1000,  progress: Math.min(1, totalSavedAmt / 1000) },
+    { id: "saved-10k",        emoji: "💵", group: "Money", title: "Saved $10k",         desc: "Five figures of cushion",                  earned: totalSavedAmt >= 10000, progress: Math.min(1, totalSavedAmt / 10000) },
+    { id: "nw-10k",           emoji: "📈", group: "Money", title: "Net worth $10k",     desc: "Crossed the $10,000 line",                 earned: nw >= 10000,  progress: Math.min(1, Math.max(0, nw) / 10000) },
+    { id: "nw-100k",          emoji: "🏔", group: "Money", title: "Net worth $100k",    desc: "Six figures",                              earned: nw >= 100000, progress: Math.min(1, Math.max(0, nw) / 100000) },
     { id: "audit-done",       emoji: "🔍", group: "Mastery", title: "Subscription audit", desc: "Reviewed your recurring charges",         earned: !!subAuditDone },
-    { id: "five-insights",    emoji: "📌", group: "Mastery", title: "5 insights pinned", desc: "Save Cornileus's best replies",            earned: cornInsights >= 5 },
+    { id: "five-insights",    emoji: "📌", group: "Mastery", title: "5 insights pinned", desc: "Save Cornileus's best replies",            earned: cornInsights >= 5, progress: Math.min(1, cornInsights / 5) },
     { id: "encrypted",        emoji: "🔒", group: "Mastery", title: "Locked it down",   desc: "Set a passphrase",                         earned: !!DB.settings.encrypted },
   ];
 }
@@ -13422,6 +13464,28 @@ function achievementsSheet() {
   const list = _achievementsList();
   const earned = list.filter(a => a.earned);
   const pct = list.length ? Math.round(100 * earned.length / list.length) : 0;
+  // "Next up" — closest-to-unlock achievement with a meaningful progress value.
+  const nextUp = list
+    .filter(a => !a.earned && typeof a.progress === "number" && a.progress > 0)
+    .sort((a, b) => (b.progress || 0) - (a.progress || 0))[0] || null;
+  const nextHtml = nextUp ? `
+    <div style="background:var(--card);border:0.5px solid rgba(124,58,237,0.32);border-left:3px solid var(--purple,#8957d9);border-radius:var(--r2,12px);padding:12px 14px;margin:10px 0 4px">
+      <div style="font-size:10.5px;color:var(--purple,#8957d9);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Next up</div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div style="font-size:22px;flex-shrink:0">${nextUp.emoji}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13.5px;font-weight:700;color:var(--t1);line-height:1.2">${esc(nextUp.title)}</div>
+          <div style="font-size:11px;color:var(--t3);margin-top:2px">${esc(nextUp.desc)}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${Math.round(nextUp.progress * 100)}%</div>
+        </div>
+      </div>
+      <div style="height:5px;background:var(--bg-elev);border-radius:3px;overflow:hidden;margin-top:8px">
+        <div style="height:100%;width:${Math.round(nextUp.progress * 100)}%;background:linear-gradient(90deg,#7c3aed,#ec4899);border-radius:3px;transition:width 0.4s ease"></div>
+      </div>
+    </div>
+  ` : "";
   // Group by group label, in original order
   const groups = {};
   for (const a of list) {
@@ -13454,6 +13518,7 @@ function achievementsSheet() {
         <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#FF9500,#7c3aed);border-radius:3px;transition:width 0.4s ease"></div>
       </div>
     </div>
+    ${nextHtml}
     ${groupHtml}
     <div class="actions" style="margin-top:18px"><button class="btn" onclick="closeSheet()">Close</button></div>
   `);
