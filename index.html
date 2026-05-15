@@ -1974,7 +1974,7 @@ const DEFAULT_DB = {
   budget: { income: 0, expenses: [] },
   spend:  [],   // manual + auto-imported transactions: [{id, date, category, amount, note, source:'manual'|'plaid', plaid_id?, merchant_name?, pending?}]
   wins:   [],
-  stocks: { recentTickers: [], account: 10000 },
+  stocks: { recentTickers: [], account: 10000, watchlist: [], holdings: {}, quoteCache: {} },
   // Timestamp (ms) of the user's last successful exportData() — drives the
   // backup-reminder Pulse on Today. 0 = never exported.
   lastExportAt: 0,
@@ -9563,9 +9563,15 @@ function renderStocks() {
       <button class="btn" style="font-size:13px;padding:10px 16px" onclick="_stocksAddTicker(document.getElementById('stk-add-input').value)">Add</button>
     </div>
 
+    <!-- Portfolio summary hero (shows only if user has holdings) -->
+    <div id="stk-portfolio-hero"></div>
+
     <!-- Watchlist -->
     <div class="section-h" style="margin-top:14px"><span class="lbl">Watchlist</span><button class="act" onclick="_stocksRefreshAll()" id="stk-refresh-btn">↻ Refresh</button></div>
     <div id="stk-watchlist" class="list"></div>
+
+    <!-- Holdings list -->
+    <div id="stk-holdings-wrap"></div>
 
     <!-- Market scan + housing/mortgage links -->
     <div class="section-h" style="margin-top:14px"><span class="lbl">Research tools</span></div>
@@ -9589,7 +9595,210 @@ function renderStocks() {
   `;
 
   _stocksRenderWatchlist();
+  _stocksRenderPortfolio();
   _stocksRefreshAll();
+}
+
+/* ---------- Portfolio / holdings tracker ----------
+   DB.stocks.holdings = { TICKER: { shares: number, cost: number } }
+   Computes per-ticker market value + unrealized P&L using the same
+   quote cache the watchlist uses. Re-rendered after each batch refresh
+   so values stay in sync. */
+function _stocksRenderPortfolio() {
+  const hero = document.getElementById("stk-portfolio-hero");
+  const wrap = document.getElementById("stk-holdings-wrap");
+  if (!hero || !wrap) return;
+  if (!DB.stocks) DB.stocks = {};
+  if (!DB.stocks.holdings || typeof DB.stocks.holdings !== "object") DB.stocks.holdings = {};
+  const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  const entries = Object.entries(DB.stocks.holdings).filter(([tk, h]) => h && +h.shares > 0);
+  if (!entries.length) {
+    hero.innerHTML = "";
+    wrap.innerHTML = `
+      <div class="section-h" style="margin-top:18px"><span class="lbl">Portfolio</span></div>
+      <div class="row tappable" onclick="_stocksAddHoldingSheet()" role="button" tabindex="0"
+           style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--green,#34C759);border-radius:var(--r);padding:12px 14px;align-items:center">
+        <div style="width:32px;height:32px;border-radius:50%;background:rgba(52,199,89,0.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;color:var(--green,#34C759);margin-right:10px">💼</div>
+        <div class="body">
+          <div class="t1" style="margin:0;font-size:13.5px">Track what you actually own</div>
+          <div class="t2" style="font-size:11.5px;margin-top:1px">Enter shares + cost basis → live P&amp;L, allocation, total return</div>
+        </div>
+        <div class="trail chev"></div>
+      </div>`;
+    return;
+  }
+  // Compute totals
+  let mkt = 0, cost = 0, dayChange = 0, missingPrice = 0;
+  const rows = entries.map(([tk, h]) => {
+    const shares = +h.shares || 0;
+    const c = +h.cost || 0;
+    const q = cache[tk];
+    const price = q && !q.error && q.price != null ? +q.price : null;
+    const prevChg = q && !q.error && q.change != null ? +q.change : 0;
+    if (price == null) missingPrice++;
+    const m = price != null ? price * shares : 0;
+    const costTotal = c * shares;
+    const pl = m - costTotal;
+    const plPct = costTotal > 0 ? pl / costTotal : 0;
+    const dayPl = price != null ? prevChg * shares : 0;
+    mkt += m; cost += costTotal; dayChange += dayPl;
+    return { tk, shares, c, price, m, costTotal, pl, plPct, dayPl, q };
+  });
+  const totalPl = mkt - cost;
+  const totalPlPct = cost > 0 ? totalPl / cost : 0;
+  const dayChangePct = mkt > 0 ? dayChange / (mkt - dayChange) : 0;
+  const plColor = totalPl >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+  const dayColor = dayChange >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+
+  // Sort rows by market value descending for the table
+  rows.sort((a, b) => b.m - a.m);
+
+  // Allocation bar — top 5 + "Other"
+  const top5 = rows.slice(0, 5);
+  const otherVal = rows.slice(5).reduce((s, r) => s + r.m, 0);
+  const allocs = [...top5.map(r => ({ tk: r.tk, val: r.m })), ...(otherVal > 0 ? [{ tk: "Other", val: otherVal }] : [])];
+  const allocColors = ["#34C759", "#007AFF", "#FF9500", "#AF52DE", "#FF3B30", "#5856D6", "#8E8E93"];
+  const allocBar = allocs.map((a, i) => {
+    const pct = mkt > 0 ? (a.val / mkt) * 100 : 0;
+    return `<div title="${esc(a.tk)} · ${pct.toFixed(1)}%" style="background:${allocColors[i % allocColors.length]};width:${pct}%;height:100%"></div>`;
+  }).join("");
+  const allocLegend = allocs.slice(0, 6).map((a, i) => {
+    const pct = mkt > 0 ? (a.val / mkt) * 100 : 0;
+    return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:var(--t3);margin-right:8px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${allocColors[i % allocColors.length]}"></span>${esc(a.tk)} ${pct.toFixed(0)}%</span>`;
+  }).join("");
+
+  hero.innerHTML = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${plColor};border-radius:var(--r);padding:16px;margin-top:6px;margin-bottom:14px">
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Portfolio value</div>
+        ${missingPrice > 0 ? `<div style="font-size:10px;color:var(--t3)">refresh for live prices</div>` : ""}
+      </div>
+      <div style="font-size:32px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-0.02em" data-priv="amount">$${mkt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div style="display:flex;gap:14px;font-size:12.5px;margin-top:4px;flex-wrap:wrap;font-variant-numeric:tabular-nums">
+        <div><span style="color:var(--t3)">Today</span> <b style="color:${dayColor}" data-priv="amount">${dayChange >= 0 ? "+" : ""}$${Math.abs(dayChange).toFixed(2)}</b> <span style="color:${dayColor}">(${dayChange >= 0 ? "+" : ""}${(dayChangePct * 100).toFixed(2)}%)</span></div>
+        <div><span style="color:var(--t3)">Total P&amp;L</span> <b style="color:${plColor}" data-priv="amount">${totalPl >= 0 ? "+" : ""}$${Math.abs(totalPl).toFixed(2)}</b> <span style="color:${plColor}">(${totalPl >= 0 ? "+" : ""}${(totalPlPct * 100).toFixed(2)}%)</span></div>
+        <div><span style="color:var(--t3)">Cost</span> <b style="color:var(--t2)" data-priv="amount">$${cost.toFixed(2)}</b></div>
+      </div>
+      ${mkt > 0 ? `
+        <div style="display:flex;width:100%;height:8px;border-radius:4px;overflow:hidden;margin-top:12px;background:var(--bg-elev)">${allocBar}</div>
+        <div style="margin-top:6px;line-height:1.6">${allocLegend}</div>
+      ` : ""}
+      <button onclick="_stocksAddHoldingSheet()" class="btn secondary" style="width:100%;margin-top:12px;font-size:12.5px;padding:7px">+ Add holding</button>
+    </div>
+  `;
+  // Render the rows
+  wrap.innerHTML = `
+    <div class="section-h" style="margin-top:14px"><span class="lbl">Holdings (${rows.length})</span></div>
+    <div class="list">
+      ${rows.map(r => {
+        const pColor = r.pl >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+        return `
+          <div class="row tappable" onclick="_stocksOpenDetail(${jsAttr(r.tk)})" role="button" tabindex="0" style="align-items:center">
+            <div style="width:48px;flex-shrink:0">
+              <div style="font-weight:700;font-size:13.5px;color:var(--t1)">${esc(r.tk)}</div>
+              <div style="font-size:10.5px;color:var(--t3)">${r.shares} ${r.shares === 1 ? "share" : "shares"}</div>
+            </div>
+            <div class="body" style="flex:1;min-width:0;margin-left:6px">
+              <div style="font-size:12.5px;color:var(--t2);font-variant-numeric:tabular-nums">${r.price != null ? `$${r.price.toFixed(2)}` : "—"} <span style="color:var(--t3);font-size:10.5px">cost $${r.c.toFixed(2)}</span></div>
+              <div style="font-size:11px;color:${pColor};font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums">${r.pl >= 0 ? "+" : ""}$${Math.abs(r.pl).toFixed(2)} (${r.pl >= 0 ? "+" : ""}${(r.plPct * 100).toFixed(1)}%)</div>
+            </div>
+            <div style="text-align:right;flex-shrink:0">
+              <div style="font-weight:700;font-size:13.5px;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${r.m.toFixed(2)}</div>
+              <button onclick="event.stopPropagation();_stocksEditHoldingSheet(${jsAttr(r.tk)})" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:2px 4px;cursor:pointer;text-decoration:underline">edit</button>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
+// Open sheet to add or edit a holding
+function _stocksAddHoldingSheet(prefill) {
+  openSheet(`
+    <h2 style="margin-bottom:4px">Add holding</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Track shares you own to see live P&amp;L. Stored only on this device.</p>
+    <label>Ticker</label>
+    <input id="hold-tk" placeholder="e.g. AAPL" autocapitalize="characters" autocorrect="off"
+      value="${esc(prefill || "")}"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Shares</label>
+    <input id="hold-shares" type="number" inputmode="decimal" placeholder="e.g. 10"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Cost basis per share ($)</label>
+    <input id="hold-cost" type="number" inputmode="decimal" placeholder="e.g. 165.50"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box" />
+    <div class="actions">
+      <button class="btn secondary" onclick="closeSheet()">Cancel</button>
+      <button class="btn" onclick="_stocksSaveHolding()">Save holding</button>
+    </div>
+  `);
+  setTimeout(() => { const el = document.getElementById("hold-tk"); if (el) el.focus(); }, 60);
+}
+
+async function _stocksSaveHolding() {
+  const tkEl = document.getElementById("hold-tk");
+  const shEl = document.getElementById("hold-shares");
+  const cstEl = document.getElementById("hold-cost");
+  if (!tkEl || !shEl || !cstEl) return;
+  const tk = (tkEl.value || "").trim().toUpperCase().replace(/[^A-Z0-9.-]/g, "");
+  const shares = parseFloat(shEl.value);
+  const cost = parseFloat(cstEl.value);
+  if (!tk) { toast("Ticker required"); return; }
+  if (!isFinite(shares) || shares <= 0) { toast("Shares must be > 0"); return; }
+  if (!isFinite(cost) || cost <= 0) { toast("Cost basis must be > 0"); return; }
+  if (!DB.stocks) DB.stocks = {};
+  if (!DB.stocks.holdings) DB.stocks.holdings = {};
+  DB.stocks.holdings[tk] = { shares, cost };
+  // Auto-add to watchlist if not present so quote refresh covers it
+  if (!Array.isArray(DB.stocks.watchlist)) DB.stocks.watchlist = [];
+  if (!DB.stocks.watchlist.includes(tk)) DB.stocks.watchlist.push(tk);
+  await save();
+  closeSheet();
+  toast(`Added ${shares} ${shares === 1 ? "share" : "shares"} of ${tk}`);
+  if (typeof renderStocks === "function" && document.getElementById("page-stocks")) renderStocks();
+}
+
+function _stocksEditHoldingSheet(tk) {
+  const h = (DB.stocks && DB.stocks.holdings && DB.stocks.holdings[tk]) || {};
+  openSheet(`
+    <h2 style="margin-bottom:4px">Edit ${esc(tk)}</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Update shares or cost basis.</p>
+    <label>Shares</label>
+    <input id="hold-shares" type="number" inputmode="decimal" value="${esc(h.shares || "")}"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Cost basis per share ($)</label>
+    <input id="hold-cost" type="number" inputmode="decimal" value="${esc(h.cost || "")}"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box" />
+    <div class="actions">
+      <button class="btn secondary" onclick="closeSheet()">Cancel</button>
+      <button class="btn" style="background:var(--red,#FF3B30);color:#fff;border:none" onclick="_stocksRemoveHolding(${jsAttr(tk)})">Remove</button>
+      <button class="btn" onclick="_stocksUpdateHolding(${jsAttr(tk)})">Save</button>
+    </div>
+  `);
+}
+
+async function _stocksUpdateHolding(tk) {
+  const sh = parseFloat(document.getElementById("hold-shares").value);
+  const cst = parseFloat(document.getElementById("hold-cost").value);
+  if (!isFinite(sh) || sh <= 0) { toast("Shares must be > 0"); return; }
+  if (!isFinite(cst) || cst <= 0) { toast("Cost must be > 0"); return; }
+  if (!DB.stocks) DB.stocks = {};
+  if (!DB.stocks.holdings) DB.stocks.holdings = {};
+  DB.stocks.holdings[tk] = { shares: sh, cost: cst };
+  await save();
+  closeSheet();
+  toast(`${tk} updated`);
+  if (typeof renderStocks === "function" && document.getElementById("page-stocks")) renderStocks();
+}
+
+async function _stocksRemoveHolding(tk) {
+  if (!DB.stocks || !DB.stocks.holdings) return;
+  delete DB.stocks.holdings[tk];
+  await save();
+  closeSheet();
+  toast(`Removed ${tk} from portfolio`);
+  if (typeof renderStocks === "function" && document.getElementById("page-stocks")) renderStocks();
 }
 
 // Renders the watchlist with cached data (no fetch). Refresh fetches.
@@ -9655,11 +9864,15 @@ function _stocksTickerRowHtml(tk, q) {
 
 async function _stocksRefreshAll() {
   const watchlist = (DB.stocks && DB.stocks.watchlist) || [];
-  if (!watchlist.length) return;
+  // Include any portfolio holdings tickers that aren't on the watchlist —
+  // so portfolio P&L can compute even for "owned but unwatched" tickers.
+  const holdings = (DB.stocks && DB.stocks.holdings) || {};
+  const all = Array.from(new Set([...watchlist, ...Object.keys(holdings)]));
+  if (!all.length) return;
   const btn = document.getElementById("stk-refresh-btn");
   if (btn) { btn.textContent = "Loading…"; btn.disabled = true; }
   try {
-    const url = "/api/quote/batch?tickers=" + encodeURIComponent(watchlist.join(","));
+    const url = "/api/quote/batch?tickers=" + encodeURIComponent(all.join(","));
     const r = await fetch(url);
     const data = await r.json();
     if (data && data.quotes) {
@@ -9667,6 +9880,7 @@ async function _stocksRefreshAll() {
       DB.stocks.lastFetched = Date.now();
       await save();
       _stocksRenderWatchlist();
+      _stocksRenderPortfolio();
     }
   } catch (e) {
     toast("Couldn't fetch quotes: " + (e.message || "network"));
@@ -9765,6 +9979,94 @@ function _stkFmtNum(n, suffix = "") {
 function _stkFmtPct(n) {
   if (n == null || !isFinite(n)) return "—";
   return (n * 100).toFixed(2) + "%";
+}
+
+/* ---------- Risk score (0-100) ----------
+   Composite risk reading. Higher = riskier. Weights:
+     - Beta vs 1.0 (volatility)              30%
+     - Debt/equity (balance-sheet risk)      20%
+     - RSI extremes (momentum risk)          15%
+     - Max 1Y drawdown (price stability)     15%
+     - Short interest (sentiment crowding)   10%
+     - Profit margin sign (operational)      10%
+   Returns { score, band: 'low'|'moderate'|'elevated'|'high', factors[] }. */
+function _stkRiskScore(q) {
+  const factors = [];
+  let score = 50; // baseline
+
+  if (q.beta != null) {
+    const beta = +q.beta;
+    const delta = Math.abs(beta - 1.0);
+    const contrib = Math.min(30, delta * 18);
+    if (beta > 1.2 || beta < 0.5) factors.push({ label: "Beta " + beta.toFixed(2), impact: contrib });
+    score += contrib * (beta >= 1 ? 1 : 0.6);
+  }
+
+  if (q.debt_to_equity != null) {
+    const de = +q.debt_to_equity;
+    if (de > 200) { factors.push({ label: "Debt/equity " + de.toFixed(0) + " (very high)", impact: 18 }); score += 18; }
+    else if (de > 100) { factors.push({ label: "Debt/equity " + de.toFixed(0) + " (elevated)", impact: 10 }); score += 10; }
+    else if (de < 30) { score -= 6; }
+  }
+
+  if (q.rsi14 != null) {
+    const r = +q.rsi14;
+    if (r >= 75) { factors.push({ label: "RSI " + r.toFixed(0) + " (extreme overbought)", impact: 12 }); score += 12; }
+    else if (r <= 25) { factors.push({ label: "RSI " + r.toFixed(0) + " (extreme oversold)", impact: 10 }); score += 10; }
+  }
+
+  // 1Y max drawdown
+  const closes = (q.timeframes && q.timeframes["1Y"] && q.timeframes["1Y"].closes) || [];
+  if (closes.length > 30) {
+    let peak = closes[0]; let maxDd = 0;
+    for (const c of closes) { if (c > peak) peak = c; const dd = (c - peak) / peak; if (dd < maxDd) maxDd = dd; }
+    const ddPct = Math.abs(maxDd) * 100;
+    if (ddPct > 40) { factors.push({ label: "1Y drawdown -" + ddDdLabel(ddPct), impact: 15 }); score += 15; }
+    else if (ddPct > 25) { factors.push({ label: "1Y drawdown -" + ddDdLabel(ddPct), impact: 8 }); score += 8; }
+  }
+
+  if (q.short_pct_float != null && +q.short_pct_float >= 0.10) {
+    const pct = +q.short_pct_float * 100;
+    factors.push({ label: `Short interest ${pct.toFixed(1)}%`, impact: 10 });
+    score += 10;
+  }
+
+  if (q.profit_margin != null && +q.profit_margin < 0) {
+    factors.push({ label: "Negative profit margin", impact: 12 });
+    score += 12;
+  }
+
+  // Stability sweeteners (lower risk)
+  if (q.held_institutions != null && +q.held_institutions >= 0.85 && q.market_cap != null && +q.market_cap >= 5e10) {
+    score -= 8;
+  }
+
+  score = Math.max(5, Math.min(95, Math.round(score)));
+  const band = score < 30 ? "low" : score < 50 ? "moderate" : score < 70 ? "elevated" : "high";
+  return { score, band, factors };
+}
+function ddDdLabel(pct) { return pct.toFixed(0) + "%"; }
+
+/* ---------- "What if I invested $X N years ago" ----------
+   Pure-frontend calc on the timeframes already in the broker bundle.
+   Picks the longest timeframe that fits within the user's chosen lookback. */
+function _stkWhatIfReturn(q, amount, years) {
+  // Map years → timeframe key
+  const tf = years <= 0.085 ? "1M" : years <= 0.25 ? "3M" : years <= 0.5 ? "6M" : years <= 1 ? "1Y" : "5Y";
+  const closes = (q.timeframes && q.timeframes[tf] && q.timeframes[tf].closes) || [];
+  if (closes.length < 2) return null;
+  // Find the close closest to N years ago
+  const tradingDaysPerYear = 252;
+  const targetIdx = Math.max(0, closes.length - 1 - Math.round(years * tradingDaysPerYear));
+  const start = closes[targetIdx];
+  const end = closes[closes.length - 1];
+  if (!start || start <= 0) return null;
+  const shares = amount / start;
+  const endValue = shares * end;
+  const profit = endValue - amount;
+  const pct = profit / amount;
+  const cagr = years > 0 ? Math.pow(endValue / amount, 1 / years) - 1 : pct;
+  return { startPrice: start, endPrice: end, shares, endValue, profit, pct, cagr };
 }
 
 /* ---------- Pattern detection layer ----------
@@ -10054,6 +10356,117 @@ function _stocksRenderNewsBriefing({ tk, verdict, conf, oneLine, bullish, bearis
         </a>
       `).join("")}
       <div style="font-size:10px;color:var(--t3);margin-top:8px;line-height:1.4;font-style:italic">AI summary of public news, not financial advice. Verify with the source links above before acting.</div>
+    </div>
+  `;
+}
+
+// Risk score card — a 0-100 dial + colored band + contributing factors
+function _stocksRenderRiskCard(q) {
+  const r = _stkRiskScore(q);
+  const color = r.band === "low" ? "var(--green,#34C759)"
+              : r.band === "moderate" ? "#9ACD32"
+              : r.band === "elevated" ? "var(--orange,#FF9500)"
+              : "var(--red,#FF3B30)";
+  const label = r.band === "low" ? "Low risk" : r.band === "moderate" ? "Moderate" : r.band === "elevated" ? "Elevated" : "High risk";
+  // Half-circle gauge SVG
+  const W = 160, H = 90, cx = W / 2, cy = H - 8, R = 70;
+  const pct = r.score / 100;
+  const startAng = Math.PI; const endAng = Math.PI + Math.PI * pct;
+  const x1 = cx + R * Math.cos(startAng), y1 = cy + R * Math.sin(startAng);
+  const x2 = cx + R * Math.cos(endAng),   y2 = cy + R * Math.sin(endAng);
+  const largeArc = pct > 0.5 ? 1 : 0;
+  return `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Risk score</div>
+        <div style="flex:1"></div>
+        <div style="background:var(--bg-elev);color:${color};border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase">${esc(label)}</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:14px">
+        <div style="position:relative;width:${W}px;flex-shrink:0">
+          <svg viewBox="0 0 ${W} ${H}" style="display:block">
+            <path d="M ${cx-R},${cy} A ${R},${R} 0 0 1 ${cx+R},${cy}" fill="none" stroke="var(--bg-elev)" stroke-width="10" stroke-linecap="round"/>
+            <path d="M ${x1.toFixed(1)},${y1.toFixed(1)} A ${R},${R} 0 ${largeArc} 1 ${x2.toFixed(1)},${y2.toFixed(1)}" fill="none" stroke="${color}" stroke-width="10" stroke-linecap="round"/>
+            <text x="${cx}" y="${cy - 14}" text-anchor="middle" font-size="26" font-weight="800" fill="var(--t1)">${r.score}</text>
+            <text x="${cx}" y="${cy + 4}" text-anchor="middle" font-size="10" fill="var(--t3)">of 100</text>
+          </svg>
+        </div>
+        <div style="flex:1;min-width:0">
+          ${r.factors.length ? `
+            <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;margin-bottom:4px">Drivers</div>
+            ${r.factors.slice(0, 5).map(f => `<div style="font-size:11.5px;color:var(--t2);line-height:1.4;margin-bottom:2px">• ${esc(f.label)}</div>`).join("")}
+          ` : `<div style="font-size:12px;color:var(--t2);line-height:1.45">No major risk drivers detected. The fundamentals and momentum signals are in a typical range.</div>`}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+// "What if I invested..." sheet — uses the cached timeframes
+function _stocksWhatIfSheet(tk) {
+  const q = (window._stkDetail && window._stkDetail.q) || null;
+  if (!q) { toast("Open the ticker first"); return; }
+  openSheet(`
+    <h2 style="margin-bottom:4px">What if you'd invested in ${esc(q.ticker)}?</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Pick an amount + lookback. We'll compute your shares, ending value, and CAGR.</p>
+    <label>Investment amount ($)</label>
+    <input id="wi-amt" type="number" inputmode="decimal" value="1000" min="100"
+      oninput="_stocksWhatIfRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Lookback</label>
+    <select id="wi-period" onchange="_stocksWhatIfRecompute()" style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box">
+      <option value="0.0833">1 month ago</option>
+      <option value="0.25">3 months ago</option>
+      <option value="0.5">6 months ago</option>
+      <option value="1" selected>1 year ago</option>
+      <option value="3">3 years ago</option>
+      <option value="5">5 years ago</option>
+    </select>
+    <div id="wi-result"></div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  _stocksWhatIfRecompute();
+}
+
+function _stocksWhatIfRecompute() {
+  const q = (window._stkDetail && window._stkDetail.q) || null;
+  const amtEl = document.getElementById("wi-amt");
+  const perEl = document.getElementById("wi-period");
+  const out = document.getElementById("wi-result");
+  if (!q || !amtEl || !perEl || !out) return;
+  const amt = parseFloat(amtEl.value) || 0;
+  const years = parseFloat(perEl.value) || 1;
+  if (amt <= 0) { out.innerHTML = ""; return; }
+  const res = _stkWhatIfReturn(q, amt, years);
+  if (!res) {
+    out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;color:var(--t3);font-size:13px;text-align:center">Not enough historical data for that lookback.</div>`;
+    return;
+  }
+  const color = res.profit >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+  out.innerHTML = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${color};border-radius:var(--r);padding:16px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Today it would be worth</div>
+      <div style="font-size:30px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-0.02em" data-priv="amount">$${res.endValue.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div style="font-size:14px;color:${color};font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums" data-priv="amount">${res.profit >= 0 ? "+" : ""}$${Math.abs(res.profit).toFixed(2)} (${res.pct >= 0 ? "+" : ""}${(res.pct * 100).toFixed(1)}%)</div>
+      <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Shares</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${res.shares.toFixed(3)}</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">CAGR</div>
+          <div style="font-size:14px;font-weight:700;color:${color};font-variant-numeric:tabular-nums">${(res.cagr * 100).toFixed(2)}% /yr</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Buy price</div>
+          <div style="font-size:13px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">$${res.startPrice.toFixed(2)}</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Now</div>
+          <div style="font-size:13px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">$${res.endPrice.toFixed(2)}</div>
+        </div>
+      </div>
+      <div style="font-size:10.5px;color:var(--t3);margin-top:10px;line-height:1.4;font-style:italic">Past performance ≠ future performance. Doesn't account for dividends or taxes.</div>
     </div>
   `;
 }
@@ -10359,6 +10772,7 @@ function _stocksRenderDetail(q) {
       </div>
       ${rangeBar}
       ${_stocksRenderPatternCard(q)}
+      ${_stocksRenderRiskCard(q)}
       ${techSignals}
       ${analystCard}
       ${earningsCard}
@@ -10367,6 +10781,8 @@ function _stocksRenderDetail(q) {
       <button onclick="_stocksNewsBriefing(${jsAttr(q.ticker)})" id="stk-news-btn" class="btn" style="width:100%;margin-bottom:6px;background:linear-gradient(135deg,#0ea5e9,#7c3aed);color:#fff;border:none">📰 News-driven AI take</button>
       <div id="stk-news-result"></div>
       <button onclick="_stocksRunAnalyze(${jsAttr(q.ticker)})" id="stk-analyze-btn" class="btn" style="width:100%;margin-bottom:6px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none">✨ Run full analysis (buy/hold/sell)</button>
+      <button onclick="_stocksWhatIfSheet(${jsAttr(q.ticker)})" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">💸 What if I'd invested $1k…</button>
+      <button onclick="_stocksAddHoldingSheet(${jsAttr(q.ticker)})" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">💼 I own this — track P&amp;L</button>
       <button onclick="_stocksLoadPeers(${jsAttr(q.ticker)})" id="stk-peers-btn" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">Show sector peers</button>
       <button onclick="openCounselor(${jsAttr(`What's your read on ${q.ticker}? Currently $${(+q.price).toFixed(2)}, ${(pct).toFixed(1)}% today${q.ytd_return != null ? `, ${((+q.ytd_return) * 100).toFixed(1)}% YTD` : ''}, P/E ${q.trailing_pe ? (+q.trailing_pe).toFixed(1) : 'n/a'}, RSI ${q.rsi14 ? (+q.rsi14).toFixed(0) : 'n/a'}, analyst target ${q.target_mean ? '$' + (+q.target_mean).toFixed(0) : 'n/a'}. Should I add it to my portfolio given my situation? Give me the why, not just a verdict.`)})" class="btn secondary" style="width:100%;margin-bottom:14px;font-size:13px">✨ Ask Cornileus about ${esc(q.ticker)}</button>
       <div id="stk-analyze-result"></div>
