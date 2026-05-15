@@ -1990,6 +1990,8 @@ const DEFAULT_DB = {
   spend:  [],   // manual + auto-imported transactions: [{id, date, category, amount, note, source:'manual'|'plaid', plaid_id?, merchant_name?, pending?}]
   wins:   [],
   stocks: { recentTickers: [], account: 10000, watchlist: [], holdings: {}, quoteCache: {}, alerts: [], realizedPL: [], watchlistSort: "default", portfolioHistory: [] },
+  insurance: {}, // { health: {have, note, ts}, life: {...}, ... } — see insuranceAuditSheet
+  cornileusFollowups: [], // [{id, ts, suggestion, status: 'pending'|'done'|'skipped'}]
   // Timestamp (ms) of the user's last successful exportData() — drives the
   // backup-reminder Pulse on Today. 0 = never exported.
   lastExportAt: 0,
@@ -3406,6 +3408,7 @@ function toggleHabit(id) {
   const h = DB.habits.find(x => x.id === id);
   if (!h) return;
   const k = todayKey();
+  const wasDone = h.type === "count" ? (h.log[k]||0) >= (h.target||1) : !!h.log[k];
   if (h.type === "count") {
     h.log[k] = (h.log[k]||0) + 1;
     if (h.log[k] >= (h.target||1) && !h._wasDone) toast(`✓ ${h.name}`);
@@ -3414,6 +3417,22 @@ function toggleHabit(id) {
     h.log[k] = !h.log[k];
     if (h.log[k]) toast(`✓ ${h.name}`);
   }
+  // Habit → savings auto-credit: if this habit is linked to a savings
+  // bucket AND completing it transitioned from not-done to done, log a
+  // deposit equal to h.savingsAmount (or h.target × h.savingsPerUnit).
+  try {
+    const nowDone = h.type === "count" ? (h.log[k]||0) >= (h.target||1) : !!h.log[k];
+    if (h.savingsBucketId && nowDone && !wasDone) {
+      const bucket = (DB.savings || []).find(s => s.id === h.savingsBucketId);
+      const amount = +h.savingsAmount || 0;
+      if (bucket && amount > 0) {
+        if (!Array.isArray(bucket.log)) bucket.log = [];
+        bucket.log.push({ date: k, amount, note: "Habit: " + h.name, auto: true });
+        bucket.current = (+bucket.current || 0) + amount;
+        toast(`+$${amount} → ${bucket.name}`);
+      }
+    }
+  } catch {}
   save(); render();
 }
 function setHabitCount(id, val) {
@@ -3543,12 +3562,24 @@ function addHabitSheet(existing) {
         <input id="h-unit"   placeholder="oz, $, min" value="${esc(h.unit||"")}" />
       </div>
     </div>
+<<<<<<< Updated upstream
     <label>Reminder (optional)</label>
     <p class="muted" style="font-size:12px;margin:-4px 0 6px">Fires only on days you haven't done this habit yet. Needs notifications enabled in Settings.</p>
     <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center">
       <input id="h-reminder" type="time" value="${esc(h.reminderTime || "")}" />
       <button type="button" class="btn secondary" style="font-size:12px;padding:8px 12px" onclick="document.getElementById('h-reminder').value=''">Clear</button>
     </div>
+=======
+    <label style="margin-top:14px;display:block">💰 Auto-save to bucket when completed <span style="color:var(--t3);font-weight:400;font-size:11px">(optional)</span></label>
+    <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:10px;margin-bottom:10px">
+      <select id="h-bucket">
+        <option value="">— no auto-save —</option>
+        ${(DB.savings || []).map(s => `<option value="${esc(s.id)}" ${h.savingsBucketId === s.id ? "selected" : ""}>${esc(s.name)}</option>`).join("")}
+      </select>
+      <input id="h-amt" type="number" min="0" step="0.5" placeholder="$ each day" value="${esc(h.savingsAmount || "")}" />
+    </div>
+    <div style="font-size:11px;color:var(--t3);line-height:1.4;margin-bottom:12px">Every time this habit transitions from not-done to done, $X gets logged to the chosen bucket automatically.</div>
+>>>>>>> Stashed changes
     <div class="actions">
       ${isEdit ? `<button class="btn danger" onclick="if(confirm('Delete habit?')){deleteHabit('${h.id}');closeSheet();}">Delete</button>` : ""}
       <button class="btn secondary" onclick="closeSheet()">Cancel</button>
@@ -3569,11 +3600,20 @@ function addHabitSheet(existing) {
     const target = Number($("#h-target")?.value || 1);
     const unit = $("#h-unit")?.value.trim() || "";
     const group = $("#h-group")?.value || "other";
+<<<<<<< Updated upstream
     const reminderTime = $("#h-reminder")?.value || "";
     if (isEdit) {
       Object.assign(h, { name, emoji, type, target, unit, group, reminderTime });
     } else {
       DB.habits.push({ id: uid(), name, emoji, type, target, unit, group, reminderTime, color: COLORS[DB.habits.length % COLORS.length], createdAt: Date.now(), log: {} });
+=======
+    const savingsBucketId = $("#h-bucket")?.value || "";
+    const savingsAmount = Math.max(0, Number($("#h-amt")?.value || 0));
+    if (isEdit) {
+      Object.assign(h, { name, emoji, type, target, unit, group, savingsBucketId: savingsBucketId || null, savingsAmount: savingsAmount || null });
+    } else {
+      DB.habits.push({ id: uid(), name, emoji, type, target, unit, group, savingsBucketId: savingsBucketId || null, savingsAmount: savingsAmount || null, color: COLORS[DB.habits.length % COLORS.length], createdAt: Date.now(), log: {} });
+>>>>>>> Stashed changes
     }
     await save(); closeSheet();
     // Refresh per-habit reminder timers — the new/edited habit may now have
@@ -4897,10 +4937,16 @@ function exploreAscendSheet() {
       { emoji: "💰", title: "Add a savings goal",  desc: "Earmark for any target",                    onclick: "closeSheet();setTimeout(()=>addSavingSheet(),100)" },
       { emoji: "🔍", title: "Subscription audit",  desc: "Keep / negotiate / cancel each recurring",  onclick: "closeSheet();setTimeout(()=>subscriptionAuditSheet(),100)" },
       { emoji: "🔎", title: "Detected recurring",  desc: "Charges that look periodic but untracked",  onclick: "closeSheet();setTimeout(()=>detectedRecurringSheet(),100)" },
+      { emoji: "☂️", title: "Insurance audit",     desc: "Health · auto · home · life · disability · umbrella", onclick: "closeSheet();setTimeout(()=>insuranceAuditSheet(),100)" },
       { emoji: "💡", title: "Smart Plays",         desc: "Personalized money next-steps",             onclick: "closeSheet();setTimeout(()=>smartPlaysSheet(),100)" },
     ]},
     { group: "Cornileus", items: [
       { emoji: "✨", title: "Open Cornileus",      desc: "AI counselor that knows your numbers",       onclick: "closeSheet();setTimeout(()=>openCounselor(),100)" },
+      { emoji: "☀️", title: "Morning briefing",    desc: "Today's portfolio, top concern, one focus",  onclick: "closeSheet();setTimeout(()=>cornileusMorningBriefingSheet(),100)" },
+      { emoji: "🧠", title: "Cornileus' memory",   desc: "Pinned facts referenced in every chat",      onclick: "closeSheet();setTimeout(()=>cornileusMemoriesSheet(),100)" },
+      { emoji: "📋", title: "Followups",           desc: "Did you do what Cornileus suggested?",       onclick: "closeSheet();setTimeout(()=>cornileusFollowupsSheet(),100)" },
+      { emoji: "🔍", title: "What he knows",       desc: "Transparency: every data point he sees",     onclick: "closeSheet();setTimeout(()=>cornileusKnowsSheet(),100)" },
+      { emoji: "📜", title: "Annual review",       desc: "Year in review — AI commentary + shareable card", onclick: "closeSheet();setTimeout(()=>cornileusAnnualReviewSheet(),100)" },
       { emoji: "📌", title: "Saved insights",      desc: "Pinned replies that survive auto-clear",     onclick: "closeSheet();setTimeout(()=>cornileusInsightsSheet(),100)" },
     ]},
     { group: "Stats + history", items: [
@@ -14196,6 +14242,511 @@ function _stocksSetWatchlistSort(s) {
    prompt. Stored as DB.counselor.memories = [{id, text, addedAt}].
    Examples: "I'm getting married Oct 2026", "Risk-averse — bonds OK".
 */
+/* ---------- Annual review with shareable card ----------
+   At year-end (or any time), Cornileus generates a 6-block review:
+   biggest financial win, biggest mistake, net worth delta, top 3
+   lessons, what to repeat, what to drop. Renders as a shareable
+   1080×1080 SVG card. */
+async function cornileusAnnualReviewSheet() {
+  const today = new Date();
+  const year = today.getFullYear();
+  // If we're before April 1, default to last year (people review previous year)
+  const reviewYear = today.getMonth() < 3 ? year - 1 : year;
+  if (!DB.counselor) DB.counselor = { thread: [] };
+  if (!DB.counselor.annualReviews) DB.counselor.annualReviews = {};
+  const cached = DB.counselor.annualReviews[reviewYear];
+  openSheet(`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+      ${cornAvatarHtml(48, false, "happy")}
+      <div style="flex:1;min-width:0">
+        <h2 style="margin:0">📜 ${reviewYear} year in review</h2>
+        <div class="muted" style="font-size:12.5px;margin-top:2px">A year of money, habits, and what changed.</div>
+      </div>
+    </div>
+    <div id="ann-result" style="margin-top:10px">${cached ? _cornileusRenderAnnualReview(cached, reviewYear) : `<div style="text-align:center;padding:30px 14px;color:var(--t3);font-size:13px">📊 Pulling your year together…</div>`}</div>
+    <div class="actions">
+      <button class="btn secondary" onclick="DB.counselor.annualReviews[${reviewYear}]=null;cornileusAnnualReviewSheet()">↻ Regenerate</button>
+      ${cached ? `<button class="btn" onclick="shareAnnualReviewCard(${reviewYear})" style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none">Share ↗</button>` : ""}
+      <button class="btn" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+  if (cached) return;
+  try {
+    const stats = _annualReviewStats(reviewYear);
+    const userMsg = `Write me a ${reviewYear} year-in-review. Reply with this exact structure, no preamble:
+
+HEADLINE: <1 sentence — overall arc of the year>
+NET-WORTH: <1 sentence on net worth direction — use the number ${stats.netWorthChange != null ? "$" + stats.netWorthChange.toLocaleString() + " change" : "if available"}>
+WIN: <1 sentence on biggest win of the year — could be habit, saving, investing, plan>
+MISTAKE: <1 sentence on biggest mistake or thing to learn from>
+LESSON-1: <one specific lesson learned, 1 sentence>
+LESSON-2: <another specific lesson, 1 sentence>
+NEXT-YEAR: <1 sentence: the single most important thing for next year>
+
+Stats from ${reviewYear}:
+- Wins logged: ${stats.wins}
+- Habits checked: ${stats.habitDones}
+- Total saved: $${stats.totalSaved.toFixed(0)}
+- Plans completed: ${stats.plansCompleted}
+- Goals shipped: ${stats.goalsShipped}
+- Realized stock P&L: $${stats.realizedPL.toFixed(0)}
+- Spent this year: $${stats.totalSpent.toFixed(0)}
+- Earned this year: $${stats.totalEarned.toFixed(0)}
+- Net worth change (if tracked): ${stats.netWorthChange != null ? "$" + stats.netWorthChange.toLocaleString() : "not tracked"}
+- Mood logs: ${stats.moodLogs}
+- Best streak: ${stats.bestStreak} days`;
+    const ai = await aiApi({
+      model: DB.settings.anthropicModel || "claude-haiku-4-5-20251001",
+      max_tokens: 700,
+      temperature: 0.5,
+      system: "You are Cornileus, a candid AI financial counselor. Write a year-in-review for the user that reads like a thoughtful friend reviewing their year. Reference specific numbers from the stats provided. No jargon, no hedging, no disclaimers. Each section is one tight sentence.",
+      messages: [{ role: "user", content: userMsg }],
+    });
+    const text = (ai.content && ai.content[0] && ai.content[0].text) || "";
+    if (!text) throw new Error("Empty response");
+    const parsed = { text, stats, year: reviewYear, ts: Date.now() };
+    DB.counselor.annualReviews[reviewYear] = parsed;
+    save();
+    const out = document.getElementById("ann-result");
+    if (out) out.innerHTML = _cornileusRenderAnnualReview(parsed, reviewYear);
+    // Re-render sheet to surface the Share button
+    cornileusAnnualReviewSheet();
+  } catch (e) {
+    const out = document.getElementById("ann-result");
+    if (out) out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  }
+}
+
+function _annualReviewStats(year) {
+  const yearStr = year.toString();
+  // Wins
+  const wins = (DB.wins || []).filter(w => (w.date || "").startsWith(yearStr)).length;
+  // Habits — count check-ins by date prefix
+  let habitDones = 0;
+  for (const h of (DB.habits || [])) {
+    for (const [date, val] of Object.entries(h.log || {})) {
+      if (!date.startsWith(yearStr)) continue;
+      const did = h.type === "count" ? ((+val || 0) >= (+h.target || 1)) : !!val;
+      if (did) habitDones++;
+    }
+  }
+  // Savings deposits this year
+  let totalSaved = 0;
+  for (const s of (DB.savings || [])) {
+    for (const l of (s.log || [])) {
+      if ((l.date || "").startsWith(yearStr)) totalSaved += +l.amount || 0;
+    }
+  }
+  // Plans completed
+  const plansCompleted = (DB.plans || []).filter(p => p.completed && (p.completedAt || p.targetCompleted || "").toString().startsWith(yearStr)).length;
+  // Goals shipped
+  const goalsShipped = (DB.goals || []).filter(g => g.done && (g.doneAt || "").toString().startsWith(yearStr)).length;
+  // Realized stocks P&L
+  const realizedPL = ((DB.stocks && DB.stocks.realizedPL) || []).filter(r => (r.date || "").startsWith(yearStr)).reduce((s, r) => s + (+r.pl || 0), 0);
+  // Spend/earn from transactions
+  const yearTx = (DB.spend || []).filter(t => (t.date || "").startsWith(yearStr));
+  const totalSpent = yearTx.filter(t => +t.amount > 0).reduce((s, t) => s + (+t.amount || 0), 0);
+  const totalEarned = yearTx.filter(t => +t.amount < 0).reduce((s, t) => s + Math.abs(+t.amount || 0), 0);
+  // Net worth change
+  const hist = DB.netWorthHistory || [];
+  const yearStart = hist.find(h => h.date && h.date >= yearStr + "-01-01");
+  const yearEnd = hist.slice().reverse().find(h => h.date && h.date <= yearStr + "-12-31" && h.date >= yearStr + "-01-01");
+  const netWorthChange = (yearStart && yearEnd && yearStart !== yearEnd) ? Math.round(yearEnd.total - yearStart.total) : null;
+  // Mood logs
+  const moodLogs = Object.keys(DB.moods || {}).filter(d => d.startsWith(yearStr)).length;
+  // Best streak ever (best snapshot, not just this year — approximate)
+  const bestStreak = Math.max(0, ...(DB.habits || []).map(h => {
+    let max = 0; let cur = 0;
+    for (const [date, val] of Object.entries(h.log || {})) {
+      if (!date.startsWith(yearStr)) continue;
+      const did = h.type === "count" ? ((+val || 0) >= (+h.target || 1)) : !!val;
+      if (did) { cur++; max = Math.max(max, cur); }
+      else cur = 0;
+    }
+    return max;
+  }));
+  return { year, wins, habitDones, totalSaved, plansCompleted, goalsShipped, realizedPL, totalSpent, totalEarned, netWorthChange, moodLogs, bestStreak };
+}
+
+function _cornileusRenderAnnualReview(parsed, year) {
+  const text = parsed.text || "";
+  const parse = (key) => {
+    const m = text.match(new RegExp("^" + key + ":\\s*(.*?)$", "im"));
+    return m ? m[1].trim() : "";
+  };
+  const stats = parsed.stats || {};
+  const headline = parse("HEADLINE");
+  const nw = parse("NET-WORTH");
+  const win = parse("WIN");
+  const mistake = parse("MISTAKE");
+  const l1 = parse("LESSON-1");
+  const l2 = parse("LESSON-2");
+  const next = parse("NEXT-YEAR");
+  return `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid #7c3aed;border-radius:var(--r);padding:16px;margin-bottom:10px">
+      ${headline ? `<div style="font-size:15px;font-weight:700;color:var(--t1);line-height:1.4;margin-bottom:12px">${esc(headline)}</div>` : ""}
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-bottom:12px">
+        <div style="background:var(--bg-elev);border-radius:8px;padding:9px 10px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:var(--t1)">${stats.wins || 0}</div>
+          <div style="font-size:10px;color:var(--t3);margin-top:2px">wins logged</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:9px 10px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:var(--t1)">${stats.habitDones || 0}</div>
+          <div style="font-size:10px;color:var(--t3);margin-top:2px">habits done</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:9px 10px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:var(--green,#34C759)" data-priv="amount">$${(stats.totalSaved || 0).toLocaleString()}</div>
+          <div style="font-size:10px;color:var(--t3);margin-top:2px">saved</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:9px 10px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:var(--t1)">${stats.plansCompleted || 0}</div>
+          <div style="font-size:10px;color:var(--t3);margin-top:2px">plans done</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:9px 10px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:var(--t1)">${stats.goalsShipped || 0}</div>
+          <div style="font-size:10px;color:var(--t3);margin-top:2px">goals shipped</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:9px 10px;text-align:center">
+          <div style="font-size:18px;font-weight:800;color:var(--t1)">${stats.bestStreak || 0}</div>
+          <div style="font-size:10px;color:var(--t3);margin-top:2px">best streak</div>
+        </div>
+      </div>
+      ${nw ? `<div style="background:var(--bg-elev);border-radius:8px;padding:9px 11px;margin-bottom:6px"><div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:2px">📈 Net worth</div><div style="font-size:12.5px;color:var(--t1);line-height:1.45">${esc(nw)}</div></div>` : ""}
+      ${win ? `<div style="background:rgba(52,199,89,0.08);border:0.5px solid rgba(52,199,89,0.25);border-radius:8px;padding:9px 11px;margin-bottom:6px"><div style="font-size:10.5px;color:var(--green,#34C759);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:2px">🏆 Biggest win</div><div style="font-size:12.5px;color:var(--t1);line-height:1.45">${esc(win)}</div></div>` : ""}
+      ${mistake ? `<div style="background:rgba(255,149,0,0.08);border:0.5px solid rgba(255,149,0,0.25);border-radius:8px;padding:9px 11px;margin-bottom:6px"><div style="font-size:10.5px;color:var(--orange,#FF9500);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:2px">⚠️ Lesson from the year</div><div style="font-size:12.5px;color:var(--t1);line-height:1.45">${esc(mistake)}</div></div>` : ""}
+      ${(l1 || l2) ? `<div style="background:var(--bg-elev);border-radius:8px;padding:9px 11px;margin-bottom:6px"><div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">📌 Key takeaways</div>${l1 ? `<div style="font-size:12px;color:var(--t1);line-height:1.45;margin-bottom:4px">• ${esc(l1)}</div>` : ""}${l2 ? `<div style="font-size:12px;color:var(--t1);line-height:1.45">• ${esc(l2)}</div>` : ""}</div>` : ""}
+      ${next ? `<div style="background:rgba(0,122,255,0.08);border:0.5px solid rgba(0,122,255,0.25);border-radius:8px;padding:9px 11px"><div style="font-size:10.5px;color:var(--blue,#007AFF);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:2px">🚀 For ${year + 1}</div><div style="font-size:12.5px;color:var(--t1);line-height:1.45">${esc(next)}</div></div>` : ""}
+    </div>
+  `;
+}
+
+function annualReviewShareSvg(year) {
+  const parsed = (DB.counselor && DB.counselor.annualReviews && DB.counselor.annualReviews[year]) || null;
+  if (!parsed) return "";
+  const text = parsed.text || "";
+  const stats = parsed.stats || {};
+  const parse = (key) => {
+    const m = text.match(new RegExp("^" + key + ":\\s*(.*?)$", "im"));
+    return m ? m[1].trim() : "";
+  };
+  const W = 1080, H = 1080;
+  // 4 stat cards + headline + win
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W}" height="${H}">
+  <defs><linearGradient id="arbg" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0a0a10"/><stop offset="100%" stop-color="#1a1a22"/></linearGradient></defs>
+  <rect width="${W}" height="${H}" fill="url(#arbg)"/>
+  <text x="${W/2}" y="100" text-anchor="middle" font-size="28" font-weight="600" fill="#9a9a9f" letter-spacing="4">YEAR IN REVIEW · ASCEND</text>
+  <text x="${W/2}" y="200" text-anchor="middle" font-size="120" font-weight="800" fill="#f7f7f5" font-family="-apple-system,system-ui,sans-serif">${year}</text>
+  ${parse("HEADLINE") ? `
+    <foreignObject x="80" y="240" width="${W-160}" height="120">
+      <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:-apple-system,system-ui,sans-serif;font-size:28px;color:#f7f7f5;line-height:1.4;text-align:center;font-weight:600">${esc(parse("HEADLINE"))}</div>
+    </foreignObject>` : ""}
+  <!-- Stat cards row 1 -->
+  <g transform="translate(80 400)">
+    <rect x="0" y="0" width="220" height="120" rx="12" fill="#1f1f2a"/>
+    <text x="110" y="55" text-anchor="middle" font-size="48" font-weight="800" fill="#f7f7f5">${stats.wins || 0}</text>
+    <text x="110" y="90" text-anchor="middle" font-size="18" fill="#7a7a7f">wins logged</text>
+  </g>
+  <g transform="translate(320 400)">
+    <rect x="0" y="0" width="220" height="120" rx="12" fill="#1f1f2a"/>
+    <text x="110" y="55" text-anchor="middle" font-size="48" font-weight="800" fill="#f7f7f5">${stats.habitDones || 0}</text>
+    <text x="110" y="90" text-anchor="middle" font-size="18" fill="#7a7a7f">habits done</text>
+  </g>
+  <g transform="translate(560 400)">
+    <rect x="0" y="0" width="220" height="120" rx="12" fill="#1f1f2a"/>
+    <text x="110" y="55" text-anchor="middle" font-size="42" font-weight="800" fill="#34C759">$${(stats.totalSaved || 0).toLocaleString()}</text>
+    <text x="110" y="90" text-anchor="middle" font-size="18" fill="#7a7a7f">saved</text>
+  </g>
+  <g transform="translate(800 400)">
+    <rect x="0" y="0" width="220" height="120" rx="12" fill="#1f1f2a"/>
+    <text x="110" y="55" text-anchor="middle" font-size="48" font-weight="800" fill="#f7f7f5">${stats.bestStreak || 0}</text>
+    <text x="110" y="90" text-anchor="middle" font-size="18" fill="#7a7a7f">best streak</text>
+  </g>
+  <!-- Big win callout -->
+  ${parse("WIN") ? `
+    <rect x="80" y="580" width="${W-160}" height="170" rx="16" fill="#1a3322" stroke="#34C759" stroke-width="2" stroke-opacity="0.3"/>
+    <text x="120" y="620" font-size="20" font-weight="700" fill="#34C759" letter-spacing="3">🏆 BIGGEST WIN</text>
+    <foreignObject x="120" y="640" width="${W-240}" height="100">
+      <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:-apple-system,system-ui,sans-serif;font-size:24px;color:#f7f7f5;line-height:1.45">${esc(parse("WIN"))}</div>
+    </foreignObject>` : ""}
+  ${parse("NEXT-YEAR") ? `
+    <text x="${W/2}" y="850" text-anchor="middle" font-size="22" font-weight="700" fill="#007AFF" letter-spacing="3">FOR ${year + 1}</text>
+    <foreignObject x="80" y="880" width="${W-160}" height="120">
+      <div xmlns="http://www.w3.org/1999/xhtml" style="font-family:-apple-system,system-ui,sans-serif;font-size:24px;color:#f7f7f5;line-height:1.45;text-align:center">${esc(parse("NEXT-YEAR"))}</div>
+    </foreignObject>` : ""}
+  <text x="${W/2}" y="${H - 50}" text-anchor="middle" font-size="22" fill="#5a5a5f">life-hack-app.vercel.app</text>
+</svg>`;
+}
+
+async function shareAnnualReviewCard(year) {
+  const svg = annualReviewShareSvg(year);
+  if (!svg) { toast("Generate the review first"); return; }
+  const blob = new Blob([svg], { type: "image/svg+xml" });
+  const file = new File([blob], `ascend-${year}-review.svg`, { type: "image/svg+xml" });
+  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: `${year} year in review`, text: `My ${year} on Ascend.` });
+      return;
+    } catch {}
+  }
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `ascend-${year}-review.svg`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast("Annual review card downloaded");
+}
+
+/* ---------- "Did you do it?" follow-through tracker ----------
+   When Cornileus makes a concrete suggestion (parse for action verbs
+   like "transfer", "buy", "cancel", "open", "increase"), capture it.
+   Next time the user opens the chat, surface a "Did you follow through
+   on X?" prompt with thumbs-up / thumbs-down / snooze.
+*/
+const FOLLOWUP_VERBS = /\b(?:transfer|move|put|allocate|invest|buy|sell|trim|rebalance|cancel|negotiate|open|increase|decrease|automate|set up|schedule|contact|review|talk to|call|email|sign up|enroll|max out|contribute|deposit|withdraw|consolidate|refinance|pay off|pay down|build|create|add|switch)\b/i;
+
+function _cornileusExtractFollowups(replyText) {
+  // Extract sentences that contain action verbs + are imperative-ish.
+  // Limit to 3 per reply so we don't explode the queue.
+  if (!replyText || typeof replyText !== "string") return [];
+  const sentences = replyText.split(/(?<=[.!?])\s+/).filter(s => s.length > 15 && s.length < 240);
+  const out = [];
+  for (const s of sentences) {
+    const trimmed = s.trim();
+    if (FOLLOWUP_VERBS.test(trimmed) && !/\bif\b|\bmight\b|\bcould\b/i.test(trimmed.slice(0, 20))) {
+      // Skip questions ("Could you...?") and conditionals at sentence start
+      out.push(trimmed);
+      if (out.length >= 3) break;
+    }
+  }
+  return out;
+}
+
+function _cornileusQueueFollowups(replyText) {
+  if (!DB.counselor) return;
+  if (!Array.isArray(DB.counselor.followups)) DB.counselor.followups = [];
+  const items = _cornileusExtractFollowups(replyText);
+  for (const text of items) {
+    DB.counselor.followups.push({
+      id: "fu_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6),
+      ts: Date.now(),
+      text,
+      status: "pending",
+    });
+  }
+  // Cap to 20 pending so it doesn't grow forever
+  const pending = DB.counselor.followups.filter(f => f.status === "pending");
+  if (pending.length > 20) {
+    const overflow = pending.length - 20;
+    let removed = 0;
+    DB.counselor.followups = DB.counselor.followups.filter(f => {
+      if (f.status === "pending" && removed < overflow) { removed++; return false; }
+      return true;
+    });
+  }
+}
+
+function _cornileusOldestPendingFollowup() {
+  if (!DB.counselor || !Array.isArray(DB.counselor.followups)) return null;
+  // Only surface followups >= 6 hours old so we don't ask immediately
+  const sixHoursAgo = Date.now() - 6 * 60 * 60 * 1000;
+  return DB.counselor.followups.find(f => f.status === "pending" && f.ts < sixHoursAgo) || null;
+}
+
+function cornileusFollowupsSheet() {
+  if (!DB.counselor || !Array.isArray(DB.counselor.followups)) DB.counselor.followups = [];
+  const list = DB.counselor.followups.slice().reverse();
+  const pending = list.filter(f => f.status === "pending");
+  const done = list.filter(f => f.status === "done");
+  const skipped = list.filter(f => f.status === "skipped");
+  openSheet(`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+      ${cornAvatarHtml(44, false, "curious")}
+      <div style="flex:1;min-width:0">
+        <h2 style="margin:0">📋 Followups</h2>
+        <div class="muted" style="font-size:12.5px;margin-top:2px">Things Cornileus suggested — did you do them?</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:12px;margin-bottom:14px">
+      <div style="background:var(--bg-elev);border-radius:8px;padding:9px 10px;text-align:center"><div style="font-size:18px;font-weight:800;color:var(--orange,#FF9500);font-variant-numeric:tabular-nums">${pending.length}</div><div style="font-size:10px;color:var(--t3);margin-top:2px">pending</div></div>
+      <div style="background:var(--bg-elev);border-radius:8px;padding:9px 10px;text-align:center"><div style="font-size:18px;font-weight:800;color:var(--green,#34C759);font-variant-numeric:tabular-nums">${done.length}</div><div style="font-size:10px;color:var(--t3);margin-top:2px">done</div></div>
+      <div style="background:var(--bg-elev);border-radius:8px;padding:9px 10px;text-align:center"><div style="font-size:18px;font-weight:800;color:var(--t3);font-variant-numeric:tabular-nums">${skipped.length}</div><div style="font-size:10px;color:var(--t3);margin-top:2px">skipped</div></div>
+    </div>
+    ${pending.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Pending</div>
+      ${pending.map(f => {
+        const days = Math.floor((Date.now() - f.ts) / 86400000);
+        return `
+          <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--orange,#FF9500);border-radius:10px;padding:11px 13px;margin-bottom:6px">
+            <div style="font-size:12.5px;color:var(--t1);line-height:1.5;margin-bottom:8px">${esc(f.text)}</div>
+            <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">
+              <div style="font-size:10px;color:var(--t3)">${days === 0 ? "Today" : days === 1 ? "Yesterday" : days + " days ago"}</div>
+              <div style="flex:1"></div>
+              <button onclick="_cornileusMarkFollowup(${jsAttr(f.id)}, 'done')" style="background:var(--green,#34C759);color:#fff;border:0;border-radius:6px;padding:5px 10px;font-size:11px;font-weight:700;cursor:pointer">✓ Did it</button>
+              <button onclick="_cornileusMarkFollowup(${jsAttr(f.id)}, 'skipped')" style="background:var(--bg-elev);color:var(--t2);border:0.5px solid var(--sep);border-radius:6px;padding:5px 10px;font-size:11px;font-weight:600;cursor:pointer">Skip</button>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    ` : `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:12.5px;font-style:italic">No pending followups. Cornileus suggestions will show up here.</div>`}
+    ${(done.length || skipped.length) ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:14px 0 6px">History (${done.length + skipped.length})</div>
+      ${[...done, ...skipped].slice(0, 10).map(f => `
+        <div style="background:var(--bg-elev);border-radius:8px;padding:9px 11px;margin-bottom:3px;opacity:0.7">
+          <div style="font-size:11.5px;color:var(--t2);line-height:1.4">${f.status === "done" ? "✓" : "✗"} ${esc(f.text.slice(0, 100))}${f.text.length > 100 ? "…" : ""}</div>
+        </div>
+      `).join("")}
+    ` : ""}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+async function _cornileusMarkFollowup(id, status) {
+  if (!DB.counselor || !Array.isArray(DB.counselor.followups)) return;
+  const f = DB.counselor.followups.find(x => x.id === id);
+  if (!f) return;
+  f.status = status;
+  f.resolvedAt = Date.now();
+  await save();
+  cornileusFollowupsSheet();
+}
+
+/* ---------- Insurance audit ----------
+   6-category checklist with plain-English "you need this if…" copy.
+   Each item tracks: have (yes/no/unsure), note (free text), ts.
+   Stored on DB.insurance keyed by item id.
+*/
+const INSURANCE_ITEMS = [
+  {
+    id: "health",
+    title: "Health insurance",
+    icon: "⚕️",
+    needIf: "You need this. Period. A single ER visit without coverage can wipe out years of savings.",
+    questions: [
+      "Do you have current health coverage (employer, marketplace, or parents' plan if under 26)?",
+      "Have you reviewed your deductible and max out-of-pocket?",
+    ],
+  },
+  {
+    id: "auto",
+    title: "Auto insurance",
+    icon: "🚗",
+    needIf: "Required by law if you own a car. Liability minimums protect others; comprehensive/collision protects your vehicle.",
+    questions: [
+      "Are liability limits at least 100/300/100 (most advisors' recommendation)?",
+      "If your car is < 10 years old, do you have comp + collision?",
+    ],
+  },
+  {
+    id: "renters",
+    title: "Renters / homeowners",
+    icon: "🏠",
+    needIf: "Required by most landlords + mortgage lenders. Renters insurance is ~$15-20/mo and covers theft, fire, liability if someone gets hurt at your place.",
+    questions: [
+      "If you rent, do you have a policy? ($15-20/mo)",
+      "If you own, is dwelling coverage at replacement value (not market value)?",
+    ],
+  },
+  {
+    id: "life",
+    title: "Life insurance",
+    icon: "🛡️",
+    needIf: "You need this if anyone depends on your income — spouse, kids, aging parents. Term life is cheap (~$30/mo at 30 for $500k); skip whole life unless you've maxed every tax-advantaged account.",
+    questions: [
+      "If anyone relies on your income, do you have term life ≥ 10x annual income?",
+      "Is the policy term long enough to cover until your kids are independent / mortgage is paid?",
+    ],
+  },
+  {
+    id: "disability",
+    title: "Disability insurance",
+    icon: "🦯",
+    needIf: "You need this more than life insurance. ~25% of working adults experience a disability before retirement. Employer LTD coverage is often only 60% of base salary; supplement if you have dependents.",
+    questions: [
+      "Does your employer offer long-term disability (LTD)?",
+      "If self-employed, do you have an own-occupation disability policy?",
+    ],
+  },
+  {
+    id: "umbrella",
+    title: "Umbrella liability",
+    icon: "☂️",
+    needIf: "You need this if your net worth > $500k, you have a teen driver, or you have a pool/dog. ~$300/yr buys $1-2M of extra liability above auto+home policies.",
+    questions: [
+      "Is your net worth above $500k?",
+      "If yes, do you carry umbrella liability ≥ 1× net worth?",
+    ],
+  },
+];
+
+function insuranceAuditSheet() {
+  if (!DB.insurance || typeof DB.insurance !== "object") DB.insurance = {};
+  const ins = DB.insurance;
+  const done = INSURANCE_ITEMS.filter(i => ins[i.id] && ins[i.id].have === "yes").length;
+  const total = INSURANCE_ITEMS.length;
+  const pct = Math.round((done / total) * 100);
+  openSheet(`
+    <h2 style="margin-bottom:4px">☂️ Insurance audit</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">6 categories of insurance. Each has plain-English "you need this if…" guidance. Educational — not licensed insurance advice.</p>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${pct === 100 ? 'var(--green,#34C759)' : pct >= 50 ? '#9ACD32' : 'var(--orange,#FF9500)'};border-radius:var(--r);padding:14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Coverage status</div>
+        <div style="font-size:13px;color:var(--t1);font-weight:700;font-variant-numeric:tabular-nums">${done} / ${total} confirmed</div>
+      </div>
+      <div style="height:8px;background:var(--bg-elev);border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:${pct === 100 ? 'var(--green,#34C759)' : pct >= 50 ? '#9ACD32' : 'var(--orange,#FF9500)'};transition:width .4s"></div>
+      </div>
+    </div>
+    ${INSURANCE_ITEMS.map(i => {
+      const state = ins[i.id] || {};
+      const have = state.have || "unsure";
+      const color = have === "yes" ? "var(--green,#34C759)" : have === "no" ? "var(--red,#FF3B30)" : "var(--t3)";
+      const label = have === "yes" ? "Have it ✓" : have === "no" ? "Don't have" : "Not sure";
+      return `
+        <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:12px 14px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+            <div style="font-size:14px;font-weight:700;color:var(--t1)">${i.icon} ${esc(i.title)}</div>
+            <div style="font-size:11px;color:${color};font-weight:700">${esc(label)}</div>
+          </div>
+          <div style="font-size:11.5px;color:var(--t2);line-height:1.45;margin-bottom:8px">${esc(i.needIf)}</div>
+          ${i.questions.map(q => `<div style="font-size:11px;color:var(--t3);line-height:1.4;margin-bottom:3px">• ${esc(q)}</div>`).join("")}
+          <div style="display:flex;gap:4px;margin-top:8px">
+            ${["yes","no","unsure"].map(opt => {
+              const sel = have === opt;
+              const lbl = opt === "yes" ? "✓ Have" : opt === "no" ? "✗ Don't" : "? Unsure";
+              const optColor = opt === "yes" ? "var(--green,#34C759)" : opt === "no" ? "var(--red,#FF3B30)" : "var(--t3)";
+              return `<button onclick="_insSetHave(${jsAttr(i.id)}, ${jsAttr(opt)})" style="flex:1;background:${sel?optColor:'var(--bg-elev)'};color:${sel?'#fff':'var(--t2)'};border:0.5px solid var(--sep);border-radius:8px;padding:6px 8px;font-size:11px;font-weight:600;cursor:pointer">${lbl}</button>`;
+            }).join("")}
+          </div>
+          ${state.note ? `<div style="margin-top:6px;padding:6px 9px;background:var(--bg-elev);border-radius:6px;font-size:11px;color:var(--t2);line-height:1.4;font-style:italic">${esc(state.note)}</div>` : ""}
+          <input placeholder="Add a note (annual premium, deductible, agent…)"
+            value="${esc(state.note || "")}"
+            onchange="_insSetNote(${jsAttr(i.id)}, this.value)"
+            style="width:100%;margin-top:6px;background:transparent;border:0;border-bottom:0.5px solid var(--sep);padding:5px 0;color:var(--t1);font-size:11.5px;box-sizing:border-box" />
+        </div>
+      `;
+    }).join("")}
+    <button class="btn" style="width:100%;margin-top:6px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-size:13px;padding:10px" onclick="closeSheet();openCounselor('Audit my insurance coverage based on my situation. Walk through health, auto, renters/home, life, disability, umbrella — which gaps are most critical for me right now?')">✨ Ask Cornileus to review my coverage</button>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+async function _insSetHave(id, val) {
+  if (!DB.insurance) DB.insurance = {};
+  if (!DB.insurance[id]) DB.insurance[id] = {};
+  DB.insurance[id].have = val;
+  DB.insurance[id].ts = Date.now();
+  await save();
+  insuranceAuditSheet();
+}
+async function _insSetNote(id, note) {
+  if (!DB.insurance) DB.insurance = {};
+  if (!DB.insurance[id]) DB.insurance[id] = {};
+  DB.insurance[id].note = (note || "").slice(0, 240);
+  DB.insurance[id].ts = Date.now();
+  await save();
+}
+
 function cornileusMemoriesSheet() {
   if (!DB.counselor) DB.counselor = { thread: [], memories: [] };
   if (!Array.isArray(DB.counselor.memories)) DB.counselor.memories = [];
@@ -17653,9 +18204,22 @@ function renderSettings() {
         })()}</div></div>
         <div class="trail chev"></div>
       </div>
+      <div class="row tappable" onclick="cornileusFollowupsSheet()" role="button" tabindex="0">
+        <div class="lead">📋</div>
+        <div class="body"><div class="t1">Followups</div><div class="t2">${(() => {
+          const fps = ((DB.counselor && DB.counselor.followups) || []).filter(f => f.status === "pending").length;
+          return fps ? `${fps} pending — things Cornileus suggested` : "Track Cornileus suggestions and whether you acted on them";
+        })()}</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="cornileusMorningBriefingSheet()" role="button" tabindex="0">
         <div class="lead">☀️</div>
         <div class="body"><div class="t1">Morning briefing</div><div class="t2">Today's portfolio, top concern, one focus — generated daily</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="cornileusAnnualReviewSheet()" role="button" tabindex="0">
+        <div class="lead">📜</div>
+        <div class="body"><div class="t1">Annual review</div><div class="t2">Year-in-review with stats, AI commentary, shareable card</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="closeSheet&&closeSheet();openCounselor()">
@@ -20911,6 +21475,9 @@ async function counselorSend(text) {
       actions: parsed.confirmations,
       t: Date.now(),
     });
+    // Capture any concrete action-verb suggestions into the followup
+    // tracker so we can ask "did you do that?" a day or two later.
+    try { _cornileusQueueFollowups(parsed.cleanedText); } catch {}
     // React to his own reply with the matching mood (happy for wins,
     // concerned for tough-love advice, etc). Settles back to neutral after
     // a couple of seconds so the avatar doesn't lock into one expression.
@@ -24415,6 +24982,21 @@ function computeSmartPlays() {
 
   // Cornileus advisor nudge when the user has a portfolio and hasn't
   // run a review recently. Skips when there's a fresher review cached.
+  // Stale Cornileus followup nudge — surface 1 oldest pending followup
+  const stalefp = (typeof _cornileusOldestPendingFollowup === "function") ? _cornileusOldestPendingFollowup() : null;
+  if (stalefp) {
+    out.push({
+      id: "cornileus-followup-" + stalefp.id,
+      priority: 78,
+      emoji: "📋",
+      title: "Did you do that thing Cornileus suggested?",
+      body: stalefp.text.slice(0, 140) + (stalefp.text.length > 140 ? "…" : ""),
+      why: "Capturing whether you actually act on advice keeps Cornileus calibrated — and you accountable.",
+      actionLabel: "Review followups",
+      actionFn: "cornileusFollowupsSheet()",
+    });
+  }
+
   // Morning briefing — once a day, mornings only (5am-noon local)
   const hour = new Date().getHours();
   if (hour >= 5 && hour < 12) {
