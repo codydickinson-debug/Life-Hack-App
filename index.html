@@ -18493,29 +18493,172 @@ async function toggleNotifications(on) {
 // Add or remove a reminder time. Used by the notification settings sheet.
 function addReminderTime() {
   if (!Array.isArray(DB.settings.reminderTimes)) DB.settings.reminderTimes = [];
-  // Default new times to evening if the user already has a morning, otherwise morning.
   const existing = _reminderTimesActive();
   const next = existing.includes("20:00") ? "12:00" : (existing.includes("08:00") ? "20:00" : "08:00");
   DB.settings.reminderTimes = [...new Set([...existing, next])].sort();
-  save(); scheduleReminder(); notificationSettingsSheet();
+  save(); scheduleReminder();
+  // Keep the backend schedule in sync when subscribed for background push.
+  if (typeof refreshPushSchedule === "function") refreshPushSchedule();
+  notificationSettingsSheet();
 }
 function removeReminderTime(t) {
   const times = _reminderTimesActive().filter(x => x !== t);
-  // Mirror back into reminderTimes; clear legacy single if it matched
   DB.settings.reminderTimes = times;
   if (DB.settings.reminderTime === t) DB.settings.reminderTime = times[0] || "";
-  save(); scheduleReminder(); notificationSettingsSheet();
+  save(); scheduleReminder();
+  if (typeof refreshPushSchedule === "function") refreshPushSchedule();
+  notificationSettingsSheet();
 }
 function setReminderTime(oldT, newT) {
   if (!/^\d{2}:\d{2}$/.test(newT)) return;
   const times = _reminderTimesActive().map(x => x === oldT ? newT : x);
   DB.settings.reminderTimes = [...new Set(times)].sort();
-  save(); scheduleReminder(); notificationSettingsSheet();
+  save(); scheduleReminder();
+  if (typeof refreshPushSchedule === "function") refreshPushSchedule();
+  notificationSettingsSheet();
 }
 function toggleNotifyCategory(cat) {
   DB.settings.notifyCategories = DB.settings.notifyCategories || {};
   DB.settings.notifyCategories[cat] = !DB.settings.notifyCategories[cat];
   save(); notificationSettingsSheet();
+}
+
+// ============================================================================
+// WEB PUSH (background notifications when the app is closed)
+//
+// Flow:
+//   1. User taps "Enable background push" → subscribeToPush()
+//   2. We fetch the backend's VAPID public key, ask the SW to subscribe,
+//      POST the subscription + reminderTimes (as schedule) + tz to backend.
+//   3. Backend cron checks every 15min, delivers pushes whose scheduled
+//      time is in the user's local clock window.
+//   4. If reminderTimes change, refreshPushSchedule() updates the schedule
+//      without re-subscribing.
+//
+// Requires: backend VAPID_* secrets set, app installed to Home Screen on
+// iOS 16.4+, notification permission granted.
+// ============================================================================
+
+async function _pushVapidPublicKey() {
+  if (!_backendReady()) throw new Error("backend not configured");
+  const r = await api("/push/vapid-public-key", { method: "GET" });
+  if (!r.enabled || !r.key) throw new Error("Backend isn't configured for push (VAPID keys missing)");
+  return r.key;
+}
+
+function _b64urlToBytes(s) {
+  s = String(s).replace(/-/g, "+").replace(/_/g, "/");
+  const pad = s.length % 4;
+  if (pad) s += "=".repeat(4 - pad);
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
+function _u8eq(a, b) {
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) if (a[i] !== b[i]) return false;
+  return true;
+}
+
+async function subscribeToPush() {
+  if (!("serviceWorker" in navigator) || !("PushManager" in window)) {
+    toast("This browser doesn't support background push"); return false;
+  }
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") {
+    if (Notification && typeof Notification.requestPermission === "function") {
+      const perm = await Notification.requestPermission();
+      if (perm !== "granted") { toast("Notification permission denied"); return false; }
+    } else { toast("Notifications not supported"); return false; }
+  }
+  try {
+    const vapidKey = await _pushVapidPublicKey();
+    const reg = await navigator.serviceWorker.ready;
+    let sub = await reg.pushManager.getSubscription();
+    if (sub) {
+      const existingKey = sub.options && sub.options.applicationServerKey;
+      const same = existingKey && _u8eq(new Uint8Array(existingKey), _b64urlToBytes(vapidKey));
+      if (!same) { try { await sub.unsubscribe(); } catch {} sub = null; }
+    }
+    if (!sub) {
+      sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: _b64urlToBytes(vapidKey),
+      });
+    }
+    const subJson = sub.toJSON ? sub.toJSON() : JSON.parse(JSON.stringify(sub));
+    const schedule = _reminderTimesActive().map(t => ({ hhmm: t, body: "" }));
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    await api("/push/subscribe", { method: "POST", body: JSON.stringify({
+      userId: ensureUserId(), subscription: subJson, schedule, tz,
+    })});
+    DB.settings.pushSubscription = subJson;
+    DB.settings.pushSubscribedAt = Date.now();
+    await save();
+    toast("Background push enabled ✓");
+    return true;
+  } catch (e) {
+    toast("Push setup failed: " + (e.message || "unknown error"));
+    return false;
+  }
+}
+
+async function unsubscribeFromPush() {
+  try {
+    if ("serviceWorker" in navigator) {
+      const reg = await navigator.serviceWorker.ready;
+      const sub = await reg.pushManager.getSubscription();
+      if (sub) await sub.unsubscribe();
+    }
+  } catch {}
+  try { await api("/push/unsubscribe", { method: "POST", body: JSON.stringify({ userId: ensureUserId() }) }); } catch {}
+  DB.settings.pushSubscription = null;
+  DB.settings.pushSubscribedAt = 0;
+  await save();
+  toast("Background push disabled");
+}
+
+async function sendTestPush() {
+  if (!DB.settings.pushSubscription) { toast("Enable background push first"); return; }
+  try {
+    await api("/push/test", { method: "POST", body: JSON.stringify({ userId: ensureUserId() }) });
+    toast("Test push sent — check your notification tray");
+  } catch (e) {
+    toast("Test push failed: " + e.message);
+  }
+}
+
+// When the user changes their reminderTimes, push the new schedule to the
+// backend so the cron uses the latest. Called from setReminderTime/etc.
+async function refreshPushSchedule() {
+  if (!DB.settings.pushSubscription) return;
+  try {
+    const schedule = _reminderTimesActive().map(t => ({ hhmm: t, body: "" }));
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+    await api("/push/subscribe", { method: "POST", body: JSON.stringify({
+      userId: ensureUserId(),
+      subscription: DB.settings.pushSubscription,
+      schedule, tz,
+    })});
+  } catch (e) {
+    console.warn("refreshPushSchedule failed:", e.message);
+  }
+}
+
+// Trigger an immediate backend-delivered push. Used for milestone alerts
+// so the user gets a notification even if the app isn't open at the moment
+// the event happens (rare but it matters for hit-the-$100k moments).
+async function sendPushNow(title, body, url) {
+  if (!DB.settings.pushSubscription) return;
+  try {
+    await api("/push/send", { method: "POST", body: JSON.stringify({
+      userId: ensureUserId(),
+      title: String(title || "Ascend").slice(0, 100),
+      body: String(body || "").slice(0, 400),
+      url: String(url || "/").slice(0, 200),
+    })});
+  } catch (e) { console.warn("sendPushNow failed:", e.message); }
 }
 
 // Send a test notification so the user can verify permission + delivery
@@ -18617,19 +18760,55 @@ function notificationSettingsSheet() {
       </div>
     </div>
   ` : "";
+  // Background push (Web Push via Service Worker) — works when the app is
+  // closed. Requires backend VAPID + an installed PWA on iOS 16.4+.
+  const pushSubscribed = !!DB.settings.pushSubscription;
+  const pushSection = on ? `
+    <div class="section-h" style="margin-top:18px"><span class="lbl">Background push</span></div>
+    <div class="list">
+      <div class="row">
+        <div class="lead">📲</div>
+        <div class="body">
+          <div class="t1">Push when app is closed${pushSubscribed ? ' <span style="background:var(--green,#34C759);color:#fff;border-radius:999px;padding:2px 8px;font-size:10px;margin-left:6px;font-weight:700">ON</span>' : ''}</div>
+          <div class="t2">${pushSubscribed
+            ? `Subscribed · backend cron fires your scheduled times every 15 min`
+            : "Tap Enable below. Needs backend VAPID config + installed-to-Home-Screen PWA on iOS 16.4+."}</div>
+        </div>
+      </div>
+      ${pushSubscribed ? `
+        <div class="row tappable" onclick="sendTestPush()">
+          <div class="lead">🧪</div>
+          <div class="body"><div class="t1">Send a test push from server</div><div class="t2">Confirms end-to-end delivery</div></div>
+          <div class="trail chev"></div>
+        </div>
+        <div class="row tappable" onclick="if(confirm('Disable background push? Local reminders still work.')){unsubscribeFromPush().then(()=>setTimeout(()=>notificationSettingsSheet(),200))}">
+          <div class="lead">🔕</div>
+          <div class="body"><div class="t1">Disable background push</div><div class="t2">Removes the subscription from the backend</div></div>
+          <div class="trail chev"></div>
+        </div>
+      ` : `
+        <div class="row tappable" onclick="subscribeToPush().then(ok=>ok&&setTimeout(()=>notificationSettingsSheet(),200))">
+          <div class="lead">⚡</div>
+          <div class="body"><div class="t1">Enable background push</div><div class="t2">Pushes arrive even when the app is closed</div></div>
+          <div class="trail chev"></div>
+        </div>
+      `}
+    </div>
+  ` : "";
   const testRow = on ? `
     <div style="margin-top:18px">
-      <button class="btn secondary" style="width:100%" onclick="sendTestNotification()">Send a test notification</button>
+      <button class="btn secondary" style="width:100%" onclick="sendTestNotification()">Send a test local notification</button>
     </div>
   ` : "";
   openSheet(`
     <h2 style="margin-bottom:4px">Notifications</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px">${supported ? "Pick what matters. Reminders fire while the app is open; install to your Home Screen for background pushes (iOS 16.4+, Android)." : "Web notifications aren't available here."}</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">${supported ? "Pick what matters. Local reminders fire while the app is open; enable Background push below for delivery when closed (needs Home-Screen PWA on iOS 16.4+)." : "Web notifications aren't available here."}</p>
     ${permBanner}
     ${masterRow}
     ${timesSection}
     ${catSection}
     ${habitsLink}
+    ${pushSection}
     ${testRow}
     <div class="actions"><button class="btn" onclick="closeSheet()">Done</button></div>
   `);
@@ -29316,6 +29495,14 @@ function checkNetWorthMilestones() {
   save();
   toast(`🎉 ${m.title} — ${m.quote.split(".")[0]}!`);
   try { celebrate(1.2); } catch {}
+  // Fire a server-side push too so the user gets it even when the app's
+  // closed — these are the moments worth being interrupted for.
+  try {
+    if (typeof sendPushNow === "function" &&
+        (DB.settings.notifyCategories || {}).networth !== false) {
+      sendPushNow(`${m.emoji || "📈"} Milestone hit`, `${m.title} — congrats`);
+    }
+  } catch {}
 }
 
 function milestonesSheet() {
@@ -31735,6 +31922,7 @@ function init() {
     acceptDetectedRecurring, dismissDetectedRecurring, plaidRecurringSheet,
     notificationSettingsSheet, addReminderTime, removeReminderTime, setReminderTime,
     toggleNotifyCategory, sendTestNotification, scheduleHabitReminders, fireOnOpenTriggers,
+    subscribeToPush, unsubscribeFromPush, sendTestPush, refreshPushSchedule, sendPushNow,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
     setPassphrase, unlockWithPassphrase, disablePassphrase, encryptObject, decryptObject, deriveKey,
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,

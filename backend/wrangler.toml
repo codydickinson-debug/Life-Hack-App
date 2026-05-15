@@ -7,6 +7,11 @@ compatibility_date = "2024-09-01"
 binding = "ASCEND_KV"
 id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
 
+# Scheduled trigger — runs every 15 minutes to deliver any scheduled
+# pushes whose time has arrived. Cheap; idles when nothing's due.
+[triggers]
+crons = ["*/15 * * * *"]
+
 # Secrets are NOT set here. Set them via the CLI (one-time) so they don't end up in git:
 #   wrangler secret put PLAID_CLIENT_ID
 #   wrangler secret put PLAID_SECRET
@@ -14,3 +19,10 @@ id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
 #   wrangler secret put API_KEY            # any random string; the PWA will send this as Bearer
 #   wrangler secret put ENCRYPTION_KEY     # base64 32-byte key (run: openssl rand -base64 32)
 #   wrangler secret put ALLOWED_ORIGIN     # the URL of your deployed PWA, e.g. https://ascend-yourname.netlify.app
+#
+# Web Push (optional — enables background pushes when the app is closed):
+#   wrangler secret put VAPID_PUBLIC_KEY   # base64url-encoded P-256 public key (uncompressed, 65 bytes)
+#   wrangler secret put VAPID_PRIVATE_KEY  # base64url-encoded P-256 private key (32 bytes)
+#   wrangler secret put VAPID_SUBJECT      # mailto: or https: URL identifying the sender
+#
+# Generate VAPID keys: `node -e "const c=require('crypto');const k=c.generateKeyPairSync('ec',{namedCurve:'prime256v1'});const pub=k.publicKey.export({format:'jwk'});const prv=k.privateKey.export({format:'jwk'});console.log('VAPID_PUBLIC_KEY:',Buffer.from([4,...Buffer.from(pub.x,'base64url'),...Buffer.from(pub.y,'base64url')]).toString('base64url'));console.log('VAPID_PRIVATE_KEY:',prv.d);"`

@@ -37,6 +37,16 @@ const DEFAULT_LLM_BURST = 10;    // calls per user per minute (global across fea
 const WEBHOOK_KEEP_DAYS = 30;    // Plaid webhook events expire after N days
 
 export default {
+  // ============ Scheduled handler ============
+  // Cron-triggered (see [triggers] in wrangler.toml). Runs every 15min,
+  // scans every user with a push subscription + schedule, and delivers any
+  // pushes whose target HH:MM has arrived in the user's local clock window.
+  // Idles cheaply when nothing's due.
+  async scheduled(event, env, ctx) {
+    try { await deliverScheduledPushes(env); }
+    catch (e) { console.error("scheduled push delivery failed:", e && e.stack || e); }
+  },
+
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
     const allowed = env.ALLOWED_ORIGIN || "*";
@@ -128,6 +138,29 @@ export default {
       }
       if (url.pathname === "/account" && request.method === "DELETE") {
         return await handleDeleteAccount(env, userId, allowed);
+      }
+      // ----- Push notifications -----
+      // Public key is the only push endpoint that doesn't need user auth —
+      // actually it does, since checkAuth gates everything; we just don't
+      // log it as an audit event. The frontend fetches this once.
+      if (url.pathname === "/push/vapid-public-key" && request.method === "GET") {
+        return json({ key: env.VAPID_PUBLIC_KEY || null, enabled: !!(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY && env.VAPID_SUBJECT) }, 200, allowed);
+      }
+      if (url.pathname === "/push/subscribe" && request.method === "POST") {
+        return await audited(env, userId, "push_subscribe",
+          () => handlePushSubscribe(request, env, userId, allowed));
+      }
+      if (url.pathname === "/push/unsubscribe" && request.method === "POST") {
+        return await audited(env, userId, "push_unsubscribe",
+          () => handlePushUnsubscribe(env, userId, allowed));
+      }
+      if (url.pathname === "/push/test" && request.method === "POST") {
+        return await audited(env, userId, "push_test",
+          () => handlePushTest(env, userId, allowed));
+      }
+      if (url.pathname === "/push/send" && request.method === "POST") {
+        return await audited(env, userId, "push_send",
+          () => handlePushSend(request, env, userId, allowed));
       }
       return json({ error: "not found" }, 404, allowed);
     } catch (err) {
@@ -926,4 +959,398 @@ function json(obj, status = 200, origin = "*") {
       ...corsHeaders(origin),
     },
   });
+}
+
+// ============================================================================
+// WEB PUSH (VAPID + RFC 8291 aes128gcm payload encryption)
+//
+// Endpoints:
+//   POST /push/subscribe   body {subscription, schedule, tz}   — store subscription + schedule
+//   POST /push/unsubscribe                                     — remove
+//   POST /push/test                                            — fire a test push now
+//   POST /push/send        body {title, body, url?, tag?}      — fire an immediate push
+//   scheduled cron */15 *  scans all subscriptions, delivers any whose
+//                          schedule time has arrived in the user's tz
+//
+// KV layout:
+//   u:<userId>:push  →  { subscription, schedule:[{hhmm, body, lastFiredKey}], tz, createdAt }
+//   push:index       →  array of userIds with active subscriptions (for cron scan)
+// ============================================================================
+
+function pushKey(uid) { return `u:${uid}:push`; }
+const PUSH_INDEX_KEY = "push:index";
+
+async function _getPushIndex(env) {
+  const raw = await env.ASCEND_KV.get(PUSH_INDEX_KEY);
+  try { return raw ? JSON.parse(raw) : []; } catch { return []; }
+}
+async function _addToPushIndex(env, userId) {
+  const arr = await _getPushIndex(env);
+  if (!arr.includes(userId)) {
+    arr.push(userId);
+    await env.ASCEND_KV.put(PUSH_INDEX_KEY, JSON.stringify(arr));
+  }
+}
+async function _removeFromPushIndex(env, userId) {
+  const arr = await _getPushIndex(env);
+  const next = arr.filter(x => x !== userId);
+  await env.ASCEND_KV.put(PUSH_INDEX_KEY, JSON.stringify(next));
+}
+
+async function handlePushSubscribe(request, env, userId, origin) {
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) {
+    return json({ error: "Push not configured on this backend (missing VAPID_*)" }, 503, origin);
+  }
+  const body = await request.json().catch(() => ({}));
+  const sub = body.subscription;
+  if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
+    return json({ error: "invalid subscription" }, 400, origin);
+  }
+  // schedule = [{ hhmm: "08:00", body: "Optional body" }] — sent by frontend
+  // when reminderTimes change. Body is optional; backend uses a generic
+  // "Time for your daily check-in" if absent.
+  const schedule = Array.isArray(body.schedule)
+    ? body.schedule.filter(s => /^\d{2}:\d{2}$/.test(s.hhmm)).slice(0, 8).map(s => ({
+        hhmm: s.hhmm,
+        body: typeof s.body === "string" ? s.body.slice(0, 200) : "",
+        lastFiredKey: "",
+      }))
+    : [];
+  // tz = IANA timezone (e.g. "America/New_York"). Defaults to UTC if missing.
+  const tz = (typeof body.tz === "string" && body.tz.length < 60) ? body.tz : "UTC";
+  await env.ASCEND_KV.put(pushKey(userId), JSON.stringify({
+    subscription: sub,
+    schedule,
+    tz,
+    createdAt: new Date().toISOString(),
+  }));
+  await _addToPushIndex(env, userId);
+  return json({ ok: true }, 200, origin);
+}
+
+async function handlePushUnsubscribe(env, userId, origin) {
+  await env.ASCEND_KV.delete(pushKey(userId));
+  await _removeFromPushIndex(env, userId);
+  return json({ ok: true }, 200, origin);
+}
+
+async function handlePushTest(env, userId, origin) {
+  const raw = await env.ASCEND_KV.get(pushKey(userId));
+  if (!raw) return json({ error: "not subscribed" }, 400, origin);
+  const rec = JSON.parse(raw);
+  try {
+    await sendWebPush(env, rec.subscription, {
+      title: "Ascend test",
+      body: "Background push is working 🎉",
+      tag: "ascend-test",
+      url: "/",
+    });
+    return json({ ok: true }, 200, origin);
+  } catch (e) {
+    return json({ error: "push failed: " + e.message }, 500, origin);
+  }
+}
+
+async function handlePushSend(request, env, userId, origin) {
+  const raw = await env.ASCEND_KV.get(pushKey(userId));
+  if (!raw) return json({ error: "not subscribed" }, 400, origin);
+  const body = await request.json().catch(() => ({}));
+  const rec = JSON.parse(raw);
+  const payload = {
+    title: String(body.title || "Ascend").slice(0, 100),
+    body: String(body.body || "").slice(0, 400),
+    tag: String(body.tag || "ascend").slice(0, 60),
+    url: String(body.url || "/").slice(0, 200),
+  };
+  try {
+    await sendWebPush(env, rec.subscription, payload);
+    return json({ ok: true }, 200, origin);
+  } catch (e) {
+    // 404/410 means the subscription is dead — clean it up so we stop trying.
+    if (e.status === 404 || e.status === 410) {
+      await env.ASCEND_KV.delete(pushKey(userId));
+      await _removeFromPushIndex(env, userId);
+    }
+    return json({ error: "push failed: " + e.message, status: e.status || null }, 500, origin);
+  }
+}
+
+// ----- Scheduled delivery -----
+async function deliverScheduledPushes(env) {
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) return;
+  const userIds = await _getPushIndex(env);
+  if (!userIds.length) return;
+  const now = new Date();
+  const nowMs = now.getTime();
+  const deadSubs = [];
+
+  for (const userId of userIds) {
+    try {
+      const raw = await env.ASCEND_KV.get(pushKey(userId));
+      if (!raw) { deadSubs.push(userId); continue; }
+      const rec = JSON.parse(raw);
+      const tz = rec.tz || "UTC";
+      // Compute the user's local HH:MM and YYYY-MM-DD for matching + dedup.
+      const local = _formatInTimeZone(now, tz);
+      let modified = false;
+      for (const slot of (rec.schedule || [])) {
+        // Match the local hour:minute exactly, plus a 15-min forward window
+        // since cron fires every 15min — without the window, anything not
+        // hitting exactly :00, :15, :30, :45 in the user's local time would
+        // be missed forever.
+        if (!_withinWindow(local.hhmm, slot.hhmm, 15)) continue;
+        // Dedup: only fire once per local-day per slot
+        const fireKey = local.dateKey + "|" + slot.hhmm;
+        if (slot.lastFiredKey === fireKey) continue;
+        try {
+          await sendWebPush(env, rec.subscription, {
+            title: "Ascend",
+            body: slot.body || "Time for your daily check-in",
+            tag: "scheduled-" + slot.hhmm,
+            url: "/",
+          });
+          slot.lastFiredKey = fireKey;
+          modified = true;
+        } catch (e) {
+          if (e.status === 404 || e.status === 410) { deadSubs.push(userId); break; }
+          // Other errors: leave lastFiredKey untouched so next cron retries.
+        }
+      }
+      if (modified) {
+        await env.ASCEND_KV.put(pushKey(userId), JSON.stringify(rec));
+      }
+    } catch (e) {
+      console.warn("deliver failed for", userId, e && e.message);
+    }
+  }
+  // Reap dead subscriptions
+  for (const u of deadSubs) {
+    await env.ASCEND_KV.delete(pushKey(u));
+    await _removeFromPushIndex(env, u);
+  }
+}
+
+// HH:MM in the user's local timezone is within `windowMin` minutes of slot.
+// Both inputs are "HH:MM" strings.
+function _withinWindow(currentHHMM, slotHHMM, windowMin) {
+  const [ch, cm] = currentHHMM.split(":").map(Number);
+  const [sh, sm] = slotHHMM.split(":").map(Number);
+  const cMin = ch * 60 + cm;
+  const sMin = sh * 60 + sm;
+  // Match if slot time is in the closed interval [current, current+window]
+  // — i.e. we fire AT slot time or up to `windowMin` after, so cron firings
+  // that land on :00/:15/:30/:45 catch slots set to any minute.
+  return sMin >= cMin && sMin < cMin + windowMin;
+}
+
+// Format a Date in a given IANA timezone, returning {hhmm, dateKey} where
+// dateKey is YYYY-MM-DD for that tz. Uses Intl which is available in Workers.
+function _formatInTimeZone(date, tz) {
+  try {
+    const parts = new Intl.DateTimeFormat("en-CA", {
+      timeZone: tz, hour12: false,
+      year: "numeric", month: "2-digit", day: "2-digit",
+      hour: "2-digit", minute: "2-digit",
+    }).formatToParts(date);
+    const get = (t) => (parts.find(p => p.type === t) || {}).value || "00";
+    return { hhmm: `${get("hour")}:${get("minute")}`, dateKey: `${get("year")}-${get("month")}-${get("day")}` };
+  } catch {
+    const iso = date.toISOString();
+    return { hhmm: iso.slice(11, 16), dateKey: iso.slice(0, 10) };
+  }
+}
+
+// ----- Web Push delivery: VAPID JWT + aes128gcm payload encryption -----
+//
+// RFC 8291 (Message Encryption for Web Push, aes128gcm scheme):
+//   1. Generate ephemeral P-256 keypair
+//   2. ECDH(privEphemeral, pubSubscriber.p256dh) → ikm
+//   3. HKDF-Expand(salt=random16, IKM=combine(ikm, auth), info=...) → CEK + nonce
+//   4. AES-128-GCM(CEK, nonce, padded plaintext) → ciphertext
+//   5. POST to subscription.endpoint with:
+//        headers: Authorization: vapid t=<JWT>, k=<vapidPublic>
+//                 Encryption: salt=<base64url>
+//                 Crypto-Key: p256ecdsa=<vapidPublic>
+//                 Content-Encoding: aes128gcm
+//                 Content-Type: application/octet-stream
+//                 TTL: <seconds>
+//        body: salt(16) || rs(4) || idlen(1) || ephemeralPub(idlen) || ciphertext
+//
+// VAPID JWT (RFC 8292): header {alg:ES256,typ:JWT}, claims {aud:endpointOrigin,
+// exp:nowInSec+12h, sub:VAPID_SUBJECT}, signed ES256 with the VAPID private key.
+
+async function sendWebPush(env, subscription, payload) {
+  const endpoint = subscription.endpoint;
+  if (!endpoint) throw withStatus(new Error("no endpoint"), 400);
+  const aud = new URL(endpoint).origin;
+
+  // 1. VAPID JWT
+  const jwt = await _vapidJwt(env, aud);
+
+  // 2. Encrypt payload
+  const body = await _encryptAes128gcm(JSON.stringify(payload), subscription.keys);
+
+  const ttl = 60 * 60 * 24; // 24h — push services drop if undeliverable longer
+  const r = await fetch(endpoint, {
+    method: "POST",
+    headers: {
+      "Authorization": `vapid t=${jwt}, k=${env.VAPID_PUBLIC_KEY}`,
+      "Content-Encoding": "aes128gcm",
+      "Content-Type": "application/octet-stream",
+      "TTL": String(ttl),
+      "Urgency": "normal",
+    },
+    body,
+  });
+  if (!r.ok) {
+    const txt = await r.text().catch(() => "");
+    throw withStatus(new Error(`push service ${r.status}: ${txt.slice(0,200)}`), r.status);
+  }
+}
+
+function withStatus(err, status) { err.status = status; return err; }
+
+// VAPID JWT — ES256 signature with the VAPID private key
+async function _vapidJwt(env, audience) {
+  const header = { alg: "ES256", typ: "JWT" };
+  const claims = {
+    aud: audience,
+    exp: Math.floor(Date.now() / 1000) + 12 * 3600,
+    sub: env.VAPID_SUBJECT,
+  };
+  const headerB64 = _b64urlEncode(new TextEncoder().encode(JSON.stringify(header)));
+  const claimsB64 = _b64urlEncode(new TextEncoder().encode(JSON.stringify(claims)));
+  const signingInput = `${headerB64}.${claimsB64}`;
+  const key = await _vapidSigningKey(env);
+  const sigBuf = await crypto.subtle.sign(
+    { name: "ECDSA", hash: "SHA-256" },
+    key,
+    new TextEncoder().encode(signingInput),
+  );
+  const sigB64 = _b64urlEncode(new Uint8Array(sigBuf));
+  return `${signingInput}.${sigB64}`;
+}
+
+// Import the raw 32-byte VAPID private key as an ECDSA signing key. The
+// public key is the base64url-encoded uncompressed P-256 point (0x04 || X || Y).
+async function _vapidSigningKey(env) {
+  const priv = _b64urlDecode(env.VAPID_PRIVATE_KEY);   // 32 bytes
+  const pubRaw = _b64urlDecode(env.VAPID_PUBLIC_KEY);  // 65 bytes (0x04||X||Y)
+  if (pubRaw.length !== 65 || pubRaw[0] !== 0x04) {
+    throw new Error("VAPID_PUBLIC_KEY must be a 65-byte uncompressed P-256 point in base64url");
+  }
+  const x = pubRaw.slice(1, 33), y = pubRaw.slice(33, 65);
+  return crypto.subtle.importKey(
+    "jwk",
+    {
+      kty: "EC", crv: "P-256",
+      x: _b64urlEncode(x), y: _b64urlEncode(y),
+      d: _b64urlEncode(priv),
+      ext: true,
+    },
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["sign"],
+  );
+}
+
+// aes128gcm encryption per RFC 8291
+async function _encryptAes128gcm(plaintext, subKeys) {
+  const ptBytes = typeof plaintext === "string" ? new TextEncoder().encode(plaintext) : plaintext;
+  const subPubRaw = _b64urlDecode(subKeys.p256dh);  // 65 bytes (0x04||X||Y)
+  const authSecret = _b64urlDecode(subKeys.auth);   // 16 bytes
+
+  // 1) Ephemeral ECDH keypair
+  const ephemeral = await crypto.subtle.generateKey(
+    { name: "ECDH", namedCurve: "P-256" },
+    true,
+    ["deriveBits"],
+  );
+  const ephPubRaw = new Uint8Array(await crypto.subtle.exportKey("raw", ephemeral.publicKey));
+
+  // 2) Import subscriber's public key for ECDH
+  const subPubKey = await crypto.subtle.importKey(
+    "raw", subPubRaw,
+    { name: "ECDH", namedCurve: "P-256" },
+    false, [],
+  );
+  const ecdhSecret = new Uint8Array(await crypto.subtle.deriveBits(
+    { name: "ECDH", public: subPubKey },
+    ephemeral.privateKey,
+    256,
+  ));
+
+  // 3) HKDF chain per RFC 8291
+  // PRK_key   = HKDF(salt=auth, IKM=ecdhSecret, info="WebPush: info\0"||subPub||ephPub, len=32)
+  // salt      = random 16 bytes
+  // IKM       = HKDF(salt=auth_above, IKM=PRK_key, info="Content-Encoding: aes128gcm\0", len=32)  -- (uses Web Push spec variant)
+  // Actually RFC 8291 §3.4:
+  //   PRK_key = HMAC-SHA-256(auth_secret, ecdhSecret)
+  //   key_info = "WebPush: info" || 0x00 || ua_public || as_public
+  //   IKM = HMAC-SHA-256(PRK_key, key_info || 0x01)
+  //   salt = random 16 bytes
+  //   PRK = HMAC-SHA-256(salt, IKM)
+  //   cek_info = "Content-Encoding: aes128gcm" || 0x00
+  //   CEK = HMAC-SHA-256(PRK, cek_info || 0x01)[:16]
+  //   nonce_info = "Content-Encoding: nonce" || 0x00
+  //   nonce = HMAC-SHA-256(PRK, nonce_info || 0x01)[:12]
+  const prkKey = await _hmacSha256(authSecret, ecdhSecret);
+  const keyInfo = _concat(
+    new TextEncoder().encode("WebPush: info\0"),
+    subPubRaw, ephPubRaw,
+    new Uint8Array([0x01]),
+  );
+  const ikm = await _hmacSha256(prkKey, keyInfo);
+
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const prk = await _hmacSha256(salt, ikm);
+  const cekInfo = _concat(new TextEncoder().encode("Content-Encoding: aes128gcm\0"), new Uint8Array([0x01]));
+  const cek = (await _hmacSha256(prk, cekInfo)).slice(0, 16);
+  const nonceInfo = _concat(new TextEncoder().encode("Content-Encoding: nonce\0"), new Uint8Array([0x01]));
+  const nonce = (await _hmacSha256(prk, nonceInfo)).slice(0, 12);
+
+  // 4) AES-128-GCM: pad plaintext with 0x02 || 0x00 padding terminator,
+  //    then encrypt with CEK and nonce.
+  const padded = _concat(ptBytes, new Uint8Array([0x02]));
+  const aesKey = await crypto.subtle.importKey("raw", cek, { name: "AES-GCM" }, false, ["encrypt"]);
+  const ciphertext = new Uint8Array(await crypto.subtle.encrypt(
+    { name: "AES-GCM", iv: nonce },
+    aesKey, padded,
+  ));
+
+  // 5) Assemble RFC 8188 binary header: salt(16) || rs(4 BE) || idlen(1) || keyid(idlen)
+  const rs = new Uint8Array([0x00, 0x00, 0x10, 0x00]); // record size 4096
+  const idLen = new Uint8Array([ephPubRaw.length]);   // 65 for P-256 uncompressed
+  return _concat(salt, rs, idLen, ephPubRaw, ciphertext).buffer;
+}
+
+async function _hmacSha256(key, data) {
+  const k = await crypto.subtle.importKey("raw", key, { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  return new Uint8Array(await crypto.subtle.sign("HMAC", k, data));
+}
+
+function _concat(...arrs) {
+  let total = 0;
+  for (const a of arrs) total += a.byteLength;
+  const out = new Uint8Array(total);
+  let off = 0;
+  for (const a of arrs) { out.set(a, off); off += a.byteLength; }
+  return out;
+}
+
+function _b64urlEncode(bytes) {
+  let bin = "";
+  const a = bytes instanceof Uint8Array ? bytes : new Uint8Array(bytes);
+  for (let i = 0; i < a.length; i++) bin += String.fromCharCode(a[i]);
+  return btoa(bin).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function _b64urlDecode(s) {
+  s = String(s).replace(/-/g, "+").replace(/_/g, "/");
+  const pad = s.length % 4;
+  if (pad) s += "=".repeat(4 - pad);
+  const bin = atob(s);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
 }
