@@ -7785,6 +7785,73 @@ function _overlappingTickers() {
   return manual.filter(tk => plaid.has(tk));
 }
 
+// Normalize a string for fuzzy comparison. Lowercases, strips punctuation,
+// and tokenizes. "Capital One Visa" → "capital one visa".
+function _normalizeNameForMatch(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/[^a-z0-9 ]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+// Token-overlap score [0..1]. Two strings sharing ≥2 unique tokens out of
+// the smaller token set score high. Stop words removed — they'd inflate
+// everything. Used for Plaid↔manual asset/liability dedupe.
+const _STOP_TOKENS = new Set(["the","a","an","and","of","or","my","credit","card","loan","account","bank","savings","checking","visa","mastercard","amex"]);
+function _nameSimilarity(a, b) {
+  const ta = _normalizeNameForMatch(a).split(" ").filter(t => t.length >= 3 && !_STOP_TOKENS.has(t));
+  const tb = _normalizeNameForMatch(b).split(" ").filter(t => t.length >= 3 && !_STOP_TOKENS.has(t));
+  if (!ta.length || !tb.length) return 0;
+  const setA = new Set(ta), setB = new Set(tb);
+  let overlap = 0;
+  for (const t of setA) if (setB.has(t)) overlap++;
+  return overlap / Math.min(setA.size, setB.size);
+}
+
+// Detect manual liabilities that probably duplicate a Plaid credit/loan
+// account: name similarity ≥ 0.5 AND balance within 15% of each other.
+// Returns [{ manual: liability, account: plaidAcct }] for warning UI.
+function _overlappingLiabilities() {
+  const liab = DB.liabilities || [];
+  const accts = (DB.accounts || []).filter(a => a.type === "credit" || a.type === "loan");
+  if (!liab.length || !accts.length) return [];
+  const out = [];
+  for (const l of liab) {
+    for (const a of accts) {
+      const nameSim = _nameSimilarity(l.name || "", a.name || "");
+      if (nameSim < 0.5) continue;
+      const lBal = +l.balance || 0;
+      const aBal = +a.balance_current || 0;
+      if (lBal <= 0 || aBal <= 0) continue;
+      const ratio = Math.min(lBal, aBal) / Math.max(lBal, aBal);
+      if (ratio >= 0.85) out.push({ manual: l, account: a });
+    }
+  }
+  return out;
+}
+
+// Detect manual assets that probably duplicate a Plaid investment/depository
+// account. Same heuristic as liabilities.
+function _overlappingAssets() {
+  const assets = DB.assets || [];
+  const accts = (DB.accounts || []).filter(a => a.type === "depository" || a.type === "investment" || a.type === "brokerage");
+  if (!assets.length || !accts.length) return [];
+  const out = [];
+  for (const m of assets) {
+    for (const a of accts) {
+      const nameSim = _nameSimilarity(m.name || "", a.name || "");
+      if (nameSim < 0.5) continue;
+      const mVal = +m.value || 0;
+      const aBal = +a.balance_current || 0;
+      if (mVal <= 0 || aBal <= 0) continue;
+      const ratio = Math.min(mVal, aBal) / Math.max(mVal, aBal);
+      if (ratio >= 0.85) out.push({ manual: m, account: a });
+    }
+  }
+  return out;
+}
+
 function setWealthRange(r) { wealthRange = r; renderMoney(); }
 
 // Smooth-scroll the Wealth dashboard to a section anchor (used by nav pills).
@@ -7907,6 +7974,23 @@ function renderMoney() {
       <div style="color:var(--t3);font-size:11px;margin-top:5px">Fix: remove the manual entry on the Stocks tab if these are the same positions, or use only one source per ticker.</div>
     </div>
   ` : "";
+  // Asset/liability overlap banner: manual entries that look like duplicates
+  // of Plaid-synced accounts (similar name + balance within 15%). Unlike
+  // stocks we DON'T auto-skip — assets/liabilities have no clean key to
+  // dedupe by, only fuzzy matching, so we leave the math intact and warn
+  // the user to clean up manually.
+  const liabOverlap = (typeof _overlappingLiabilities === "function") ? _overlappingLiabilities() : [];
+  const assetOverlap = (typeof _overlappingAssets === "function") ? _overlappingAssets() : [];
+  const accountOverlapBanner = (liabOverlap.length || assetOverlap.length) ? `
+    <div style="background:rgba(255,149,0,0.08);border:1px solid rgba(255,149,0,0.30);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:12.5px;line-height:1.5">
+      <div style="color:var(--orange,#FF9500);font-weight:700;margin-bottom:3px">⚠ Possible double-count: manual + synced account</div>
+      <div style="color:var(--t2)">
+        ${liabOverlap.length ? liabOverlap.map(o => `<div style="margin:3px 0">"<b>${esc(o.manual.name)}</b>" (debt, ${fmt$0(+o.manual.balance||0)}) looks like "<b>${esc(o.account.name)}</b>" (synced, ${fmt$0(+o.account.balance_current||0)})</div>`).join("") : ""}
+        ${assetOverlap.length ? assetOverlap.map(o => `<div style="margin:3px 0">"<b>${esc(o.manual.name)}</b>" (asset, ${fmt$0(+o.manual.value||0)}) looks like "<b>${esc(o.account.name)}</b>" (synced, ${fmt$0(+o.account.balance_current||0)})</div>`).join("") : ""}
+      </div>
+      <div style="color:var(--t3);font-size:11px;margin-top:5px">Net worth is counting both. Remove whichever you don't need — the synced version is usually canonical.</div>
+    </div>
+  ` : "";
   const counselorTeaser = `
     <div class="row tappable" onclick="openCounselor()" role="button" tabindex="0"
       style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:12px 14px;margin-bottom:12px;align-items:center;cursor:pointer">
@@ -7921,6 +8005,7 @@ function renderMoney() {
   const hdr = `
     <div class="lg-title">Money</div>
     ${overlapBanner}
+    ${accountOverlapBanner}
     ${healthSnapshot}
     ${cashflowBlock}
     ${counselorTeaser}
@@ -17250,8 +17335,20 @@ async function syncNow() {
 async function disconnectItem(itemId) {
   try {
     await backendRemoveItem(itemId);
+    // Capture account_ids belonging to this item before removing them, so we
+    // can clean up downstream stores that reference them.
+    const removedAccountIds = new Set(
+      (DB.accounts || []).filter(a => a.item_id === itemId).map(a => a.account_id)
+    );
     DB.items = (DB.items||[]).filter(x => x.item_id !== itemId);
     DB.accounts = (DB.accounts||[]).filter(a => a.item_id !== itemId);
+    // Clean up holdings tied to the removed accounts — they were derived
+    // data from the broker connection and have no value standalone.
+    // Otherwise the Holdings section would show ghost positions whose
+    // account is gone.
+    if (removedAccountIds.size) {
+      DB.holdings = (DB.holdings || []).filter(h => !removedAccountIds.has(h.account_id));
+    }
     // Note: keep historical transactions; the user can delete manually if they want
     await save(); render();
     toast("Disconnected");
@@ -20487,19 +20584,34 @@ function setSubscriptionStatus(key, status) {
 }
 
 function snapshotNetWorth() {
-  // Snapshot if there's anything to track (plaid accounts OR manual assets/liabilities)
+  // Snapshot if there's anything to track (plaid accounts OR manual entries
+  // OR Stocks-tab portfolio). Routes through wealthComposition() so the
+  // snapshot total ALWAYS matches what the user sees in the Wealth Health
+  // card — previously snapshotNetWorth recomputed a near-identical total
+  // that excluded DB.stocks.holdings, so a user with manual stock positions
+  // saw a discrepancy between their displayed net worth and the historical
+  // chart's "today" point.
   const hasPlaid = (DB.accounts || []).length > 0;
   const hasManual = (DB.assets || []).length > 0 || (DB.liabilities || []).length > 0;
-  if (!hasPlaid && !hasManual) return;
+  const hasStocks = Object.keys((DB.stocks && DB.stocks.holdings) || {}).length > 0;
+  if (!hasPlaid && !hasManual && !hasStocks) return;
+  const comp = (typeof wealthComposition === "function") ? wealthComposition() : null;
+  // Fall back to the original by-type accumulation if wealthComposition isn't
+  // available for any reason (very early init).
   const byType = { depository: 0, investment: 0, credit: 0, loan: 0, other: 0 };
   for (const a of (DB.accounts || [])) {
     const bal = +a.balance_current || 0;
     const t = ["depository","investment","credit","loan"].includes(a.type) ? a.type : "other";
     byType[t] += bal;
   }
-  const manualAssetTotal = (DB.assets || []).reduce((s,a)=>s+(+a.value||0), 0);
-  const manualLiabTotal  = (DB.liabilities || []).reduce((s,l)=>s+(+l.balance||0), 0);
-  const total = byType.depository + byType.investment + byType.other - byType.credit - byType.loan + manualAssetTotal - manualLiabTotal;
+  let total;
+  if (comp) {
+    total = comp.total;
+  } else {
+    const manualAssetTotal = (DB.assets || []).reduce((s,a)=>s+(+a.value||0), 0);
+    const manualLiabTotal  = (DB.liabilities || []).reduce((s,l)=>s+(+l.balance||0), 0);
+    total = byType.depository + byType.investment + byType.other - byType.credit - byType.loan + manualAssetTotal - manualLiabTotal;
+  }
   if (!DB.netWorthHistory) DB.netWorthHistory = [];
   const today = todayKey();
   const idx = DB.netWorthHistory.findIndex(s => s.date === today);
