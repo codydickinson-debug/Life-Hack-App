@@ -28066,7 +28066,7 @@ function weeklyReviewSheet() {
 }
 
 /* --- "What's new" sheet (one-time on upgrade) ------------------- */
-const WHATS_NEW_KEY = "v3.3";
+const WHATS_NEW_KEY = "v3.4-stocks";
 function maybeShowWhatsNew() {
   // Skip if a PWA shortcut is opening its own action sheet — the user
   // didn't launch the app to see What's New, they tapped Quick Add.
@@ -28077,21 +28077,24 @@ function maybeShowWhatsNew() {
 }
 function whatsNewSheet() {
   openSheet(
-    '<h2>What\'s new</h2>' +
-    '<p class="muted" style="font-size:13px;margin-bottom:14px">Tighter integration across the app — your systems now talk to each other.</p>' +
+    '<h2>What\'s new — Cornileus, your financial advisor</h2>' +
+    '<p class="muted" style="font-size:13px;margin-bottom:14px">Stocks tab is now a full broker-grade research platform with AI predictions, visual past→present→future projections, and Cornileus as your financial advisor.</p>' +
     '<div class="list">' +
-      '<div class="row"><div class="lead">\u{1F517}</div><div class="body"><div class="t1">Plans + Savings linked</div><div class="t2">Edit any plan → pick savings buckets to link. Deposits to a bucket auto-advance the plan and flip it complete at target.</div></div></div>' +
-      '<div class="row"><div class="lead">✨</div><div class="body"><div class="t1">Cornileus knows more</div><div class="t2">Now sees habits, streaks, moods, reflections, wins, stocks watchlist, money personality, open roadmaps, dividends. Ask anything.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4C8}</div><div class="body"><div class="t1">Smarter Daily Pulse</div><div class="t2">Now surfaces streaks about to break, bills due in &lt;3d, goals one step from done, savings within $100 of target.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4C5}</div><div class="body"><div class="t1">Plan deadlines on Calendar</div><div class="t2">Plan target dates now show on the heatmap and the day sheet — tap any day to see what plans land there.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F310}</div><div class="body"><div class="t1">Mood, surfaced</div><div class="t2">Stats now shows a 30-day mood strip and surfaces mood-vs-spend patterns.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F525}</div><div class="body"><div class="t1">Wealth Score: Discipline bonus</div><div class="t2">A 6th dimension that credits habit streaks, plans done, and goals shipped. Bonus only — never penalizes.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4B0}</div><div class="body"><div class="t1">Smarter projections</div><div class="t2">FIRE + retirement now use recurring income − bills + dividends when you haven\'t set a target. Forecast shows the source.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4DC}</div><div class="body"><div class="t1">Richer Year Review</div><div class="t2">Now includes net-worth delta, plans completed, savings deposited, moods captured, books read, achievements unlocked.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4F2}</div><div class="body"><div class="t1">Smarter daily reminder</div><div class="t2">The notification now surfaces the most urgent thing — bill due, streak at risk, plan deadline this week.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F198}</div><div class="body"><div class="t1">Support page</div><div class="t2">Settings → Help → Support &amp; FAQ. Consolidated help, security disclosure, and feedback paths.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F52E}</div><div class="body"><div class="t1">AI-powered price forecasts</div><div class="t2">Every ticker has a past · present · future chart with bear/base/bull bands from Monte Carlo on its own historical drift &amp; volatility.</div></div></div>' +
+      '<div class="row"><div class="lead">✨</div><div class="body"><div class="t1">Cornileus as your advisor</div><div class="t2">Reads your full picture — net worth, cashflow, holdings, goals — and gives you a graded plan for this month, quarter, and year.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4D0}</div><div class="body"><div class="t1">Build a plan visually</div><div class="t2">Pick a goal → compound math + projection chart with milestone markers. 6 starter presets: house, FIRE, retire-by-60, college fund, more.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4BC}</div><div class="body"><div class="t1">Portfolio tracker + insights</div><div class="t2">Holdings, allocation pie, 90-day chart, projected dividends, diversification score, performance attribution — all in one card.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F3AF}</div><div class="body"><div class="t1">Allocation targets + rebalance</div><div class="t2">Set target % per holding → automatic sell/buy plan to return to target. Drift alerts in Smart Plays.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4C9}</div><div class="body"><div class="t1">Tax-loss harvesting</div><div class="t2">Surfaces losses you could realize against gains, with wash-sale rule guidance. Auto-fires in Nov/Dec.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4CA}</div><div class="body"><div class="t1">Market sentiment + sector heatmap</div><div class="t2">Fear/Greed-style market gauge from SPY, VIX, 10Y treasury. 11-sector ETF heatmap with mood pill.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F50D}</div><div class="body"><div class="t1">Stock screener + comparator</div><div class="t2">Filter the S&amp;P 500 by value, growth, dividend, momentum, oversold, quality. Side-by-side ticker comparison with head-to-head scoring.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F514}</div><div class="body"><div class="t1">Price alerts + earnings calendar</div><div class="t2">Notify on threshold crossings. Earnings + ex-dividend dates feed the unified Calendar tab.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F393}</div><div class="body"><div class="t1">Teach me — 22-topic glossary</div><div class="t2">Tap "?" next to any metric: contextualized explanations of P/E, beta, RSI, compound interest, dollar-cost averaging, allocation by age, more.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4F0}</div><div class="body"><div class="t1">News-driven AI takes + weekly digest</div><div class="t2">Per-ticker AI summaries of recent headlines with structured verdicts. Weekly portfolio digest auto-suggested on Sundays.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4BE}</div><div class="body"><div class="t1">CSV import / export</div><div class="t2">Bulk-add holdings from a broker statement export, or send your portfolio + realized P&amp;L to a spreadsheet.</div></div></div>' +
     '</div>' +
-    '<div class="actions"><button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet()">Got it</button></div>'
+    '<div class="actions"><button class="btn secondary" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet()">Got it</button>' +
+    '<button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet();setTimeout(()=>showTab(\'stocks\'),120)">Take me to Stocks →</button></div>'
   );
 }
 
