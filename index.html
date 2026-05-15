@@ -4859,12 +4859,56 @@ function renderToday() {
         <span style="color:var(--t3);font-size:14px;flex-shrink:0">›</span>
       </button>
     ` : ""}
-    <div style="display:flex;gap:16px;font-size:12px;color:var(--t3);margin:0 0 16px;flex-wrap:wrap;align-items:baseline">
-      <span style="font-size:10.5px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600;color:var(--t3)">This week</span>
-      ${weekSummary.habitPossible ? `<button onclick="showTab('stats')" style="background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer"><b style="color:var(--t1)">${weekSummary.habitDones}/${weekSummary.habitPossible}</b> habits</button>` : ""}
-      <button onclick="allWinsSheet()" style="background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer"><b style="color:var(--t1)">${weekSummary.winsW}</b> wins</button>
-      ${weekSummary.spendW > 0 ? `<button onclick="showTab('money')" style="background:none;border:0;padding:0;font:inherit;color:inherit;cursor:pointer"><b style="color:var(--t1)" data-priv="amount">${fmt$0(weekSummary.spendW)}</b> spent</button>` : ""}
-    </div>
+    ${(() => {
+      // This-week snapshot: a 4-cell metric grid showing today's habits,
+      // weekly wins, weekly spend, and overall progress. Replaces the
+      // previous inline text-strip with a tighter, more glanceable grid.
+      const tk0 = todayKey();
+      const dayHabits = (DB.habits || []).filter(h => !isHabitPaused(h));
+      const dayDone = dayHabits.filter(h => h.type === "count" ? (+h.log[tk0] || 0) >= (+h.target || 1) : !!h.log[tk0]).length;
+      const dayHabitColor = dayHabits.length && dayDone === dayHabits.length
+        ? "var(--green,#34C759)"
+        : dayHabits.length && dayDone > 0
+          ? "var(--orange,#FF9500)"
+          : "var(--t1)";
+      const todaySpent = (DB.spend || []).filter(t => t.date === tk0 && (+t.amount || 0) > 0).reduce((a,t) => a + (+t.amount || 0), 0);
+      const cells = [];
+      if (dayHabits.length) cells.push({
+        icon: "✓", value: `${dayDone}/${dayHabits.length}`, label: "today",
+        color: dayHabitColor, onclick: "document.querySelectorAll('.row').forEach(()=>{}); window.scrollTo({top: document.querySelector('[class*=\"section-h\"]')?.offsetTop || 200, behavior: 'smooth'});"
+      });
+      if (weekSummary.habitPossible) cells.push({
+        icon: "📊", value: `${Math.round(100 * weekSummary.habitDones / weekSummary.habitPossible)}%`, label: "this week",
+        color: "var(--t1)", onclick: "showTab('stats')"
+      });
+      cells.push({
+        icon: "⭐", value: String(weekSummary.winsW), label: `win${weekSummary.winsW === 1 ? '' : 's'} wk`,
+        color: weekSummary.winsW > 0 ? "var(--orange,#FF9500)" : "var(--t1)",
+        onclick: "allWinsSheet()"
+      });
+      if (todaySpent > 0 || weekSummary.spendW > 0) cells.push({
+        icon: "💸", value: fmt$0(Math.round(todaySpent || weekSummary.spendW)),
+        label: todaySpent > 0 ? "today" : "wk",
+        color: "var(--t1)", priv: true,
+        onclick: "showTab('money')"
+      });
+      // Only render the grid when there's meaningful data — a single
+      // "0 WINS WK" cell on a fresh install reads as empty noise.
+      if (cells.length < 2) return "";
+      // Limit to 4 cells max (responsive grid)
+      const top = cells.slice(0, 4);
+      return `
+        <div style="display:grid;grid-template-columns:repeat(${top.length},1fr);gap:6px;margin:8px 0 16px">
+          ${top.map(c => `
+            <button onclick="${c.onclick}" style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r2,12px);padding:8px 6px;text-align:center;cursor:pointer;color:inherit;font:inherit">
+              <div style="font-size:12px;margin-bottom:1px">${c.icon}</div>
+              <div style="font-size:15px;font-weight:700;color:${c.color};font-variant-numeric:tabular-nums;line-height:1"${c.priv ? ' data-priv="amount"' : ''}>${c.value}</div>
+              <div style="font-size:9.5px;color:var(--t3);margin-top:3px;text-transform:uppercase;letter-spacing:0.04em">${c.label}</div>
+            </button>
+          `).join("")}
+        </div>
+      `;
+    })()}
 
     ${(!isTodaySectionHidden('weeklyRecap') && new Date().getDay() === 0) ? (() => {
       // Sunday-only recap. Cylan summarizes the user's last 7 days when tapped.
