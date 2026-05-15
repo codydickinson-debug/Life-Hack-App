@@ -10641,6 +10641,15 @@ function _stocksRenderPortfolio() {
     return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--t2);margin-right:10px;margin-bottom:3px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${allocColorFor(a)}"></span><b style="color:var(--t1)">${esc(a.tk)}</b> <span style="font-variant-numeric:tabular-nums">${pct.toFixed(0)}%</span></span>`;
   }).join("");
 
+  // Mood emoji from today's % change — gives the user instant emotional read
+  const moodEmoji = (() => {
+    const p = dayChangePct;
+    if (p > 0.03) return "🚀";
+    if (p > 0.005) return "📈";
+    if (p > -0.005) return "😐";
+    if (p > -0.03) return "📉";
+    return "😬";
+  })();
   hero.innerHTML = `
     <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${plColor};border-radius:var(--r);padding:16px;margin-top:6px;margin-bottom:14px;position:relative">
       <button onclick="event.stopPropagation();sharePortfolioCard()" title="Share" aria-label="Share portfolio" style="position:absolute;top:12px;right:12px;background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t3);font-size:11px;padding:4px 10px;border-radius:999px;cursor:pointer;font-weight:600">Share ↗</button>
@@ -10648,7 +10657,10 @@ function _stocksRenderPortfolio() {
         <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Portfolio value</div>
         ${missingPrice > 0 ? `<div style="font-size:10px;color:var(--t3)">refresh for live prices</div>` : ""}
       </div>
-      <div style="font-size:32px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-0.02em" data-priv="amount">$${mkt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+        <div style="font-size:32px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-0.02em" data-priv="amount">$${mkt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+        <div style="font-size:28px;line-height:1" title="Portfolio mood — today's % move">${moodEmoji}</div>
+      </div>
       <div style="display:flex;gap:14px;font-size:12.5px;margin-top:4px;flex-wrap:wrap;font-variant-numeric:tabular-nums">
         <div><span style="color:var(--t3)">Today</span> <b style="color:${dayColor}" data-priv="amount">${dayChange >= 0 ? "+" : ""}$${Math.abs(dayChange).toFixed(2)}</b> <span style="color:${dayColor}">(${dayChange >= 0 ? "+" : ""}${(dayChangePct * 100).toFixed(2)}%)</span></div>
         <div><span style="color:var(--t3)">Total P&amp;L</span> <b style="color:${plColor}" data-priv="amount">${totalPl >= 0 ? "+" : ""}$${Math.abs(totalPl).toFixed(2)}</b> <span style="color:${plColor}">(${totalPl >= 0 ? "+" : ""}${(totalPlPct * 100).toFixed(2)}%)</span></div>
