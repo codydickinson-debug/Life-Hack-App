@@ -9708,16 +9708,23 @@ async function _stocksRemoveTicker(tk) {
   _stocksRenderWatchlist();
 }
 
-// Per-ticker detail sheet — pulls /api/quote/<ticker>/full and renders
-// the rich data card with chart, stats, news, and Cornileus button.
+// Per-ticker detail sheet — pulls /api/ticker/<ticker> (broker-grade data
+// bundle: multi-timeframe chart, SMAs, RSI, analyst ratings, earnings,
+// news, ownership, peers) and renders a multi-section research UI.
 async function _stocksOpenDetail(tk) {
+  // Local UI state for the detail sheet — timeframe selector + cached
+  // ticker payload so timeframe switches don't refetch.
+  window._stkDetail = { ticker: tk, tf: "1Y", q: null };
   openSheet(`
     <h2 style="margin-bottom:4px">${esc(tk)}</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Loading rich quote + 1-year chart…</p>
-    <div style="text-align:center;padding:40px 14px;color:var(--t3)">⏳</div>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Loading broker-grade research bundle (chart, indicators, analyst ratings, news)…</p>
+    <div style="text-align:center;padding:40px 14px;color:var(--t3);font-size:13px">
+      <div style="font-size:30px;margin-bottom:8px">📊</div>
+      First fetch can take 10-15s while data sources warm.<br>Subsequent loads are fast.
+    </div>
   `);
   try {
-    const r = await fetch("/api/quote/" + encodeURIComponent(tk) + "/full");
+    const r = await fetch("/api/ticker/" + encodeURIComponent(tk));
     const q = await r.json();
     if (!r.ok || q.error) {
       openSheet(`
@@ -9727,6 +9734,7 @@ async function _stocksOpenDetail(tk) {
       `);
       return;
     }
+    window._stkDetail.q = q;
     _stocksRenderDetail(q);
   } catch (e) {
     openSheet(`
@@ -9737,21 +9745,64 @@ async function _stocksOpenDetail(tk) {
   }
 }
 
+function _stocksSetTf(tf) {
+  if (!window._stkDetail || !window._stkDetail.q) return;
+  window._stkDetail.tf = tf;
+  _stocksRenderDetail(window._stkDetail.q);
+}
+
+// Format a big number as 1.23T / 4.56B / 7.89M / 12.3K / 45.6
+function _stkFmtNum(n, suffix = "") {
+  if (n == null || !isFinite(n)) return "—";
+  const a = Math.abs(n);
+  const sign = n < 0 ? "-" : "";
+  if (a >= 1e12) return sign + (a / 1e12).toFixed(2) + "T" + suffix;
+  if (a >= 1e9)  return sign + (a / 1e9).toFixed(2) + "B" + suffix;
+  if (a >= 1e6)  return sign + (a / 1e6).toFixed(2) + "M" + suffix;
+  if (a >= 1e3)  return sign + (a / 1e3).toFixed(1) + "K" + suffix;
+  return sign + a.toFixed(2) + suffix;
+}
+function _stkFmtPct(n) {
+  if (n == null || !isFinite(n)) return "—";
+  return (n * 100).toFixed(2) + "%";
+}
+
+// Broker-grade detail renderer. Uses window._stkDetail.tf for chart
+// timeframe so the timeframe chips can re-render without refetching.
 function _stocksRenderDetail(q) {
+  const tf = (window._stkDetail && window._stkDetail.tf) || "1Y";
   const change = +q.change || 0;
   const pct = (+q.change_pct || 0) * 100;
   const color = change >= 0 ? "var(--green, #34C759)" : "var(--red, #FF3B30)";
   const arrow = change >= 0 ? "↗" : "↘";
-  // Big 1-year chart
-  const chart = (() => {
-    const closes = q.history_1y_closes || [];
+
+  // ----- Multi-timeframe chart with optional 50/200 SMA overlays -----
+  const tfData = (q.timeframes && q.timeframes[tf]) || { closes: [], dates: [] };
+  const closes = tfData.closes || [];
+  const dates  = tfData.dates  || [];
+  const chartSvg = (() => {
     if (closes.length < 2) return "";
-    const W = 320, H = 110;
+    const W = 320, H = 130;
     const min = Math.min(...closes), max = Math.max(...closes);
     const range = (max - min) || 1;
-    const pts = closes.map((v, i) => `${((i / (closes.length - 1)) * W).toFixed(1)},${(H - ((v - min) / range) * H).toFixed(1)}`).join(" ");
+    const xAt = (i) => (i / (closes.length - 1)) * W;
+    const yAt = (v) => H - ((v - min) / range) * H;
+    const pts = closes.map((v, i) => xAt(i).toFixed(1) + "," + yAt(v).toFixed(1)).join(" ");
     const areaPath = `M 0,${H} L ${pts.split(' ').join(' L ')} L ${W},${H} Z`;
     const gradId = "stk-grad-" + Math.floor(Math.random() * 1e9).toString(36);
+    // Overlay SMAs only on 1Y view (they're aligned with the 1Y window)
+    let smaLines = "";
+    if (tf === "1Y") {
+      const sma50 = q.sma50 || [];
+      const sma200 = q.sma200 || [];
+      const drawSma = (arr, stroke) => {
+        const valid = arr.map((v, i) => ({ v, i })).filter(p => p.v != null);
+        if (valid.length < 2) return "";
+        const pts2 = valid.map(p => xAt(p.i).toFixed(1) + "," + yAt(p.v).toFixed(1)).join(" ");
+        return `<polyline points="${pts2}" fill="none" stroke="${stroke}" stroke-width="1.3" stroke-dasharray="3 3" stroke-linecap="round" opacity="0.85"/>`;
+      };
+      smaLines = drawSma(sma50, "#FF9500") + drawSma(sma200, "#3b82f6");
+    }
     return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:auto;display:block">
       <defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
         <stop offset="0%" stop-color="${color}" stop-opacity="0.35"/>
@@ -9759,9 +9810,25 @@ function _stocksRenderDetail(q) {
       </linearGradient></defs>
       <path d="${areaPath}" fill="url(#${gradId})"/>
       <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      ${smaLines}
     </svg>`;
   })();
-  // 52-week range visualization
+
+  // ----- Volume bars (6M window) -----
+  const volSvg = (() => {
+    const vols = q.volume_6m || [];
+    if (!vols.length) return "";
+    const W = 320, H = 36;
+    const maxV = Math.max(...vols, 1);
+    const barW = W / vols.length;
+    const bars = vols.map((v, i) => {
+      const h = (v / maxV) * H;
+      return `<rect x="${(i * barW).toFixed(2)}" y="${(H - h).toFixed(2)}" width="${Math.max(0.5, barW - 0.3).toFixed(2)}" height="${Math.max(0.5, h).toFixed(2)}" fill="var(--t4,#4a4d54)" opacity="0.55"/>`;
+    }).join("");
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:36px;display:block;margin-top:4px">${bars}</svg>`;
+  })();
+
+  // ----- 52-week range bar -----
   const rangeBar = (() => {
     const pos = Math.max(0, Math.min(1, +q.range_pos || 0)) * 100;
     return `
@@ -9774,35 +9841,170 @@ function _stocksRenderDetail(q) {
       </div>
     `;
   })();
-  // Stats grid
-  const fmtNum = (n, suffix = "") => {
-    if (n == null) return "—";
-    if (n >= 1e12) return (n / 1e12).toFixed(2) + "T" + suffix;
-    if (n >= 1e9)  return (n / 1e9).toFixed(2) + "B" + suffix;
-    if (n >= 1e6)  return (n / 1e6).toFixed(2) + "M" + suffix;
-    if (n >= 1e3)  return (n / 1e3).toFixed(1) + "K" + suffix;
-    return n.toFixed(2) + suffix;
-  };
-  const stats = [
-    { label: "Market cap",     value: fmtNum(q.market_cap) },
-    { label: "Trailing P/E",   value: q.trailing_pe != null ? (+q.trailing_pe).toFixed(2) : "—" },
-    { label: "Forward P/E",    value: q.forward_pe != null ? (+q.forward_pe).toFixed(2) : "—" },
-    { label: "Beta",           value: q.beta != null ? (+q.beta).toFixed(2) : "—" },
-    { label: "Dividend",       value: q.dividend_yield != null ? (+q.dividend_yield * 100).toFixed(2) + "%" : "—" },
-    { label: "Avg volume",     value: fmtNum(q.average_volume) },
-    { label: "YTD return",     value: q.ytd_return != null ? ((+q.ytd_return * 100).toFixed(2) + "%") : "—" },
-    { label: "30-day return",  value: q.return_30d != null ? ((+q.return_30d * 100).toFixed(2) + "%") : "—" },
-  ];
-  const statsGrid = `
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
-      ${stats.map(s => `
-        <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:8px 12px">
-          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:2px">${esc(s.label)}</div>
-          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${esc(s.value)}</div>
+
+  // ----- Technical signals card -----
+  const techSignals = (() => {
+    const signals = [];
+    if (q.sma50_last != null) {
+      const above = q.price > q.sma50_last;
+      signals.push({
+        label: "vs 50-day SMA",
+        value: `${above ? "↑" : "↓"} ${above ? "above" : "below"} $${(+q.sma50_last).toFixed(2)}`,
+        color: above ? "var(--green,#34C759)" : "var(--red,#FF3B30)",
+      });
+    }
+    if (q.sma200_last != null) {
+      const above = q.price > q.sma200_last;
+      signals.push({
+        label: "vs 200-day SMA",
+        value: `${above ? "↑" : "↓"} ${above ? "above" : "below"} $${(+q.sma200_last).toFixed(2)}`,
+        color: above ? "var(--green,#34C759)" : "var(--red,#FF3B30)",
+      });
+    }
+    if (q.rsi14 != null) {
+      const v = +q.rsi14;
+      const lbl = v >= 70 ? "Overbought" : v <= 30 ? "Oversold" : "Neutral";
+      const col = v >= 70 ? "var(--red,#FF3B30)" : v <= 30 ? "var(--green,#34C759)" : "var(--t2)";
+      signals.push({ label: "RSI(14)", value: `${v.toFixed(1)} · ${lbl}`, color: col });
+    }
+    if (q.beta != null) {
+      const v = +q.beta;
+      const lbl = v > 1.2 ? "More volatile than market" : v < 0.8 ? "Less volatile than market" : "Market-like";
+      signals.push({ label: "Beta", value: `${v.toFixed(2)} · ${lbl}`, color: "var(--t2)" });
+    }
+    if (!signals.length) return "";
+    return `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Technical signals</div>
+        ${signals.map(s => `
+          <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12.5px;border-bottom:0.5px solid var(--sep)">
+            <span style="color:var(--t3)">${esc(s.label)}</span>
+            <span style="color:${s.color};font-weight:600">${esc(s.value)}</span>
+          </div>
+        `).join("")}
+      </div>
+    `;
+  })();
+
+  // ----- Analyst card -----
+  const analystCard = (() => {
+    if (q.target_mean == null && q.recommendation_key == null) return "";
+    const targetPct = (q.target_mean != null && q.price > 0) ? ((q.target_mean - q.price) / q.price) * 100 : null;
+    const tgtColor = targetPct == null ? "var(--t2)" : targetPct > 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+    const recColors = { strong_buy: "#16a34a", buy: "#34C759", hold: "#FF9500", sell: "#FF3B30", strong_sell: "#dc2626" };
+    const recKey = (q.recommendation_key || "").toLowerCase();
+    const recColor = recColors[recKey] || "var(--t2)";
+    const recLabel = q.recommendation_key ? q.recommendation_key.replace(/_/g, " ").toUpperCase() : "—";
+    return `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:8px">
+          <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Analyst consensus</div>
+          ${q.num_analysts != null ? `<div style="font-size:11px;color:var(--t3)">${+q.num_analysts} analysts</div>` : ""}
         </div>
+        <div style="display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;margin-bottom:6px">
+          <div style="font-size:20px;font-weight:800;color:${recColor};letter-spacing:0.02em">${esc(recLabel)}</div>
+          ${q.recommendation_mean != null ? `<div style="font-size:12px;color:var(--t3)">avg ${(+q.recommendation_mean).toFixed(2)}/5</div>` : ""}
+        </div>
+        ${q.target_mean != null ? `
+          <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--t3);margin-top:6px">
+            <span>12-mo target</span>
+            <span><b style="color:var(--t1);font-variant-numeric:tabular-nums">$${(+q.target_mean).toFixed(2)}</b>${targetPct != null ? ` <span style="color:${tgtColor};font-weight:600">(${targetPct >= 0 ? '+' : ''}${targetPct.toFixed(1)}%)</span>` : ""}</span>
+          </div>
+          ${q.target_low != null && q.target_high != null ? `
+            <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-top:2px">
+              <span>Range</span><span data-priv="amount">$${(+q.target_low).toFixed(0)} — $${(+q.target_high).toFixed(0)}</span>
+            </div>
+          ` : ""}
+        ` : ""}
+      </div>
+    `;
+  })();
+
+  // ----- Fundamentals expanded -----
+  const fundStats = [
+    { label: "Market cap",      value: _stkFmtNum(q.market_cap) },
+    { label: "Trailing P/E",    value: q.trailing_pe != null ? (+q.trailing_pe).toFixed(2) : "—" },
+    { label: "Forward P/E",     value: q.forward_pe != null ? (+q.forward_pe).toFixed(2) : "—" },
+    { label: "PEG ratio",       value: q.peg_ratio != null ? (+q.peg_ratio).toFixed(2) : "—" },
+    { label: "EPS (trailing)",  value: q.eps_trailing != null ? "$" + (+q.eps_trailing).toFixed(2) : "—" },
+    { label: "EPS (forward)",   value: q.eps_forward != null ? "$" + (+q.eps_forward).toFixed(2) : "—" },
+    { label: "Revenue growth",  value: _stkFmtPct(q.revenue_growth) },
+    { label: "Earnings growth", value: _stkFmtPct(q.earnings_growth) },
+    { label: "Profit margin",   value: _stkFmtPct(q.profit_margin) },
+    { label: "Debt / equity",   value: q.debt_to_equity != null ? (+q.debt_to_equity).toFixed(2) : "—" },
+    { label: "Dividend yield",  value: _stkFmtPct(q.dividend_yield) },
+    { label: "Avg volume",      value: _stkFmtNum(q.average_volume) },
+    { label: "Held by inst.",   value: _stkFmtPct(q.held_institutions) },
+    { label: "Held insiders",   value: _stkFmtPct(q.held_insiders) },
+    { label: "Short % float",   value: _stkFmtPct(q.short_pct_float) },
+    { label: "5-year return",   value: _stkFmtPct(q.return_5y) },
+  ];
+  const fundGrid = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:10px">Fundamentals</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        ${fundStats.map(s => `
+          <div style="background:var(--bg-elev);border-radius:8px;padding:7px 10px">
+            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;margin-bottom:1px">${esc(s.label)}</div>
+            <div style="font-size:13.5px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${esc(s.value)}</div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+
+  // ----- Earnings countdown -----
+  const earningsCard = (() => {
+    if (!q.next_earnings) return "";
+    const ed = new Date(q.next_earnings + "T00:00:00");
+    const days = Math.ceil((ed.getTime() - Date.now()) / 86400000);
+    if (isNaN(days)) return "";
+    const lbl = days < 0 ? `${-days} days ago` : days === 0 ? "Today" : days === 1 ? "Tomorrow" : `In ${days} days`;
+    return `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--orange,#FF9500);border-radius:var(--r);padding:14px;margin-bottom:10px;display:flex;align-items:center;gap:12px">
+        <div style="font-size:22px;flex-shrink:0">📅</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:2px">Next earnings</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1)">${esc(ed.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric", year: "numeric" }))}</div>
+          <div style="font-size:12px;color:var(--orange,#FF9500);font-weight:600;margin-top:2px">${esc(lbl)}</div>
+        </div>
+      </div>
+    `;
+  })();
+
+  // ----- News card -----
+  const newsCard = (() => {
+    const items = q.news || [];
+    if (!items.length) return "";
+    return `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Latest news</div>
+        ${items.map(n => `
+          <a href="${esc(n.url || '#')}" target="_blank" rel="noopener" style="display:block;padding:8px 0;border-bottom:0.5px solid var(--sep);text-decoration:none;color:inherit">
+            <div style="font-size:13px;color:var(--t1);font-weight:600;line-height:1.35;margin-bottom:2px">${esc(n.title || "")}</div>
+            <div style="font-size:11px;color:var(--t3)">${esc(n.publisher || "")}</div>
+          </a>
+        `).join("")}
+      </div>
+    `;
+  })();
+
+  // ----- Timeframe selector -----
+  const tfs = ["1M", "3M", "6M", "1Y", "5Y"];
+  const tfChips = `
+    <div style="display:flex;gap:4px;justify-content:flex-end;margin-bottom:6px">
+      ${tfs.map(t => `
+        <button onclick="_stocksSetTf(${jsAttr(t)})" style="background:${t === tf ? 'var(--blue,#007AFF)' : 'var(--bg-elev)'};color:${t === tf ? '#fff' : 'var(--t2)'};border:0.5px solid var(--sep);border-radius:8px;padding:3px 10px;font-size:11px;font-weight:600;cursor:pointer">${t}</button>
       `).join("")}
     </div>
   `;
+  const smaLegend = tf === "1Y" ? `
+    <div style="display:flex;gap:14px;justify-content:center;font-size:10.5px;color:var(--t3);margin-top:6px">
+      <span><span style="display:inline-block;width:14px;height:1.3px;background:#FF9500;vertical-align:middle;margin-right:4px"></span>50-day SMA</span>
+      <span><span style="display:inline-block;width:14px;height:1.3px;background:#3b82f6;vertical-align:middle;margin-right:4px"></span>200-day SMA</span>
+    </div>
+  ` : "";
+
   openSheet(`
     <div data-stocks-detail>
       <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
@@ -9810,22 +10012,71 @@ function _stocksRenderDetail(q) {
         <span style="font-size:13.5px;color:var(--t3)">${esc(q.name || q.ticker)}</span>
       </div>
       <p class="muted" style="font-size:12px;margin-bottom:8px">${q.sector ? esc(q.sector) : ""}${q.sector && q.industry ? " · " : ""}${q.industry ? esc(q.industry) : ""}${(!q.sector && !q.industry) ? "Equity" : ""}</p>
-      <div style="display:flex;align-items:baseline;gap:10px;margin:8px 0 14px">
+      <div style="display:flex;align-items:baseline;gap:10px;margin:8px 0 8px;flex-wrap:wrap">
         <div style="font-size:38px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-0.02em">$${(+q.price).toFixed(2)}</div>
         <div style="font-size:14px;font-weight:700;color:${color};font-variant-numeric:tabular-nums">${arrow} ${change >= 0 ? "+" : ""}$${Math.abs(change).toFixed(2)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)</div>
       </div>
+      <div style="display:flex;gap:14px;font-size:11.5px;color:var(--t3);margin-bottom:10px;flex-wrap:wrap">
+        <span>Day ${q.day_low != null ? '$' + (+q.day_low).toFixed(2) : '—'} – ${q.day_high != null ? '$' + (+q.day_high).toFixed(2) : '—'}</span>
+        <span>Open $${q.open != null ? (+q.open).toFixed(2) : '—'}</span>
+        <span>Prev $${q.prev_close != null ? (+q.prev_close).toFixed(2) : '—'}</span>
+        <span>Vol ${_stkFmtNum(q.last_volume)}</span>
+      </div>
       <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:12px;margin-bottom:10px">
-        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">1-year price</div>
-        ${chart}
+        ${tfChips}
+        ${chartSvg}
+        ${smaLegend}
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:10px 0 4px">Volume (6M)</div>
+        ${volSvg}
       </div>
       ${rangeBar}
-      ${statsGrid}
+      ${techSignals}
+      ${analystCard}
+      ${earningsCard}
+      ${fundGrid}
+      ${newsCard}
       <button onclick="_stocksRunAnalyze(${jsAttr(q.ticker)})" id="stk-analyze-btn" class="btn" style="width:100%;margin-bottom:6px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none">✨ Run full analysis (buy/hold/sell)</button>
-      <button onclick="openCounselor(${jsAttr(`What's your read on ${q.ticker}? Currently $${(+q.price).toFixed(2)}, ${(pct).toFixed(1)}% today${q.ytd_return != null ? `, ${((+q.ytd_return) * 100).toFixed(1)}% YTD` : ''}, P/E ${q.trailing_pe ? (+q.trailing_pe).toFixed(1) : 'n/a'}. Should I add it to my portfolio given my situation? Give me the why, not just a verdict.`)})" class="btn secondary" style="width:100%;margin-bottom:14px;font-size:13px">✨ Ask Cornileus about ${esc(q.ticker)}</button>
+      <button onclick="_stocksLoadPeers(${jsAttr(q.ticker)})" id="stk-peers-btn" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">Show sector peers</button>
+      <button onclick="openCounselor(${jsAttr(`What's your read on ${q.ticker}? Currently $${(+q.price).toFixed(2)}, ${(pct).toFixed(1)}% today${q.ytd_return != null ? `, ${((+q.ytd_return) * 100).toFixed(1)}% YTD` : ''}, P/E ${q.trailing_pe ? (+q.trailing_pe).toFixed(1) : 'n/a'}, RSI ${q.rsi14 ? (+q.rsi14).toFixed(0) : 'n/a'}, analyst target ${q.target_mean ? '$' + (+q.target_mean).toFixed(0) : 'n/a'}. Should I add it to my portfolio given my situation? Give me the why, not just a verdict.`)})" class="btn secondary" style="width:100%;margin-bottom:14px;font-size:13px">✨ Ask Cornileus about ${esc(q.ticker)}</button>
       <div id="stk-analyze-result"></div>
+      <div id="stk-peers-result"></div>
       <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
     </div>
   `);
+}
+
+// Load and render peer tickers in the same sector/industry
+async function _stocksLoadPeers(tk) {
+  const btn = document.getElementById("stk-peers-btn");
+  const out = document.getElementById("stk-peers-result");
+  if (btn) { btn.textContent = "Finding peers…"; btn.disabled = true; }
+  if (out) out.innerHTML = `<div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:10px;text-align:center;color:var(--t3);font-size:13px">Looking up sector peers…</div>`;
+  try {
+    const r = await fetch("/api/peers/" + encodeURIComponent(tk));
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || "HTTP " + r.status);
+    const peers = data.peers || [];
+    if (!peers.length) {
+      out.innerHTML = `<div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:10px;color:var(--t3);font-size:12.5px;text-align:center">No peers found in ${esc(data.sector || data.industry || "this sector")}</div>`;
+    } else {
+      out.innerHTML = `
+        <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
+          <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Peers — ${esc(data.industry || data.sector || "")}</div>
+          ${peers.map(p => `
+            <div onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(p.ticker)}),120)" role="button" tabindex="0" style="display:flex;justify-content:space-between;align-items:center;padding:9px 10px;background:var(--bg-elev);border-radius:8px;margin-bottom:5px;cursor:pointer">
+              <div style="font-weight:700;font-size:13px;width:60px">${esc(p.ticker)}</div>
+              <div style="flex:1;font-size:12px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name || "")}</div>
+              <div style="font-size:14px;color:var(--t3)">→</div>
+            </div>
+          `).join("")}
+        </div>
+      `;
+    }
+  } catch (e) {
+    out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;margin-bottom:10px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  } finally {
+    if (btn) { btn.textContent = "Show sector peers"; btn.disabled = false; }
+  }
 }
 
 // Pulls the full pillar analysis from /api/analyze and renders the

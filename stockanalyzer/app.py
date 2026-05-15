@@ -281,6 +281,314 @@ def api_quote_full(ticker):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/ticker/<ticker>")
+def api_ticker_broker(ticker):
+    """Broker-grade ticker detail: every signal a research platform shows.
+
+    Bundles into one round-trip:
+      - Real-time quote (price, change, change %)
+      - Day range, 52-week range, range position
+      - Multi-timeframe close arrays (1M, 3M, 6M, 1Y, 5Y) for chart
+      - 50-day + 200-day moving averages over the 1Y window
+      - RSI(14) over the 1Y window
+      - Volume series for the 6M window + average volume + last
+      - Earnings — next earnings date if upcoming
+      - Analyst recommendations summary (counts + mean target)
+      - Top per-ticker news (5)
+      - Insider + institutional ownership headline counts
+      - Sector / industry / company name / beta / dividend yield
+      - Trailing + forward P/E, market cap, EPS
+
+    yfinance fetches several lookups per ticker. Slow on cold cache
+    (8-15s typical), fast on warm. Marked as cacheable for ~5 min
+    on the Vercel side via Cache-Control headers.
+    """
+    import yfinance as yf
+    try:
+        t = yf.Ticker(ticker)
+        # 5y daily — covers all timeframes we need to slice
+        df = t.history(period="5y", auto_adjust=True)
+        if df is None or df.empty or len(df) < 2:
+            return jsonify({"error": "no data"}), 404
+        closes = [float(x) for x in df["Close"].tolist()]
+        opens  = [float(x) for x in df["Open"].tolist()]
+        highs  = [float(x) for x in df["High"].tolist()]
+        lows   = [float(x) for x in df["Low"].tolist()]
+        vols   = [int(x) if x == x else 0 for x in df["Volume"].tolist()]
+        dates  = [d.strftime("%Y-%m-%d") for d in df.index.tolist()]
+
+        last_close = closes[-1]
+        prev_close = closes[-2]
+        last_open  = opens[-1]
+        day_high   = highs[-1]
+        day_low    = lows[-1]
+        last_vol   = vols[-1]
+        change     = last_close - prev_close
+        change_pct = (change / prev_close) if prev_close > 0 else 0.0
+
+        # Multi-timeframe slices (last N trading days)
+        slice_n = lambda n: closes[-n:] if len(closes) >= n else closes
+        slice_d = lambda n: dates[-n:] if len(dates) >= n else dates
+        tf = {
+            "1M": {"closes": slice_n(21),  "dates": slice_d(21)},
+            "3M": {"closes": slice_n(63),  "dates": slice_d(63)},
+            "6M": {"closes": slice_n(126), "dates": slice_d(126)},
+            "1Y": {"closes": slice_n(252), "dates": slice_d(252)},
+            "5Y": {"closes": closes,       "dates": dates},
+        }
+
+        # 52-week stats
+        y1_closes = tf["1Y"]["closes"]
+        hi52 = max(y1_closes)
+        lo52 = min(y1_closes)
+        rng_pos = (last_close - lo52) / (hi52 - lo52) if hi52 > lo52 else 0.5
+        ret_ytd = ((last_close - y1_closes[0]) / y1_closes[0]) if len(y1_closes) > 0 and y1_closes[0] > 0 else 0.0
+        ret_30d = ((last_close - closes[-21]) / closes[-21]) if len(closes) >= 21 and closes[-21] > 0 else None
+        ret_5y  = ((last_close - closes[0]) / closes[0]) if closes[0] > 0 else None
+
+        # 50/200-day simple moving averages over the 1Y window
+        def sma(arr, n):
+            out = []
+            running = 0.0
+            for i, v in enumerate(arr):
+                running += v
+                if i >= n:
+                    running -= arr[i - n]
+                out.append(running / n if i >= n - 1 else None)
+            return out
+        sma50  = sma(y1_closes, 50)
+        sma200 = sma(closes, 200)[-len(y1_closes):]  # align with 1Y window
+        sma50_last  = next((x for x in reversed(sma50) if x is not None), None)
+        sma200_last = next((x for x in reversed(sma200) if x is not None), None)
+
+        # RSI(14) over the 1Y window
+        def rsi(arr, n=14):
+            if len(arr) < n + 1:
+                return None
+            gains = 0.0; losses = 0.0
+            for i in range(1, n + 1):
+                d = arr[i] - arr[i - 1]
+                if d > 0: gains += d
+                else: losses += -d
+            avg_g = gains / n
+            avg_l = losses / n
+            for i in range(n + 1, len(arr)):
+                d = arr[i] - arr[i - 1]
+                g = d if d > 0 else 0
+                l = -d if d < 0 else 0
+                avg_g = (avg_g * (n - 1) + g) / n
+                avg_l = (avg_l * (n - 1) + l) / n
+            if avg_l == 0:
+                return 100.0
+            rs = avg_g / avg_l
+            return 100 - (100 / (1 + rs))
+        rsi_val = rsi(y1_closes, 14)
+
+        # Volume series + average (6M window)
+        vol_6m = vols[-126:] if len(vols) >= 126 else vols
+        avg_vol_6m = sum(vol_6m) / len(vol_6m) if vol_6m else None
+
+        # yfinance .info — guarded
+        info = {}
+        try:
+            info = t.info or {}
+        except Exception:
+            info = {}
+        def _f(k):
+            v = info.get(k)
+            try:
+                return float(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+        market_cap     = _f("marketCap")
+        trailing_pe    = _f("trailingPE")
+        forward_pe     = _f("forwardPE")
+        dividend_yield = _f("dividendYield")
+        avg_vol_info   = _f("averageVolume")
+        beta           = _f("beta")
+        eps_trailing   = _f("trailingEps")
+        eps_forward    = _f("forwardEps")
+        peg_ratio      = _f("pegRatio")
+        revenue_growth = _f("revenueGrowth")
+        earnings_growth= _f("earningsGrowth")
+        profit_margin  = _f("profitMargins")
+        debt_to_equity = _f("debtToEquity")
+        sector         = info.get("sector") if isinstance(info.get("sector"), str) else None
+        industry       = info.get("industry") if isinstance(info.get("industry"), str) else None
+        long_name      = info.get("longName") or info.get("shortName") if isinstance(info.get("longName") or info.get("shortName"), str) else None
+        target_mean    = _f("targetMeanPrice")
+        target_high    = _f("targetHighPrice")
+        target_low     = _f("targetLowPrice")
+        rec_mean       = _f("recommendationMean")
+        rec_key        = info.get("recommendationKey") if isinstance(info.get("recommendationKey"), str) else None
+        num_analysts   = _f("numberOfAnalystOpinions")
+        held_insiders  = _f("heldPercentInsiders")
+        held_inst      = _f("heldPercentInstitutions")
+        short_pct      = _f("shortPercentOfFloat")
+
+        # Earnings — next date if upcoming
+        next_earnings_date = None
+        try:
+            cal = t.calendar
+            if cal is not None and not getattr(cal, "empty", True):
+                ed = cal.get("Earnings Date") if hasattr(cal, "get") else None
+                if ed is not None and len(ed) > 0:
+                    d0 = ed[0]
+                    next_earnings_date = d0.strftime("%Y-%m-%d") if hasattr(d0, "strftime") else str(d0)
+        except Exception:
+            try:
+                # Newer yfinance returns dict
+                cal2 = t.calendar
+                if isinstance(cal2, dict):
+                    ed = cal2.get("Earnings Date")
+                    if ed and len(ed) > 0:
+                        next_earnings_date = ed[0].strftime("%Y-%m-%d")
+            except Exception:
+                next_earnings_date = None
+
+        # Per-ticker news headlines (top 5)
+        news_items = []
+        try:
+            raw_news = t.news or []
+            for n in raw_news[:5]:
+                # newer yfinance returns dicts with .content, older returns flat
+                if isinstance(n, dict):
+                    c = n.get("content") or n
+                    title = c.get("title") or n.get("title")
+                    publisher = c.get("provider", {}).get("displayName") if isinstance(c.get("provider"), dict) else (n.get("publisher") or c.get("publisher"))
+                    link = c.get("canonicalUrl", {}).get("url") if isinstance(c.get("canonicalUrl"), dict) else (n.get("link") or c.get("link"))
+                    pub_ts = c.get("pubDate") or n.get("providerPublishTime")
+                    if title:
+                        news_items.append({
+                            "title": title,
+                            "publisher": publisher,
+                            "url": link,
+                            "published": pub_ts,
+                        })
+        except Exception:
+            pass
+
+        # Analyst recommendations summary — recommendations table
+        rec_summary = None
+        try:
+            rec_df = t.recommendations
+            if rec_df is not None and not rec_df.empty:
+                # Most recent month bucket if available
+                latest = rec_df.tail(1).to_dict("records")
+                if latest:
+                    rec_summary = {k: int(v) if isinstance(v, (int, float)) else str(v) for k, v in latest[0].items()}
+        except Exception:
+            rec_summary = None
+
+        return jsonify({
+            "ticker": ticker.upper(),
+            "name": long_name,
+            "sector": sector,
+            "industry": industry,
+            "price": last_close,
+            "open": last_open,
+            "prev_close": prev_close,
+            "change": change,
+            "change_pct": change_pct,
+            "day_high": day_high,
+            "day_low": day_low,
+            "hi52": hi52,
+            "lo52": lo52,
+            "range_pos": rng_pos,
+            "ytd_return": ret_ytd,
+            "return_30d": ret_30d,
+            "return_5y": ret_5y,
+            "as_of": dates[-1],
+            "market_cap": market_cap,
+            "trailing_pe": trailing_pe,
+            "forward_pe": forward_pe,
+            "peg_ratio": peg_ratio,
+            "eps_trailing": eps_trailing,
+            "eps_forward": eps_forward,
+            "revenue_growth": revenue_growth,
+            "earnings_growth": earnings_growth,
+            "profit_margin": profit_margin,
+            "debt_to_equity": debt_to_equity,
+            "dividend_yield": dividend_yield,
+            "average_volume": avg_vol_info,
+            "last_volume": last_vol,
+            "avg_vol_6m": avg_vol_6m,
+            "beta": beta,
+            "held_insiders": held_insiders,
+            "held_institutions": held_inst,
+            "short_pct_float": short_pct,
+            # Multi-timeframe chart data
+            "timeframes": tf,
+            # Volume series (6 months)
+            "volume_6m": vol_6m,
+            # Technical indicators
+            "sma50": sma50,
+            "sma200": sma200,
+            "sma50_last": sma50_last,
+            "sma200_last": sma200_last,
+            "rsi14": rsi_val,
+            # Analyst data
+            "target_mean": target_mean,
+            "target_high": target_high,
+            "target_low": target_low,
+            "recommendation_mean": rec_mean,
+            "recommendation_key": rec_key,
+            "num_analysts": num_analysts,
+            "recommendations_latest": rec_summary,
+            # Earnings + news
+            "next_earnings": next_earnings_date,
+            "news": news_items,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/peers/<ticker>")
+def api_peers(ticker):
+    """Find peer tickers — yfinance doesn't expose this directly so we
+    do a coarse sector/industry-based pick from a hand-built S&P 500 +
+    ETF list. Returns up to 6 peers."""
+    import yfinance as yf
+    try:
+        t = yf.Ticker(ticker)
+        info = {}
+        try: info = t.info or {}
+        except Exception: info = {}
+        sector   = info.get("sector")
+        industry = info.get("industry")
+        if not (sector or industry):
+            return jsonify({"peers": []})
+        # Try the same universe used for scans
+        try:
+            universe = list(get_universe("stocks"))
+        except Exception:
+            universe = ["AAPL","MSFT","GOOGL","AMZN","NVDA","META","TSLA","JPM","V","MA","UNH","HD","BAC","XOM","CVX","WMT","PG","JNJ","KO","PEP","DIS","NFLX","CRM","INTC","CSCO","ORCL","ADBE","PYPL","COST","TGT"]
+        peers = []
+        upper_tk = ticker.upper()
+        # Sample only 30 from the universe — full lookups would be too slow
+        import random
+        sample = random.sample(universe, min(40, len(universe)))
+        for pk in sample:
+            if pk.upper() == upper_tk:
+                continue
+            try:
+                pi = yf.Ticker(pk).info or {}
+                if pi.get("industry") == industry or pi.get("sector") == sector:
+                    peers.append({
+                        "ticker": pk.upper(),
+                        "name": pi.get("longName") or pi.get("shortName") or pk.upper(),
+                        "sector": pi.get("sector"),
+                        "industry": pi.get("industry"),
+                    })
+                if len(peers) >= 6:
+                    break
+            except Exception:
+                continue
+        return jsonify({"peers": peers, "sector": sector, "industry": industry})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/quote/batch")
 def api_quote_batch():
     """Batch quote endpoint — returns lightweight quotes for multiple
