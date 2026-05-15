@@ -2085,7 +2085,11 @@ const DEFAULT_DB = {
   plans: [],                 // big-picture life plans (distinct from daily Goals).
                              // {id, title, tier:'short'|'mid'|'long', emoji, note,
                              //  target_amount, current_amount, target_date,
-                             //  completed, completedAt, createdAt}
+                             //  completed, completedAt, createdAt,
+                             //  linkedSavingsIds:[savingsId,...]}  ← when set, the
+                             //  live progress = current_amount + Σ(linked savings.current).
+                             //  Lets one Plan track multiple Savings buckets and
+                             //  auto-advance when the user logs a deposit.
   assets: [],                // [{id, name, type:'home'|'vehicle'|'crypto'|'cash'|'investment'|'other', value, note, updatedAt}]
   liabilities: [],           // [{id, name, type:'student'|'auto'|'mortgage'|'personal'|'medical'|'other', balance, apr, minPayment, note, updatedAt}]
   recurring: [],             // user-managed recurring tx: [{id, name, amount, category, cadence:'weekly'|'biweekly'|'monthly'|'yearly', dayOfMonth, kind:'expense'|'income', nextDate, createdAt}]
@@ -3773,7 +3777,10 @@ function logSavingSheet(id) {
     if (!a) { toast("Enter amount"); return; }
     s.current = Math.max(0, (+s.current||0) + a);
     s.log.push({ date: todayKey(), amount: a, note: $("#ls-note").value.trim() });
-    await save(); closeSheet(); render(); toast((a>0?"+":"")+fmt$0(a));
+    const flipped = _autoCompletePlans();
+    await save(); closeSheet(); render();
+    if (flipped > 0) toast(`${(a>0?"+":"")}${fmt$0(a)} · plan complete 🎯`);
+    else toast((a>0?"+":"")+fmt$0(a));
   });
 }
 
@@ -5060,18 +5067,79 @@ function renderToday() {
   })();
 
   // Daily Pulse — a single contextual nudge above the THIS WEEK row.
-  // Picks one signal from across the app (plan deadline, net-worth change,
-  // wins streak, mood). Habits are intentionally NOT in this rotation —
-  // they have their own milestone banner farther down the page.
+  // Picks one signal from across the app. Order = "most actionable now":
+  // streak about to break → bill due → goal almost done → savings near
+  // target → plan deadline → net-worth change → wins streak → mood →
+  // backup nudge.
   const dailyPulse = (() => {
     // Each insight may have an optional `amount` string. The renderer
     // wraps it in <span data-priv="amount"> so privacy mode blurs it
     // the same way every other $ on the page is blurred.
+
+    // 0) Streak about to break: any habit with streak ≥7 not done today
+    //    AND not paused. Time-sensitive — leads everything else.
+    const tk = todayKey();
+    for (const h of (DB.habits || [])) {
+      if (!h || isHabitPaused(h)) continue;
+      const v = h.log && h.log[tk];
+      const doneToday = h.type === "count" ? +v >= (h.target || 1) : !!v;
+      if (doneToday) continue;
+      let s = 0; try { s = streakOf(h) || 0; } catch {}
+      if (s >= 7) {
+        return { emoji: "🔥",
+          text: `${h.name}: ${s}-day streak — don't break it today`,
+          onclick: `toggleHabit('${h.id}')` };
+      }
+    }
+
+    // 0b) Bill due in next 3 days
+    try {
+      const bills = (typeof upcomingBills === "function" ? upcomingBills(3) : []) || [];
+      const next = bills.sort((a,b) => (a.days|0) - (b.days|0))[0];
+      if (next) {
+        const who = next.merchant || next.name || "Bill";
+        const when = next.days <= 0 ? "today" : (next.days === 1 ? "tomorrow" : `in ${next.days}d`);
+        return { emoji: "📆",
+          text: `${who} —`,
+          amount: fmt$0(+next.amount || 0 || +next.avg_amount || 0),
+          suffix: `due ${when}`,
+          onclick: `showTab('today')` };
+      }
+    } catch {}
+
+    // 0c) Goal one step from done (steps array, last unchecked step)
+    for (const g of (DB.goals || [])) {
+      if (!g || g.done) continue;
+      const steps = Array.isArray(g.steps) ? g.steps : [];
+      if (steps.length < 2) continue;
+      const remain = steps.filter(st => !st.done).length;
+      if (remain === 1) {
+        return { emoji: "🎯",
+          text: `${g.title}: 1 step left to finish`,
+          onclick: `showTab('goals')` };
+      }
+    }
+
+    // 0d) Savings bucket within $100 OR 95% of target
+    for (const s of (DB.savings || [])) {
+      const target = +s.target || 0; const cur = +s.current || 0;
+      if (target <= 0 || cur >= target) continue;
+      const remaining = target - cur;
+      const pct = cur / target;
+      if (remaining <= 100 || pct >= 0.95) {
+        return { emoji: s.emoji || "💰",
+          text: `${s.name} —`,
+          amount: fmt$0(remaining),
+          suffix: `from goal`,
+          onclick: `(function(){moneySub='savings';showTab('money');})()` };
+      }
+    }
+
     // 1) Plan deadline near (≤30d) with $ remaining
     const plans = (DB.plans || []).filter(p => !p.completed && p.target_date && +p.target_amount > 0);
     for (const p of plans.sort((a, b) => new Date(a.target_date) - new Date(b.target_date))) {
       const tdays = Math.round((new Date(p.target_date + "T00:00:00").getTime() - Date.now()) / 86400000);
-      const remaining = (+p.target_amount || 0) - (+p.current_amount || 0);
+      const remaining = (+p.target_amount || 0) - _planLiveCurrent(p);
       if (tdays >= 0 && tdays <= 30 && remaining > 0) {
         return { emoji: p.emoji || "🎯",
           text: `${p.title} —`,
@@ -6150,6 +6218,41 @@ const PLAN_TEMPLATES = {
 };
 
 function planById(id) { return (DB.plans || []).find(p => p.id === id); }
+
+// Sum of linked savings buckets' current values for this plan.
+// Returns 0 if no buckets are linked or none resolve.
+function _planLinkedSavingsSum(p) {
+  if (!p || !Array.isArray(p.linkedSavingsIds) || !p.linkedSavingsIds.length) return 0;
+  const byId = new Map((DB.savings || []).map(s => [s.id, s]));
+  let total = 0;
+  for (const sid of p.linkedSavingsIds) {
+    const s = byId.get(sid);
+    if (s) total += (+s.current || 0);
+  }
+  return total;
+}
+// Live current_amount for a plan = manual current + any linked savings buckets.
+// This is what every UI/progress site should read, so logging a savings
+// deposit instantly advances the plan it's linked to.
+function _planLiveCurrent(p) {
+  return (+(p && p.current_amount) || 0) + _planLinkedSavingsSum(p);
+}
+// After savings changes, auto-complete any plan whose live amount >= target.
+// Safe to call from save paths; no-op if nothing flips.
+function _autoCompletePlans() {
+  let flipped = 0;
+  (DB.plans || []).forEach(p => {
+    if (p.completed) return;
+    if (!(+p.target_amount > 0)) return;
+    if (_planLiveCurrent(p) >= +p.target_amount) {
+      p.completed = true;
+      p.completedAt = Date.now();
+      flipped++;
+    }
+  });
+  if (flipped > 0 && typeof celebrate === "function") celebrate();
+  return flipped;
+}
 function plansByTier(tier) {
   return (DB.plans || []).filter(p => p.tier === tier)
     .sort((a, b) => (a.completed ? 1 : 0) - (b.completed ? 1 : 0) || (b.createdAt || 0) - (a.createdAt || 0));
@@ -6171,6 +6274,7 @@ function addPlan(tier, fields) {
     completed: false,
     completedAt: 0,
     createdAt: Date.now(),
+    linkedSavingsIds: Array.isArray(fields.linkedSavingsIds) ? fields.linkedSavingsIds.slice() : [],
   });
   save();
   render();
@@ -6197,7 +6301,7 @@ function updatePlanProgress(id, amount) {
   const p = planById(id);
   if (!p) return;
   p.current_amount = Math.max(0, +amount || 0);
-  if (p.target_amount && p.current_amount >= p.target_amount && !p.completed) {
+  if (p.target_amount && _planLiveCurrent(p) >= p.target_amount && !p.completed) {
     p.completed = true;
     p.completedAt = Date.now();
     celebrate && celebrate();
@@ -6234,6 +6338,20 @@ function addPlanSheet(opts = {}) {
   const existing = opts.id ? planById(opts.id) : null;
   const tier = (existing && existing.tier) || opts.tier || "short";
   const tierMeta = PLAN_TIERS.find(t => t.id === tier);
+  const allSavings = DB.savings || [];
+  const existingLinked = (existing && Array.isArray(existing.linkedSavingsIds)) ? existing.linkedSavingsIds : [];
+  const savingsPickerHtml = allSavings.length ? `
+    <label>Linked savings buckets (optional)</label>
+    <p class="muted" style="font-size:12px;margin:-4px 0 6px">Tap buckets to credit their balance toward this plan automatically.</p>
+    <div id="plan-linked-savings" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+      ${allSavings.map(s => {
+        const on = existingLinked.includes(s.id);
+        return `<button type="button" data-sid="${esc(s.id)}" data-on="${on?1:0}"
+          onclick="(()=>{const b=this;const on=b.dataset.on==='1';b.dataset.on=on?'0':'1';b.style.background=on?'var(--bg-elev)':'rgba(124,58,237,0.18)';b.style.color=on?'var(--t2)':'#7c3aed';b.style.borderColor=on?'var(--sep)':'#7c3aed';}).call(this)"
+          style="padding:6px 12px;border-radius:999px;background:${on?'rgba(124,58,237,0.18)':'var(--bg-elev)'};color:${on?'#7c3aed':'var(--t2)'};border:1px solid ${on?'#7c3aed':'var(--sep)'};font-size:12px;cursor:pointer">${esc(s.emoji || '💰')} ${esc(s.name)}</button>`;
+      }).join("")}
+    </div>
+  ` : "";
   openSheet(`
     <h2 style="margin-bottom:14px">${existing ? "Edit plan" : `New ${esc(tierMeta.label.toLowerCase())} plan`}</h2>
     <label>What's the plan?</label>
@@ -6251,17 +6369,20 @@ function addPlanSheet(opts = {}) {
       value="${(existing && existing.target_amount) || ""}" />
     <label>Target date (optional)</label>
     <input id="plan-date" type="date" value="${esc((existing && existing.target_date) || "")}" />
+    ${savingsPickerHtml}
     <label>Notes (optional)</label>
     <textarea id="plan-note" maxlength="${NOTE_MAX}" placeholder="Why this matters, first step, anything else.">${esc((existing && existing.note) || "")}</textarea>
     <div class="actions">
       ${existing ? `<button class="btn secondary" onclick="deletePlan(${jsAttr(existing.id)});closeSheet()">Delete</button>` : `<button class="btn secondary" onclick="closeSheet()">Cancel</button>`}
       <button class="btn" onclick="(()=>{
+        const linked = Array.from(document.querySelectorAll('#plan-linked-savings button[data-on=\\'1\\']')).map(b => b.dataset.sid);
         const fields = {
           title: document.getElementById('plan-title').value,
           emoji: document.getElementById('plan-emoji').value,
           target_amount: document.getElementById('plan-target').value,
           target_date: document.getElementById('plan-date').value,
           note: document.getElementById('plan-note').value,
+          linkedSavingsIds: linked,
         };
         const newTier = document.getElementById('plan-tier').value;
         if (${existing ? "true" : "false"}) {
@@ -6273,6 +6394,8 @@ function addPlanSheet(opts = {}) {
             p.target_amount = +fields.target_amount || 0;
             p.target_date = fields.target_date || '';
             p.note = sanitizeText(fields.note, ${NOTE_MAX});
+            p.linkedSavingsIds = linked;
+            _autoCompletePlans();
             save(); render(); closeSheet();
           }
         } else {
@@ -6303,7 +6426,7 @@ function logPlanProgressSheet(id) {
 
 function _planProgressPct(p) {
   if (!p.target_amount) return 0;
-  return Math.min(100, Math.round((+p.current_amount || 0) * 100 / +p.target_amount));
+  return Math.min(100, Math.round(_planLiveCurrent(p) * 100 / +p.target_amount));
 }
 function _planDateChip(p) {
   if (!p.target_date) return "";
@@ -6328,7 +6451,7 @@ function _planDateChip(p) {
 function _planPaceChip(p) {
   if (!p.target_amount || !p.target_date || p.completed) return "";
   const targetAmount = +p.target_amount;
-  const currentAmount = +(p.current_amount || 0);
+  const currentAmount = _planLiveCurrent(p);
   if (targetAmount <= 0 || currentAmount >= targetAmount) return "";
   const targetMs = new Date(p.target_date + "T00:00:00").getTime();
   const createdMs = +p.createdAt || (Date.now() - 30 * 86400000); // assume month-old if missing
@@ -6359,11 +6482,11 @@ function _planHealthSnapshot() {
   const plans = DB.plans || [];
   if (!plans.length) return null;
   const moneyPlans = plans.filter(p => +p.target_amount > 0);
-  const totalSaved  = moneyPlans.reduce((s, p) => s + (+p.current_amount || 0), 0);
+  const totalSaved  = moneyPlans.reduce((s, p) => s + _planLiveCurrent(p), 0);
   const totalTarget = moneyPlans.reduce((s, p) => s + (+p.target_amount  || 0), 0);
   const pct = totalTarget > 0 ? Math.round((totalSaved / totalTarget) * 100) : 0;
   const completed = plans.filter(p => p.completed).length;
-  const inMotion  = plans.filter(p => !p.completed && (+p.current_amount || 0) > 0).length;
+  const inMotion  = plans.filter(p => !p.completed && _planLiveCurrent(p) > 0).length;
   const nextUp = plans
     .filter(p => !p.completed && p.target_date)
     .sort((a, b) => new Date(a.target_date) - new Date(b.target_date))[0] || null;
@@ -6833,6 +6956,14 @@ function renderPlanning() {
       const pct = _planProgressPct(p);
       const hasTarget = !!p.target_amount;
       const dateChip = _planDateChip(p);
+      const liveCur = _planLiveCurrent(p);
+      const linkedSum = _planLinkedSavingsSum(p);
+      const linkedNames = (Array.isArray(p.linkedSavingsIds) && p.linkedSavingsIds.length)
+        ? (DB.savings || []).filter(s => p.linkedSavingsIds.includes(s.id)).map(s => `${s.emoji || ""}${s.name}`)
+        : [];
+      const linkedChip = linkedNames.length
+        ? `<span class="plan-chip" style="background:rgba(124,58,237,0.10);color:#7c3aed" title="Linked savings buckets feed this plan automatically">🔗 ${esc(linkedNames.slice(0,2).join(" · "))}${linkedNames.length>2?` +${linkedNames.length-2}`:""}</span>`
+        : "";
       return `
         <div class="plan-card ${p.completed ? 'done' : ''}" style="border-left-color:${t.color}">
           <div class="plan-card-head">
@@ -6842,9 +6973,10 @@ function renderPlanning() {
               <div class="plan-title ${p.completed ? 'done' : ''}">${esc(p.title)}</div>
               ${p.note ? `<div class="plan-note">${esc(p.note)}</div>` : ""}
               <div class="plan-meta">
-                ${hasTarget ? `<span class="plan-chip" style="background:${t.color}22;color:${t.color}">💰 ${fmt$0(p.current_amount || 0)} / ${fmt$0(p.target_amount)}</span>` : ""}
+                ${hasTarget ? `<span class="plan-chip" style="background:${t.color}22;color:${t.color}">💰 ${fmt$0(liveCur)} / ${fmt$0(p.target_amount)}</span>` : ""}
                 ${dateChip}
                 ${_planPaceChip(p)}
+                ${linkedChip}
               </div>
             </div>
             <button class="del-x" onclick="addPlanSheet({id:${jsAttr(p.id)}})" title="Edit">⋯</button>
@@ -6973,7 +7105,11 @@ function _whatIfSetCell(rowId, key, value) {
 }
 
 function _whatIfBaseline() {
-  const baseMonthly = +DB.retirement?.monthlyContribution || +DB.settings.monthlySavingsTarget || 0;
+  // Same fallback chain as the Forecast tab: explicit settings → implied
+  // capacity (recurring income − recurring expenses) → 0. Lets the what-if
+  // sliders mean something even before the user sets a savings target.
+  const implied = (typeof impliedMonthlySavings === "function") ? impliedMonthlySavings() : 0;
+  const baseMonthly = +DB.retirement?.monthlyContribution || +DB.settings.monthlySavingsTarget || implied || 0;
   let invested = 0;
   try { invested = currentInvested(); } catch {}
   // Default to user's portfolio mix; fall back to settings/7%.
@@ -7653,7 +7789,19 @@ function renderMoney() {
     let targetAge = +retire.targetAge || 65;
     if (targetAge <= currentAge) targetAge = currentAge + 1;
     const invested = currentInvested() || 0;
-    const baseMonthly = Math.max(0, +retire.monthlyContribution || +DB.settings.monthlySavingsTarget || 500);
+    // Order of preference for the base contribution number:
+    //   1. user-set retirement.monthlyContribution
+    //   2. user-set settings.monthlySavingsTarget
+    //   3. IMPLIED capacity from recurring income − recurring expenses
+    //   4. arbitrary $500 fallback (only when zero other signal)
+    const implied = impliedMonthlySavings();
+    const baseMonthly = Math.max(0,
+      +retire.monthlyContribution || +DB.settings.monthlySavingsTarget || implied || 500
+    );
+    const baseSource = +retire.monthlyContribution ? "retirement setting"
+      : +DB.settings.monthlySavingsTarget ? "monthly savings target"
+      : implied ? "income − recurring bills"
+      : "default";
     const annualReturn = Math.max(0, +retire.annualReturn || 7);
 
     // Three comparable scenarios — base contribution, +$200/mo, +$500/mo.
@@ -7739,7 +7887,7 @@ function renderMoney() {
     const milestonesHtml = wealthMilestones.length ? `
       <div class="section-h"><span class="lbl">Next wealth milestones</span></div>
       <div style="background:var(--card);border-radius:var(--r);padding:18px;border:0.5px solid var(--sep);box-shadow:var(--sh-1);margin-bottom:14px">
-        <div style="font-size:11.5px;color:var(--t3);margin-bottom:14px">At <span data-priv="amount">${fmt$0(baseMonthly)}</span>/mo · ${annualReturn}% return · from <span data-priv="amount">${fmt$0(currentInvested())}</span> today</div>
+        <div style="font-size:11.5px;color:var(--t3);margin-bottom:14px">At <span data-priv="amount">${fmt$0(baseMonthly)}</span>/mo · ${annualReturn}% return · from <span data-priv="amount">${fmt$0(currentInvested())}</span> today<br><span style="font-size:10.5px;opacity:0.8">contribution source: ${esc(baseSource)}</span></div>
         ${wealthMilestones.map((m, i) => `
           <div style="display:flex;align-items:center;gap:14px;${i > 0 ? 'border-top:0.5px solid var(--sep);padding-top:12px;margin-top:12px' : ''}">
             <div style="width:34px;height:34px;border-radius:50%;background:rgba(46,184,117,0.12);color:var(--green);display:flex;align-items:center;justify-content:center;font-size:13px;font-weight:700;flex-shrink:0">${i+1}</div>
@@ -9163,6 +9311,35 @@ function renderStats() {
     ` : ""}
 
     ${(() => {
+      const moods = DB.moods || {};
+      const keys = Object.keys(moods);
+      if (keys.length < 5) return "";
+      const cells = []; const d = new Date();
+      for (let i = 29; i >= 0; i--) {
+        const dt = new Date(d); dt.setDate(d.getDate() - i);
+        const k = todayKey(dt);
+        cells.push({ k, m: moods[k] || "" });
+      }
+      const logged = cells.filter(c => c.m).length;
+      const counts = {}; for (const c of cells) if (c.m) counts[c.m] = (counts[c.m] || 0) + 1;
+      const top = Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+      return `
+        <div style="background:var(--card);border-radius:var(--r);padding:14px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+            <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:600">Mood · last 30 days</div>
+            <div style="font-size:11px;color:var(--t3)">${logged}/30 logged${top ? ` · ${top[0]} ${top[1]}×` : ""}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(30,1fr);gap:3px">
+            ${cells.map(c => `<div title="${c.k}${c.m?' '+c.m:''}" style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:14px;background:${c.m?'var(--bg-elev)':'transparent'};border:0.5px solid ${c.m?'transparent':'var(--sep)'};border-radius:4px;line-height:1">${c.m || ""}</div>`).join("")}
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t3);margin-top:6px">
+            <span>30d ago</span><span>today</span>
+          </div>
+        </div>
+      `;
+    })()}
+
+    ${(() => {
       // Auto-insights — compute notable patterns from existing data and surface
       // 1–3 of them as bullet rows. Quietly hides when nothing interesting is
       // computable yet.
@@ -9216,6 +9393,56 @@ function renderStats() {
         const top = goalProgressList[0];
         insights.push({ icon: top.s.emoji || "🎯", text: `<b style="color:var(--t1)" data-priv="amount">${fmt$0(top.gap)}</b> away from <b>${esc(top.s.name)}</b> (${Math.round(top.pct*100)}% there)` });
       }
+      // 4b. Mood-vs-spend correlation — when the user has moods + spend data, compare
+      // daily spend totals on positive-mood days vs negative-mood days. Cheap heuristic
+      // but often surprising (and actionable).
+      try {
+        const moods = DB.moods || {};
+        const moodKeys = Object.keys(moods);
+        if (moodKeys.length >= 10 && (DB.spend || []).length) {
+          // Map mood emoji → polarity. Anything not listed is neutral.
+          const POS = ["😄","😊","🤩","🥰","😎","🙂"];
+          const NEG = ["😞","☹️","😢","😡","😤","😩","😟","😖"];
+          const spendByDate = {};
+          for (const t of DB.spend) {
+            if (!t || !t.date) continue;
+            if (+t.amount <= 0) continue;
+            spendByDate[t.date] = (spendByDate[t.date] || 0) + (+t.amount || 0);
+          }
+          let posSum=0,posN=0,negSum=0,negN=0;
+          for (const [k, m] of Object.entries(moods)) {
+            if (!spendByDate[k]) continue;
+            if (POS.includes(m)) { posSum += spendByDate[k]; posN++; }
+            else if (NEG.includes(m)) { negSum += spendByDate[k]; negN++; }
+          }
+          if (posN >= 3 && negN >= 3) {
+            const posAvg = posSum / posN, negAvg = negSum / negN;
+            const diff = negAvg - posAvg;
+            if (Math.abs(diff) >= 10) {
+              const dir = diff > 0 ? "more" : "less";
+              const color = diff > 0 ? "var(--red)" : "var(--green)";
+              insights.push({ icon: "💭", text: `You spend <b style="color:${color}" data-priv="amount">${fmt$0(Math.abs(diff))}</b> ${dir} on rough-mood days than happy ones` });
+            }
+          }
+        }
+      } catch {}
+      // 4c. Mood trend — most-common mood last 30 days
+      try {
+        const moods = DB.moods || {};
+        const last30 = []; const d2 = new Date();
+        for (let i = 0; i < 30; i++) {
+          const k = todayKey(d2);
+          if (moods[k]) last30.push(moods[k]);
+          d2.setDate(d2.getDate() - 1);
+        }
+        if (last30.length >= 10) {
+          const counts = {};
+          for (const m of last30) counts[m] = (counts[m] || 0) + 1;
+          const [top, n] = Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+          const pct = Math.round(100 * n / last30.length);
+          if (pct >= 35) insights.push({ icon: top, text: `Your most-common mood last 30 days is <b style="color:var(--t1)">${top}</b> (${pct}% of logged days)` });
+        }
+      } catch {}
       // 5. Net worth growth
       const nwHist = (DB.netWorthHistory || []).slice(-30);
       if (nwHist.length >= 2) {
@@ -14607,6 +14834,30 @@ function calendarDaySheet(dateKey) {
     </div>
   `).join("");
 
+  // Plan deadlines landing on this day
+  const plansThatDay = (DB.plans || []).filter(p => !p.completed && p.target_date === dateKey);
+  const planRows = plansThatDay.map(p => {
+    const liveCur = (typeof _planLiveCurrent === "function") ? _planLiveCurrent(p) : (+p.current_amount || 0);
+    const sub = p.target_amount
+      ? `<span data-priv="amount">${fmt$0(liveCur)} / ${fmt$0(p.target_amount)}</span>`
+      : esc((PLAN_TIERS && PLAN_TIERS.find(t => t.id === p.tier) || {}).label || p.tier || "plan");
+    return `
+      <div class="row tappable" onclick="closeSheet();setTimeout(()=>addPlanSheet({id:${jsAttr(p.id)}}),120)">
+        <div class="lead">${esc(p.emoji || "🎯")}</div>
+        <div class="body"><div class="t1">${esc(p.title)}</div><div class="t2">${sub} · deadline</div></div>
+      </div>
+    `;
+  }).join("");
+
+  // Important user dates on this day
+  const userDatesThatDay = (DB.calendarDates || []).filter(d => d.date === dateKey);
+  const userDateRows = userDatesThatDay.map(d => `
+    <div class="row">
+      <div class="lead">${esc(d.icon || "📌")}</div>
+      <div class="body"><div class="t1">${esc(d.title)}</div>${d.note ? `<div class="t2">${esc(d.note)}</div>` : ""}</div>
+    </div>
+  `).join("");
+
   const section = (label, rows, emptyMsg) => rows ? `
     <div class="section-h"><span class="lbl">${label}</span></div>
     <div class="list">${rows}</div>
@@ -14677,6 +14928,8 @@ function calendarDaySheet(dateKey) {
     ${savingsLogs.length ? section("Savings logged", savingsRows) : ""}
     ${goalsDone.length ? section("Goals completed", goalRows) : ""}
     ${billsThatDay.length ? section("Bills due", billRows) : ""}
+    ${plansThatDay.length ? section("Plan deadlines", planRows) : ""}
+    ${userDatesThatDay.length ? section("Important dates", userDateRows) : ""}
     ${(eligibleHabits.length || wins.length || spendDay.length || savingsLogs.length) ? `
       <div style="margin-top:14px">
         <button class="btn secondary" style="width:100%;color:var(--purple);border-color:var(--purple);font-size:13px" onclick="openCounselor(${jsAttr(`On ${titleLbl}: ${eligibleHabits.length ? `${eligibleHabits.filter(h => h.type==='count' ? (h.log[dateKey]||0)>=(h.target||1) : !!h.log[dateKey]).length}/${eligibleHabits.length} habits done, ` : ""}${wins.length} wins (${wins.map(w => `"${w.text.slice(0,50)}"`).join("; ")}), $${Math.round(spendTotal)} spent across ${spendDay.length} transactions${currentMood ? `, felt ${currentMood}` : ""}${existingNote ? `. Note: "${existingNote.slice(0,80)}"` : ""}. Help me reflect on this day.`)})">✨ Ask Cornileus to reflect on this day</button>
@@ -14712,6 +14965,15 @@ function renderCalendar() {
   const noteDates = new Set(Object.keys(DB.calendarNotes || {}));
   // Per-day mood emojis (date → emoji)
   const moodMap = DB.moods || {};
+  // Plan target dates — surface deadlines on the heatmap so a user actually
+  // SEES "Roth IRA deadline 2026-12-31" instead of it living only in Plan tab.
+  const planDates = new Set((DB.plans || [])
+    .filter(p => !p.completed && /^\d{4}-\d{2}-\d{2}$/.test(p.target_date || ""))
+    .map(p => p.target_date));
+  // User-added calendar dates (tax day, anniversaries, etc.)
+  const userDates = new Set((DB.calendarDates || [])
+    .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d.date || ""))
+    .map(d => d.date));
 
   // Aggregate month-level stats for the header strip
   let monthHabitDone = 0, monthHabitPossible = 0;
@@ -14759,6 +15021,8 @@ function renderCalendar() {
       hasSavings: savingsDates.has(k),
       hasBill: billDates.has(k) && !winDates.has(k), // bills hidden when other action exists, avoid clutter on past days
       hasNote: noteDates.has(k),
+      hasPlan: planDates.has(k),
+      hasUserDate: userDates.has(k),
       mood: moodMap[k] || "",
     });
   }
@@ -14776,6 +15040,7 @@ function renderCalendar() {
       else                    bg = "rgba(46,184,117,0.08)";
     }
     if (c.isFuture && c.hasBill) bg = "rgba(237,139,34,0.10)";
+    if (c.isFuture && c.hasPlan && bg === "var(--bg-elev)") bg = "rgba(124,58,237,0.10)";
     const ring = c.isToday ? "box-shadow:inset 0 0 0 2px var(--blue);" : "";
     const dots = [
       c.hasWin && '<span style="background:var(--yellow)"></span>',
@@ -14784,6 +15049,8 @@ function renderCalendar() {
       c.hasBill && !c.isFuture && '<span style="background:var(--orange)"></span>',
       c.isFuture && c.hasBill && '<span style="background:var(--orange)"></span>',
       c.hasNote && '<span style="background:var(--blue)"></span>',
+      c.hasPlan && '<span style="background:var(--purple);box-shadow:0 0 0 1px rgba(124,58,237,0.4)" title="Plan deadline"></span>',
+      c.hasUserDate && '<span style="background:var(--pink,#ec4899)" title="Important date"></span>',
     ].filter(Boolean).join("");
     return `
       <div class="cal-cell" style="background:${bg};${ring}" onclick="calendarDaySheet('${c.key}')" role="button" tabindex="0">
@@ -16831,6 +17098,127 @@ function buildCounselorSnapshot() {
   let investedTotal = 0;
   try { investedTotal = currentInvested(); } catch {}
 
+  // --- Habits: top by current streak (cap 12). Lets Cornileus answer
+  // "how am I trending on workouts" / "what habit am I crushing" / etc.
+  const habits = (DB.habits || []).map(h => {
+    let streak = 0; try { streak = streakOf(h) || 0; } catch {}
+    // 30-day completion %
+    let hits = 0;
+    if (h && h.log) {
+      const d = new Date();
+      for (let i = 0; i < 30; i++) {
+        const k = todayKey(d);
+        const v = h.log[k];
+        if (h.type === "count" ? +v >= (h.target || 1) : !!v) hits++;
+        d.setDate(d.getDate() - 1);
+      }
+    }
+    return {
+      name: h.name, group: h.group || "other",
+      streak,
+      pct_30d: Math.round(100 * hits / 30),
+    };
+  }).sort((a,b) => b.streak - a.streak).slice(0, 12);
+  const longestCurrentStreak = habits.length ? habits[0].streak : 0;
+
+  // --- Moods: last 14 days as ordered array. Captures emotional trend.
+  const moodsMap = DB.moods || {};
+  const recentMoods = (() => {
+    const out = [];
+    const d = new Date();
+    for (let i = 0; i < 14; i++) {
+      const k = todayKey(d);
+      if (moodsMap[k]) out.push({ date: k, mood: moodsMap[k] });
+      d.setDate(d.getDate() - 1);
+    }
+    return out;
+  })();
+
+  // --- Reflections: last 3, excerpt to 200 chars
+  const recentReflections = (DB.reflections || [])
+    .slice(-3)
+    .map(r => ({ date: r.date || "", excerpt: String(r.text || "").slice(0, 200) }));
+
+  // --- Upcoming user dates (next 90d)
+  const cutoffMs = Date.now() + 90 * 86400000;
+  const upcomingDates = (DB.calendarDates || [])
+    .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d.date || ""))
+    .filter(d => {
+      const t = new Date(d.date + "T00:00:00").getTime();
+      return t >= Date.now() - 86400000 && t <= cutoffMs;
+    })
+    .sort((a,b) => new Date(a.date) - new Date(b.date))
+    .slice(0, 8)
+    .map(d => ({ title: d.title, date: d.date, icon: d.icon || "📅" }));
+
+  // --- Wins (recent 5)
+  const recentWins = (DB.wins || []).slice(-5).map(w => ({
+    text: String(w.text || w.title || w.note || "").slice(0, 140),
+    date: w.date || (w.t ? new Date(w.t).toISOString().slice(0,10) : ""),
+  }));
+
+  // --- Stocks watchlist + alerts
+  const stocksObj = DB.stocks || {};
+  const watchlist = Array.isArray(stocksObj.watchlist) ? stocksObj.watchlist.slice(0, 10) : [];
+  const stockAlerts = Array.isArray(stocksObj.alerts)
+    ? stocksObj.alerts.filter(a => a && !a.triggered).slice(0, 8).map(a => ({
+        ticker: a.ticker, condition: a.condition, target: a.target,
+      }))
+    : [];
+
+  // --- Estimated annual dividend income — centralized helper.
+  let annualDividends = 0;
+  try { annualDividends = estimatedAnnualDividends(); } catch {}
+
+  // --- Money personality (if quiz taken)
+  const personality = DB.moneyPersonality && DB.moneyPersonality.primary ? {
+    primary: DB.moneyPersonality.primary,
+    secondary: DB.moneyPersonality.secondary || null,
+    taken_at: DB.moneyPersonality.takenAt || null,
+  } : null;
+
+  // --- Open roadmaps (titles + overall progress)
+  const openRoadmaps = (DB.roadmaps || [])
+    .filter(r => !r.archived)
+    .slice(0, 6)
+    .map(r => {
+      let pct = 0;
+      try { pct = (typeof roadmapProgress === "function") ? roadmapProgress(r) : 0; } catch {}
+      const phases = Array.isArray(r.phases) ? r.phases : [];
+      const activePhase = phases.find(p => !p.completed) || null;
+      return {
+        title: r.title,
+        pct,
+        phases: phases.length,
+        active_phase: activePhase ? activePhase.title : null,
+        active_period: activePhase ? activePhase.period : null,
+      };
+    });
+
+  // --- Net-worth snapshot
+  const nwHist = DB.netWorthHistory || [];
+  const netWorth = nwHist.length ? Math.round(+nwHist[nwHist.length - 1].total || 0) : null;
+  let netWorthDelta30d = null;
+  if (nwHist.length >= 2) {
+    const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
+    const cutoffK = todayKey(cutoff);
+    const past = nwHist.filter(h => h.date && h.date <= cutoffK);
+    if (past.length) netWorthDelta30d = Math.round((+nwHist[nwHist.length - 1].total || 0) - (+past[past.length - 1].total || 0));
+  }
+
+  // --- Wealth Score (computed) — gives Cornileus the same vital sign the user sees
+  let wealthScore = null, wealthLabel = null, wealthTopGap = null;
+  try {
+    if (typeof computeWealthHealth === "function") {
+      const r = computeWealthHealth();
+      if (r) {
+        wealthScore = Math.round(+r.score || 0);
+        wealthLabel = r.label || null;
+        wealthTopGap = r.topGap || null;
+      }
+    }
+  } catch {}
+
   return {
     today: todayKey(),
     name: DB.user.name || null,
@@ -16846,6 +17234,7 @@ function buildCounselorSnapshot() {
     monthly_savings_target: +DB.settings.monthlySavingsTarget || 0,
     debt_strategy_pref: DB.settings.debtPayoffStrategy || "avalanche",
     extra_debt_payment_monthly: +DB.settings.debtExtraPayment || 0,
+    money_personality: personality,
     cash_flow: {
       income_recurring_monthly: Math.round(monthlyIncomeRecurring),
       expense_recurring_monthly: Math.round(monthlyExpenseRecurring),
@@ -16854,16 +17243,31 @@ function buildCounselorSnapshot() {
       safe_to_spend_remaining: Math.round(sts.remaining),
       safe_to_spend_per_day: Math.round(sts.perDay),
       on_track: !!sts.onTrack,
+      estimated_annual_dividends: Math.round(annualDividends),
     },
+    net_worth: netWorth,
+    net_worth_change_30d: netWorthDelta30d,
+    wealth_score: wealthScore,
+    wealth_label: wealthLabel,
+    wealth_top_gap: wealthTopGap,
     top_spend_categories_this_month: topCats,
     savings_buckets: savingsBuckets,
     open_goals: openGoals,
     open_plans: openPlans,
+    open_roadmaps: openRoadmaps,
     accounts,
     manual_assets: manualAssets,
     manual_liabilities: manualLiabs,
     investments: { total_invested: Math.round(investedTotal), holdings },
+    stocks_watchlist: watchlist,
+    stocks_alerts_active: stockAlerts,
     active_subscriptions: activeSubs,
+    habits_top: habits,
+    longest_current_habit_streak: longestCurrentStreak,
+    moods_last_14_days: recentMoods,
+    recent_reflections: recentReflections,
+    upcoming_user_dates: upcomingDates,
+    recent_wins: recentWins,
   };
 }
 
@@ -18134,7 +18538,65 @@ function yearReview(year) {
   // Top streaks (current)
   const streaks = (DB.habits||[]).map(h => ({ name: h.name, emoji: h.emoji, streak: streakOf(h) })).sort((a,b)=>b.streak - a.streak).slice(0,5);
 
-  return { year: y, totalChecks, perHabit: perHabit.sort((a,b)=>b.count-a.count), goalsCompleted, yearOut, yearIn, winsYear: winsYear.length, streaks };
+  // --- Plans completed this year
+  const plansCompleted = (DB.plans || []).filter(p => p.completed && p.completedAt && new Date(p.completedAt).getFullYear() === y);
+
+  // --- Roadmap phases completed this year (look at phase.completedAt where present)
+  let roadmapPhasesDone = 0;
+  for (const rm of (DB.roadmaps || [])) {
+    for (const ph of (rm.phases || [])) {
+      if (ph.completed && ph.completedAt && new Date(ph.completedAt).getFullYear() === y) roadmapPhasesDone++;
+    }
+  }
+
+  // --- Savings: sum of deposits logged this year (excludes withdrawals)
+  let savingsDeposited = 0;
+  for (const s of (DB.savings || [])) {
+    for (const l of (s.log || [])) {
+      if (l.date && l.date.startsWith(yPrefix) && (+l.amount || 0) > 0) savingsDeposited += (+l.amount || 0);
+    }
+  }
+
+  // --- Net-worth delta — first vs last snapshot within the year, if we have any
+  let netWorthDelta = null;
+  const nwHist = (DB.netWorthHistory || []).filter(h => h.date && h.date.startsWith(yPrefix));
+  if (nwHist.length >= 2) {
+    netWorthDelta = Math.round((+nwHist[nwHist.length - 1].total || 0) - (+nwHist[0].total || 0));
+  }
+
+  // --- Moods captured + most-common
+  const moodMap = DB.moods || {};
+  const moodKeys = Object.keys(moodMap).filter(k => k.startsWith(yPrefix));
+  let moodTop = null;
+  if (moodKeys.length) {
+    const counts = {};
+    for (const k of moodKeys) counts[moodMap[k]] = (counts[moodMap[k]] || 0) + 1;
+    const [emoji, n] = Object.entries(counts).sort((a,b) => b[1] - a[1])[0];
+    moodTop = { emoji, count: n, pct: Math.round(100 * n / moodKeys.length) };
+  }
+
+  // --- Reflections written this year
+  const reflectionsCount = (DB.reflections || []).filter(r => r.date && String(r.date).startsWith(yPrefix)).length;
+
+  // --- Achievements unlocked this year
+  let achievementsCount = 0;
+  try {
+    if (typeof _achievementsList === "function") {
+      achievementsCount = _achievementsList().filter(a => a.earned).length;
+    }
+  } catch {}
+
+  // --- Lessons read + books read totals (lifetime — we don't have per-year timestamps for lessons)
+  const lessonsCount = Object.keys(DB.lessonsRead || {}).length;
+  const booksCount = Object.values(DB.booksRead || {}).filter(b => b && b.read).length;
+
+  return {
+    year: y, totalChecks, perHabit: perHabit.sort((a,b)=>b.count-a.count),
+    goalsCompleted, yearOut, yearIn, winsYear: winsYear.length, streaks,
+    plansCompleted, roadmapPhasesDone, savingsDeposited,
+    netWorthDelta, moodCount: moodKeys.length, moodTop,
+    reflectionsCount, achievementsCount, lessonsCount, booksCount,
+  };
 }
 function shareCardSvg() {
   const top = (DB.habits||[]).map(h => ({ name: h.name, emoji: h.emoji, streak: streakOf(h) })).sort((a,b)=>b.streak - a.streak).slice(0,4);
@@ -18971,14 +19433,52 @@ function yearReviewSheet() {
       </div>
     `;
   })();
+  // Build "money & milestones" row — only includes cells with data so the sheet stays tight
+  const moneyCells = [];
+  if (r.netWorthDelta !== null && r.netWorthDelta !== 0) {
+    const dir = r.netWorthDelta >= 0 ? "+" : "-";
+    const color = r.netWorthDelta >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+    moneyCells.push(`<div class="kpi"><div class="v" style="color:${color}" data-priv="amount">${dir}${fmt$0(Math.abs(r.netWorthDelta))}</div><div class="l">Net-worth Δ</div></div>`);
+  }
+  if (r.savingsDeposited > 0) moneyCells.push(`<div class="kpi"><div class="v" data-priv="amount">${fmt$0(r.savingsDeposited)}</div><div class="l">Saved this year</div></div>`);
+  if (r.plansCompleted.length) moneyCells.push(`<div class="kpi"><div class="v">${r.plansCompleted.length}</div><div class="l">Plan${r.plansCompleted.length===1?'':'s'} done</div></div>`);
+  if (r.roadmapPhasesDone > 0) moneyCells.push(`<div class="kpi"><div class="v">${r.roadmapPhasesDone}</div><div class="l">Roadmap phases</div></div>`);
+
+  const moodLine = r.moodCount > 0
+    ? `<div style="font-size:13px;color:var(--t2);margin:6px 0">Logged your mood <b style="color:var(--t1)">${r.moodCount}</b> day${r.moodCount===1?'':'s'}${r.moodTop ? ` — most-common: ${r.moodTop.emoji} (${r.moodTop.pct}%)` : ""}.</div>`
+    : "";
+  const otherLine = (r.reflectionsCount + r.achievementsCount + r.lessonsCount + r.booksCount) > 0 ? `
+    <div style="font-size:13px;color:var(--t2);margin:6px 0;line-height:1.6">
+      ${r.reflectionsCount ? `<b style="color:var(--t1)">${r.reflectionsCount}</b> reflection${r.reflectionsCount===1?'':'s'} written · ` : ""}
+      ${r.achievementsCount ? `<b style="color:var(--orange,#FF9500)">${r.achievementsCount}</b> achievement${r.achievementsCount===1?'':'s'} earned · ` : ""}
+      ${r.lessonsCount ? `<b style="color:var(--t1)">${r.lessonsCount}</b> lesson${r.lessonsCount===1?'':'s'} read · ` : ""}
+      ${r.booksCount ? `<b style="color:var(--t1)">${r.booksCount}</b> book${r.booksCount===1?'':'s'} finished` : ""}
+    </div>
+  `.replace(/ · \s*<\/div>/, "</div>") : "";
+
+  const planList = r.plansCompleted.length ? `
+    <hr class="sep">
+    <label>Plans completed</label>
+    <div style="font-size:13px;color:var(--t2)">
+      ${r.plansCompleted.slice(0, 8).map(p => `<div style="margin:4px 0">${esc(p.emoji || '✨')} ${esc(p.title)}${p.target_amount ? ` <span class="muted" data-priv="amount">${fmt$0(p.target_amount)}</span>` : ""}</div>`).join("")}
+    </div>
+  ` : "";
+
   openSheet(`
     <h2>${r.year} in review</h2>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
       <div class="kpi"><div class="v">${r.totalChecks}</div><div class="l">Habit check-offs</div></div>
       <div class="kpi"><div class="v">${r.goalsCompleted.length}</div><div class="l">Goals done</div></div>
-      <div class="kpi"><div class="v">${fmt$0(r.yearOut)}</div><div class="l">Spent</div></div>
-      <div class="kpi"><div class="v">${fmt$0(r.yearIn)}</div><div class="l">Income</div></div>
+      <div class="kpi"><div class="v" data-priv="amount">${fmt$0(r.yearOut)}</div><div class="l">Spent</div></div>
+      <div class="kpi"><div class="v" data-priv="amount">${fmt$0(r.yearIn)}</div><div class="l">Income</div></div>
     </div>
+    ${moneyCells.length ? `
+      <div style="display:grid;grid-template-columns:repeat(${Math.min(moneyCells.length,2)},1fr);gap:8px;margin-bottom:14px">
+        ${moneyCells.join("")}
+      </div>
+    ` : ""}
+    ${moodLine}
+    ${otherLine}
     ${heatmapHtml}
     ${spendBarsHtml}
     ${winsBarsHtml}
@@ -18987,6 +19487,7 @@ function yearReviewSheet() {
     <hr class="sep">
     <label>Top streaks (current)</label>
     ${list(r.streaks)}
+    ${planList}
     <hr class="sep">
     <label>Wins logged</label>
     <div style="font-size:13px;color:var(--t2)">${r.winsYear} small wins captured this year.</div>
@@ -20369,6 +20870,37 @@ function recurringMonthlyTotal(kind) {
   const list = (DB.recurring || []).filter(r => r.kind === kind);
   return list.reduce((a, r) => a + (+r.amount || 0) * (RECURRING_PER_MONTH[r.cadence] || 1), 0);
 }
+// Estimated annual dividend income across all holdings. Uses the cached
+// dividend yield × current price × shares. Returns 0 when we have no
+// price/yield data. Centralized here so cash-flow + Cornileus + Forecast
+// + Wealth Score all agree.
+function estimatedAnnualDividends() {
+  const st = DB.stocks || {};
+  const cache = st.quoteCache || {};
+  const divCache = st.dividendCache || {};
+  const holdings = st.holdings || {};
+  let total = 0;
+  for (const [tk, h] of Object.entries(holdings)) {
+    const shares = +h.shares || 0;
+    const q = cache[tk];
+    const price = q && !q.error && q.price != null ? +q.price : null;
+    const yld = divCache[tk] && divCache[tk].yield != null ? +divCache[tk].yield : null;
+    if (price != null && yld != null) total += yld * price * shares;
+  }
+  return total;
+}
+// Implied monthly savings capacity = recurring income - recurring expenses,
+// plus dividend income smoothed to a monthly figure. Use as a smarter
+// default for projections when the user hasn't set an explicit
+// `monthlySavingsTarget`. Returns 0 if data is too sparse to be trustworthy
+// (no recurring income on file).
+function impliedMonthlySavings() {
+  const inc = recurringMonthlyTotal("income");
+  const exp = recurringMonthlyTotal("expense");
+  if (inc <= 0) return 0;
+  const divMonthly = estimatedAnnualDividends() / 12;
+  return Math.max(0, Math.round(inc + divMonthly - exp));
+}
 function safeToSpend() {
   const income = (+(DB.budget && DB.budget.income) || 0) + recurringMonthlyTotal("income");
   const fixedRecurring = recurringMonthlyTotal("expense");
@@ -21192,7 +21724,59 @@ function computeWealthHealth() {
     investScore = Math.round(_scoreClamp((invRatio / 0.3) * 20, 20));
   }
 
-  const total = runwayScore + debtScore + savingsScore + trendScore + investScore;
+  const financialTotal = runwayScore + debtScore + savingsScore + trendScore + investScore;
+
+  // --- Discipline bonus (0-5) ---
+  // Rewards the non-financial behaviors that compound into wealth — habits,
+  // plans completed, goals shipped. A bonus (not a penalty) so the score
+  // can't drop below what your finances earned. Capped at +5 so it can't
+  // dominate the financial picture.
+  let discBreakdown = [];
+  let disc = 0;
+  try {
+    // Longest active habit streak
+    const habits = DB.habits || [];
+    let longestStreak = 0;
+    for (const h of habits) {
+      if (!h || isHabitPaused(h)) continue;
+      let s = 0; try { s = streakOf(h) || 0; } catch {}
+      if (s > longestStreak) longestStreak = s;
+    }
+    if (longestStreak >= 100)     { disc += 3; discBreakdown.push(`${longestStreak}-day habit streak (+3)`); }
+    else if (longestStreak >= 30) { disc += 2; discBreakdown.push(`${longestStreak}-day habit streak (+2)`); }
+    else if (longestStreak >= 7)  { disc += 1; discBreakdown.push(`${longestStreak}-day habit streak (+1)`); }
+
+    // 30-day completion %
+    if (habits.length) {
+      let hits = 0, possible = 0;
+      const d = new Date();
+      for (let i = 0; i < 30; i++) {
+        const k = todayKey(d);
+        for (const h of habits) {
+          if (!h || !h.log) continue;
+          if (h.createdAt && new Date(h.createdAt) > d) continue;
+          possible++;
+          const v = h.log[k];
+          if (h.type === "count" ? +v >= (h.target || 1) : !!v) hits++;
+        }
+        d.setDate(d.getDate() - 1);
+      }
+      const pct30 = possible > 0 ? hits / possible : 0;
+      if (pct30 >= 0.80)      { disc += 1; discBreakdown.push(`${Math.round(pct30*100)}% habit completion 30d (+1)`); }
+    }
+
+    // Plans completed
+    const plansDone = (DB.plans || []).filter(p => p.completed).length;
+    if (plansDone >= 3)       { disc += 1; discBreakdown.push(`${plansDone} plans completed (+1)`); }
+
+    // Goals completed
+    const goalsDone = (DB.goals || []).filter(g => g.done).length;
+    if (goalsDone >= 5)       { disc += 1; discBreakdown.push(`${goalsDone} goals shipped (+1)`); }
+
+    disc = Math.min(5, disc);
+  } catch {}
+
+  const total = Math.min(100, financialTotal + disc);
 
   // Top suggestion = the dimension with the largest unclaimed score
   const dims = [
@@ -21201,12 +21785,13 @@ function computeWealthHealth() {
     { name: "Savings rate", score: savingsScore, max: 20, suggest: income > 0 && savingsScore < 16 ? "Cut recurring expenses or grow income — target 50% surplus" : null },
     { name: "Trend", score: trendScore, max: 15, suggest: hist.length < 2 ? "Snapshot net worth weekly to start tracking trend" : trendScore < 10 ? "Focus on growing net worth — even +1% / month compounds" : null },
     { name: "Investing", score: investScore, max: 20, suggest: investScore < 16 ? (comp.investments === 0 ? "Open a brokerage and start automatic investing" : "Increase investing share of your wealth") : null },
+    { name: "Discipline", score: disc, max: 5, bonus: true, suggest: disc < 3 ? "Build a habit streak and ship goals — discipline compounds wealth" : null, breakdown: discBreakdown },
   ];
   const topGap = dims
-    .filter(d => d.suggest)
+    .filter(d => d.suggest && !d.bonus)
     .sort((a, b) => (b.max - b.score) - (a.max - a.score))[0];
 
-  return { total, dims, topGap, monthsRunway: months };
+  return { total, dims, topGap, monthsRunway: months, financialTotal, disciplineBonus: disc };
 }
 
 function wealthHealthLabel(score) {
@@ -21222,15 +21807,20 @@ function wealthHealthSheet() {
   const lbl = wealthHealthLabel(r.total);
   const bar = (d) => {
     const pct = (d.score / d.max) * 100;
+    const bonusTag = d.bonus ? `<span style="background:rgba(124,58,237,0.15);color:#7c3aed;font-size:9.5px;padding:2px 6px;border-radius:999px;margin-left:6px;text-transform:uppercase;letter-spacing:0.05em">Bonus</span>` : "";
+    const breakdownLine = (d.breakdown && d.breakdown.length)
+      ? `<div style="font-size:11px;color:var(--t3);margin-top:4px;line-height:1.4">${d.breakdown.map(b => esc(b)).join(" · ")}</div>`
+      : "";
     return `
       <div style="margin-bottom:12px">
         <div style="display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px">
-          <span>${d.name}</span>
+          <span>${d.name}${bonusTag}</span>
           <span style="color:var(--t3);font-weight:600">${d.score} / ${d.max}</span>
         </div>
         <div style="height:8px;background:var(--bg-elev);border-radius:4px;overflow:hidden">
-          <div style="height:100%;background:${lbl.color};width:${pct}%;transition:width .3s"></div>
+          <div style="height:100%;background:${d.bonus ? '#7c3aed' : lbl.color};width:${pct}%;transition:width .3s"></div>
         </div>
+        ${breakdownLine}
         ${d.suggest ? `<div style="font-size:11px;color:var(--t3);margin-top:4px">→ ${esc(d.suggest)}</div>` : ""}
       </div>
     `;
