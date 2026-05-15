@@ -6675,6 +6675,8 @@ function renderMoney() {
         emoji: "💰",
         title: "Start a savings bucket",
         sub: "Emergency fund, truck down payment, retirement, that trip you keep putting off — name it and watch it grow.",
+        primary: { label: "+ New savings goal", onclick: "addSavingSheet()" },
+        secondary: { label: "✨ Let Cylan help me pick", onclick: "openCounselor('What savings buckets should I have given my situation? Suggest 3-5 specific ones with target amounts.')" },
       })}
     `;
   }
@@ -8026,6 +8028,8 @@ function renderMoney() {
               emoji: "💳",
               title: "Log your first spend",
               sub: "Tap the form above for a quick entry, or connect a bank in Settings to auto-import everything.",
+              primary: { label: "📷 Scan a receipt", onclick: "quickAddSpendSheet()" },
+              secondary: { label: "+ Quick add", onclick: "quickAddSpendSheet()" },
             }))}
       </div>
     `;
