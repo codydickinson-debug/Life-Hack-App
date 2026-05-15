@@ -4984,6 +4984,27 @@ function renderToday() {
         color: "var(--t1)", priv: true,
         onclick: "showTab('money')"
       });
+      // Net worth delta this month — when we have history, surface the
+      // change so the user sees their wealth trajectory in the snapshot.
+      const nwHist = DB.netWorthHistory || [];
+      if (nwHist.length >= 2) {
+        const monthAgo = new Date(); monthAgo.setMonth(monthAgo.getMonth() - 1);
+        const cutoffK = todayKey(monthAgo);
+        const past = nwHist.filter(h => h.date && h.date <= cutoffK);
+        if (past.length) {
+          const delta = (nwHist[nwHist.length - 1].total || 0) - (past[past.length - 1].total || 0);
+          if (Math.abs(delta) >= 50) {
+            cells.push({
+              icon: delta >= 0 ? "📈" : "📉",
+              value: `${delta >= 0 ? '+' : ''}${fmt$0(Math.round(delta))}`,
+              label: "net 30d",
+              color: delta >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)",
+              priv: true,
+              onclick: "showTab('money')",
+            });
+          }
+        }
+      }
       // Only render the grid when there's meaningful data — a single
       // "0 WINS WK" cell on a fresh install reads as empty noise.
       if (cells.length < 2) return "";
