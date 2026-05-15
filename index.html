@@ -4959,6 +4959,14 @@ function exploreAscendSheet() {
       { emoji: "📜", title: "Money rules",         desc: "Your own financial principles — Cornileus enforces them", onclick: "closeSheet();setTimeout(()=>cornileusRulesSheet(),100)" },
       { emoji: "🧠", title: "Bias diagnostic",     desc: "10 questions → bias profile + real-time interruptions", onclick: "closeSheet();setTimeout(()=>biasQuizSheet(),100)" },
       { emoji: "📨", title: "Letter from age 80",  desc: "Write a decision → letter back from your future self", onclick: "closeSheet();setTimeout(()=>futureSelfLetterSheet(),100)" },
+      { emoji: "🛋️", title: "Financial therapy",   desc: "Money anxiety → named + reality-checked vs your numbers", onclick: "closeSheet();setTimeout(()=>financialTherapySheet(),100)" },
+      { emoji: "😶", title: "Money mood patterns", desc: "Spending by emotion — patterns over time",       onclick: "closeSheet();setTimeout(()=>moneyMoodPatternsSheet(),100)" },
+      { emoji: "⚖️", title: "Decision tree",       desc: "Big binary choice? Structured walk-through + recommendation", onclick: "closeSheet();setTimeout(()=>decisionTreeSheet(),100)" },
+    ]},
+    { group: "Long-term", items: [
+      { emoji: "🌳", title: "Skill tree",          desc: "25-node financial XP — auto-unlocks as you progress", onclick: "closeSheet();setTimeout(()=>skillTreeSheet(),100)" },
+      { emoji: "🌳", title: "Generational impact", desc: "What today's $X/mo becomes for your grandkids",  onclick: "closeSheet();setTimeout(()=>generationalImpactSheet(),100)" },
+      { emoji: "📝", title: "Negotiation script",  desc: "AI drafts cancellation / retention emails for you", onclick: "closeSheet();setTimeout(()=>negotiationScriptSheet(),100)" },
     ]},
     { group: "Cornileus", items: [
       { emoji: "✨", title: "Open Cornileus",      desc: "AI counselor that knows your numbers",       onclick: "closeSheet();setTimeout(()=>openCounselor(),100)" },
@@ -15363,6 +15371,492 @@ function _cornileusExtraContext() {
     out.push("BIAS PROFILE (this user scored highest on these — flag in real time when an action looks like one of these biases):\n" + top.map(([k, v]) => "- " + names[k] + ": " + v + "/10").join("\n"));
   }
   return out.length ? "\n\n" + out.join("\n\n") : "";
+}
+
+/* ============================================================
+   PHASE 15 — more "no one does this" features
+   Skill tree · Generational impact · Negotiation scripts ·
+   Financial therapy · Money mood · Decision tree
+   ============================================================ */
+
+/* ---------- 9. Skill-tree gamification ----------
+   25-node financial XP system. Nodes have prereqs forming a tree.
+   Each is detected from existing DB state (no manual marking — earns
+   itself when the milestone is real). Visual progression. */
+const SKILL_TREE_NODES = [
+  // Foundation
+  { id: "first-habit",  name: "First habit",          tier: 1, icon: "✓",  desc: "Add your first habit",
+    detect: () => (DB.habits || []).length > 0 },
+  { id: "first-win",    name: "First win",            tier: 1, icon: "⭐", desc: "Log a win",
+    detect: () => (DB.wins || []).length > 0 },
+  { id: "first-tx",     name: "First spend",          tier: 1, icon: "💸", desc: "Log a transaction",
+    detect: () => (DB.spend || []).length > 0 },
+  { id: "first-cornileus", name: "Met Cornileus",     tier: 1, icon: "✨", desc: "Open the AI counselor",
+    detect: () => DB.counselor && DB.counselor.lastOpenedAt > 0 },
+  // Discipline
+  { id: "streak-7",     name: "7-day streak",         tier: 2, icon: "🔥", desc: "Any habit hits 7 days",
+    detect: () => Math.max(0, ...(DB.habits || []).map(h => (typeof streakOf === "function") ? streakOf(h) : 0)) >= 7,
+    requires: ["first-habit"] },
+  { id: "perfect-day",  name: "Perfect day",          tier: 2, icon: "🌟", desc: "All habits done one day",
+    detect: () => {
+      const habits = DB.habits || [];
+      if (!habits.length) return false;
+      for (const h of habits) for (const [k, v] of Object.entries(h.log || {})) {
+        const did = h.type === "count" ? (+v || 0) >= (+h.target || 1) : !!v;
+        if (!did) continue;
+        const all = habits.every(hh => { const vv = hh.log?.[k]; return hh.type === "count" ? (+vv || 0) >= (+hh.target || 1) : !!vv; });
+        if (all) return true;
+      }
+      return false;
+    },
+    requires: ["first-habit"] },
+  // Money fundamentals
+  { id: "first-savings", name: "Savings bucket",      tier: 2, icon: "💰", desc: "Create first savings goal",
+    detect: () => (DB.savings || []).length > 0 },
+  { id: "first-goal",   name: "First goal",           tier: 2, icon: "🎯", desc: "Set a goal",
+    detect: () => (DB.goals || []).length > 0 },
+  { id: "first-plan",   name: "First plan",           tier: 2, icon: "📐", desc: "Add a plan to your roadmap",
+    detect: () => (DB.plans || []).length > 0 },
+  // Investing
+  { id: "first-holding", name: "First holding",       tier: 3, icon: "📈", desc: "Track a stock position",
+    detect: () => Object.values((DB.stocks && DB.stocks.holdings) || {}).some(h => +h.shares > 0) },
+  { id: "diversified",  name: "Diversified",          tier: 3, icon: "🍩", desc: "5+ positions held",
+    detect: () => Object.values((DB.stocks && DB.stocks.holdings) || {}).filter(h => +h.shares > 0).length >= 5,
+    requires: ["first-holding"] },
+  { id: "advisor-ran",  name: "Advisor briefing",     tier: 3, icon: "🎯", desc: "Got a Cornileus advisor review",
+    detect: () => !!(DB.stocks && DB.stocks.lastAdvisorReview),
+    requires: ["first-cornileus"] },
+  // Self-knowledge
+  { id: "identity-set", name: "Money identity",       tier: 3, icon: "🧬", desc: "Pick a money identity",
+    detect: () => !!(DB.moneyIdentity && DB.moneyIdentity.text) },
+  { id: "rules-set",    name: "Wrote your rules",     tier: 3, icon: "📜", desc: "Define 3+ money rules",
+    detect: () => Array.isArray(DB.moneyRules) && DB.moneyRules.length >= 3 },
+  { id: "bias-known",   name: "Know your biases",     tier: 3, icon: "🧠", desc: "Take the bias diagnostic",
+    detect: () => !!(DB.moneyBiasProfile && DB.moneyBiasProfile.takenAt) },
+  // Money-worth milestones
+  { id: "saved-1k",     name: "$1k saved",            tier: 4, icon: "💵", desc: "First $1,000 across buckets",
+    detect: () => (DB.savings || []).reduce((s, x) => s + (+x.current || 0), 0) >= 1000,
+    requires: ["first-savings"] },
+  { id: "saved-10k",    name: "$10k saved",           tier: 4, icon: "💵", desc: "Five-figure cushion",
+    detect: () => (DB.savings || []).reduce((s, x) => s + (+x.current || 0), 0) >= 10000,
+    requires: ["saved-1k"] },
+  { id: "nw-10k",       name: "Net worth $10k",       tier: 4, icon: "📈", desc: "Cross $10K net worth",
+    detect: () => ((DB.netWorthHistory || []).slice(-1)[0]?.total || 0) >= 10000 },
+  { id: "nw-100k",      name: "Net worth $100k",      tier: 5, icon: "🏔", desc: "Six figures",
+    detect: () => ((DB.netWorthHistory || []).slice(-1)[0]?.total || 0) >= 100000,
+    requires: ["nw-10k"] },
+  { id: "nw-1m",        name: "Net worth $1M",        tier: 6, icon: "💎", desc: "Million-dollar net worth",
+    detect: () => ((DB.netWorthHistory || []).slice(-1)[0]?.total || 0) >= 1000000,
+    requires: ["nw-100k"] },
+  // Mastery
+  { id: "streak-100",   name: "100-day streak",       tier: 5, icon: "🏆", desc: "Triple-digit streak",
+    detect: () => Math.max(0, ...(DB.habits || []).map(h => (typeof streakOf === "function") ? streakOf(h) : 0)) >= 100,
+    requires: ["streak-7"] },
+  { id: "insured",      name: "Fully insured",        tier: 4, icon: "☂️", desc: "Insurance audit ≥ 5/6 confirmed",
+    detect: () => Object.values(DB.insurance || {}).filter(v => v && v.have === "yes").length >= 5 },
+  { id: "precommit",    name: "Locked in",            tier: 3, icon: "🔐", desc: "First pre-commitment contract",
+    detect: () => (DB.precommitContracts || []).length > 0 },
+  { id: "letter-self",  name: "Future self letter",   tier: 3, icon: "📨", desc: "Get a letter from age 80",
+    detect: () => (DB.futureLetters || []).length > 0 },
+  { id: "review-ran",   name: "Year reviewed",        tier: 4, icon: "📜", desc: "Generate an annual review",
+    detect: () => !!(DB.counselor && DB.counselor.annualReviews && Object.keys(DB.counselor.annualReviews).length) },
+];
+
+function skillTreeSheet() {
+  const earned = {};
+  for (const n of SKILL_TREE_NODES) earned[n.id] = !!(n.detect && n.detect());
+  const earnedCount = Object.values(earned).filter(Boolean).length;
+  const tiers = {};
+  for (const n of SKILL_TREE_NODES) { (tiers[n.tier] = tiers[n.tier] || []).push(n); }
+  const totalTiers = Object.keys(tiers).map(Number).sort((a,b)=>a-b);
+  const tierLabels = { 1: "Foundation", 2: "Habit + first money", 3: "Self-knowledge + first investing", 4: "Mid-tier wealth", 5: "Mastery", 6: "Legend" };
+  openSheet(`
+    <h2 style="margin-bottom:4px">🌳 Skill tree</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Your financial XP. Nodes unlock automatically as you hit real milestones.</p>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Progress</div>
+        <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${earnedCount} / ${SKILL_TREE_NODES.length} unlocked</div>
+      </div>
+      <div style="height:8px;background:var(--bg-elev);border-radius:4px;overflow:hidden">
+        <div style="height:100%;width:${(earnedCount / SKILL_TREE_NODES.length) * 100}%;background:linear-gradient(90deg,#34C759,#007AFF);transition:width .4s"></div>
+      </div>
+    </div>
+    ${totalTiers.map(t => `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:14px 0 6px">Tier ${t} — ${esc(tierLabels[t] || "")}</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
+        ${tiers[t].map(n => {
+          const isEarned = earned[n.id];
+          const blocked = !isEarned && (n.requires || []).some(r => !earned[r]);
+          const cardBg = isEarned ? "rgba(52,199,89,0.10)" : blocked ? "var(--bg-elev)" : "var(--card)";
+          const borderColor = isEarned ? "rgba(52,199,89,0.40)" : blocked ? "var(--sep)" : "var(--sep)";
+          const opacity = blocked ? 0.4 : isEarned ? 1 : 0.7;
+          return `
+            <div style="background:${cardBg};border:0.5px solid ${borderColor};border-radius:10px;padding:9px 8px;text-align:center;opacity:${opacity};position:relative">
+              <div style="font-size:22px;line-height:1;margin-bottom:4px;${isEarned?"":"filter:grayscale(80%)"}">${n.icon}</div>
+              <div style="font-size:10.5px;color:var(--t1);font-weight:700;line-height:1.2;margin-bottom:2px">${esc(n.name)}</div>
+              <div style="font-size:9px;color:var(--t3);line-height:1.3">${esc(n.desc)}</div>
+              ${isEarned ? `<div style="position:absolute;top:4px;right:5px;color:var(--green,#34C759);font-size:11px;font-weight:800">✓</div>` : ""}
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `).join("")}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+/* ---------- 10. Generational impact view ----------
+   How does saving 1% more this year affect grandkids in 60-80 years?
+   Pure math, big visceral payoff. */
+function generationalImpactSheet() {
+  const profile = DB.profile || {};
+  const currentAge = +profile.age || 30;
+  const currentNW = (DB.netWorthHistory || []).slice(-1)[0]?.total || 0;
+  openSheet(`
+    <h2 style="margin-bottom:4px">🌳 Generational impact</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">A tiny choice today, compounded for a lifetime + a generation, becomes legacy money. Most people only see year-1.</p>
+    <label>Extra savings per month ($)</label>
+    <input id="gi-monthly" type="number" min="0" value="100" oninput="_giRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Annual return (%)</label>
+    <input id="gi-return" type="number" min="2" max="12" step="0.5" value="7" oninput="_giRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Heirs inherit at your age</label>
+    <input id="gi-death" type="number" min="${currentAge + 10}" max="100" value="85" oninput="_giRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box" />
+    <div id="gi-result"></div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  window._giBaseline = { currentAge, currentNW };
+  _giRecompute();
+}
+function _giRecompute() {
+  const b = window._giBaseline; if (!b) return;
+  const monthly = parseFloat(document.getElementById("gi-monthly").value) || 0;
+  const ret = parseFloat(document.getElementById("gi-return").value) || 7;
+  const deathAge = parseInt(document.getElementById("gi-death").value, 10);
+  const years = Math.max(1, deathAge - b.currentAge);
+  const r = Math.pow(1 + ret/100, 1/12) - 1;
+  const n = years * 12;
+  // Annuity FV
+  const fv = monthly * ((Math.pow(1 + r, n) - 1) / r);
+  // What does the inheritance become if the heir lets it grow another 30 yrs at the same rate?
+  const grandkidYears = 30;
+  const grandkidFV = fv * Math.pow(1 + ret/100, grandkidYears);
+  const totalContrib = monthly * n;
+  const fmt = (v) => v >= 1e6 ? "$" + (v/1e6).toFixed(2) + "M" : v >= 1e3 ? "$" + (v/1e3).toFixed(0) + "K" : "$" + v.toFixed(0);
+  const out = document.getElementById("gi-result");
+  out.innerHTML = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid #7c3aed;border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;text-align:center">
+        <div style="background:var(--bg-elev);border-radius:10px;padding:11px 8px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600">You contribute</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1);margin-top:4px" data-priv="amount">${fmt(totalContrib)}</div>
+        </div>
+        <div style="background:rgba(52,199,89,0.10);border:0.5px solid rgba(52,199,89,0.30);border-radius:10px;padding:11px 8px">
+          <div style="font-size:10px;color:var(--green,#34C759);text-transform:uppercase;font-weight:600">Heirs inherit</div>
+          <div style="font-size:14px;font-weight:800;color:var(--green,#34C759);margin-top:4px" data-priv="amount">${fmt(fv)}</div>
+        </div>
+        <div style="background:rgba(124,58,237,0.10);border:0.5px solid rgba(124,58,237,0.30);border-radius:10px;padding:11px 8px">
+          <div style="font-size:10px;color:#7c3aed;text-transform:uppercase;font-weight:600">Grandkids @ +30yr</div>
+          <div style="font-size:14px;font-weight:800;color:#7c3aed;margin-top:4px" data-priv="amount">${fmt(grandkidFV)}</div>
+        </div>
+      </div>
+      <div style="margin-top:14px;padding:11px 13px;background:var(--bg-elev);border-radius:10px">
+        <div style="font-size:11px;color:var(--t1);font-weight:600;line-height:1.5">
+          ${monthly > 0 ? `Saving an extra <b style="color:var(--green,#34C759)" data-priv="amount">$${monthly}/mo</b> for ${years} years compounds into <b style="color:var(--green,#34C759)" data-priv="amount">${fmt(fv)}</b> when your heirs inherit at age ${deathAge}.
+          If they let it grow for another 30 years before tapping it, your grandkids see <b style="color:#7c3aed" data-priv="amount">${fmt(grandkidFV)}</b> from your single choice today.` : "Type a monthly amount above to see the multi-generational effect."}
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+/* ---------- 11. Negotiation script generator ----------
+   AI drafts a cancellation or retention-offer email for a recurring
+   charge. Includes specific anchors (years as a customer, total spent). */
+async function negotiationScriptSheet(merchant) {
+  const merchants = (() => {
+    try { return (typeof detectSubscriptions === "function") ? detectSubscriptions() : []; }
+    catch { return []; }
+  })();
+  const list = merchants.filter(m => m && m.merchant).slice(0, 12);
+  openSheet(`
+    <h2 style="margin-bottom:4px">📝 Negotiation script generator</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Pick a subscription. Cornileus drafts an email or chat script anchored to your specific history.</p>
+    <label>Subscription / merchant</label>
+    <input id="neg-merchant" placeholder="e.g. Comcast, Spotify, Adobe…" value="${esc(merchant || "")}"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Type</label>
+    <select id="neg-type" style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box">
+      <option value="retention">Ask for a retention offer / lower price</option>
+      <option value="cancel">Cancel cleanly with no upsell</option>
+      <option value="negotiate">Negotiate annual contract renewal</option>
+    </select>
+    ${list.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Detected subscriptions</div>
+      <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">
+        ${list.map(m => `<button onclick="document.getElementById('neg-merchant').value=${jsAttr(m.merchant)}" style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t1);border-radius:999px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer">${esc(m.merchant)}${m.monthly_cost ? " · $" + (+m.monthly_cost).toFixed(0) + "/mo" : ""}</button>`).join("")}
+      </div>
+    ` : ""}
+    <button class="btn" style="width:100%;margin-bottom:14px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="_negGenerate()">📝 Generate script</button>
+    <div id="neg-result"></div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+async function _negGenerate() {
+  const merchant = ((document.getElementById("neg-merchant") || {}).value || "").trim();
+  const type = (document.getElementById("neg-type") || {}).value || "retention";
+  if (!merchant) { toast("Pick a merchant"); return; }
+  const out = document.getElementById("neg-result");
+  if (out) out.innerHTML = `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:13px">📝 Drafting…</div>`;
+  try {
+    // Try to find history with this merchant for specifics
+    const history = (DB.spend || []).filter(t => (t.merchant_name || t.note || "").toLowerCase().includes(merchant.toLowerCase()) && +t.amount > 0);
+    const totalSpent = history.reduce((s, t) => s + (+t.amount || 0), 0);
+    const firstDate = history.length ? history.reduce((m, t) => t.date < m ? t.date : m, history[0].date) : null;
+    const monthsHistory = firstDate ? Math.round((new Date() - new Date(firstDate + "T00:00:00")) / (1000 * 60 * 60 * 24 * 30)) : null;
+    const typeMap = {
+      retention: "an email or chat-support script asking for a retention offer or lower price",
+      cancel: "a clean, polite cancellation script that resists upsell pressure",
+      negotiate: "an annual-contract renewal negotiation script",
+    };
+    const userMsg = `Draft ${typeMap[type]} for ${merchant}.
+${monthsHistory != null ? `History: I've been a customer for about ${monthsHistory} months and spent ~$${Math.round(totalSpent)} total.` : "I don't have specific spend history captured."}
+
+Write the actual script the user can copy-paste. Reply with this exact structure:
+SUBJECT: <one-line email subject>
+BODY: <the actual message, 3-4 short paragraphs, polite but firm. Include specific anchors. End with a clear ask.>
+TIPS: <2-3 one-line tips on how to use this — what to do if they push back, what to escalate to, etc.>`;
+    const ai = await aiApi({
+      model: DB.settings.anthropicModel || "claude-haiku-4-5-20251001",
+      max_tokens: 700,
+      temperature: 0.5,
+      system: "You write polite, effective, customer-retention or cancellation scripts. Anchored to specific facts (customer tenure, $ spent, market alternatives). Direct, never threatening, never aggressive. Always end with one clear ask.",
+      messages: [{ role: "user", content: userMsg }],
+    });
+    const text = (ai.content && ai.content[0] && ai.content[0].text) || "";
+    if (!text) throw new Error("Empty reply");
+    const parse = (k) => { const m = text.match(new RegExp("^" + k + ":\\s*([\\s\\S]*?)(?=\\n[A-Z\\-]+:|$)", "m")); return m ? m[1].trim() : ""; };
+    const subj = parse("SUBJECT");
+    const body = parse("BODY");
+    const tips = parse("TIPS");
+    out.innerHTML = `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid #7c3aed;border-radius:var(--r);padding:14px;margin-bottom:10px">
+        ${subj ? `<div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">SUBJECT</div><div style="font-size:13.5px;color:var(--t1);font-weight:700;margin-bottom:12px">${esc(subj)}</div>` : ""}
+        ${body ? `<div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">BODY</div><div style="font-size:13px;color:var(--t1);line-height:1.6;white-space:pre-wrap;margin-bottom:12px">${esc(body)}</div>` : ""}
+        ${tips ? `<div style="background:var(--bg-elev);border-radius:8px;padding:10px 12px"><div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Tips</div><div style="font-size:12px;color:var(--t2);line-height:1.5;white-space:pre-wrap">${esc(tips)}</div></div>` : ""}
+        ${body ? `<button class="btn" style="width:100%;margin-top:10px;font-size:12.5px" onclick="navigator.clipboard&&navigator.clipboard.writeText(${jsAttr(body)});toast('Copied')">📋 Copy body to clipboard</button>` : ""}
+      </div>
+    `;
+  } catch (e) {
+    out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  }
+}
+
+/* ---------- 12. Financial therapy mode ----------
+   User writes a money anxiety. AI responds therapy-style — referencing
+   their actual numbers to ground the anxiety in reality. */
+async function financialTherapySheet() {
+  openSheet(`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+      ${cornAvatarHtml(48, false, "concerned")}
+      <div style="flex:1;min-width:0">
+        <h2 style="margin:0">🛋️ Financial therapy</h2>
+        <div class="muted" style="font-size:12.5px;margin-top:2px">Money anxiety, named and reality-checked.</div>
+      </div>
+    </div>
+    <p style="font-size:12.5px;color:var(--t2);line-height:1.5;margin-bottom:14px">Write what's on your mind. Cornileus listens, names the feeling, then grounds the anxiety in your actual numbers from the snapshot.</p>
+    <textarea id="ft-prompt" rows="4" placeholder="e.g. I keep thinking I'm going to lose my job. I can't stop checking my balance. I'm scared we don't have enough."
+      style="width:100%;background:var(--bg-elev);padding:11px 14px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;margin-bottom:14px;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea>
+    <button class="btn" style="width:100%;margin-bottom:14px;background:linear-gradient(135deg,#0ea5e9,#7c3aed);color:#fff;border:none" onclick="_ftGenerate()">🛋️ Talk it through</button>
+    <div id="ft-result"></div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  setTimeout(() => { const el = document.getElementById("ft-prompt"); if (el) el.focus(); }, 60);
+}
+async function _ftGenerate() {
+  const prompt = ((document.getElementById("ft-prompt") || {}).value || "").trim();
+  if (!prompt) { toast("Write what's on your mind"); return; }
+  const out = document.getElementById("ft-result");
+  if (out) out.innerHTML = `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:13px">💭 Cornileus is listening…</div>`;
+  try {
+    const snap = (typeof buildCounselorSnapshot === "function") ? buildCounselorSnapshot() : {};
+    const userMsg = `${prompt}\n\nGround your response in the snapshot below. Reply with this exact structure (no preamble, no headers):
+NAME-THE-FEELING: <1-2 sentences naming what you're actually experiencing>
+REALITY-CHECK: <2-3 sentences citing real numbers from the snapshot that either confirm or counter the worry. Be specific.>
+WHAT-TO-DO-NOW: <2-3 sentences with one concrete, small thing to do in the next 24 hours to either reduce the anxiety or address the underlying issue>
+WHAT-TO-LET-GO: <1 sentence on what part of this anxiety doesn't deserve your attention right now>
+
+Snapshot:
+\`\`\`json
+${JSON.stringify(snap).slice(0, 10000)}
+\`\`\``;
+    const ai = await aiApi({
+      model: DB.settings.anthropicModel || "claude-haiku-4-5-20251001",
+      max_tokens: 600,
+      temperature: 0.6,
+      system: "You are Cornileus, a warm, candid AI counselor. The user is sharing a money anxiety. Respond like a therapist who also knows their finances: name what they're feeling, ground it in actual numbers from their snapshot, offer one concrete next step, and one thing to release. No platitudes. No 'just breathe' clichés. No advice industry speak. Speak directly to the person.",
+      messages: [{ role: "user", content: userMsg }],
+    });
+    const text = (ai.content && ai.content[0] && ai.content[0].text) || "";
+    if (!text) throw new Error("Empty reply");
+    const parse = (k) => { const m = text.match(new RegExp("^" + k + ":\\s*(.*?)$", "im")); return m ? m[1].trim() : ""; };
+    const parts = {
+      feel: parse("NAME-THE-FEELING"),
+      reality: parse("REALITY-CHECK"),
+      action: parse("WHAT-TO-DO-NOW"),
+      release: parse("WHAT-TO-LET-GO"),
+    };
+    out.innerHTML = `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid #0ea5e9;border-radius:var(--r);padding:16px;margin-bottom:10px">
+        ${parts.feel ? `<div style="margin-bottom:12px"><div style="font-size:10.5px;color:#0ea5e9;text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">💭 What you're feeling</div><div style="font-size:13.5px;color:var(--t1);line-height:1.55;font-style:italic">${esc(parts.feel)}</div></div>` : ""}
+        ${parts.reality ? `<div style="background:var(--bg-elev);border-radius:10px;padding:11px 13px;margin-bottom:6px"><div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">📊 What's actually true</div><div style="font-size:13px;color:var(--t1);line-height:1.55">${esc(parts.reality)}</div></div>` : ""}
+        ${parts.action ? `<div style="background:rgba(52,199,89,0.08);border:0.5px solid rgba(52,199,89,0.25);border-radius:10px;padding:11px 13px;margin-bottom:6px"><div style="font-size:10.5px;color:var(--green,#34C759);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">✓ One small thing to do</div><div style="font-size:13px;color:var(--t1);line-height:1.55">${esc(parts.action)}</div></div>` : ""}
+        ${parts.release ? `<div style="background:rgba(124,58,237,0.07);border:0.5px solid rgba(124,58,237,0.25);border-radius:10px;padding:11px 13px"><div style="font-size:10.5px;color:#7c3aed;text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">🌿 Let this part go</div><div style="font-size:13px;color:var(--t1);line-height:1.55">${esc(parts.release)}</div></div>` : ""}
+        <div style="font-size:10px;color:var(--t3);margin-top:10px;font-style:italic">Cornileus is not a licensed therapist. For sustained anxiety, talk to a real one.</div>
+      </div>
+    `;
+  } catch (e) {
+    if (out) out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  }
+}
+
+/* ---------- 13. Money mood journal ----------
+   When logging a transaction, optionally tag the emotion that drove it.
+   Surfaces patterns over time. */
+const MOOD_EMOJIS = [
+  { e: "😌", lbl: "Calm" },
+  { e: "🎉", lbl: "Celebrating" },
+  { e: "😰", lbl: "Anxious" },
+  { e: "😞", lbl: "Stressed" },
+  { e: "🥱", lbl: "Bored" },
+  { e: "🤩", lbl: "FOMO" },
+  { e: "😡", lbl: "Angry" },
+  { e: "🤷", lbl: "Mindless" },
+];
+
+function moneyMoodPatternsSheet() {
+  // Aggregate spend by mood
+  const tagged = (DB.spend || []).filter(t => +t.amount > 0 && t.mood);
+  if (!tagged.length) {
+    openSheet(`
+      <h2 style="margin-bottom:4px">😶 Money mood</h2>
+      <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">No mood-tagged transactions yet. When you log a transaction, optionally pick the emotion driving it — patterns emerge fast.</p>
+      <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+    `);
+    return;
+  }
+  const byMood = {};
+  for (const t of tagged) {
+    if (!byMood[t.mood]) byMood[t.mood] = { count: 0, total: 0 };
+    byMood[t.mood].count++;
+    byMood[t.mood].total += +t.amount || 0;
+  }
+  const rows = Object.entries(byMood).sort((a, b) => b[1].total - a[1].total);
+  const grandTotal = rows.reduce((s, [, v]) => s + v.total, 0);
+  openSheet(`
+    <h2 style="margin-bottom:4px">😶 Money mood patterns</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">${tagged.length} mood-tagged transactions, $${grandTotal.toFixed(0)} total. The story your spending tells about your emotional life.</p>
+    ${rows.map(([mood, stats]) => {
+      const cfg = MOOD_EMOJIS.find(m => m.e === mood) || { lbl: "Unknown" };
+      const pct = (stats.total / grandTotal) * 100;
+      return `
+        <div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+            <div style="font-size:14px;color:var(--t1);font-weight:700">${mood} ${esc(cfg.lbl)}</div>
+            <div style="font-size:13px;color:var(--t1);font-weight:700;font-variant-numeric:tabular-nums">$${stats.total.toFixed(0)} <span style="color:var(--t3);font-weight:400;font-size:11px">${stats.count} tx</span></div>
+          </div>
+          <div style="height:6px;background:var(--bg-elev);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#7c3aed"></div></div>
+          <div style="font-size:10.5px;color:var(--t3);margin-top:2px;font-variant-numeric:tabular-nums">${pct.toFixed(1)}% of mood-tagged spending</div>
+        </div>
+      `;
+    }).join("")}
+    <button class="btn" style="width:100%;margin-top:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-size:13px" onclick="closeSheet();openCounselor('Look at my money-mood patterns: ${esc(rows.map(([m, s]) => (MOOD_EMOJIS.find(x => x.e === m)||{}).lbl + ' $' + s.total.toFixed(0)).join(', '))}. What emotional patterns do you see in my spending and what should I do about them?')">✨ Ask Cornileus what this means</button>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+/* ---------- 14. Decision tree builder ----------
+   Structured walk-through for a major binary money decision (buy vs rent,
+   change jobs, big purchase). User answers pros/cons; Cornileus weighs in. */
+function decisionTreeSheet() {
+  openSheet(`
+    <h2 style="margin-bottom:4px">⚖️ Decision tree</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">For a big binary money decision. Force yourself through the structured questions; the answers reveal the right call.</p>
+    <label>The decision</label>
+    <input id="dt-decision" placeholder="e.g. Buy a $50k car vs keep my old one and invest the difference"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Option A (what you're considering)</label>
+    <input id="dt-a" placeholder="e.g. Buy the $50k car"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Option B (the alternative)</label>
+    <input id="dt-b" placeholder="e.g. Keep current car + invest $50k"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;margin-bottom:14px;box-sizing:border-box" />
+    <button class="btn" style="width:100%;margin-bottom:14px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="_dtAnalyze()">⚖️ Walk through this</button>
+    <div id="dt-result"></div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+async function _dtAnalyze() {
+  const decision = ((document.getElementById("dt-decision") || {}).value || "").trim();
+  const a = ((document.getElementById("dt-a") || {}).value || "").trim();
+  const b = ((document.getElementById("dt-b") || {}).value || "").trim();
+  if (!decision || !a || !b) { toast("Fill all three fields"); return; }
+  const out = document.getElementById("dt-result");
+  if (out) out.innerHTML = `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:13px">⚖️ Cornileus is analyzing…</div>`;
+  try {
+    const snap = (typeof buildCounselorSnapshot === "function") ? buildCounselorSnapshot() : {};
+    const userMsg = `Decision: "${decision}"
+Option A: ${a}
+Option B: ${b}
+
+Walk through this like an MBA decision-analysis case. Reply with this exact structure:
+COST-A: <financial cost / impact of Option A in 1 sentence>
+COST-B: <financial cost / impact of Option B in 1 sentence>
+REVERSIBILITY-A: <how easy to reverse Option A if I change my mind, 1 sentence>
+REVERSIBILITY-B: <same for Option B, 1 sentence>
+NON-FINANCIAL-A: <what Option A trades for non-financially (time, identity, relationships, ego), 1 sentence>
+NON-FINANCIAL-B: <same for Option B, 1 sentence>
+HIDDEN-A: <one hidden cost or risk in A people miss, 1 sentence>
+HIDDEN-B: <one hidden cost or risk in B people miss, 1 sentence>
+RECOMMENDATION: <Option A or Option B, then 2 sentences of reasoning tied to my actual snapshot>
+
+User snapshot for context (use it):
+\`\`\`json
+${JSON.stringify(snap).slice(0, 8000)}
+\`\`\``;
+    const ai = await aiApi({
+      model: DB.settings.anthropicModel || "claude-haiku-4-5-20251001",
+      max_tokens: 900,
+      temperature: 0.4,
+      system: "You are Cornileus, a candid AI advisor. Walk through binary decisions like an MBA case study. Cover financial cost, reversibility, non-financial trade-offs, hidden costs, and end with a clear recommendation rooted in the user's snapshot. No hedging. No 'it depends'. Pick a side.",
+      messages: [{ role: "user", content: userMsg }],
+    });
+    const text = (ai.content && ai.content[0] && ai.content[0].text) || "";
+    if (!text) throw new Error("Empty reply");
+    const parse = (k) => { const m = text.match(new RegExp("^" + k + ":\\s*(.*?)$", "im")); return m ? m[1].trim() : ""; };
+    const grid = (title, ka, kb) => `
+      <div style="background:var(--bg-elev);border-radius:10px;padding:10px 12px;margin-bottom:6px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">${esc(title)}</div>
+        <div style="font-size:12px;color:var(--t1);line-height:1.45;margin-bottom:5px"><b style="color:var(--blue,#007AFF)">A.</b> ${esc(parse(ka))}</div>
+        <div style="font-size:12px;color:var(--t1);line-height:1.45"><b style="color:#7c3aed">B.</b> ${esc(parse(kb))}</div>
+      </div>
+    `;
+    const rec = parse("RECOMMENDATION");
+    out.innerHTML = `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid #7c3aed;border-radius:var(--r);padding:14px;margin-bottom:10px">
+        ${grid("💰 Financial cost", "COST-A", "COST-B")}
+        ${grid("↺ Reversibility", "REVERSIBILITY-A", "REVERSIBILITY-B")}
+        ${grid("🎭 Non-financial trade-off", "NON-FINANCIAL-A", "NON-FINANCIAL-B")}
+        ${grid("⚠️ Hidden cost", "HIDDEN-A", "HIDDEN-B")}
+        ${rec ? `<div style="background:rgba(52,199,89,0.08);border:0.5px solid rgba(52,199,89,0.30);border-radius:10px;padding:11px 13px;margin-top:8px"><div style="font-size:10.5px;color:var(--green,#34C759);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">🎯 Recommendation</div><div style="font-size:13.5px;color:var(--t1);line-height:1.55;font-weight:600">${esc(rec)}</div></div>` : ""}
+      </div>
+    `;
+  } catch (e) {
+    out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  }
 }
 
 function insuranceAuditSheet() {
@@ -31876,6 +32370,11 @@ function quickAddSpendSheet(prefilled) {
     '</select>' +
     '<label>Note (optional)</label>' +
     '<input id="qs-note" placeholder="e.g. Coffee at the corner" value="' + esc(pre.note || "") + '" />' +
+    '<label style="margin-top:12px;display:block">What was driving this? <span style="color:var(--t3);font-weight:400;font-size:11px">(optional — surfaces patterns)</span></label>' +
+    '<div id="qs-mood-row" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">' +
+      MOOD_EMOJIS.map(m => '<button type="button" data-mood="' + m.e + '" class="qs-mood-pick" style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t2);border-radius:999px;padding:5px 11px;font-size:12px;cursor:pointer">' + m.e + ' ' + esc(m.lbl) + '</button>').join("") +
+    '</div>' +
+    '<input type="hidden" id="qs-mood" value="" />' +
     '<div class="actions">' +
       '<button class="btn secondary" onclick="closeSheet()">Cancel</button>' +
       '<button class="btn" id="qs-save">Add spend</button>' +
@@ -31892,13 +32391,28 @@ function quickAddSpendSheet(prefilled) {
     if (!file) return;
     await scanReceiptFile(file);
   });
+  // Mood chip picker — toggle selection
+  document.querySelectorAll(".qs-mood-pick").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const cur = document.getElementById("qs-mood").value;
+      const m = btn.dataset.mood;
+      const newVal = cur === m ? "" : m;
+      document.getElementById("qs-mood").value = newVal;
+      document.querySelectorAll(".qs-mood-pick").forEach(b => {
+        const sel = b.dataset.mood === newVal;
+        b.style.background = sel ? "var(--purple,#8957d9)" : "var(--bg-elev)";
+        b.style.color = sel ? "#fff" : "var(--t2)";
+      });
+    });
+  });
   $("#qs-save").addEventListener("click", async () => {
     const amt = Number($("#qs-amt").value);
     if (!amt || amt <= 0) { toast("Enter an amount"); return; }
     const cat = $("#qs-cat").value;
     const note = $("#qs-note").value.trim();
     const date = $("#qs-date").value || todayKey();
-    DB.spend.unshift({ id: uid(), date, category: cat, amount: amt, note, source: "manual" });
+    const mood = $("#qs-mood").value || null;
+    DB.spend.unshift({ id: uid(), date, category: cat, amount: amt, note, mood, source: "manual" });
     await save(); closeSheet(); render(); toast("✓ " + fmt$0(amt) + " logged");
   });
 }
@@ -32515,7 +33029,11 @@ function weeklyReviewSheet() {
 }
 
 /* --- "What's new" sheet (one-time on upgrade) ------------------- */
+<<<<<<< Updated upstream
 const WHATS_NEW_KEY = "v3.6-sync-and-push";
+=======
+const WHATS_NEW_KEY = "v3.6-behavioral";
+>>>>>>> Stashed changes
 function maybeShowWhatsNew() {
   // Skip if a PWA shortcut is opening its own action sheet — the user
   // didn't launch the app to see What's New, they tapped Quick Add.
@@ -32526,6 +33044,7 @@ function maybeShowWhatsNew() {
 }
 function whatsNewSheet() {
   openSheet(
+<<<<<<< Updated upstream
     '<h2>What\'s new — everything in sync</h2>' +
     '<p class="muted" style="font-size:13px;margin-bottom:14px">Your bank, brokerage, and credit accounts pull more data than ever — APRs, due dates, holdings, dividends, and recurring patterns sync automatically. Plus background push notifications when the app is closed.</p>' +
     '<div class="list">' +
@@ -32541,6 +33060,28 @@ function whatsNewSheet() {
     '</div>' +
     '<div class="actions"><button class="btn secondary" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet()">Got it</button>' +
     '<button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet();setTimeout(()=>{if(typeof notificationSettingsSheet===\'function\')notificationSettingsSheet();},120)">\u{1F514} Set up reminders</button></div>'
+=======
+    '<h2>What\'s new — Ascend goes behavioral</h2>' +
+    '<p class="muted" style="font-size:13px;margin-bottom:14px">14 new features rooted in actual behavioral science. Things no other personal-finance app does — at all.</p>' +
+    '<div class="list">' +
+      '<div class="row"><div class="lead">\u{1F52E}</div><div class="body"><div class="t1">Lifestyle simulator</div><div class="t2">"What if I went part-time when the kids are born?" 4 live sliders, instant net-worth re-projection. Nobody has a life chart.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F3AF}</div><div class="body"><div class="t1">Reverse life math</div><div class="t2">Pick the life you want (retire at 55 living on $7K/mo) — backsolves required savings + 5-year waypoints.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F9E0}</div><div class="body"><div class="t1">Behavioral bias diagnostic + real-time interruptions</div><div class="t2">10 questions → bias profile. Selling a loser at a loss? Cornileus interrupts: "Your loss-aversion is 8/10 — has the business changed, or just the price?"</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4DC}</div><div class="body"><div class="t1">Money rules engine</div><div class="t2">Write your own financial commandments ("Never finance depreciating assets"). Cornileus enforces them on every reply.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F9EC}</div><div class="body"><div class="t1">Money identity</div><div class="t2">Atomic Habits for money. "I\'m someone who saves before spending" — frames every decision. Nobody else does this.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F510}</div><div class="body"><div class="t1">Pre-commitment contracts</div><div class="t2">Lock a future commitment with optional stake ("If I don\'t, donate $100 to a politician I dislike"). StickK for money.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{23F3}</div><div class="body"><div class="t1">Hours of your life</div><div class="t2">Every $ shows as time worked. $50 = 1.7h of your life. Reframes the dollar permanently.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4E8}</div><div class="body"><div class="t1">Letter from your 80-year-old self</div><div class="t2">Write a decision you\'re wrestling with → receive a serif-typewriter letter back from your future self with regret + perspective.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F333}</div><div class="body"><div class="t1">Skill tree (25 nodes)</div><div class="t2">Financial XP. Nodes auto-unlock as you hit real milestones. First habit → 7-day streak → first investment → $10K net worth → millionaire.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F333}</div><div class="body"><div class="t1">Generational impact</div><div class="t2">What does $100/mo extra today become for your grandkids? Backwards-discounted math made visceral.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4DD}</div><div class="body"><div class="t1">Negotiation script generator</div><div class="t2">Cornileus drafts cancellation / retention / renewal emails anchored to your actual tenure + spend.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F6CB}\u{FE0F}</div><div class="body"><div class="t1">Financial therapy mode</div><div class="t2">Money anxiety, named and grounded in your actual numbers. 4-section response: name the feeling, reality check, one action, what to let go.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F636}</div><div class="body"><div class="t1">Money mood journal</div><div class="t2">Tag transactions with the emotion driving them. Patterns surface fast: "You spend 3x more on Sundays when bored."</div></div></div>' +
+      '<div class="row"><div class="lead">\u{2696}\u{FE0F}</div><div class="body"><div class="t1">Decision tree builder</div><div class="t2">Big binary choice (buy vs rent, change jobs)? Cornileus walks an MBA case-study: cost, reversibility, non-financial trade-offs, hidden costs, recommendation.</div></div></div>' +
+    '</div>' +
+    '<div class="actions"><button class="btn secondary" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet()">Got it</button>' +
+    '<button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet();setTimeout(()=>skillTreeSheet(),120)">🌳 See my skill tree</button></div>'
+>>>>>>> Stashed changes
   );
 }
 
