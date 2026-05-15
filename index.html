@@ -2219,6 +2219,29 @@ function _parseDb(raw) {
   // Migration: drop the legacy top-level cornileusFollowups if any user save
   // still carries it. Real ones live on counselor.followups.
   if ("cornileusFollowups" in merged) delete merged.cornileusFollowups;
+  // Migration: fold legacy DB.nwAnnotations into DB.lifeEvents (single
+  // canonical store for life-event markers). The two had slightly
+  // different shapes; lifeEvents wins. Map { date, label, emoji, note }
+  // → { id, date, kind, label, dollarImpact:null } so the sheet renders.
+  if (Array.isArray(merged.nwAnnotations) && merged.nwAnnotations.length) {
+    if (!Array.isArray(merged.lifeEvents)) merged.lifeEvents = [];
+    const existingDates = new Set(merged.lifeEvents.map(e => (e.date || "") + "|" + (e.label || "")));
+    for (const a of merged.nwAnnotations) {
+      if (!a || !a.date || !a.label) continue;
+      const k = a.date + "|" + a.label;
+      if (existingDates.has(k)) continue;
+      merged.lifeEvents.push({
+        id: a.id || ("le_" + Date.now().toString(36) + Math.random().toString(36).slice(2,6)),
+        date: a.date,
+        kind: "other",
+        label: (a.emoji ? a.emoji + " " : "") + a.label + (a.note ? " — " + a.note : ""),
+        dollarImpact: null,
+      });
+      existingDates.add(k);
+    }
+    // Empty the old store so it doesn't double-render.
+    merged.nwAnnotations = [];
+  }
   return merged;
 }
 function load() {
@@ -3076,16 +3099,30 @@ function unpairFromHouseholdSheet() {
 }
 
 async function connectBank() {
-  if (!window.Plaid) { toast("Bank connect still loading — try again"); return; }
   if (!_backendReady()) {
     toast("Set up bank sync in Settings first");
     showTab("settings");
     return;
   }
+  // If the Plaid SDK CDN script hasn't loaded yet, poll for it (up to 8s)
+  // with a visible "Loading bank connect…" toast that auto-dismisses on
+  // success or timeout. Replaces the dead-end "try again" message that
+  // gave users no actual recourse.
+  if (!window.Plaid) {
+    toast("Loading bank connect — one second…");
+    const start = Date.now();
+    while (!window.Plaid && Date.now() - start < 8000) {
+      await new Promise(r => setTimeout(r, 250));
+    }
+    if (!window.Plaid) {
+      toast("Bank connect didn't load. Check your connection and try again.");
+      return;
+    }
+  }
   toast("Opening bank connect…");
   let lt;
   try { lt = await backendLinkToken(); }
-  catch (e) { toast("Couldn't open bank connect — try again"); return; }
+  catch (e) { toast(_friendlyApiError("Bank connect", e)); return; }
 
   const handler = window.Plaid.create({
     token: lt.link_token,
@@ -3094,9 +3131,9 @@ async function connectBank() {
         await backendExchange(public_token, metadata?.institution?.name || "Bank");
         toast("Connected — syncing…");
         const s = await backendSync();
-        toast(`Synced ${s.added} new transactions`);
+        toast(`Synced ${s.added} new transaction${s.added===1?"":"s"}`);
         render();
-      } catch (e) { toast("Couldn't link bank — try again"); }
+      } catch (e) { toast(_friendlyApiError("Bank connect", e)); }
     },
     onExit: (err) => { if (err) toast("Bank connect cancelled"); },
   });
@@ -4815,7 +4852,22 @@ function _a11yLabelDeleteButtons() {
   } catch {}
 }
 
+// Per-render memoization cache. Cleared at the top of every render() so
+// expensive helpers (wealthComposition, safeToSpend, recurringMonthlyTotal,
+// _playsTotalSavings, etc.) that get called from multiple cards within a
+// single render only compute their result once. Invalidates on any mutation
+// because every save() triggers render(). Roughly halves the work the
+// Money tab does on a phone with a year of accumulated data.
+let _renderMemo = {};
+function _memoize(key, fn) {
+  if (key in _renderMemo) return _renderMemo[key];
+  const v = fn();
+  _renderMemo[key] = v;
+  return v;
+}
+
 function render() {
+  _renderMemo = {}; // fresh cache per render pass
   renderHeader();
   const tab = activeTab;
   if (tab === "today")    renderToday();
@@ -8504,6 +8556,12 @@ var wealthRange = "90"; // "30" | "90" | "365" | "all" — controls net-worth ch
 // Net-worth composition for the Wealth dashboard. Computes how much wealth lives
 // in each major bucket so we can show a stacked-bar breakdown.
 function wealthComposition() {
+  // Hot path — called from 6+ surfaces on Money tab render.
+  // Memoize within a single render() pass to avoid repeating the
+  // accounts + assets + liabilities + stocks loops.
+  if (typeof _renderMemo === "object" && "wealthComposition" in _renderMemo) {
+    return _renderMemo.wealthComposition;
+  }
   let cash = 0, investments = 0, realAssets = 0, debts = 0;
   // Plaid accounts
   for (const a of (DB.accounts || [])) {
@@ -8554,7 +8612,9 @@ function wealthComposition() {
     investments += price * shares;
   }
   const total = cash + investments + realAssets - debts;
-  return { cash, investments, realAssets, debts, total };
+  const result = { cash, investments, realAssets, debts, total };
+  if (typeof _renderMemo === "object") _renderMemo.wealthComposition = result;
+  return result;
 }
 
 // Detect tickers tracked in BOTH Plaid-synced holdings AND manual Stocks-tab
@@ -9249,7 +9309,10 @@ function renderMoney() {
             ${ranges.map(r => `<button class="btn sm ${wealthRange===r.id?"":"secondary"}" style="flex:1;font-size:11px;padding:6px 0" onclick="setWealthRange(${jsAttr(r.id)})">${r.label}</button>`).join("")}
           </div>
           ${stale ? `<button class="btn secondary" style="width:100%;font-size:12px;margin-top:10px" onclick="snapshotNetWorth();render();toast('Snapshot saved')">${nwAge === null ? "Take first snapshot" : `Snapshot now (last ${nwAge}d ago)`}</button>` : ""}
-          <button class="btn secondary" style="width:100%;font-size:11.5px;margin-top:8px;color:var(--t2)" onclick="nwAnnotationsSheet()">📍 ${(DB.nwAnnotations || []).length ? `${(DB.nwAnnotations || []).length} life event${(DB.nwAnnotations || []).length===1?'':'s'} marked` : "Mark a life event on the chart"}</button>
+          <button class="btn secondary" style="width:100%;font-size:11.5px;margin-top:8px;color:var(--t2)" onclick="lifeEventsSheet()">📍 ${(() => {
+            const total = ((DB.lifeEvents || []).length + (DB.nwAnnotations || []).length);
+            return total ? `${total} life event${total===1?'':'s'} marked` : "Mark a life event on the chart";
+          })()}</button>
         </div>
       `;
     })();
@@ -21074,8 +21137,14 @@ function _agendaViewHtml() {
       onclick: `calendarDaySheet(${jsAttr(d.date)})`,
     });
   }
-  // 4) Annotated net-worth life events that haven't happened yet (future-dated)
-  for (const a of (DB.nwAnnotations || [])) {
+  // 4) Life events that haven't happened yet (future-dated). Pulls from
+  //    both DB.lifeEvents (the canonical store) and the legacy
+  //    DB.nwAnnotations so old data still shows.
+  const allLifeEvents = [
+    ...(DB.lifeEvents || []),
+    ...(DB.nwAnnotations || []),
+  ];
+  for (const a of allLifeEvents) {
     if (!a || !a.date) continue;
     const daysOut = Math.round((new Date(a.date + "T00:00:00") - today) / 86400000);
     if (daysOut < 0 || daysOut > horizon) continue;
@@ -21083,9 +21152,9 @@ function _agendaViewHtml() {
       date: a.date,
       emoji: a.emoji || "📍",
       title: a.label || "Life event",
-      sub: "Net-worth annotation",
+      sub: a.kind ? `${a.kind} · life event` : "Life event",
       color: "var(--green,#34C759)",
-      onclick: `showTab('money')`,
+      onclick: `closeSheet();setTimeout(()=>lifeEventsSheet(),100)`,
     });
   }
   // Sort by date ascending
@@ -26249,9 +26318,13 @@ function netWorthSparkline(history, w=300, h=60) {
   const color = trendUp ? "#34C759" : "#FF3B30";
   // Life-event annotations: vertical markers + emoji at the matching X
   // position. Only renders annotations whose date is within the history
-  // window. Click target lives in the parent card; the SVG marks are
-  // visual breadcrumbs.
-  const annotations = Array.isArray(DB.nwAnnotations) ? DB.nwAnnotations : [];
+  // window. Reads from DB.lifeEvents (the canonical store) plus any
+  // legacy DB.nwAnnotations entries so existing users don't lose markers
+  // they added before the unification.
+  const annotations = [
+    ...(Array.isArray(DB.lifeEvents) ? DB.lifeEvents : []),
+    ...(Array.isArray(DB.nwAnnotations) ? DB.nwAnnotations : []),
+  ];
   const dateToIdx = new Map(history.map((s, i) => [s.date, i]));
   const annHtml = annotations.map(a => {
     if (!a || !a.date || !dateToIdx.has(a.date)) return "";
@@ -28404,8 +28477,15 @@ function aiOnbClose() {
 */
 const RECURRING_PER_MONTH = { weekly: 4.345, biweekly: 2.1725, monthly: 1, yearly: 1/12 };
 function recurringMonthlyTotal(kind) {
+  // Hot path — called from a dozen places per Money/Today render.
+  const cacheKey = "recurringMonthlyTotal:" + kind;
+  if (typeof _renderMemo === "object" && cacheKey in _renderMemo) {
+    return _renderMemo[cacheKey];
+  }
   const list = (DB.recurring || []).filter(r => r.kind === kind);
-  return list.reduce((a, r) => a + (+r.amount || 0) * (RECURRING_PER_MONTH[r.cadence] || 1), 0);
+  const total = list.reduce((a, r) => a + (+r.amount || 0) * (RECURRING_PER_MONTH[r.cadence] || 1), 0);
+  if (typeof _renderMemo === "object") _renderMemo[cacheKey] = total;
+  return total;
 }
 // Estimated annual dividend income across all holdings. Uses the cached
 // dividend yield × current price × shares. Returns 0 when we have no
@@ -28452,6 +28532,10 @@ function impliedMonthlySavings() {
   return Math.max(0, Math.round(inc + divMonthly - exp));
 }
 function safeToSpend() {
+  // Hot path — called from Today + Money tabs + Cornileus snapshot.
+  if (typeof _renderMemo === "object" && "safeToSpend" in _renderMemo) {
+    return _renderMemo.safeToSpend;
+  }
   const income = monthlyIncome();
   const fixedRecurring = recurringMonthlyTotal("expense");
   const fixedBudget = ((DB.budget && DB.budget.expenses) || []).reduce((a, e) => a + (+e.amount || 0), 0);
@@ -28469,12 +28553,14 @@ function safeToSpend() {
   const daysLeft = Math.max(1, daysInMonth - now.getDate() + 1);
   const remainingBudget = income - fixed - savingsTarget - mtd;
   const perDay = remainingBudget / daysLeft;
-  return {
+  const out = {
     perDay: Math.max(0, perDay),
     remaining: Math.max(0, remainingBudget),
     income, fixedRecurring, fixedBudget, fixed, savingsTarget, mtd, daysLeft, daysInMonth,
     onTrack: remainingBudget >= 0,
   };
+  if (typeof _renderMemo === "object") _renderMemo.safeToSpend = out;
+  return out;
 }
 
 /* Privacy mode
@@ -28587,11 +28673,16 @@ function _playsTotalSavings() {
   // an unlinked bank PLUS $2k Plaid checking — will see $5k counted, not
   // $7k. That's still better than 0 (the old behavior) or $7k
   // (double-count).
+  if (typeof _renderMemo === "object" && "_playsTotalSavings" in _renderMemo) {
+    return _renderMemo._playsTotalSavings;
+  }
   const buckets = (DB.savings || []).reduce((s,x) => s + (+x.current || 0), 0);
   const depository = (DB.accounts || [])
     .filter(a => a.type === "depository")
     .reduce((s, a) => s + (+a.balance_current || 0), 0);
-  return Math.max(buckets, depository);
+  const v = Math.max(buckets, depository);
+  if (typeof _renderMemo === "object") _renderMemo._playsTotalSavings = v;
+  return v;
 }
 function _playsHighestAprDebt() {
   const items = (DB.liabilities || []).filter(l => +l.apr > 0);
