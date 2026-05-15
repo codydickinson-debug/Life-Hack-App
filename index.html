@@ -1760,6 +1760,102 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 <div id="toast"></div>
 
 <script>
+/* ================================================================
+   SCRIPT TABLE OF CONTENTS — grep "===" to jump between sections.
+
+   This file is one big script (~20k lines) by design — single static
+   asset, no build step, no bundler. The ToC below is curated by hand
+   so future edits stay navigable. Update when adding a top-level
+   section banner.
+
+   PLATFORM
+     L1763  DATA              — DB shape, DEFAULT_DB, persistence keys
+     L1970  UTILS             — esc, jsAttr, emptyStateHtml, fmt, etc.
+     L2207  CRYPTO            — passphrase encryption (PBKDF2 / AES-GCM)
+     L2366  BACKEND CLIENT    — Cloudflare Worker for Plaid bank sync
+     L2470  AI PROXY CLIENT   — Anthropic via Worker / Vercel /api
+     L2588  THEME             — applyTheme + dark/light/auto
+     L2597  BUILD INFO        — BUILD_ID + BUILD_DATE for Settings
+     L2617  TABS              — showTab + activeTab dispatch
+     L2657  TOAST             — bottom-of-screen ephemeral notice
+     L2667  SHEET             — bottom-up modal with scrim
+
+   DOMAIN MODELS (CRUD + helpers)
+     L2701  HEADER            — top greeting + privacy/settings buttons
+     L2714  HABITS            — toggleHabit, streakOf, addHabitSheet
+     L3034  GOALS             — toggleGoal, toggleStep, goalCelebrationSheet
+     L3205  SAVINGS           — addSavingSheet, logSavingSheet
+     L3285  BUDGET
+     L3297  SPEND             — log/edit transactions
+     L3402  WINS              — addWin, allWinsSheet
+
+   RENDER (one renderer per tab + sub-views)
+     L3538  RENDER            — global render() dispatcher
+     L3557  TODAY             — renderToday + Daily Pulse + sections
+     L4806  GOALS tab         — renderGoals (3-tier overview)
+     L5007  PLAN tab          — renderPlanning (Health card + plans)
+     L5829  MONEY tab         — renderMoney (Savings/Wealth/Forecast/Budget/Spend)
+     L7773  STATS tab         — renderStats (Your Journey + heatmap + insights)
+     L8126  CALENDAR tab      — renderCalendar (month/year, mood, notes)
+     L8326  STOCKS tab        — iframe to /stockanalyzer Flask app
+     L8800  SETTINGS tab      — renderSettings (deeply nested)
+
+   FLOWS / FEATURES
+     L9433  SETTINGS HELPERS  — toggleNotifications, scheduleReminder
+     L9594  PLAID HELPERS     — bank account display
+     L9628  CATEGORY RULES    — auto-categorize spend
+     L9717  UPCOMING BILLS
+     L9796  PAYCHECK / INCOME
+     L9974  NET WORTH CHARTS  — sparkline + breakdown
+     L10092 DEBT PAYOFF
+     L10305 AI INSIGHTS       — Today summary card
+     L10374 FINANCIAL COUNSELOR — Cylan chat sheet (CFP system prompt)
+
+   ONBOARDING + TOUR
+     L12248 DEMO DATA         — _buildDemoData factory + loadDemoData
+     L12552 ONBOARDING        — manual 4-step + Cylan AI flow
+     L12684 POST-ONBOARDING TOUR — 12-step interactive walkthrough
+     L13207 AI ONBOARDING     — Cylan-driven setup conversation
+
+   FEATURE FLOWS (mostly self-contained sheets — alphabetical-ish)
+     L13705 SMART MONEY PLAYS
+     L14030 RETIREMENT PROJECTION
+     L14332 WEALTH HEALTH SCORE
+     L14480 MORTGAGE REFINANCE
+     L14646 CHARITABLE GIVING
+     L14789 MONEY PERSONALITY QUIZ
+     L15122 SPENDING BREAKDOWN
+     L15346 SUBSCRIPTION AUDIT
+     L15702 READING LIST
+     L15927 EDUCATION COST PLANNER
+     L16103 SETUP CHECKLIST
+     L16219 ESTATE PLANNING
+     L16373 INSURANCE COVERAGE
+     L16534 INCOME STRATEGIES
+     L16733 BILL NEGOTIATION
+     L16949 RENTAL PROPERTY CALCULATOR
+     L17173 NET WORTH BENCHMARKS
+     L17279 SINKING FUNDS
+     L17424 INFLATION CALCULATOR
+     L17515 BIG PURCHASE TOOL
+     L17657 REAL ESTATE CALCULATOR
+     L17841 ASSET ALLOCATION
+     L17969 NET WORTH MILESTONES
+     L18062 CREDIT CARD MATCHES
+     L18317 FIRE CALCULATOR
+     L18474 CASH FLOW VIZ
+     L18539 WEALTH LESSONS
+     L18692 TAX PLANNING
+     L18845 ACCOUNT-PRIORITY PYRAMID
+     L19049 FINANCIAL CALENDAR
+
+   BOOT
+     L20212 INIT              — DB load, SW register, window exports
+
+   Line numbers are approximate — they drift as the file grows.
+   Use the section banner text (search "================") to jump.
+   ============================================================== */
+
 /* ================ DATA ================ */
 const SK = "ascend_v2";
 const SK_BAK = "ascend_v2.bak";  // rolling backup of last known-good blob (same format)
@@ -8449,9 +8545,9 @@ function renderStocks() {
       <div id="stk-local-msg" class="lg-title">Stocks</div>
       <div class="card" style="background:var(--card);border-radius:var(--r);padding:20px;margin-top:14px;text-align:center">
         <div style="font-size:34px;margin-bottom:6px">📊</div>
-        <div style="font-size:15px;font-weight:600;margin-bottom:4px">Backend required</div>
-        <div style="font-size:13px;color:var(--t3);line-height:1.5;margin-bottom:14px">Open the deployed version to use Stocks, Housing, Mortgages, and News.</div>
-        <a href="https://life-hack-app.vercel.app" target="_blank" rel="noopener" class="btn" style="display:inline-block;text-decoration:none;padding:10px 18px">Open life-hack-app.vercel.app ↗</a>
+        <div style="font-size:15px;font-weight:600;margin-bottom:4px">Stocks needs the live site</div>
+        <div style="font-size:13px;color:var(--t3);line-height:1.5;margin-bottom:14px">Live quotes, market scans, and housing data run on the deployed app. Habits, goals, and money tracking work fine offline here.</div>
+        <a href="https://life-hack-app.vercel.app" target="_blank" rel="noopener" class="btn" style="display:inline-block;text-decoration:none;padding:10px 18px">Open the live site ↗</a>
       </div>
     `;
     return;
