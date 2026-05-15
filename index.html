@@ -22637,7 +22637,22 @@ function _playsMonthlyFixed() {
   return Math.max(rec, bud);
 }
 function _playsTotalSavings() {
-  return (DB.savings || []).reduce((s,x) => s + (+x.current || 0), 0);
+  // "Total liquid assets" for runway/emergency-fund math. Savings buckets
+  // are usually CATEGORIZATIONS of money sitting in real depository
+  // accounts (not separate cash). So summing the two would double-count
+  // for a user whose Emergency Fund bucket ($6k) lives inside their Chase
+  // Savings ($6k). We take the max() of the two: covers the user who
+  // tracks via buckets only (no Plaid), the user who tracks via Plaid
+  // only (no buckets), and the common case where both reflect the same
+  // money. Trade-off: a user with money in both — say $5k in buckets at
+  // an unlinked bank PLUS $2k Plaid checking — will see $5k counted, not
+  // $7k. That's still better than 0 (the old behavior) or $7k
+  // (double-count).
+  const buckets = (DB.savings || []).reduce((s,x) => s + (+x.current || 0), 0);
+  const depository = (DB.accounts || [])
+    .filter(a => a.type === "depository")
+    .reduce((s, a) => s + (+a.balance_current || 0), 0);
+  return Math.max(buckets, depository);
 }
 function _playsHighestAprDebt() {
   const items = (DB.liabilities || []).filter(l => +l.apr > 0);
