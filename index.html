@@ -10414,6 +10414,11 @@ function renderStocks() {
         <div class="body"><div class="t1">Tax-loss harvesting</div><div class="t2">Surface losses that can offset gains · wash-sale guidance</div></div>
         <div class="trail chev"></div>
       </div>
+      <div class="row tappable" onclick="taxEstimationSheet()" role="button" tabindex="0">
+        <div class="lead">🧾</div>
+        <div class="body"><div class="t1">Tax estimation</div><div class="t2">Estimated capital gains tax if you sold everything today</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="portfolioBenchmarkSheet()" role="button" tabindex="0">
         <div class="lead">📈</div>
         <div class="body"><div class="t1">Portfolio vs S&amp;P 500</div><div class="t2">Are you beating or trailing the market?</div></div>
@@ -10761,6 +10766,24 @@ function _stocksRenderPortfolio() {
         </div>
       ` : ""}
       ${_stocksRenderPortfolioChart()}
+      ${(() => {
+        const yoy = _stocksYoyComparison();
+        if (!yoy) return "";
+        const c = yoy.change >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+        const yrLbl = yoy.daysAgo >= 350 ? "1 year" : `${yoy.daysAgo} days`;
+        return `
+          <div style="margin-top:10px;padding:8px 11px;background:var(--bg-elev);border-radius:8px;display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+            <div>
+              <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">${esc(yrLbl)} ago</div>
+              <div style="font-size:11.5px;color:var(--t3);margin-top:1px" data-priv="amount">was $${yoy.pastValue.toFixed(0)} on ${esc(yoy.pastDate)}</div>
+            </div>
+            <div style="text-align:right;font-variant-numeric:tabular-nums">
+              <div style="font-size:14px;font-weight:700;color:${c}" data-priv="amount">${yoy.change >= 0 ? "+" : "-"}$${Math.abs(yoy.change).toFixed(0)}</div>
+              <div style="font-size:11px;color:${c}">${yoy.pct >= 0 ? "+" : ""}${(yoy.pct * 100).toFixed(1)}%</div>
+            </div>
+          </div>
+        `;
+      })()}
       ${annualDiv > 0 ? `
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;padding:8px 10px;background:var(--bg-elev);border-radius:8px">
           <div>
@@ -10792,6 +10815,8 @@ function _stocksRenderPortfolio() {
             ${stop && take ? " · " : ""}
             ${take ? `<span style="color:var(--green,#34C759)">⊤ $${take.toFixed(2)}</span>` : ""}
           </div>` : "";
+        const noteRow = h.note ? `
+          <div style="font-size:10.5px;color:var(--t2);margin-top:3px;line-height:1.35;font-style:italic;border-left:2px solid var(--sep);padding-left:6px">${esc(h.note)}</div>` : "";
         const weightPct = mkt > 0 ? (r.m / mkt) * 100 : 0;
         const tkColor = _stkTickerColor(r.tk);
         return `
@@ -10808,6 +10833,7 @@ function _stocksRenderPortfolio() {
                 <div style="font-size:12.5px;color:var(--t2);font-variant-numeric:tabular-nums">${r.price != null ? `$${r.price.toFixed(2)}` : "—"} <span style="color:var(--t3);font-size:10.5px">cost $${r.c.toFixed(2)}</span></div>
                 <div style="font-size:11px;color:${pColor};font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums">${r.pl >= 0 ? "+" : ""}$${Math.abs(r.pl).toFixed(2)} (${r.pl >= 0 ? "+" : ""}${(r.plPct * 100).toFixed(1)}%)</div>
                 ${limitsRow}
+                ${noteRow}
               </div>
               <div style="text-align:right;flex-shrink:0">
                 <div style="font-weight:700;font-size:13.5px;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${r.m.toFixed(2)}</div>
@@ -10881,13 +10907,16 @@ function _stocksEditHoldingSheet(tk) {
   const h = (DB.stocks && DB.stocks.holdings && DB.stocks.holdings[tk]) || {};
   openSheet(`
     <h2 style="margin-bottom:4px">Edit ${esc(tk)}</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Update shares or cost basis.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Update shares, cost basis, or add a personal note.</p>
     <label>Shares</label>
     <input id="hold-shares" type="number" inputmode="decimal" value="${esc(h.shares || "")}"
       style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
     <label>Cost basis per share ($)</label>
     <input id="hold-cost" type="number" inputmode="decimal" value="${esc(h.cost || "")}"
-      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box" />
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Note (why you bought, target sell, thesis…)</label>
+    <textarea id="hold-note" rows="3" placeholder="e.g. Bought after Q2 earnings beat. Target: $250."
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;margin-bottom:14px;box-sizing:border-box;resize:vertical;font-family:inherit">${esc(h.note || "")}</textarea>
     <div class="actions">
       <button class="btn secondary" onclick="closeSheet()">Cancel</button>
       <button class="btn" style="background:var(--red,#FF3B30);color:#fff;border:none" onclick="_stocksRemoveHolding(${jsAttr(tk)})">Remove</button>
@@ -10899,11 +10928,14 @@ function _stocksEditHoldingSheet(tk) {
 async function _stocksUpdateHolding(tk) {
   const sh = parseFloat(document.getElementById("hold-shares").value);
   const cst = parseFloat(document.getElementById("hold-cost").value);
+  const noteEl = document.getElementById("hold-note");
+  const note = noteEl ? (noteEl.value || "").trim().slice(0, 500) : "";
   if (!isFinite(sh) || sh <= 0) { toast("Shares must be > 0"); return; }
   if (!isFinite(cst) || cst <= 0) { toast("Cost must be > 0"); return; }
   if (!DB.stocks) DB.stocks = {};
   if (!DB.stocks.holdings) DB.stocks.holdings = {};
-  DB.stocks.holdings[tk] = { shares: sh, cost: cst };
+  const prev = DB.stocks.holdings[tk] || {};
+  DB.stocks.holdings[tk] = { ...prev, shares: sh, cost: cst, note };
   await save();
   closeSheet();
   toast(`${tk} updated`);
@@ -14017,6 +14049,108 @@ function _stocksSetWatchlistSort(s) {
   _stocksRenderWatchlist();
 }
 
+/* ---------- Tax estimation sheet ----------
+   Rough estimate of the capital gains tax bill if the user sold all
+   their positions today. Defaults to short-term rate (treats every
+   position as <1y); user can toggle long-term to see the lower-rate
+   equivalent. State tax stub is included. */
+function _stocksTaxEstimation() {
+  const holdings = (DB.stocks && DB.stocks.holdings) || {};
+  const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  const rows = Object.entries(holdings).filter(([_, h]) => +h.shares > 0).map(([tk, h]) => {
+    const q = cache[tk];
+    const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+    const shares = +h.shares;
+    const c = +h.cost || 0;
+    const gain = (price - c) * shares;
+    return { tk, gain, mv: price * shares };
+  });
+  const totalGain = rows.reduce((s, r) => s + r.gain, 0);
+  const onlyGains = rows.filter(r => r.gain > 0).reduce((s, r) => s + r.gain, 0);
+  const onlyLosses = rows.filter(r => r.gain < 0).reduce((s, r) => s + r.gain, 0);
+  return { rows, totalGain, onlyGains, onlyLosses };
+}
+
+function taxEstimationSheet() {
+  const { rows, totalGain, onlyGains, onlyLosses } = _stocksTaxEstimation();
+  if (!rows.length) {
+    openSheet(`
+      <h2 style="margin-bottom:4px">🧾 Tax estimation</h2>
+      <p class="muted" style="font-size:12.5px;margin-bottom:14px">Add holdings first to estimate what you'd owe if you sold today.</p>
+      <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+    `);
+    return;
+  }
+  // Rough US federal brackets (educational, not advice). Defaults assume
+  // single filer making ~$100K income — user can adjust.
+  const shortRate = 0.24; // short-term: treated as ordinary income
+  const longRate = 0.15;  // long-term: 15% bracket
+  const stateRate = 0.05; // generic state rate placeholder
+  const fmt = (v) => "$" + Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  const taxIfShort = Math.max(0, totalGain) * (shortRate + stateRate);
+  const taxIfLong  = Math.max(0, totalGain) * (longRate + stateRate);
+  const lossOffsetCap = Math.min(3000, Math.abs(onlyLosses));
+  openSheet(`
+    <h2 style="margin-bottom:4px">🧾 Tax estimation</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Rough estimate of what you'd owe if you closed every position today. Educational — verify with your actual tax situation.</p>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${totalGain >= 0 ? 'var(--orange,#FF9500)' : 'var(--green,#34C759)'};border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Net unrealized gain</div>
+      <div style="font-size:28px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${totalGain >= 0 ? "+" : "-"}${fmt(totalGain)}</div>
+      <div style="font-size:12px;color:var(--t3);margin-top:2px;font-variant-numeric:tabular-nums">Gains <span style="color:var(--green,#34C759)" data-priv="amount">+${fmt(onlyGains)}</span> · Losses <span style="color:var(--red,#FF3B30)" data-priv="amount">-${fmt(Math.abs(onlyLosses))}</span></div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:11px 13px">
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600;letter-spacing:0.04em">Short-term tax (≤1y held)</div>
+        <div style="font-size:18px;font-weight:800;color:var(--orange,#FF9500);font-variant-numeric:tabular-nums" data-priv="amount">${fmt(taxIfShort)}</div>
+        <div style="font-size:10.5px;color:var(--t3);margin-top:2px">${(shortRate*100).toFixed(0)}% fed + ${(stateRate*100).toFixed(0)}% state</div>
+      </div>
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:11px 13px">
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600;letter-spacing:0.04em">Long-term tax (&gt;1y held)</div>
+        <div style="font-size:18px;font-weight:800;color:var(--green,#34C759);font-variant-numeric:tabular-nums" data-priv="amount">${fmt(taxIfLong)}</div>
+        <div style="font-size:10.5px;color:var(--t3);margin-top:2px">${(longRate*100).toFixed(0)}% fed + ${(stateRate*100).toFixed(0)}% state</div>
+      </div>
+    </div>
+    ${onlyLosses < 0 ? `
+      <div style="background:rgba(0,122,255,0.07);border:0.5px solid rgba(0,122,255,0.30);border-radius:10px;padding:11px 13px;margin-bottom:10px">
+        <div style="font-size:10.5px;color:var(--blue,#007AFF);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Loss-offset opportunity</div>
+        <div style="font-size:12.5px;color:var(--t1);line-height:1.45">You have <b>${fmt(Math.abs(onlyLosses))}</b> of unrealized losses. Selling them could offset your <b>${fmt(onlyGains)}</b> of gains — bringing your taxable gain to <b style="color:var(--green,#34C759)">${fmt(Math.max(0, totalGain))}</b>. Plus up to $${lossOffsetCap.toFixed(0)} more can offset ordinary income.</div>
+        <button class="btn secondary" style="width:100%;margin-top:8px;font-size:12px" onclick="closeSheet();setTimeout(()=>taxLossHarvestSheet(),120)">Open tax-loss harvesting →</button>
+      </div>
+    ` : ""}
+    <div style="font-size:10.5px;color:var(--t3);line-height:1.5;font-style:italic;background:var(--bg-elev);border-radius:8px;padding:9px 11px">
+      Bracket assumptions: 24% federal short-term (single ~$100K income), 15% federal long-term, 5% state. Your actual rates depend on income, state, holding period, and filing status. Not tax advice — consult a CPA before realizing large gains.
+    </div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+/* ---------- Year-over-year portfolio comparison ----------
+   Pulls portfolio value from ~365 days ago and compares to today.
+   Shows absolute $ change + % return alongside the same-day value. */
+function _stocksYoyComparison() {
+  const hist = (DB.stocks && DB.stocks.portfolioHistory) || [];
+  if (hist.length < 30) return null;
+  const last = hist[hist.length - 1];
+  const targetTs = new Date().getTime() - 365 * 86400000;
+  // Find closest historical snapshot to one year ago
+  let closest = null, closestDiff = Infinity;
+  for (const h of hist) {
+    const t = new Date(h.date + "T00:00:00").getTime();
+    const diff = Math.abs(t - targetTs);
+    if (diff < closestDiff) { closest = h; closestDiff = diff; }
+  }
+  if (!closest) return null;
+  const daysAgo = Math.round((new Date(last.date) - new Date(closest.date)) / 86400000);
+  if (daysAgo < 60) return null; // not enough history
+  return {
+    nowDate: last.date, nowValue: +last.value,
+    pastDate: closest.date, pastValue: +closest.value,
+    change: +last.value - +closest.value,
+    pct: +closest.value > 0 ? (+last.value - +closest.value) / +closest.value : 0,
+    daysAgo,
+  };
+}
+
 /* ---------- Portfolio milestone celebrations ----------
    When the live portfolio value crosses a milestone threshold for the
    first time, fire a toast + confetti. Crossings are recorded in
@@ -15200,13 +15334,19 @@ function _stocksRenderDetail(q) {
     </div>
   ` : "";
 
+  const tkColor = _stkTickerColor(q.ticker);
   openSheet(`
     <div data-stocks-detail>
-      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
-        <h2 style="margin:0">${esc(q.ticker)}</h2>
-        <span style="font-size:13.5px;color:var(--t3)">${esc(q.name || q.ticker)}</span>
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+        ${_stkTickerAvatar(q.ticker, 44)}
+        <div style="flex:1;min-width:0">
+          <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap">
+            <h2 style="margin:0;color:${tkColor}">${esc(q.ticker)}</h2>
+            <span style="font-size:13.5px;color:var(--t3)">${esc(q.name || q.ticker)}</span>
+          </div>
+          <div class="muted" style="font-size:12px;margin-top:2px">${q.sector ? esc(q.sector) : ""}${q.sector && q.industry ? " · " : ""}${q.industry ? esc(q.industry) : ""}${(!q.sector && !q.industry) ? "Equity" : ""}</div>
+        </div>
       </div>
-      <p class="muted" style="font-size:12px;margin-bottom:8px">${q.sector ? esc(q.sector) : ""}${q.sector && q.industry ? " · " : ""}${q.industry ? esc(q.industry) : ""}${(!q.sector && !q.industry) ? "Equity" : ""}</p>
       <div style="display:flex;align-items:baseline;gap:10px;margin:8px 0 8px;flex-wrap:wrap">
         <div style="font-size:38px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-0.02em">$${(+q.price).toFixed(2)}</div>
         <div style="font-size:14px;font-weight:700;color:${color};font-variant-numeric:tabular-nums">${arrow} ${change >= 0 ? "+" : ""}$${Math.abs(change).toFixed(2)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)</div>
