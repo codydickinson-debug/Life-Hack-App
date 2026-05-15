@@ -7735,20 +7735,54 @@ function wealthComposition() {
   for (const l of (DB.liabilities || [])) {
     debts += +l.balance || 0;
   }
-  // Stock portfolio (tracked in DB.stocks.holdings) lives under investments.
-  // Falls back to cost basis if no live quote has been fetched yet so the
-  // composition doesn't dip to 0 between refreshes.
+  // Stock portfolio (tracked in DB.stocks.holdings — manual entries on the
+  // Stocks tab) lives under investments. Falls back to cost basis if no live
+  // quote has been fetched yet so the composition doesn't dip to 0 between
+  // refreshes.
+  //
+  // DOUBLE-COUNT GUARD: Plaid-synced investment accounts already roll their
+  // positions into the account's balance_current (counted above). If a user
+  // has Plaid-synced holdings for a ticker AND also manually entered it on
+  // the Stocks tab, naively adding both would count the position twice. We
+  // conservatively skip any manual ticker that ALSO appears in DB.holdings
+  // (the Plaid-synced positions). This means: if you sync via Plaid, the
+  // Plaid value is canonical; the manual entry is treated as redundant.
+  // Trade-off: a user with the same ticker at TWO brokers (one Plaid, one
+  // manual) will undercount the manual side — but that's safer than the
+  // double-count it replaces. Track positions in one place per ticker.
   const sh = (DB.stocks && DB.stocks.holdings) || {};
   const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  const plaidTickers = new Set(
+    (DB.holdings || [])
+      .map(h => (h && h.ticker ? String(h.ticker).toUpperCase() : ""))
+      .filter(Boolean)
+  );
   for (const [tk, h] of Object.entries(sh)) {
     const shares = +h.shares || 0;
     if (shares <= 0) continue;
+    if (plaidTickers.has(String(tk).toUpperCase())) continue; // already counted via DB.accounts
     const q = cache[tk];
     const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
     investments += price * shares;
   }
   const total = cash + investments + realAssets - debts;
   return { cash, investments, realAssets, debts, total };
+}
+
+// Detect tickers tracked in BOTH Plaid-synced holdings AND manual Stocks-tab
+// holdings. Returns the array of overlapping uppercase tickers (or empty).
+// Used to surface a small banner so the user can clean up the duplicate.
+function _overlappingTickers() {
+  const plaid = new Set(
+    (DB.holdings || [])
+      .map(h => (h && h.ticker ? String(h.ticker).toUpperCase() : ""))
+      .filter(Boolean)
+  );
+  if (!plaid.size) return [];
+  const manual = Object.keys((DB.stocks && DB.stocks.holdings) || {})
+    .filter(tk => (+(DB.stocks.holdings[tk] || {}).shares || 0) > 0)
+    .map(tk => String(tk).toUpperCase());
+  return manual.filter(tk => plaid.has(tk));
 }
 
 function setWealthRange(r) { wealthRange = r; renderMoney(); }
@@ -7861,6 +7895,18 @@ function renderMoney() {
   const hasMoneyData = (+DB.budget?.income || 0) > 0 || (DB.recurring || []).length > 0 || (DB.spend || []).length > 0;
   const cashflowBlock = hasMoneyData ? cashflowCardHtml() : "";
   const healthSnapshot = moneyHealthCardHtml();
+  // Holdings-overlap banner: if the same ticker is in BOTH Plaid-synced
+  // holdings AND manual Stocks-tab entries, wealthComposition() skips the
+  // manual one to avoid double-counting. Tell the user so they can either
+  // remove the manual entry (keep Plaid) or vice versa.
+  const overlap = (typeof _overlappingTickers === "function") ? _overlappingTickers() : [];
+  const overlapBanner = overlap.length ? `
+    <div style="background:rgba(255,149,0,0.08);border:1px solid rgba(255,149,0,0.30);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:12.5px;line-height:1.5">
+      <div style="color:var(--orange,#FF9500);font-weight:700;margin-bottom:3px">⚠ Duplicate holdings detected</div>
+      <div style="color:var(--t2)">${overlap.length === 1 ? "<b>" + esc(overlap[0]) + "</b> is" : "<b>" + esc(overlap.slice(0,3).join(", ")) + (overlap.length>3?" +"+(overlap.length-3):"") + "</b> are"} tracked in both your synced brokerage AND the Stocks tab. Net worth uses the synced value — the manual entry is being ignored to prevent double-counting.</div>
+      <div style="color:var(--t3);font-size:11px;margin-top:5px">Fix: remove the manual entry on the Stocks tab if these are the same positions, or use only one source per ticker.</div>
+    </div>
+  ` : "";
   const counselorTeaser = `
     <div class="row tappable" onclick="openCounselor()" role="button" tabindex="0"
       style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:12px 14px;margin-bottom:12px;align-items:center;cursor:pointer">
@@ -7874,6 +7920,7 @@ function renderMoney() {
   `;
   const hdr = `
     <div class="lg-title">Money</div>
+    ${overlapBanner}
     ${healthSnapshot}
     ${cashflowBlock}
     ${counselorTeaser}
@@ -18505,6 +18552,10 @@ function buildCounselorSnapshot() {
     stocks_watchlist: watchlist,
     stocks_alerts_active: stockAlerts,
     stocks_portfolio: stocksPortfolio,
+    // Tickers tracked in BOTH Plaid-synced holdings AND manual Stocks-tab
+    // entries. Net worth uses Plaid as canonical; the AI should warn the
+    // user about overlap and recommend keeping one source per ticker.
+    overlapping_tickers: (typeof _overlappingTickers === "function") ? _overlappingTickers() : [],
     active_subscriptions: activeSubs,
     habits_top: habits,
     longest_current_habit_streak: longestCurrentStreak,
