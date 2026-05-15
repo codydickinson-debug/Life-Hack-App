@@ -2995,6 +2995,60 @@ function habitDetailSheet(id) {
     ${firstDate ? `<div class="muted" style="font-size:11.5px;margin-bottom:14px">First check-in: ${firstDate}</div>` : ""}
 
     ${(() => {
+      // 12-week consistency sparkline. Each week = column, height = % of
+      // eligible days hit. Reveals the trend (improving / steady / slipping).
+      const weeks = 12;
+      const cols = [];
+      const t = new Date();
+      // Anchor to Monday
+      const monday = new Date(t); monday.setDate(t.getDate() - ((t.getDay()+6)%7) - (weeks-1)*7);
+      for (let w = 0; w < weeks; w++) {
+        let did = 0, possible = 0;
+        for (let d = 0; d < 7; d++) {
+          const dt = new Date(monday); dt.setDate(monday.getDate() + w*7 + d);
+          if (dt > t) continue;
+          if (h.createdAt && new Date(h.createdAt) > dt) continue;
+          possible++;
+          const k = todayKey(dt);
+          if (_inPauseRange(h, k)) { possible--; continue; }
+          const v = h.log[k] || 0;
+          const ok = h.type === "count" ? v >= (h.target||1) : !!v;
+          if (ok) did++;
+        }
+        cols.push({ did, possible, pct: possible > 0 ? did/possible : 0 });
+      }
+      const visible = cols.filter(c => c.possible > 0).length;
+      if (visible < 4) return ""; // not enough history
+      const W = 280, H = 60;
+      const padL = 4, padR = 4, padT = 6, padB = 14;
+      const innerW = W - padL - padR;
+      const innerH = H - padT - padB;
+      const barW = innerW / weeks * 0.7;
+      const gap = innerW / weeks * 0.3;
+      const recent = cols.slice(-4).map(c => c.pct).reduce((a,b)=>a+b,0)/4;
+      const earlier = cols.slice(0, 4).map(c => c.pct).reduce((a,b)=>a+b,0)/4;
+      const trendLbl = recent > earlier + 0.1 ? "improving" : recent < earlier - 0.1 ? "slipping" : "steady";
+      const trendColor = recent > earlier + 0.1 ? "var(--green)" : recent < earlier - 0.1 ? "var(--orange)" : "var(--t3)";
+      const bars = cols.map((c, i) => {
+        const x = padL + i * (barW + gap) + gap/2;
+        const fullH = (c.pct) * innerH;
+        const y = padT + innerH - fullH;
+        const col = c.pct >= 0.8 ? "var(--green,#34C759)" : c.pct >= 0.5 ? "var(--orange,#FF9500)" : c.possible === 0 ? "var(--bg-elev2)" : "var(--bg-elev2,#3a3a44)";
+        return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(fullH, 1.5).toFixed(1)}" fill="${col}" rx="1.5"/>`;
+      }).join("");
+      return `
+        <div class="section-h" style="margin-top:0"><span class="lbl">12-week trend</span><span class="muted" style="font-size:12px;color:${trendColor}">${esc(trendLbl)}</span></div>
+        <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:8px 10px 4px;margin-bottom:14px">
+          <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:auto;display:block">
+            ${bars}
+            <text x="${padL}" y="${(H - 4).toFixed(1)}" font-size="9" fill="var(--t3)" font-family="-apple-system,system-ui,sans-serif">12 wks ago</text>
+            <text x="${(W - padR).toFixed(1)}" y="${(H - 4).toFixed(1)}" text-anchor="end" font-size="9" fill="var(--t3)" font-family="-apple-system,system-ui,sans-serif">now</text>
+          </svg>
+        </div>
+      `;
+    })()}
+
+    ${(() => {
       // Pause / resume control. Lets the user skip days (vacation, illness)
       // without breaking the streak.
       const paused = isHabitPaused(h);
