@@ -4320,6 +4320,23 @@ function render() {
   if (typeof _a11yLabelDeleteButtons === "function") _a11yLabelDeleteButtons();
   // Refresh the Cornileus FAB badge to reflect current observations.
   if (typeof _updateCornileusBadge === "function") _updateCornileusBadge();
+  // Append today's Wealth Score to a small rolling history so the hero
+  // card can render "+X this week". One sample per day, cap at 60 days.
+  try {
+    if (typeof computeWealthHealth === "function") {
+      const today = todayKey();
+      if (!DB.settings.wealthScoreHistory) DB.settings.wealthScoreHistory = [];
+      const last = DB.settings.wealthScoreHistory[DB.settings.wealthScoreHistory.length - 1];
+      if (!last || last.date !== today) {
+        const r = computeWealthHealth();
+        DB.settings.wealthScoreHistory.push({ date: today, score: r.total });
+        if (DB.settings.wealthScoreHistory.length > 60) {
+          DB.settings.wealthScoreHistory = DB.settings.wealthScoreHistory.slice(-60);
+        }
+        save();
+      }
+    }
+  } catch {}
 }
 
 // Calendar month being viewed — defaults to today's month, navigated by calendarPrev/Next.
@@ -5378,6 +5395,54 @@ function renderToday() {
       `;
     })()}
 
+    ${isTodaySectionHidden('wealthHealth') ? "" : (() => {
+      // Wealth Score hero — the headline "am I winning?" answer. Big
+      // circular SVG gauge, color-coded score band, 7-day delta, top
+      // gap suggestion, breakdown shortcut. The "credit score of life."
+      // Skipped on completely empty installs so a new user doesn't see "0".
+      const hasMoneyContext = (+(DB.budget?.income) || 0) > 0
+        || (DB.savings || []).length > 0
+        || (DB.liabilities || []).length > 0
+        || (DB.recurring || []).length > 0;
+      if (!hasMoneyContext) return "";
+      const r = computeWealthHealth();
+      const lbl = wealthHealthLabel(r.total);
+      const hist = (DB.settings && Array.isArray(DB.settings.wealthScoreHistory)) ? DB.settings.wealthScoreHistory : [];
+      const wkAgo = hist.filter(h => h.date && h.date < todayKey() && (Date.now() - new Date(h.date + "T00:00:00").getTime()) <= 8 * 86400000)[0];
+      const delta = (wkAgo && typeof wkAgo.score === "number") ? (r.total - wkAgo.score) : null;
+      const deltaStr = delta == null ? "" : (delta === 0 ? "" : (delta > 0 ? `+${delta}` : `${delta}`));
+      const deltaColor = delta == null || delta === 0 ? "var(--t3)" : (delta > 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)");
+      const R = 52, C = 2 * Math.PI * R;
+      const arcLen = (r.total / 100) * C;
+      const ringSvg = `
+        <svg viewBox="0 0 120 120" width="116" height="116" style="display:block">
+          <circle cx="60" cy="60" r="${R}" stroke="var(--bg-elev)" stroke-width="9" fill="none"/>
+          <circle cx="60" cy="60" r="${R}" stroke="${lbl.color}" stroke-width="9" fill="none"
+            stroke-dasharray="${arcLen} ${C}" stroke-linecap="round"
+            transform="rotate(-90 60 60)"
+            style="transition:stroke-dasharray .55s cubic-bezier(.4,0,.2,1)"/>
+          <text x="60" y="60" text-anchor="middle" dominant-baseline="central"
+            font-size="34" font-weight="800" fill="var(--t1)"
+            font-family="-apple-system,system-ui,sans-serif" letter-spacing="-1.5">${r.total}</text>
+          <text x="60" y="84" text-anchor="middle"
+            font-size="9.5" font-weight="700" fill="var(--t3)"
+            font-family="-apple-system,system-ui,sans-serif"
+            letter-spacing="0.6">/ 100</text>
+        </svg>
+      `;
+      return `
+        <button onclick="wealthHealthSheet()" style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${lbl.color};border-radius:var(--r);padding:16px 18px;margin-bottom:14px;display:flex;align-items:center;gap:16px;width:100%;cursor:pointer;color:inherit;font:inherit;text-align:left;transition:transform .12s ease">
+          <div style="flex-shrink:0">${ringSvg}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:10.5px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:2px">Wealth Score</div>
+            <div style="font-size:18px;font-weight:800;color:${lbl.color};line-height:1.1;letter-spacing:-0.02em;margin-bottom:6px">${lbl.word}${deltaStr ? ` <span style="font-size:13px;font-weight:600;color:${deltaColor};margin-left:6px">${esc(deltaStr)} wk</span>` : ''}</div>
+            <div style="font-size:12.5px;color:var(--t2);line-height:1.4">${r.topGap ? esc(r.topGap.suggest) : "Strong across the board — keep compounding."}</div>
+            <div style="display:inline-flex;align-items:center;gap:4px;color:var(--purple,#8957d9);font-size:11.5px;font-weight:600;margin-top:8px">See breakdown <span style="font-size:13px">→</span></div>
+          </div>
+        </button>
+      `;
+    })()}
+
     ${(!isTodaySectionHidden('weeklyRecap') && new Date().getDay() === 0) ? (() => {
       // Sunday-only recap. Cornileus summarizes the user's last 7 days when tapped.
       const sow = new Date(); sow.setDate(sow.getDate() - 6);
@@ -5588,28 +5653,6 @@ function renderToday() {
               </div>
             `;
           }).join("")}
-        </div>
-      `;
-    })()}
-
-    ${isTodaySectionHidden('wealthHealth') ? "" : (() => {
-      // Wealth Health score — only show when there's meaningful financial data,
-      // otherwise the score is artificially 0 and demotivating for new users.
-      const hasMoneyContext = (+(DB.budget?.income) || 0) > 0
-        || (DB.savings || []).length > 0
-        || (DB.liabilities || []).length > 0
-        || (DB.recurring || []).length > 0;
-      if (!hasMoneyContext) return "";
-      const r = computeWealthHealth();
-      const lbl = wealthHealthLabel(r.total);
-      return `
-        <div class="row tappable" onclick="wealthHealthSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:center">
-          <div style="font-size:30px;font-weight:700;color:${lbl.color};line-height:1;margin-right:14px;min-width:60px;text-align:center">${r.total}</div>
-          <div class="body">
-            <div class="t1" style="margin:0">🩺 Wealth Health · <span style="color:${lbl.color}">${lbl.word}</span></div>
-            <div class="t2">${r.topGap ? esc(r.topGap.suggest) : "Strong across all dimensions — keep compounding"}</div>
-          </div>
-          <div class="trail chev"></div>
         </div>
       `;
     })()}
@@ -22076,18 +22119,26 @@ function init() {
   }
 
   // One-time Today-defaults migration: for users who never customized which
-  // Today sections show, seed sensible defaults that hide the lowest-value
-  // sections (rotating quote, money-reflection prompt, wealth-health card).
-  // Wealth Health duplicates Money tab; the others are mood-y rather than
-  // actionable. Users can still re-enable any of them via Settings →
-  // Customize Today. Gated by `_todayDefaultsApplied` so we only do this
-  // once per device; doesn't touch users who have already toggled anything.
+  // Today sections show, seed sensible defaults that hide only the truly
+  // low-signal sections (rotating quote, money-reflection prompt). Wealth
+  // Health was hidden previously but the new hero "Wealth Score" card uses
+  // it — keep it shown by default. Users can still re-enable/disable any
+  // section via Settings → Customize Today. Gated so it only runs once.
   if (!DB.settings._todayDefaultsApplied) {
     const list = Array.isArray(DB.settings.hiddenTodaySections) ? DB.settings.hiddenTodaySections : [];
     if (list.length === 0) {
-      DB.settings.hiddenTodaySections = ["reminder", "moneyReflection", "wealthHealth"];
+      DB.settings.hiddenTodaySections = ["reminder", "moneyReflection"];
     }
     DB.settings._todayDefaultsApplied = true;
+    save();
+  }
+  // Follow-up migration: the previous defaults batch hid 'wealthHealth' but
+  // we've since promoted it (via a hero Wealth Score card). Un-hide it
+  // exactly once for users who haven't manually toggled it since.
+  if (!DB.settings._wealthScoreMigration) {
+    const list = Array.isArray(DB.settings.hiddenTodaySections) ? DB.settings.hiddenTodaySections : [];
+    DB.settings.hiddenTodaySections = list.filter(id => id !== "wealthHealth");
+    DB.settings._wealthScoreMigration = true;
     save();
   }
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
