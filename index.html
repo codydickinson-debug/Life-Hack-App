@@ -9333,31 +9333,6 @@ function renderStats() {
     ` : ""}
 
     ${(() => {
-<<<<<<< Updated upstream
-      const moods = DB.moods || {};
-      const keys = Object.keys(moods);
-      if (keys.length < 5) return "";
-      const cells = []; const d = new Date();
-      for (let i = 29; i >= 0; i--) {
-        const dt = new Date(d); dt.setDate(d.getDate() - i);
-        const k = todayKey(dt);
-        cells.push({ k, m: moods[k] || "" });
-      }
-      const logged = cells.filter(c => c.m).length;
-      const counts = {}; for (const c of cells) if (c.m) counts[c.m] = (counts[c.m] || 0) + 1;
-      const top = Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
-      return `
-        <div style="background:var(--card);border-radius:var(--r);padding:14px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
-          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
-            <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:600">Mood · last 30 days</div>
-            <div style="font-size:11px;color:var(--t3)">${logged}/30 logged${top ? ` · ${top[0]} ${top[1]}×` : ""}</div>
-          </div>
-          <div style="display:grid;grid-template-columns:repeat(30,1fr);gap:3px">
-            ${cells.map(c => `<div title="${c.k}${c.m?' '+c.m:''}" style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:14px;background:${c.m?'var(--bg-elev)':'transparent'};border:0.5px solid ${c.m?'transparent':'var(--sep)'};border-radius:4px;line-height:1">${c.m || ""}</div>`).join("")}
-          </div>
-          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t3);margin-top:6px">
-            <span>30d ago</span><span>today</span>
-=======
       // Portfolio snapshot card — appears when user has holdings
       const holdings = (DB.stocks && DB.stocks.holdings) || {};
       const cache = (DB.stocks && DB.stocks.quoteCache) || {};
@@ -9376,7 +9351,6 @@ function renderStats() {
       const plPct = cost > 0 ? pl / cost : 0;
       const plColor = pl >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
       const totalRealized = realized.reduce((s, r) => s + (+r.pl || 0), 0);
-      // 30-day portfolio return
       let r30 = null;
       if (hist.length >= 30) {
         const past = hist[Math.max(0, hist.length - 31)].value;
@@ -9408,7 +9382,36 @@ function renderStats() {
               <div style="font-size:18px;font-weight:700;color:${totalRealized>=0?'var(--green,#34C759)':'var(--red,#FF3B30)'};font-variant-numeric:tabular-nums;line-height:1" data-priv="amount">${totalRealized>=0?'+':'-'}$${Math.abs(totalRealized).toFixed(0)}</div>
               <div style="font-size:10.5px;color:var(--t3);margin-top:4px;line-height:1.2">realized<br>P&L all-time</div>
             </div>
->>>>>>> Stashed changes
+          </div>
+        </div>
+      `;
+    })()}
+
+    ${(() => {
+      // Mood last 30 days — original Stats heatmap card
+      const moods = DB.moods || {};
+      const keys = Object.keys(moods);
+      if (keys.length < 5) return "";
+      const cells = []; const d = new Date();
+      for (let i = 29; i >= 0; i--) {
+        const dt = new Date(d); dt.setDate(d.getDate() - i);
+        const k = todayKey(dt);
+        cells.push({ k, m: moods[k] || "" });
+      }
+      const logged = cells.filter(c => c.m).length;
+      const counts = {}; for (const c of cells) if (c.m) counts[c.m] = (counts[c.m] || 0) + 1;
+      const top = Object.entries(counts).sort((a,b)=>b[1]-a[1])[0];
+      return `
+        <div style="background:var(--card);border-radius:var(--r);padding:14px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:10px">
+            <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:600">Mood · last 30 days</div>
+            <div style="font-size:11px;color:var(--t3)">${logged}/30 logged${top ? ` · ${top[0]} ${top[1]}×` : ""}</div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(30,1fr);gap:3px">
+            ${cells.map(c => `<div title="${c.k}${c.m?' '+c.m:''}" style="aspect-ratio:1;display:flex;align-items:center;justify-content:center;font-size:14px;background:${c.m?'var(--bg-elev)':'transparent'};border:0.5px solid ${c.m?'transparent':'var(--sep)'};border-radius:4px;line-height:1">${c.m || ""}</div>`).join("")}
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t3);margin-top:6px">
+            <span>30d ago</span><span>today</span>
           </div>
         </div>
       `;
@@ -11400,6 +11403,44 @@ const STK_GLOSSARY = {
     ],
     evaluate: () => null,
   },
+  dca: {
+    title: "Dollar-cost averaging (DCA)",
+    short: "Buying a fixed dollar amount on a regular schedule, regardless of price.",
+    explain: [
+      "Every month you buy $500 of VOO. When prices are high, you get fewer shares; when prices are low, you get more.",
+      "Over time you accumulate at the average price, weighted toward lower prices — you can't time the market, but DCA removes the need to.",
+      "Academic research is mixed: lump-sum beats DCA about 2/3 of the time historically (markets trend up). But DCA wins on behavioral grounds — you actually stick with it.",
+      "Best for income earners with no large lump-sum to deploy. Auto-investing $X/paycheck is the simplest, most-followed plan in personal finance.",
+    ],
+    evaluate: () => null,
+  },
+  expenseratio: {
+    title: "Expense ratio — the silent fee",
+    short: "Annual % of fund assets the fund company keeps. Lower is almost always better.",
+    explain: [
+      "VOO costs 0.03%/yr — $0.30 per $1,000 invested. A typical actively-managed mutual fund runs 0.75-1.5%.",
+      "Over 30 years, a 1% expense ratio costs you ~25% of your final portfolio. It compounds against you the same way returns compound for you.",
+      "Index funds (VOO, VTI, SCHB) charge near-zero because they don't pay active managers to pick stocks.",
+      "Rule of thumb: weighted-average expense ratio should be under 0.20%. Anything above 0.50% needs justification.",
+    ],
+    evaluate: (v) => v == null ? null
+      : v < 0.001 ? { tag: "Ultra-low", color: "var(--green,#34C759)" }
+      : v < 0.003 ? { tag: "Excellent", color: "var(--green,#34C759)" }
+      : v < 0.005 ? { tag: "Good",      color: "#9ACD32" }
+      : v < 0.01  ? { tag: "OK",        color: "var(--t2)" }
+      :             { tag: "High — verify it's worth it", color: "var(--orange,#FF9500)" },
+  },
+  allocation: {
+    title: "Asset allocation by age",
+    short: "The classic rule: % in stocks = 110 − your age. Adjust for your own risk tolerance.",
+    explain: [
+      "A 30-year-old: 80% stocks, 20% bonds. A 60-year-old: 50% stocks, 50% bonds. Younger = longer time horizon to recover from drawdowns, so you can absorb more volatility.",
+      "Modern variants (110 instead of 100, even 120) reflect longer lifespans and lower bond yields.",
+      "Bonds smooth out the ride. Stocks compound faster but with bigger drawdowns. The mix is the lever for matching your portfolio to your stomach.",
+      "Three-fund portfolio: VOO (US stocks) + VXUS (international) + BND (bonds) — adjustable weights, near-zero fees, full global diversification in 3 tickers.",
+    ],
+    evaluate: () => null,
+  },
 };
 
 function teachMeSheet(key, contextValue) {
@@ -11442,8 +11483,8 @@ function teachMeSheet(key, contextValue) {
 // Browse the full glossary — useful entry point from Research Tools
 function learnLibrarySheet() {
   const groups = [
-    { title: "Core money concepts", keys: ["compound", "diversification", "rebalancing", "taxloss"] },
-    { title: "Fundamentals", keys: ["pe", "peg", "margin", "de", "yield", "mcap"] },
+    { title: "Core money concepts", keys: ["compound", "diversification", "rebalancing", "taxloss", "dca", "allocation"] },
+    { title: "Fundamentals", keys: ["pe", "peg", "margin", "de", "yield", "mcap", "expenseratio"] },
     { title: "Technical signals", keys: ["rsi", "beta", "sma", "volatility"] },
     { title: "Ownership", keys: ["insiderhold", "inst", "shortpct"] },
     { title: "Forward-looking", keys: ["forecast", "ytd"] },
@@ -21610,6 +21651,43 @@ function computeSmartPlays() {
       actionLabel: "Set targets",
       actionFn: "_stocksAllocationTargetsSheet()",
     });
+    // Weekly digest only fires Sunday-Monday
+    const dow = new Date().getDay();
+    const lastDigest = DB.stocks.lastWeeklyDigest;
+    const haveFresh = lastDigest && lastDigest.date === new Date().toISOString().slice(0,10);
+    if ((dow === 0 || dow === 1) && !haveFresh) {
+      out.push({
+        id: "weekly-digest",
+        priority: 65,
+        emoji: "📰",
+        title: "Read your weekly portfolio digest",
+        body: "Cornileus summarizes what moved this week and what to watch for the coming days.",
+        why: "Short weekly check-ins beat ad-hoc panic-checking your portfolio. Set the pace once a week, then ignore it.",
+        actionLabel: "Open digest",
+        actionFn: "weeklyDigestSheet()",
+      });
+    }
+    // Tax-loss harvesting only fires in Nov-Dec
+    const month = new Date().getMonth();
+    if (month >= 10) {  // Nov (10), Dec (11)
+      const hasLosses = Object.entries(DB.stocks.holdings || {}).some(([tk, h]) => {
+        const q = (DB.stocks.quoteCache || {})[tk];
+        const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+        return (price - (+h.cost || 0)) * (+h.shares || 0) < -50;
+      });
+      if (hasLosses) {
+        out.push({
+          id: "tax-loss-window",
+          priority: 75,
+          emoji: "📉",
+          title: "Year-end tax-loss harvest window",
+          body: "You have unrealized losses. Realizing them before Dec 31 could offset gains and trim your tax bill.",
+          why: "Capital losses can offset realized gains and (up to $3K) ordinary income — but only sales executed before Dec 31 count for this tax year.",
+          actionLabel: "Review losses",
+          actionFn: "taxLossHarvestSheet()",
+        });
+      }
+    }
   }
 
   return out
