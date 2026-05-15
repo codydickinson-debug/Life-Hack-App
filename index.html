@@ -1925,6 +1925,36 @@ const greet = () => {
 const clamp = (n,a,b)=>Math.max(a,Math.min(b,n));
 const esc = (s) => String(s||"").replace(/[&<>"']/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" })[c]);
 
+// Shared empty-state markup. Same shape appears 16+ times across the app
+// (Today, Calendar, Goals, Money sub-tabs, Stats, Plan sheets, audit
+// flows, etc). Pre-helper: each site hand-rolled the divs and drifted
+// over time. Now: one source of truth.
+//
+// Options:
+//   emoji     — single character or short emoji string for the header
+//   title     — short headline ("Pick a habit to start")
+//   sub       — one-line explanation; pass HTML-safe (escape user input
+//               yourself) or pass plain text and we'll esc() it
+//   subHtml   — set true when sub contains intentional inline HTML so
+//               we skip esc()ing it (rare; default false)
+//   primary   — { label, onclick } for the main CTA button (optional)
+//   secondary — { label, onclick } for a secondary ghost button (optional)
+//   pad       — extra padding override for non-default contexts
+function emptyStateHtml(opts) {
+  const { emoji = "", title = "", sub = "", subHtml = false, primary = null, secondary = null, pad = "" } = opts || {};
+  const subText = subHtml ? sub : esc(sub);
+  const padCss = pad ? `padding:${pad};` : "";
+  return `
+    <div class="empty"${padCss ? ` style="${padCss}"` : ""}>
+      ${emoji ? `<div class="e-emoji">${emoji}</div>` : ""}
+      <div class="e-title">${esc(title)}</div>
+      ${sub ? `<div class="e-sub">${subText}</div>` : ""}
+      ${primary ? `<button class="btn" style="margin-top:14px;max-width:240px" onclick="${primary.onclick}">${esc(primary.label)}</button>` : ""}
+      ${secondary ? `<button class="btn secondary" style="margin-top:8px;max-width:240px;font-size:13px" onclick="${secondary.onclick}">${esc(secondary.label)}</button>` : ""}
+    </div>
+  `;
+}
+
 /* sanitizeText — apply at WRITE time (where user input enters DB), not at
    render time. esc() defends against HTML/JS injection at render; this
    defends against:
@@ -3271,11 +3301,12 @@ function allWinsSheet() {
   if (!wins.length) {
     openSheet(`
       <h2>All wins</h2>
-      <div class="empty" style="padding:30px 16px;text-align:center">
-        <div class="e-emoji">⭐</div>
-        <div class="e-title">Your wins archive starts here</div>
-        <div class="e-sub">Tiny victories compound. Cooked dinner. Said no to a $400 sale. Called Mom.</div>
-      </div>
+      ${emptyStateHtml({
+        emoji: "⭐",
+        title: "Your wins archive starts here",
+        sub: "Tiny victories compound. Cooked dinner. Said no to a $400 sale. Called Mom.",
+        pad: "30px 16px",
+      })}
       <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
     `);
     return;
@@ -4637,13 +4668,13 @@ function renderGoals() {
       </div>
     `;
   }).join("") : `
-    <div class="empty">
-      <div class="e-emoji">🎯</div>
-      <div class="e-title">What's your next ${TIERS.find(t=>t.id===activeTier).label.toLowerCase()} goal?</div>
-      <div class="e-sub">Daily = the recurring stuff. Short-term = this quarter. Life = the big picture.</div>
-      <button class="btn" style="margin-top:14px;max-width:240px" onclick="addGoalSheet()">Write my own</button>
-      <button class="btn secondary" style="margin-top:8px;max-width:240px;font-size:13px" onclick="goalTemplatesSheet()">📚 Browse templates</button>
-    </div>
+    ${emptyStateHtml({
+      emoji: "🎯",
+      title: `What's your next ${TIERS.find(t=>t.id===activeTier).label.toLowerCase()} goal?`,
+      sub: "Daily = the recurring stuff. Short-term = this quarter. Life = the big picture.",
+      primary: { label: "Write my own", onclick: "addGoalSheet()" },
+      secondary: { label: "📚 Browse templates", onclick: "goalTemplatesSheet()" },
+    })}
   `;
 
   // Tier overview cards — double as tier selectors AND show count + completion.
@@ -6049,7 +6080,11 @@ function renderMoney() {
             </div>
           </div>
         `;
-      }).join("") : `<div class="empty"><div class="e-emoji">💰</div><div class="e-title">Start a savings bucket</div><div class="e-sub">Emergency fund, truck down payment, retirement, that trip you keep putting off — name it and watch it grow.</div></div>`}
+      }).join("") : emptyStateHtml({
+        emoji: "💰",
+        title: "Start a savings bucket",
+        sub: "Emergency fund, truck down payment, retirement, that trip you keep putting off — name it and watch it grow.",
+      })}
     `;
   }
   else if (moneySub === "forecast") {
@@ -7008,17 +7043,23 @@ function renderMoney() {
         `).join("")}
       </div>
     ` : (DB.settings.advancedFeaturesEnabled ? (DB.settings.backendUrl ? `
-      <div class="empty" style="padding:18px 16px;background:var(--card);border-radius:var(--r);margin-bottom:12px">
-        <div class="e-emoji">🏦</div>
-        <div class="e-title">Link your first bank</div>
-        <div class="e-sub">Auto-import transactions and balances. Read-only — Ascend never moves money.</div>
-        <button class="btn" style="margin-top:10px;max-width:240px" onclick="connectBank()">Connect a bank</button>
+      <div style="background:var(--card);border-radius:var(--r);margin-bottom:12px">
+        ${emptyStateHtml({
+          emoji: "🏦",
+          title: "Link your first bank",
+          sub: "Auto-import transactions and balances. Read-only — Ascend never moves money.",
+          primary: { label: "Connect a bank", onclick: "connectBank()" },
+          pad: "18px 16px",
+        })}
       </div>
     ` : `
-      <div class="empty" style="padding:18px 16px;background:var(--card);border-radius:var(--r);margin-bottom:12px">
-        <div class="e-emoji">🔌</div>
-        <div class="e-title">Bank sync not turned on</div>
-        <div class="e-sub">Add your backend URL in Settings → Advanced features to unlock bank connections.</div>
+      <div style="background:var(--card);border-radius:var(--r);margin-bottom:12px">
+        ${emptyStateHtml({
+          emoji: "🔌",
+          title: "Bank sync not turned on",
+          sub: "Add your backend URL in Settings → Advanced features to unlock bank connections.",
+          pad: "18px 16px",
+        })}
       </div>
     `) : "");
     const holdingsHtml = (DB.holdings && DB.holdings.length) ? `
@@ -7385,7 +7426,11 @@ function renderMoney() {
           </div>
         `).join("") : ((DB.spendSearch||"").trim()
           ? `<div class="row"><div class="body"><div class="t2 muted">No matches.</div></div></div>`
-          : `<div class="empty"><div class="e-emoji">💳</div><div class="e-title">Log your first spend</div><div class="e-sub">Tap the form above for a quick entry, or connect a bank in Settings to auto-import everything.</div></div>`)}
+          : emptyStateHtml({
+              emoji: "💳",
+              title: "Log your first spend",
+              sub: "Tap the form above for a quick entry, or connect a bank in Settings to auto-import everything.",
+            }))}
       </div>
     `;
   }
@@ -7398,11 +7443,14 @@ function renderStats() {
   if (!DB.habits.length && !(DB.spend||[]).length && !(DB.savings||[]).length && !(DB.goals||[]).length) {
     $("#page-stats").innerHTML = `
       <div class="lg-title">Stats</div>
-      <div class="empty" style="padding:30px 18px;background:var(--card);border-radius:var(--r);margin-top:14px">
-        <div class="e-emoji">📊</div>
-        <div class="e-title">Your patterns show up here</div>
-        <div class="e-sub">Streaks, completion rates, year reviews. Give it a few days of habit checks and wins — Stats will start telling you something.</div>
-        <button class="btn" style="margin-top:14px;max-width:240px" onclick="showTab('today')">Start on Today</button>
+      <div style="background:var(--card);border-radius:var(--r);margin-top:14px">
+        ${emptyStateHtml({
+          emoji: "📊",
+          title: "Your patterns show up here",
+          sub: "Streaks, completion rates, year reviews. Give it a few days of habit checks and wins — Stats will start telling you something.",
+          primary: { label: "Start on Today", onclick: "showTab('today')" },
+          pad: "30px 18px",
+        })}
       </div>
     `;
     return;
