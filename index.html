@@ -4434,11 +4434,13 @@ function renderToday() {
         text: `${wStreak}-day winning streak — keep capturing them`,
         onclick: `allWinsSheet()` };
     }
-    // 4) Mood not logged today
+    // 4) Mood not logged today — jump straight into today's day sheet so
+    //    the mood picker is right there. Showing the Calendar tab without
+    //    auto-opening the sheet adds a tap and dilutes the call to action.
     if (!(DB.moods || {})[todayKey()] && (DB.habits || []).length > 0) {
       return { emoji: "💭",
         text: `Quick check-in: how's the day going?`,
-        onclick: `showTab('calendar')` };
+        onclick: `calendarDaySheet(${jsAttr(todayKey())})` };
     }
     return null;
   })();
