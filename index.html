@@ -14095,6 +14095,66 @@ function _stocksSetWatchlistSort(s) {
   _stocksRenderWatchlist();
 }
 
+/* ---------- "Explain this ticker" inline AI ----------
+   Tap → plain English summary of what the company does, who buys it,
+   why someone would hold or pass. 2-paragraph answer. Cached per
+   ticker for 24 hours on DB.stocks.explainCache. */
+async function _stocksExplainTicker(tk) {
+  const q = (window._stkDetail && window._stkDetail.q) || null;
+  const btn = document.getElementById("stk-explain-btn");
+  const out = document.getElementById("stk-explain-result");
+  if (!q || !btn || !out) return;
+  if (!DB.stocks) DB.stocks = {};
+  if (!DB.stocks.explainCache) DB.stocks.explainCache = {};
+  const cached = DB.stocks.explainCache[tk];
+  if (cached && cached.fetchedAt && (Date.now() - cached.fetchedAt < 24*60*60*1000) && cached.text) {
+    out.innerHTML = _stocksRenderExplain(tk, cached.text, cached.fetchedAt);
+    return;
+  }
+  btn.textContent = "Reading the company…"; btn.disabled = true;
+  out.innerHTML = `<div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:10px;text-align:center;color:var(--t3);font-size:13px">🧠 Cornileus is researching ${esc(tk)}…</div>`;
+  try {
+    const userMsg = `Explain ${tk} (${q.name || tk}) in plain English. Two paragraphs only:
+
+1. What the company does — in 2-3 sentences, no jargon. What product or service do they sell? Who pays them?
+
+2. The current investment case — what's working, what's a risk, what kind of investor should consider holding it. Reference these facts: price $${(+q.price).toFixed(2)}, sector ${q.sector || "n/a"}, P/E ${q.trailing_pe ? (+q.trailing_pe).toFixed(1) : "n/a"}, ${q.ytd_return != null ? ((+q.ytd_return)*100).toFixed(0) + "% YTD, " : ""}beta ${q.beta ? (+q.beta).toFixed(2) : "n/a"}.
+
+Write like you're explaining it to a friend who's smart but new to investing. No disclaimers, no hedging.`;
+    const ai = await aiApi({
+      model: DB.settings.anthropicModel || "claude-haiku-4-5-20251001",
+      max_tokens: 500,
+      temperature: 0.5,
+      system: "You are Cornileus, a candid AI financial counselor. Explain stocks and ETFs in plain English. Direct, friendly, never hedging. Reference the user's specific data points when given.",
+      messages: [{ role: "user", content: userMsg }],
+    });
+    const text = (ai.content && ai.content[0] && ai.content[0].text) || "";
+    if (!text) throw new Error("Empty response");
+    DB.stocks.explainCache[tk] = { text, fetchedAt: Date.now() };
+    save();
+    out.innerHTML = _stocksRenderExplain(tk, text, Date.now());
+  } catch (e) {
+    out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;margin-bottom:10px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  } finally {
+    btn.textContent = `🧠 Explain ${tk} in plain English`; btn.disabled = false;
+  }
+}
+
+function _stocksRenderExplain(tk, text, fetchedAt) {
+  const age = Math.floor((Date.now() - fetchedAt) / 60000);
+  return `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid #7c3aed;border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">✨ In plain English</div>
+        <div style="flex:1"></div>
+        <button onclick="(DB.stocks.explainCache||{})[${jsAttr(tk)}]=null;_stocksExplainTicker(${jsAttr(tk)})" style="background:transparent;color:var(--t3);border:0.5px solid var(--sep);border-radius:8px;padding:2px 8px;font-size:10.5px;cursor:pointer">↻</button>
+      </div>
+      <div style="font-size:13px;color:var(--t1);line-height:1.55;white-space:pre-wrap">${esc(text)}</div>
+      <div style="font-size:10px;color:var(--t3);margin-top:8px;font-style:italic">Cornileus' explanation${age > 0 ? ` · cached ${age}m ago` : " · just now"}. Not financial advice.</div>
+    </div>
+  `;
+}
+
 /* ---------- Ticker quick-search ----------
    A curated list of ~120 popular tickers (major indices, mega-caps,
    sector ETFs, classic dividend stocks) so users can browse + filter
@@ -15567,6 +15627,8 @@ function _stocksRenderDetail(q) {
       <button onclick="_stocksLoadEtf(${jsAttr(q.ticker)})" id="stk-etf-btn" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">📦 Inside the fund</button>
       <div id="stk-etf-result"></div>
       <button onclick="_stocksLoadPeers(${jsAttr(q.ticker)})" id="stk-peers-btn" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">Show sector peers</button>
+      <button onclick="_stocksExplainTicker(${jsAttr(q.ticker)})" id="stk-explain-btn" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">🧠 Explain ${esc(q.ticker)} in plain English</button>
+      <div id="stk-explain-result"></div>
       <button onclick="openCounselor(${jsAttr(`What's your read on ${q.ticker}? Currently $${(+q.price).toFixed(2)}, ${(pct).toFixed(1)}% today${q.ytd_return != null ? `, ${((+q.ytd_return) * 100).toFixed(1)}% YTD` : ''}, P/E ${q.trailing_pe ? (+q.trailing_pe).toFixed(1) : 'n/a'}, RSI ${q.rsi14 ? (+q.rsi14).toFixed(0) : 'n/a'}, analyst target ${q.target_mean ? '$' + (+q.target_mean).toFixed(0) : 'n/a'}. Should I add it to my portfolio given my situation? Give me the why, not just a verdict.`)})" class="btn secondary" style="width:100%;margin-bottom:14px;font-size:13px">✨ Ask Cornileus about ${esc(q.ticker)}</button>
       <div id="stk-analyze-result"></div>
       <div id="stk-peers-result"></div>
