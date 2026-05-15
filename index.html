@@ -1991,7 +1991,9 @@ const DEFAULT_DB = {
   wins:   [],
   stocks: { recentTickers: [], account: 10000, watchlist: [], holdings: {}, quoteCache: {}, alerts: [], realizedPL: [], watchlistSort: "default", portfolioHistory: [] },
   insurance: {}, // { health: {have, note, ts}, life: {...}, ... } — see insuranceAuditSheet
-  cornileusFollowups: [], // [{id, ts, suggestion, status: 'pending'|'done'|'skipped'}]
+  // (cornileusFollowups removed — followups live on DB.counselor.followups,
+  //  which is where every caller reads/writes them. The top-level field
+  //  was dead.)
   // Phase 14 — "things no one else does" feature data
   moneyIdentity: null,          // {text, addedAt} — user's chosen money identity
   moneyRules: [],               // [{id, rule, addedAt}] — user-defined principles
@@ -2065,6 +2067,13 @@ const DEFAULT_DB = {
   dismissedBills: {},
   pendingDeposits: [],
   dismissedDeposits: [],     // plaid_ids of deposits the user explicitly Skipped — prevents re-surfacing on next sync
+  // Plaid-pulled detail surfaced via /liabilities, /recurring, /investment-transactions.
+  // All populated lazily by syncNow; the fallbacks below let renderers
+  // assume the shape is always present.
+  plaidLiabilities: { mortgage: {}, student: {}, lastSyncAt: null },
+  plaidRecurringSuggestions: { inflows: [], outflows: [], lastSyncAt: null },
+  investmentTransactions: [], // [{investment_transaction_id, account_id, ticker, date, type, subtype, quantity, price, amount, fees}]
+  netWorthHistory: [],        // [{date: 'YYYY-MM-DD', total, by_type:{...}}] — daily snapshot ring (~730 entries max)
   dismissedPlays: {},        // { playId: true } — smart-play recommendations user has dismissed
   calendarNotes: {},         // { 'YYYY-MM-DD': 'note text' } — per-day reminders/journal entries shown on Calendar
   moods: {},                 // { 'YYYY-MM-DD': '😄' } — daily mood rating, set from Calendar day sheet
@@ -6458,7 +6467,13 @@ function dayRecord(dateKey) {
   const wins = (DB.wins || []).filter(w => w.date === dateKey);
   const spend = (DB.spend || []).filter(t => t.date === dateKey);
   const spendOutflow = spend.reduce((s, t) => s + Math.max(0, +t.amount || 0), 0);
-  const spendInflow  = spend.reduce((s, t) => s + Math.max(0, -(+t.amount || 0)), 0);
+  // Anything with a negative amount counts as a "credit" — these are
+  // Plaid-detected paychecks/refunds AND any manual entries the user
+  // logged with a negative number. We expose it as `credits` (not
+  // `inflow` / "income") because a manual refund isn't real income.
+  // Cornileus + Calendar treat the field as "money coming in" without
+  // labeling it that way to the user.
+  const credits = spend.reduce((s, t) => s + Math.max(0, -(+t.amount || 0)), 0);
   const habitsDone = (DB.habits || []).reduce((acc, h) => {
     const v = (h.log || {})[dateKey];
     const did = h.type === "count" ? (+v || 0) >= (+h.target || 1) : !!v;
@@ -6478,7 +6493,9 @@ function dayRecord(dateKey) {
     note,
     importantDates,
     wins, winsCount: wins.length,
-    spend, spendOutflow, spendInflow,
+    spend, spendOutflow, credits,
+    // back-compat alias for callers that still expect the old name
+    spendInflow: credits,
     habitsDone, habitsTotal: (DB.habits || []).length,
     reflection,
     plansDueToday,
@@ -19546,56 +19563,77 @@ function _reminderTimesActive() {
   return ["08:00"];
 }
 
+// Generation token: each scheduleReminder() call bumps this, and timers
+// captured for older generations no-op when they finally fire. Prevents
+// stale callbacks from a rapid sequence of setting changes ever firing.
+let _reminderGen = 0;
+let _firedKeyToday = {}; // { "08:00": "YYYY-MM-DD" } — guards against double-fire across DST
+
 function scheduleReminder() {
   // Tear down any prior timers — we may be re-scheduling because settings
   // changed mid-day.
   for (const t of _reminderTimers) clearTimeout(t);
   _reminderTimers = [];
+  const myGen = ++_reminderGen;
   if (!DB.settings.notifications) return;
   const times = _reminderTimesActive();
-  const now = new Date();
-  for (const hhmm of times) {
-    const [h, m] = String(hhmm).split(":").map(Number);
-    if (!Number.isFinite(h) || !Number.isFinite(m)) continue;
-    const next = new Date(); next.setHours(h, m, 0, 0);
-    if (next <= now) next.setDate(next.getDate() + 1);
-    const ms = next - now;
-    const tid = setTimeout(() => {
-      if (DB.settings.notifications && typeof Notification !== "undefined" && Notification.permission === "granted") {
-        const body = _dailyReminderBody();
-        try { new Notification("Ascend", { body, icon: "icon-180.png" }); } catch {}
+  // DST-safe pattern: instead of one giant setTimeout for many hours
+  // out (which gets stale when wall-clock jumps via DST), we tick every
+  // 60 seconds and fire when the current minute matches any configured
+  // time AND we haven't already fired that time today. Browser timers
+  // are reliable enough at 60s granularity, and the cost is negligible.
+  const tick = () => {
+    if (myGen !== _reminderGen) return; // stale generation
+    if (!DB.settings.notifications) return;
+    const now = new Date();
+    const hhmm = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+    const tk = todayKey();
+    if (times.includes(hhmm) && _firedKeyToday[hhmm] !== tk) {
+      _firedKeyToday[hhmm] = tk;
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        try { new Notification("Ascend", { body: _dailyReminderBody(), icon: "icon-180.png" }); } catch {}
       }
-      // Reschedule everything so day-rollover stays correct and any newly-
-      // added time gets picked up.
-      scheduleReminder();
-    }, ms);
+    }
+    const tid = setTimeout(tick, 60_000);
     _reminderTimers.push(tid);
-  }
+  };
+  // Kick the first tick aligned to the next minute boundary so all the
+  // reminder times share a consistent fire window.
+  const msToNextMinute = 60_000 - (Date.now() % 60_000);
+  const firstTid = setTimeout(tick, Math.max(500, msToNextMinute));
+  _reminderTimers.push(firstTid);
 }
 
 // Per-habit reminder timers — fire at h.reminderTime (if set) if the habit
-// isn't done yet today. Independent of the main daily reminder chain.
+// isn't done yet today. Uses the same DST-safe 60-second tick pattern as
+// the main reminder scheduler so spring-forward / fall-back don't drop or
+// duplicate fires.
 let _habitReminderTimers = [];
+let _habitReminderGen = 0;
+let _firedHabitToday = {}; // { habitId: "YYYY-MM-DD" }
+
 function scheduleHabitReminders() {
   for (const t of _habitReminderTimers) clearTimeout(t);
   _habitReminderTimers = [];
+  const myGen = ++_habitReminderGen;
   if (!DB.settings.notifications) return;
   const cats = DB.settings.notifyCategories || {};
   if (cats.habits === false) return;
-  const now = new Date();
-  for (const h of (DB.habits || [])) {
-    if (!h.reminderTime) continue;
-    if (typeof isHabitPaused === "function" && isHabitPaused(h)) continue;
-    const [hh, mm] = String(h.reminderTime).split(":").map(Number);
-    if (!Number.isFinite(hh) || !Number.isFinite(mm)) continue;
-    const next = new Date(); next.setHours(hh, mm, 0, 0);
-    if (next <= now) next.setDate(next.getDate() + 1);
-    const tid = setTimeout(() => {
-      // Skip if already done today
-      const tk = todayKey();
+  const tick = () => {
+    if (myGen !== _habitReminderGen) return;
+    if (!DB.settings.notifications) return;
+    const now = new Date();
+    const hhmm = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+    const tk = todayKey();
+    for (const h of (DB.habits || [])) {
+      if (!h.reminderTime || h.reminderTime !== hhmm) continue;
+      if (_firedHabitToday[h.id] === tk) continue;
+      if (typeof isHabitPaused === "function" && isHabitPaused(h)) continue;
       const v = (h.log || {})[tk];
       const done = h.type === "count" ? (+v || 0) >= (+h.target || 1) : !!v;
-      if (!done && DB.settings.notifications && typeof Notification !== "undefined" && Notification.permission === "granted") {
+      if (done) continue;
+      _firedHabitToday[h.id] = tk;
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
         try {
           new Notification(`${h.emoji || "✓"} ${h.name}`, {
             body: h.type === "count" ? `${v || 0} / ${h.target || 1}${h.unit ? " " + h.unit : ""} — tap to log` : "Tap to mark done",
@@ -19604,10 +19642,13 @@ function scheduleHabitReminders() {
           });
         } catch {}
       }
-      scheduleHabitReminders();
-    }, next - now);
+    }
+    const tid = setTimeout(tick, 60_000);
     _habitReminderTimers.push(tid);
-  }
+  };
+  const msToNextMinute = 60_000 - (Date.now() % 60_000);
+  const firstTid = setTimeout(tick, Math.max(500, msToNextMinute));
+  _habitReminderTimers.push(firstTid);
 }
 
 // Smart on-open trigger: when the user opens the app (or focuses the tab
@@ -20240,9 +20281,11 @@ function processSyncedDeposits() {
   const handled = new Set((DB.dismissedDeposits||[]));
   for (const tx of plaidTxs) {
     if (seen.has(tx.plaid_id) || handled.has(tx.plaid_id)) continue;
-    // Skip if older than 14 days (probably already handled in a previous session)
+    // Skip if older than 30 days (probably already handled in a previous
+    // session). 14d was too aggressive for users who connect a bank after
+    // a sync gap — they'd miss the last 2-3 paychecks entirely.
     const ageDays = (Date.now() - new Date(tx.date).getTime()) / 86400000;
-    if (ageDays > 14) continue;
+    if (ageDays > 30) continue;
     DB.pendingDeposits = DB.pendingDeposits || [];
     DB.pendingDeposits.push({
       plaid_id: tx.plaid_id,
@@ -20303,10 +20346,16 @@ function filteredSpend() {
   );
 }
 function lastMonthSpend() {
+  // Outflows only (positive amounts) per app convention. Mirrors monthSpend.
+  // Without this filter, Plaid users would see paychecks (negative amounts)
+  // dragging "last month spent" toward 0 or even negative.
   const now = new Date();
   const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lmKey = `${lm.getFullYear()}-${String(lm.getMonth()+1).padStart(2,"0")}`;
-  return (DB.spend||[]).filter(t => t.date.startsWith(lmKey)).reduce((a,t)=>a+(+t.amount||0), 0);
+  return (DB.spend||[]).filter(t => {
+    if (!t || !t.date || !t.date.startsWith(lmKey)) return false;
+    return (+t.amount || 0) > 0;
+  }).reduce((a,t)=>a+(+t.amount||0), 0);
 }
 
 
@@ -21422,6 +21471,43 @@ function buildCounselorSnapshot() {
     recent_reflections: recentReflections,
     upcoming_user_dates: upcomingDates,
     recent_wins: recentWins,
+    // Systems Cornileus was missing — added so the AI can answer questions
+    // the user might reasonably ask. Each is kept lightweight (counts +
+    // most-recent / most-relevant entries) to bound prompt size.
+    insurance_summary: (() => {
+      const ins = DB.insurance || {};
+      const types = Object.keys(ins).filter(k => ins[k] && (ins[k].hasIt || ins[k].notes));
+      return types.length ? { tracked_types: types, count: types.length } : null;
+    })(),
+    sinking_funds: (DB.sinkingFunds || []).slice(0, 15).map(f => ({
+      name: f.name, annual: +f.annual || 0, current: +f.current || 0,
+    })),
+    estate_progress: (() => {
+      const p = DB.estateCheckProgress || {};
+      const done = Object.values(p).filter(v => v && v.done).length;
+      const total = Object.keys(p).length;
+      return total ? { done, total } : null;
+    })(),
+    books_read_count: Object.values(DB.booksRead || {}).filter(b => b && b.read).length,
+    lessons_read_count: Object.keys(DB.lessonsRead || {}).filter(k => DB.lessonsRead[k]).length,
+    important_dates: (DB.calendarDates || []).slice(0, 20).map(d => ({
+      date: d.date, title: d.title, icon: d.icon,
+    })),
+    allocation_rules: (DB.allocations || []).map(a => ({
+      bucket_id: a.savingId, percent: +a.percent || 0, label: a.label,
+    })),
+    profile_state: DB.profile?.state || null,
+    employer_offers_401k_match: !!DB.profile?.employerMatch,
+    hsa_eligible: !!DB.profile?.hsaEligible,
+    subscription_decisions: (() => {
+      const u = DB.subscriptionUsage || {};
+      const out = {};
+      for (const id of Object.keys(u)) if (u[id] && u[id].decision) out[id] = u[id].decision;
+      return Object.keys(out).length ? out : null;
+    })(),
+    followups_pending: (DB.counselor && Array.isArray(DB.counselor.followups))
+      ? DB.counselor.followups.filter(f => f.status === "pending").slice(0, 10)
+      : [],
   };
 }
 
@@ -32429,7 +32515,7 @@ function weeklyReviewSheet() {
 }
 
 /* --- "What's new" sheet (one-time on upgrade) ------------------- */
-const WHATS_NEW_KEY = "v3.5-cornileus";
+const WHATS_NEW_KEY = "v3.6-sync-and-push";
 function maybeShowWhatsNew() {
   // Skip if a PWA shortcut is opening its own action sheet — the user
   // didn't launch the app to see What's New, they tapped Quick Add.
@@ -32440,17 +32526,21 @@ function maybeShowWhatsNew() {
 }
 function whatsNewSheet() {
   openSheet(
-    '<h2>What\'s new — Cornileus, more personal</h2>' +
-    '<p class="muted" style="font-size:13px;margin-bottom:14px">Cornileus is now more of a relationship and less of a one-shot bot. Pick how he talks to you, see what he knows about you, get a daily briefing.</p>' +
+    '<h2>What\'s new — everything in sync</h2>' +
+    '<p class="muted" style="font-size:13px;margin-bottom:14px">Your bank, brokerage, and credit accounts pull more data than ever — APRs, due dates, holdings, dividends, and recurring patterns sync automatically. Plus background push notifications when the app is closed.</p>' +
     '<div class="list">' +
-      '<div class="row"><div class="lead">\u{2600}\u{FE0F}</div><div class="body"><div class="t1">Morning briefing</div><div class="t2">Once a day, Cornileus reads your snapshot and tells you what matters today, one small win, and one thing to watch out for. Auto-suggested on Today between 5am-noon.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F3AD}</div><div class="body"><div class="t1">Pick his tone</div><div class="t2">Direct (default) · Encouraging · Strict · Friendly. Settings → Cornileus → Tone.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F50D}</div><div class="body"><div class="t1">What Cornileus knows about you</div><div class="t2">Full transparency screen showing every data point he sees, grouped into 7 sections. Settings → Cornileus.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F9E0}</div><div class="body"><div class="t1">Explain any ticker</div><div class="t2">In the Stocks detail sheet, tap "Explain X in plain English" — Cornileus gives you a 2-paragraph plain-English summary of the company + investment case.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F31F}</div><div class="body"><div class="t1">Plus everything from v3.4</div><div class="t2">Full broker-grade Stocks tab: AI price forecasts, advisor mode, plan builder, portfolio tracker, allocation targets, tax-loss helper, market sentiment, screener, 29-topic glossary, more.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F3E6}</div><div class="body"><div class="t1">Liabilities sync</div><div class="t2">Credit card APRs + minimum payments + statement balances + due dates pull automatically. Mortgage rate, term, escrow, YTD interest. Student loan repayment plan. No more typing it in.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F9E0}</div><div class="body"><div class="t1">Auto-detected recurring</div><div class="t2">Plaid spots your paychecks, rent, subscriptions across all linked accounts. One tap to add them to your recurring list — no manual entry.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4C8}</div><div class="body"><div class="t1">Investment transactions</div><div class="t2">90 days of buys/sells/dividends from brokerage accounts. Cornileus can comment on trade activity + dividend income.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F514}</div><div class="body"><div class="t1">Reminders, fully rebuilt</div><div class="t2">Multiple daily times, 11 categories (streak risk, bills, plans, runway, stocks…), per-habit reminders, smart on-open triggers that fire one consolidated notification when something matters.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4F2}</div><div class="body"><div class="t1">Background push</div><div class="t2">When configured on the backend (VAPID keys), reminders arrive even when the app is closed. iOS 16.4+ Home-Screen PWA, Android, desktop. Settings → \u{1F514} → Background push.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F517}</div><div class="body"><div class="t1">Plans ↔ Savings ↔ Goals</div><div class="t2">Link a plan to a savings bucket: deposits auto-advance the plan. Link a plan to goals: completing the plan finishes the goals. "Wired up" achievement for both.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F6E1}</div><div class="body"><div class="t1">Smarter math everywhere</div><div class="t2">Single source of truth for income, fixed expenses, runway, net worth. Overlap detection between manual + synced accounts so nothing double-counts.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F9F9}</div><div class="body"><div class="t1">Privacy + safety hardening</div><div class="t2">Demo data is now a generic persona. Personal info from older builds removed. Stronger passphrase floor. News-link safety. Push endpoint allowlist + rate limits.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{2600}\u{FE0F}</div><div class="body"><div class="t1">Plus v3.5: Cornileus, more personal</div><div class="t2">Morning briefing, four tone options (Direct/Encouraging/Strict/Friendly), full transparency on what he knows, plain-English ticker explainers.</div></div></div>' +
     '</div>' +
     '<div class="actions"><button class="btn secondary" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet()">Got it</button>' +
-    '<button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet();setTimeout(()=>cornileusMorningBriefingSheet(),120)">☀️ Open today\'s briefing</button></div>'
+    '<button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet();setTimeout(()=>{if(typeof notificationSettingsSheet===\'function\')notificationSettingsSheet();},120)">\u{1F514} Set up reminders</button></div>'
   );
 }
 
