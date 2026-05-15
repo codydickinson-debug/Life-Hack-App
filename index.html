@@ -10549,18 +10549,38 @@ function _stocksRenderPortfolio() {
   // Sort rows by market value descending for the table
   rows.sort((a, b) => b.m - a.m);
 
-  // Allocation bar — top 5 + "Other"
+  // Allocation: donut pie chart + legend
   const top5 = rows.slice(0, 5);
   const otherVal = rows.slice(5).reduce((s, r) => s + r.m, 0);
   const allocs = [...top5.map(r => ({ tk: r.tk, val: r.m })), ...(otherVal > 0 ? [{ tk: "Other", val: otherVal }] : [])];
-  const allocColors = ["#34C759", "#007AFF", "#FF9500", "#AF52DE", "#FF3B30", "#5856D6", "#8E8E93"];
-  const allocBar = allocs.map((a, i) => {
-    const pct = mkt > 0 ? (a.val / mkt) * 100 : 0;
-    return `<div title="${esc(a.tk)} · ${pct.toFixed(1)}%" style="background:${allocColors[i % allocColors.length]};width:${pct}%;height:100%"></div>`;
-  }).join("");
+  // Use deterministic ticker colors (the same ones in the avatars) so the
+  // donut and the watchlist avatars are visually linked.
+  const allocColorFor = (a, i) => a.tk === "Other" ? "#8E8E93" : _stkTickerColor(a.tk);
+  const donutSvg = (() => {
+    if (mkt <= 0) return "";
+    const cx = 50, cy = 50, r = 36, sw = 14;
+    const circ = 2 * Math.PI * r;
+    let cum = 0;
+    const segs = allocs.map((a, i) => {
+      const pct = a.val / mkt;
+      const dash = (pct * circ).toFixed(2);
+      const gap = (circ - +dash).toFixed(2);
+      const offset = (-cum * circ).toFixed(2);
+      cum += pct;
+      return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${allocColorFor(a)}" stroke-width="${sw}" stroke-dasharray="${dash} ${gap}" stroke-dashoffset="${offset}" transform="rotate(-90 ${cx} ${cy})"/>`;
+    }).join("");
+    return `
+      <svg viewBox="0 0 100 100" style="display:block;width:90px;height:90px">
+        <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--bg-elev)" stroke-width="${sw}"/>
+        ${segs}
+        <text x="${cx}" y="${cy - 1}" text-anchor="middle" font-size="9" fill="var(--t3)">${allocs.length} pos</text>
+        <text x="${cx}" y="${cy + 11}" text-anchor="middle" font-size="13" font-weight="800" fill="var(--t1)">${rows.length}</text>
+      </svg>
+    `;
+  })();
   const allocLegend = allocs.slice(0, 6).map((a, i) => {
     const pct = mkt > 0 ? (a.val / mkt) * 100 : 0;
-    return `<span style="display:inline-flex;align-items:center;gap:4px;font-size:10.5px;color:var(--t3);margin-right:8px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${allocColors[i % allocColors.length]}"></span>${esc(a.tk)} ${pct.toFixed(0)}%</span>`;
+    return `<span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;color:var(--t2);margin-right:10px;margin-bottom:3px"><span style="display:inline-block;width:8px;height:8px;border-radius:2px;background:${allocColorFor(a)}"></span><b style="color:var(--t1)">${esc(a.tk)}</b> <span style="font-variant-numeric:tabular-nums">${pct.toFixed(0)}%</span></span>`;
   }).join("");
 
   hero.innerHTML = `
@@ -10576,8 +10596,13 @@ function _stocksRenderPortfolio() {
         <div><span style="color:var(--t3)">Cost</span> <b style="color:var(--t2)" data-priv="amount">$${cost.toFixed(2)}</b></div>
       </div>
       ${mkt > 0 ? `
-        <div style="display:flex;width:100%;height:8px;border-radius:4px;overflow:hidden;margin-top:12px;background:var(--bg-elev)">${allocBar}</div>
-        <div style="margin-top:6px;line-height:1.6">${allocLegend}</div>
+        <div style="display:flex;align-items:center;gap:14px;margin-top:14px;padding-top:12px;border-top:0.5px solid var(--sep)">
+          <div style="flex-shrink:0">${donutSvg}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:5px">Allocation</div>
+            <div style="line-height:1.7">${allocLegend}</div>
+          </div>
+        </div>
       ` : ""}
       ${_stocksRenderPortfolioChart()}
       ${annualDiv > 0 ? `
@@ -11380,7 +11405,17 @@ function _riskShowResult() {
 function compoundVisualSheet() {
   openSheet(`
     <h2 style="margin-bottom:4px">📈 Compound interest, visualized</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Time is the secret ingredient. Watch how a small monthly contribution becomes life-changing.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:10px;line-height:1.5">Time is the secret ingredient. Watch how a small monthly contribution becomes life-changing.</p>
+    <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Try a preset</div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:14px">
+      ${[
+        { lbl: "$5/day · 40y", m: 150, y: 40 },
+        { lbl: "$100/mo · 30y", m: 100, y: 30 },
+        { lbl: "$500/mo · 30y", m: 500, y: 30 },
+        { lbl: "$1k/mo · 30y", m: 1000, y: 30 },
+        { lbl: "Max IRA · 30y", m: 583, y: 30 },
+      ].map(p => `<button onclick="_compoundLoadPreset(${p.m},${p.y})" style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t1);border-radius:999px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer">${esc(p.lbl)}</button>`).join("")}
+    </div>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
       <div>
         <label style="font-size:11px">Monthly ($)</label>
@@ -11406,6 +11441,14 @@ function compoundVisualSheet() {
     <div id="ci-result"></div>
     <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
   `);
+  _compoundRecompute();
+}
+
+function _compoundLoadPreset(monthly, years) {
+  const m = document.getElementById("ci-monthly");
+  const y = document.getElementById("ci-years");
+  if (m) m.value = monthly;
+  if (y) y.value = years;
   _compoundRecompute();
 }
 
