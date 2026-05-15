@@ -2955,13 +2955,65 @@ $("#content").addEventListener("scroll", () => {
 // input). Standard mainstream pattern; no UI hint shown on mobile since most
 // users won't have a physical keyboard, but power-desktop users will discover.
 document.addEventListener("keydown", (e) => {
+  const tag = (document.activeElement && document.activeElement.tagName) || "";
+  const inField = tag === "INPUT" || tag === "TEXTAREA" || (document.activeElement && document.activeElement.isContentEditable);
+  // Cmd/Ctrl+K — global search
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
-    const tag = (document.activeElement && document.activeElement.tagName) || "";
-    if (tag === "INPUT" || tag === "TEXTAREA") return;
+    if (inField) return;
     e.preventDefault();
     try { globalSearchSheet(); } catch {}
+    return;
+  }
+  // "?" — keyboard shortcuts overlay (no modifier; shift+/ on US layout)
+  if (e.key === "?" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    if (inField) return;
+    e.preventDefault();
+    try { keyboardShortcutsSheet(); } catch {}
+    return;
+  }
+  // Single-key tab switches when not in a field
+  if (!inField && !e.metaKey && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+    const k = e.key.toLowerCase();
+    const tabs = { t: "today", c: "calendar", g: "goals", p: "planning", m: "money", s: "stocks", a: "stats" };
+    if (tabs[k]) {
+      e.preventDefault();
+      try { showTab(tabs[k]); } catch {}
+    }
   }
 });
+
+// Keyboard shortcuts overlay — listed in one sheet so power users can
+// discover what's bound. Mirrors what the keydown listener above handles.
+function keyboardShortcutsSheet() {
+  const rows = [
+    { keys: ["⌘", "K"],  desc: "Open global search" },
+    { keys: ["?"],       desc: "Show this keyboard shortcuts overlay" },
+    { keys: ["T"],       desc: "Switch to Today tab" },
+    { keys: ["C"],       desc: "Switch to Calendar tab" },
+    { keys: ["G"],       desc: "Switch to Goals tab" },
+    { keys: ["P"],       desc: "Switch to Plan tab" },
+    { keys: ["M"],       desc: "Switch to Money tab" },
+    { keys: ["S"],       desc: "Switch to Stocks tab" },
+    { keys: ["A"],       desc: "Switch to Stats tab" },
+    { keys: ["Esc"],     desc: "Close the open sheet (built-in)" },
+  ];
+  const kbd = (k) => `<kbd style="background:var(--bg-elev);border:0.5px solid var(--sep);border-radius:6px;padding:2px 8px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--t1);min-width:22px;display:inline-block;text-align:center;font-weight:600">${esc(k)}</kbd>`;
+  openSheet(`
+    <h2 style="margin-bottom:4px">Keyboard shortcuts</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Tap inputs are blocked from intercepting these — you can type freely in any field.</p>
+    <div class="list">
+      ${rows.map(r => `
+        <div class="row">
+          <div class="body">
+            <div class="t1">${esc(r.desc)}</div>
+          </div>
+          <div class="trail" style="display:flex;gap:4px">${r.keys.map(kbd).join('<span style="color:var(--t3);font-size:11px;margin:0 2px">+</span>')}</div>
+        </div>
+      `).join("")}
+    </div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Done</button></div>
+  `);
+}
 
 /* ================ TOAST ================ */
 let toastT;
@@ -3343,6 +3395,66 @@ function deleteHabit(id) {
   DB.habits = DB.habits.filter(h => h.id !== id);
   save(); render();
 }
+// Reorder habits sheet — up/down chevrons next to each row. Simpler and
+// more reliable on mobile than HTML5 drag-and-drop. Writes the resulting
+// order to DB.settings.habitOrder which renderToday consults when sorting.
+function reorderHabitsSheet() {
+  const refresh = () => {
+    const habitOrder = (DB.settings && Array.isArray(DB.settings.habitOrder)) ? DB.settings.habitOrder : [];
+    const orderIndex = (h) => {
+      const i = habitOrder.indexOf(h.id);
+      return i === -1 ? 9999 : i;
+    };
+    const sorted = (DB.habits || []).slice().sort((a, b) => orderIndex(a) - orderIndex(b));
+    const rows = sorted.map((h, i) => `
+      <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r2,12px);margin-bottom:6px">
+        <span style="font-size:18px;flex-shrink:0">${h.emoji || '✦'}</span>
+        <span style="flex:1;font-size:14px;color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.name)}</span>
+        <button onclick="_moveHabit(${jsAttr(h.id)}, -1)" ${i === 0 ? 'disabled' : ''} style="background:var(--bg-elev);border:0.5px solid var(--sep);border-radius:8px;width:34px;height:34px;font-size:16px;cursor:pointer;color:${i === 0 ? 'var(--t4)' : 'var(--t1)'};display:flex;align-items:center;justify-content:center;padding:0" aria-label="Move up">↑</button>
+        <button onclick="_moveHabit(${jsAttr(h.id)}, 1)" ${i === sorted.length - 1 ? 'disabled' : ''} style="background:var(--bg-elev);border:0.5px solid var(--sep);border-radius:8px;width:34px;height:34px;font-size:16px;cursor:pointer;color:${i === sorted.length - 1 ? 'var(--t4)' : 'var(--t1)'};display:flex;align-items:center;justify-content:center;padding:0" aria-label="Move down">↓</button>
+      </div>
+    `).join("");
+    return rows;
+  };
+  const render2 = () => {
+    openSheet(`
+      <h2 style="margin-bottom:4px">Reorder habits</h2>
+      <p class="muted" style="font-size:12.5px;margin-bottom:14px">Tap arrows to move habits up or down. The order applies on the Today tab.</p>
+      <div id="reorder-rows">${refresh()}</div>
+      <div class="actions"><button class="btn" onclick="closeSheet()">Done</button></div>
+    `);
+  };
+  render2();
+  // Re-render the inner rows in place on every move so the sheet doesn't
+  // close/reopen (preserves scroll position).
+  window._reorderHabitsRefresh = () => {
+    const el = document.getElementById("reorder-rows");
+    if (el) el.innerHTML = refresh();
+  };
+}
+
+async function _moveHabit(id, delta) {
+  const habitOrder = (DB.settings && Array.isArray(DB.settings.habitOrder)) ? DB.settings.habitOrder : [];
+  const orderIndex = (h) => {
+    const i = habitOrder.indexOf(h.id);
+    return i === -1 ? 9999 : i;
+  };
+  const sorted = (DB.habits || []).slice().sort((a, b) => orderIndex(a) - orderIndex(b));
+  const idx = sorted.findIndex(h => h.id === id);
+  if (idx === -1) return;
+  const tgt = idx + delta;
+  if (tgt < 0 || tgt >= sorted.length) return;
+  const next = sorted.slice();
+  const [it] = next.splice(idx, 1);
+  next.splice(tgt, 0, it);
+  if (!DB.settings) DB.settings = {};
+  DB.settings.habitOrder = next.map(h => h.id);
+  await save();
+  if (window._reorderHabitsRefresh) window._reorderHabitsRefresh();
+  // Don't full-render the page to keep the sheet open — only the underlying
+  // Today list will refresh next time the user closes the sheet.
+}
+
 function addHabitSheet(existing) {
   const h = existing || { name: "", emoji: "💪", type: "check", target: 1, unit: "", color: COLORS[0] };
   const isEdit = !!existing;
@@ -4958,7 +5070,16 @@ function renderToday() {
     return Math.round(100*done/DB.habits.length);
   };
 
-  const visibleHabits = activeHabitGroup === "all" ? DB.habits : DB.habits.filter(h => (h.group||"other") === activeHabitGroup);
+  // Sort habits by user-defined order if any, then by original DB order.
+  // DB.settings.habitOrder is an array of habit IDs maintained by the
+  // reorder sheet. Unknown IDs (new habits, deletions) fall back to end.
+  const habitOrder = (DB.settings && Array.isArray(DB.settings.habitOrder)) ? DB.settings.habitOrder : [];
+  const orderIndex = (h) => {
+    const i = habitOrder.indexOf(h.id);
+    return i === -1 ? 9999 : i;
+  };
+  const sortedHabits = (DB.habits || []).slice().sort((a, b) => orderIndex(a) - orderIndex(b));
+  const visibleHabits = activeHabitGroup === "all" ? sortedHabits : sortedHabits.filter(h => (h.group||"other") === activeHabitGroup);
   // Per-habit 7-day mini-strip: little dots showing M-T-W-T-F-S-S consistency.
   // Filled = did the thing on that day, dim = missed, ringed = paused.
   // Today's dot is highlighted regardless of state so the user always sees
@@ -5262,7 +5383,7 @@ function renderToday() {
       </div>
     </div>
 
-    <div class="section-h"><span class="lbl">Habits</span><button class="act" onclick="addHabitSheet()">+ Add</button></div>
+    <div class="section-h"><span class="lbl">Habits</span><span style="display:flex;gap:12px">${(DB.habits || []).length >= 2 ? `<button class="act" onclick="reorderHabitsSheet()" style="color:var(--t3)">Reorder</button>` : ''}<button class="act" onclick="addHabitSheet()">+ Add</button></span></div>
     ${DB.habits.length > 3 ? `
       <div class="tier-pills">
         <button class="tier-pill ${activeHabitGroup==='all'?'active':''}" onclick="activeHabitGroup='all';renderToday()">All <span class="muted" style="font-weight:400">${DB.habits.length}</span></button>
