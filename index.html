@@ -3706,11 +3706,32 @@ function totalSaved() { return DB.savings.reduce((a,s)=>a+(+s.current||0), 0); }
 function totalTarget() { return DB.savings.reduce((a,s)=>a+(+s.target||0), 0); }
 function deleteSaving(id) {
   DB.savings = DB.savings.filter(s => s.id !== id);
+  // Strip the dangling id from any plan that referenced this bucket so we
+  // don't leave orphan linkedSavingsIds entries that would silently fail
+  // _planLinkedSavingsSum lookups forever.
+  (DB.plans || []).forEach(p => {
+    if (Array.isArray(p.linkedSavingsIds) && p.linkedSavingsIds.includes(id)) {
+      p.linkedSavingsIds = p.linkedSavingsIds.filter(x => x !== id);
+    }
+  });
   save(); render();
 }
 function addSavingSheet(existing) {
   const s = existing || { name: "", emoji: "💰", current: 0, target: 0, color: COLORS[1] };
   const isEdit = !!existing;
+  // Reverse-lookup: which plans are pulling progress from this bucket?
+  // Closes the visibility loop with the Plans ↔ Savings integration so
+  // a user editing a bucket can see which plans depend on it.
+  const linkedPlans = isEdit && s.id
+    ? (DB.plans || []).filter(p => Array.isArray(p.linkedSavingsIds) && p.linkedSavingsIds.includes(s.id))
+    : [];
+  const linkedPlansHtml = linkedPlans.length ? `
+    <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:10px;padding:10px 12px;margin:14px 0 4px;font-size:12.5px;line-height:1.5">
+      <div style="color:var(--purple,#7c3aed);font-weight:700;margin-bottom:4px">🔗 Feeds ${linkedPlans.length} plan${linkedPlans.length===1?'':'s'}</div>
+      <div style="color:var(--t2)">${linkedPlans.slice(0,4).map(p => `${esc(p.emoji||'✨')} ${esc(p.title)}`).join(" · ")}${linkedPlans.length>4?` +${linkedPlans.length-4}`:""}</div>
+      <div style="color:var(--t3);font-size:11px;margin-top:5px">Deposits here auto-advance these plans.</div>
+    </div>
+  ` : "";
   openSheet(`
     <h2>${isEdit ? "Edit savings goal" : "New savings goal"}</h2>
     <label>Name</label>
@@ -3727,6 +3748,7 @@ function addSavingSheet(existing) {
       <div><label>Current ($)</label><input id="s-cur" type="number" inputmode="decimal" value="${s.current||0}" /></div>
       <div><label>Target ($)</label> <input id="s-tar" type="number" inputmode="decimal" value="${s.target||0}" /></div>
     </div>
+    ${linkedPlansHtml}
     <div class="actions">
       ${isEdit ? `<button class="btn danger" onclick="if(confirm('Delete savings goal?')){deleteSaving('${s.id}');closeSheet();}">Delete</button>` : ""}
       <button class="btn secondary" onclick="closeSheet()">Cancel</button>
@@ -19939,7 +19961,10 @@ function _buildDemoData(currentDB) {
     ]},
   ];
   fresh.budget = {
-    income: 4000,
+    // budget.income left at 0 — the biweekly Paycheck recurring item below
+    // (~$4,333/mo) is the canonical income source. Leaving budget.income at 0
+    // avoids double-counting income in safe-to-spend / FIRE projections.
+    income: 0,
     expenses: [
       { id:"e1", name:"Rent (SE Florida)", amount:1100 },
       { id:"e2", name:"Groceries",          amount:300 },
