@@ -13036,8 +13036,9 @@ function _stocksRenderEtf(d) {
       ${holdings.length ? `
         <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;margin-bottom:6px">Top holdings</div>
         ${holdings.slice(0, 10).map(h => `
-          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-elev);border-radius:8px;margin-bottom:3px;cursor:pointer" onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(h.symbol||"")}),120)" role="button" tabindex="0">
-            <div style="width:56px;font-weight:700;font-size:12px">${esc(h.symbol || "—")}</div>
+          <div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:var(--bg-elev);border-radius:8px;margin-bottom:3px;cursor:pointer" onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(h.symbol||"")}),120)" role="button" tabindex="0">
+            ${h.symbol ? _stkTickerAvatar(h.symbol, 24) : ""}
+            <div style="width:54px;font-weight:700;font-size:12px;flex-shrink:0">${esc(h.symbol || "—")}</div>
             <div style="flex:1;min-width:0;font-size:11.5px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.name || "")}</div>
             <div style="font-size:12px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${h.weight != null ? ((+h.weight * 100).toFixed(2) + "%") : "—"}</div>
           </div>
@@ -15022,8 +15023,9 @@ async function _stocksLoadPeers(tk) {
         <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
           <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Peers — ${esc(data.industry || data.sector || "")}</div>
           ${peers.map(p => `
-            <div onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(p.ticker)}),120)" role="button" tabindex="0" style="display:flex;justify-content:space-between;align-items:center;padding:9px 10px;background:var(--bg-elev);border-radius:8px;margin-bottom:5px;cursor:pointer">
-              <div style="font-weight:700;font-size:13px;width:60px">${esc(p.ticker)}</div>
+            <div onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(p.ticker)}),120)" role="button" tabindex="0" style="display:flex;align-items:center;gap:9px;padding:9px 10px;background:var(--bg-elev);border-radius:8px;margin-bottom:5px;cursor:pointer">
+              ${_stkTickerAvatar(p.ticker, 26)}
+              <div style="font-weight:700;font-size:13px;width:54px;flex-shrink:0">${esc(p.ticker)}</div>
               <div style="flex:1;font-size:12px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(p.name || "")}</div>
               <div style="font-size:14px;color:var(--t3)">→</div>
             </div>
@@ -15301,7 +15303,8 @@ function _stocksScrRenderMatches(matches, preset) {
       <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Matches (${sorted.length})</div>
       ${sorted.map(m => `
         <div onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(m.ticker)}),120)" role="button" tabindex="0" style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px;cursor:pointer;gap:8px">
-          <div style="width:56px;flex-shrink:0">
+          ${_stkTickerAvatar(m.ticker, 28)}
+          <div style="width:48px;flex-shrink:0">
             <div style="font-weight:700;font-size:13px">${esc(m.ticker)}</div>
             ${m.price != null ? `<div style="font-size:10.5px;color:var(--t3)">$${(+m.price).toFixed(2)}</div>` : ""}
           </div>
@@ -15391,6 +15394,7 @@ function _stocksRenderCompare(a, b) {
 
   const headerCell = (q, color) => `
     <div style="text-align:center;padding:14px 8px;background:var(--bg-elev);border-radius:10px">
+      <div style="display:flex;justify-content:center;margin-bottom:6px">${_stkTickerAvatar(q.ticker, 36)}</div>
       <div style="font-size:18px;font-weight:800;color:var(--t1)">${esc(q.ticker)}</div>
       <div style="font-size:11px;color:var(--t3);margin-top:2px;height:26px;overflow:hidden">${esc(q.name || "")}</div>
       <div style="font-size:14px;font-weight:700;color:${color};margin-top:4px">$${(+q.price).toFixed(2)}</div>
