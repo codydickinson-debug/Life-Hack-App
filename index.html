@@ -5378,6 +5378,150 @@ function exploreAscendSheet() {
   `);
 }
 
+// Setup Health Check — single screen that shows every major feature with
+// its setup state and a one-tap "configure" button. Designed to be the
+// first thing a new user sees after onboarding, and a periodic re-prompt
+// for users who never explored Settings. Reaches features that are
+// otherwise buried.
+function setupHealthSheet() {
+  const items = [
+    {
+      id: "name",
+      emoji: "👤",
+      label: "Your name",
+      done: !!(DB.user.name || "").trim(),
+      sub: DB.user.name ? `Set to "${DB.user.name}"` : "Personalizes the Today greeting and tour",
+      action: "showTab('settings');closeSheet();",
+      cta: "Set in Settings",
+    },
+    {
+      id: "habits",
+      emoji: "✓",
+      label: "First habit",
+      done: (DB.habits || []).length >= 1,
+      sub: (DB.habits || []).length ? `${DB.habits.length} habit${DB.habits.length===1?"":"s"} tracked` : "What do you want to do every day?",
+      action: "closeSheet();setTimeout(()=>addHabitSheet(),100);",
+      cta: "Add habit",
+    },
+    {
+      id: "goal",
+      emoji: "🎯",
+      label: "First goal",
+      done: (DB.goals || []).length >= 1,
+      sub: (DB.goals || []).length ? `${DB.goals.length} goal${DB.goals.length===1?"":"s"} set` : "Daily, short-term, or life-tier",
+      action: "closeSheet();setTimeout(()=>{showTab('goals');setTimeout(()=>addGoalSheet(),200);},100);",
+      cta: "Add goal",
+    },
+    {
+      id: "savings",
+      emoji: "💰",
+      label: "Savings bucket",
+      done: (DB.savings || []).length >= 1,
+      sub: (DB.savings || []).length ? `${DB.savings.length} bucket${DB.savings.length===1?"":"s"}` : "Emergency fund, vacation, anything",
+      action: "closeSheet();setTimeout(()=>{showTab('money');moneySub='savings';setTimeout(()=>addSavingSheet(),200);},100);",
+      cta: "Add bucket",
+    },
+    {
+      id: "monthlyTarget",
+      emoji: "📈",
+      label: "Monthly savings target",
+      done: (+DB.settings.monthlySavingsTarget || 0) > 0,
+      sub: (+DB.settings.monthlySavingsTarget || 0) > 0
+        ? `${fmt$0(DB.settings.monthlySavingsTarget)}/mo · feeds safe-to-spend + retirement projection`
+        : "Powers safe-to-spend math + retirement timeline",
+      action: "closeSheet();setTimeout(()=>{showTab('settings');setTimeout(()=>{const el=document.querySelector('input[oninput*=monthlySavingsTarget]');if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.focus();}},300);},100);",
+      cta: "Set target",
+    },
+    {
+      id: "notifications",
+      emoji: "🔔",
+      label: "Notifications",
+      done: !!DB.settings.notifications,
+      sub: DB.settings.notifications
+        ? `Enabled · ${(_reminderTimesActive ? _reminderTimesActive().length : 1)} time${(_reminderTimesActive ? _reminderTimesActive().length : 1)===1?"":"s"} per day + smart triggers`
+        : "Streak risk, bills due, plan deadlines, runway warnings",
+      action: "notificationSettingsSheet();",
+      cta: "Set up",
+    },
+    {
+      id: "bankSync",
+      emoji: "🏦",
+      label: "Bank sync",
+      done: !!_backendReady() && (DB.accounts || []).length > 0,
+      sub: (DB.accounts || []).length > 0
+        ? `${DB.accounts.length} account${DB.accounts.length===1?"":"s"} connected`
+        : "Auto-import transactions, balances, holdings (optional)",
+      action: "closeSheet();setTimeout(()=>showTab('settings'),100);",
+      cta: "Set up",
+      optional: true,
+    },
+    {
+      id: "encryption",
+      emoji: "🔒",
+      label: "Encrypt data at rest",
+      done: !!DB.settings.encrypted,
+      sub: DB.settings.encrypted
+        ? "On — data is AES-encrypted in this browser"
+        : "Sets a passphrase. Without it, anyone on this device can read your data.",
+      action: "closeSheet();setTimeout(()=>setupPassphraseSheet(),100);",
+      cta: "Set passphrase",
+      strong: !DB.settings.encrypted,
+    },
+    {
+      id: "backup",
+      emoji: "💾",
+      label: "Recent backup",
+      done: (+DB.lastExportAt || 0) > Date.now() - 60 * 86400000,
+      sub: (+DB.lastExportAt || 0)
+        ? `Last exported ${Math.round((Date.now() - DB.lastExportAt) / 86400000)} days ago`
+        : "Never exported — your data lives only on this device",
+      action: "closeSheet();setTimeout(()=>exportData(),100);",
+      cta: "Export now",
+    },
+    {
+      id: "tour",
+      emoji: "🧭",
+      label: "Took the tour",
+      done: !!(DB.user.tutorialSeenAt && DB.user.tutorialSeenAt > 0),
+      sub: DB.user.tutorialSeenAt ? "12-step walkthrough complete" : "12 short steps with demo data showing every feature",
+      action: "closeSheet();setTimeout(()=>startTutorial(),100);",
+      cta: "Start tour",
+      optional: true,
+    },
+  ];
+  const doneCount = items.filter(i => i.done).length;
+  const pct = Math.round(100 * doneCount / items.length);
+  const remaining = items.filter(i => !i.done && !i.optional).length;
+  openSheet(`
+    <h2 style="margin-bottom:6px">✨ Setup health</h2>
+    <p class="muted" style="font-size:13px;margin-bottom:14px">Quick way to see what's configured. Tap any unfinished item to set it up.</p>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;gap:14px">
+      <div style="font-size:30px;font-weight:700;letter-spacing:-0.5px;color:${pct >= 80 ? "var(--green,#34C759)" : pct >= 50 ? "var(--blue,#007AFF)" : "var(--orange,#FF9500)"}">${pct}%</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600">${doneCount} of ${items.length} configured</div>
+        <div style="font-size:11.5px;color:var(--t3);margin-top:2px">${remaining ? `${remaining} essential${remaining===1?"":"s"} left` : "Essentials done · optional items remain"}</div>
+        <div style="height:5px;background:var(--bg-elev);border-radius:3px;overflow:hidden;margin-top:8px"><div style="height:100%;width:${pct}%;background:${pct >= 80 ? "var(--green,#34C759)" : pct >= 50 ? "var(--blue,#007AFF)" : "var(--orange,#FF9500)"}"></div></div>
+      </div>
+    </div>
+    <div class="list">
+      ${items.map(it => `
+        <div class="row${it.done ? "" : " tappable"}" ${it.done ? "" : `onclick="${it.action}"`}
+          style="${it.strong && !it.done ? "border-left:3px solid var(--orange,#FF9500);background:rgba(255,149,0,0.04);" : ""}opacity:${it.done ? "0.65" : "1"}">
+          <div class="lead">${it.done ? "✅" : it.emoji}</div>
+          <div class="body">
+            <div class="t1">${esc(it.label)}${it.optional && !it.done ? ' <span style="color:var(--t3);font-weight:400;font-size:11px;margin-left:4px">optional</span>' : ""}</div>
+            <div class="t2">${esc(it.sub)}</div>
+          </div>
+          ${it.done
+            ? `<div class="trail" style="color:var(--green,#34C759);font-size:11.5px;font-weight:600">DONE</div>`
+            : `<div class="trail chev"></div>`}
+        </div>
+      `).join("")}
+    </div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">${pct === 100 ? "✓ All set" : "Done for now"}</button></div>
+  `);
+}
+
 function helpTipsSheet() {
   const tips = [
     { icon: "✓", title: "Check off a habit",        body: "Tap the circle next to a habit on Today. Tap the 🔥 streak pill to see its full history." },
@@ -5775,19 +5919,24 @@ function renderToday() {
         text: `Quick check-in: how's the day going?`,
         onclick: `calendarDaySheet(${jsAttr(todayKey())})` };
     }
-    // 5) Setup nudge — user has been around for a week+, has habits set up,
-    //    but hasn't turned on notifications. Notifications are a major
-    //    retention lever and orphaned from onboarding; the Daily Pulse is
-    //    the only place they'll naturally see the prompt.
+    // 5) Setup-health nudge — for users who've been around a week+ but
+    //    haven't configured the essentials. The Setup Health sheet is the
+    //    one place that shows every feature with its status, so we route
+    //    here instead of jumping to one specific Settings row.
     const onboardedDays = DB.user && DB.user.onboardedAt
       ? (Date.now() - DB.user.onboardedAt) / 86400000 : 0;
-    if (onboardedDays >= 7 &&
-        (DB.habits || []).length >= 2 &&
-        !DB.settings.notifications &&
-        !DB.settings._notifyNudgeDismissed) {
-      return { emoji: "🔔",
-        text: `Set up reminders — never miss a streak`,
-        onclick: `notificationSettingsSheet()` };
+    if (onboardedDays >= 3 && !DB.settings._setupNudgeDismissed) {
+      // Count missing essentials. We nudge if 2+ essentials remain.
+      const essentialsMissing =
+        ((DB.habits || []).length < 1 ? 1 : 0) +
+        ((DB.goals || []).length < 1 ? 1 : 0) +
+        (!DB.settings.notifications ? 1 : 0) +
+        ((+DB.settings.monthlySavingsTarget || 0) <= 0 ? 1 : 0);
+      if (essentialsMissing >= 2) {
+        return { emoji: "✨",
+          text: `${essentialsMissing} setup steps left — take a minute`,
+          onclick: `setupHealthSheet()` };
+      }
     }
     // 6) Backup nudge — only when nothing more pressing surfaced. Targets
     //    users who haven't exported in >60 days (or never), AND who have
@@ -9492,7 +9641,7 @@ function renderMoney() {
       <div id="wh-flow"></div>
       ${cashFlowCardHtml()}
       <div id="wh-spending-breakdown"></div>
-      <div class="row tappable" onclick="spendingBreakdownSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:12px">
+      <div class="row tappable" onclick="spendingBreakdownSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:8px">
         <div style="font-size:24px;width:40px;text-align:center">📊</div>
         <div class="body">
           <div class="t1" style="margin:0">Spending by category</div>
@@ -9500,6 +9649,24 @@ function renderMoney() {
         </div>
         <div class="trail chev"></div>
       </div>
+      ${(() => {
+        // Always-available entry to the anomaly review sheet so users can
+        // browse unusual charges historically — not just when the Daily
+        // Pulse happens to surface one.
+        const anomalies = (typeof detectAnomalies === "function") ? detectAnomalies() : [];
+        const count = anomalies.length;
+        if ((DB.spend || []).filter(t => (+t.amount || 0) > 0).length < 10) return ""; // need enough data to make this useful
+        return `
+          <div class="row tappable" onclick="anomaliesSheet()" role="button" tabindex="0" style="background:var(--card);border:1px solid var(--sep);${count ? "border-left:3px solid var(--orange,#FF9500);" : ""}border-radius:var(--r);padding:14px;margin-bottom:12px">
+            <div style="font-size:24px;width:40px;text-align:center">${count ? "⚠️" : "✅"}</div>
+            <div class="body">
+              <div class="t1" style="margin:0">${count ? `Unusual charges <span style="background:var(--orange,#FF9500);color:#fff;border-radius:999px;padding:2px 8px;font-size:10px;margin-left:6px;font-weight:700">${count}</span>` : "Spending insights"}</div>
+              <div class="t2">${count ? `${count} transaction${count===1?"":"s"} flagged ≥3× your usual category amount` : "Nothing unusual in recent transactions"}</div>
+            </div>
+            <div class="trail chev"></div>
+          </div>
+        `;
+      })()}
       <div id="wh-milestones"></div>
       ${milestonesCard}
       ${benchmarksCard}
@@ -21400,6 +21567,22 @@ function renderSettings() {
 
     <div class="section-h"><span class="lbl">Help</span></div>
     <div class="list">
+      <div class="row tappable" onclick="setupHealthSheet()">
+        <div class="lead">✨</div>
+        <div class="body"><div class="t1">Setup health</div><div class="t2">${(() => {
+          const items = ["habits","goals","savings","notifications","monthlyTarget","encryption","backup"];
+          let done = 0;
+          if ((DB.habits||[]).length >= 1) done++;
+          if ((DB.goals||[]).length >= 1) done++;
+          if ((DB.savings||[]).length >= 1) done++;
+          if (DB.settings.notifications) done++;
+          if ((+DB.settings.monthlySavingsTarget||0) > 0) done++;
+          if (DB.settings.encrypted) done++;
+          if ((+DB.lastExportAt||0) > Date.now() - 60 * 86400000) done++;
+          return `${done} of ${items.length} essentials configured`;
+        })()}</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="helpTipsSheet()">
         <div class="lead">💡</div>
         <div class="body"><div class="t1">Tips &amp; how-to</div><div class="t2">Get the most out of Ascend in a few minutes</div></div>
@@ -35113,6 +35296,11 @@ function whatsNewSheet() {
       '<div class="row"><div class="lead">\u{1F4DD}</div><div class="body"><div class="t1">Negotiation scripts + paper trading + career tracker</div><div class="t2">Cornileus drafts cancellation emails. Test investing ideas without committing. Track every job + raise + total comp CAGR.</div></div></div>' +
       '<div class="row"><div class="lead">\u{1F4C5}</div><div class="body"><div class="t1">Life events timeline + money mood</div><div class="t2">Map the big life moments that shaped your money story. Tag transactions with the emotion driving them.</div></div></div>' +
       '<div class="row"><div class="lead">\u{2600}\u{FE0F}</div><div class="body"><div class="t1">Cornileus relationship</div><div class="t2">Morning briefing, 4 tone options, full transparency on what he knows, memory (pinned facts), followups (did you do it?), annual review.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{26A0}\u{FE0F}</div><div class="body"><div class="t1">Anomaly detection</div><div class="t2">After every bank sync, scans for transactions ≥3× your usual category amount. "Restaurants $240 = 7× your average." Catches fraud + lifestyle drift fast.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F91D}</div><div class="body"><div class="t1">Couples / household mode</div><div class="t2">Pair two phones with a code → both see the same bank accounts, transactions, and holdings. Habits + Cornileus stay personal to each device.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4C5}</div><div class="body"><div class="t1">Calendar agenda view + life events</div><div class="t2">Third toggle on Calendar shows the next 60 days as a list — bills, plans, important dates. Mark life events (got married, bought house) on your net-worth chart for context.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F3B2}</div><div class="body"><div class="t1">Honest retirement forecast</div><div class="t2">500-simulation Monte Carlo with 16% volatility. See the 10th–90th percentile range, not a fake-precise single line.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{2728}</div><div class="body"><div class="t1">Setup health check</div><div class="t2">Settings → Help → Setup health shows every feature with its status. One-tap to configure anything you haven\'t set up yet.</div></div></div>' +
     '</div>' +
     '<div class="actions"><button class="btn secondary" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet()">Got it</button>' +
     '<button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet();setTimeout(()=>skillTreeSheet(),120)">🌳 See my skill tree</button></div>'
@@ -35276,6 +35464,7 @@ function init() {
     _pairingTokenString, _decodePairingToken,
     nwAnnotationsSheet, deleteNwAnnotation, _agendaViewHtml,
     monteCarloRetirement, monteCarloFanChart,
+    setupHealthSheet,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
     setPassphrase, unlockWithPassphrase, disablePassphrase, encryptObject, decryptObject, deriveKey,
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,
