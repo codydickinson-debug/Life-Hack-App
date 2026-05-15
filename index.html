@@ -2801,8 +2801,21 @@ async function backendExchange(public_token, institution_name) {
 }
 async function backendSync() {
   const r = await api("/sync", { method: "POST", body: JSON.stringify({ userId: ensureUserId() }) });
-  // Merge accounts (replace fully — they're a snapshot)
+  // Merge accounts (replace fully — they're a snapshot). Capture the new
+  // account_id set so we can prune orphan references in derived stores.
   DB.accounts = r.accounts || [];
+  const liveAcctIds = new Set(DB.accounts.map(a => a.account_id));
+  // Prune debtMeta entries keyed to accounts that no longer exist (closed
+  // by Plaid, user removed the card, etc). Without this they linger as
+  // zombie apr/minPayment records forever.
+  if (DB.debtMeta && typeof DB.debtMeta === "object") {
+    for (const aid of Object.keys(DB.debtMeta)) {
+      if (!liveAcctIds.has(aid)) delete DB.debtMeta[aid];
+    }
+  }
+  // Same for holdings — Plaid drops a position if the account closes,
+  // otherwise DB.holdings would still claim a stale account.
+  DB.holdings = (DB.holdings || []).filter(h => !h.account_id || liveAcctIds.has(h.account_id));
   snapshotNetWorth();
   // Merge transactions: any plaid_id we already have, skip; else add
   const existing = new Set(DB.spend.filter(t => t.source === "plaid").map(t => t.plaid_id));
