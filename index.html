@@ -11996,7 +11996,13 @@ async function counselorSend(text) {
   // Bound a single message to keep tokens reasonable
   if (text.length > 4000) text = text.slice(0, 4000);
 
-  DB.counselor.thread.push({ role: "user", content: text, t: Date.now() });
+  // Capture a session token so we can detect mid-flight cancellation. The
+  // counselor sheet auto-wipes the thread on close (privacy); without this
+  // guard, an in-flight reply that lands AFTER close pushes a ghost message
+  // into the now-cleared thread and the user sees a stale assistant turn
+  // on their next open.
+  const userTurn = { role: "user", content: text, t: Date.now() };
+  DB.counselor.thread.push(userTurn);
   if (DB.counselor.thread.length > 60) DB.counselor.thread = DB.counselor.thread.slice(-60);
   await save();
   counselorRender();
@@ -12041,6 +12047,14 @@ async function counselorSend(text) {
     if (data && data.error) throw new Error(data.error.message || data.error);
     const rawReply = (data.content || []).map(c => c.text).join("\n") || "(no response)";
 
+    // Mid-flight cancellation guard: if the user closed the counselor
+    // sheet while we were waiting on the API, closeSheet() wiped
+    // DB.counselor.thread to []. Pushing the assistant reply now would
+    // resurrect the conversation as a ghost message on next open. Drop
+    // the reply silently if our user turn is no longer in the thread.
+    const stillThere = (DB.counselor.thread || []).some(m => m === userTurn || (m.role === "user" && m.t === userTurn.t && m.content === userTurn.content));
+    if (!stillThere) return;
+
     // Parse any <ACTION>{...}</ACTION> blocks Cylan emitted, execute them
     // against DB, strip the tags from the displayed message, and attach a
     // list of confirmation chips to the assistant turn so the UI can show
@@ -12054,6 +12068,10 @@ async function counselorSend(text) {
     });
     await save();
   } catch (e) {
+    // Same cancellation guard for the error path — don't push an error
+    // bubble into a thread the user has already closed.
+    const stillThere = (DB.counselor.thread || []).some(m => m === userTurn || (m.role === "user" && m.t === userTurn.t && m.content === userTurn.content));
+    if (!stillThere) return;
     DB.counselor.thread.push({
       role: "assistant",
       content: "I hit a snag reaching the backend: " + (e.message || "unknown error") + ". If this keeps happening, check the daily AI cap in Settings or your worker's logs.",
