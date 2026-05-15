@@ -6742,6 +6742,35 @@ function renderMoney() {
       ${DB.savings.length ? DB.savings.map(s => {
         const p = s.target ? Math.min(100, Math.round(100*s.current/s.target)) : 0;
         const met = s.target && s.current >= s.target;
+        // Project the monthly pace from the last 90 days of deposits.
+        // When we have a reasonable pace and a remaining gap, compute an ETA.
+        const paceChip = (() => {
+          if (met) return "";
+          const log = Array.isArray(s.log) ? s.log : [];
+          if (!log.length) return "";
+          const cutoff = Date.now() - 90 * 86400000;
+          let net90 = 0, days = 0;
+          let firstDay = null;
+          for (const l of log) {
+            if (!l.date) continue;
+            const ts = new Date(l.date + "T00:00:00").getTime();
+            if (ts < cutoff) continue;
+            net90 += (+l.amount || 0);
+            if (firstDay === null || ts < firstDay) firstDay = ts;
+          }
+          if (net90 <= 0 || firstDay === null) return "";
+          // How many days does the deposit window actually cover?
+          const windowDays = Math.max(7, Math.min(90, Math.round((Date.now() - firstDay) / 86400000) || 1));
+          const perDay = net90 / windowDays;
+          const monthly = perDay * 30;
+          const remaining = Math.max(0, (+s.target || 0) - (+s.current || 0));
+          if (monthly < 1 || remaining <= 0) return "";
+          const monthsToGoal = remaining / monthly;
+          const eta = new Date();
+          eta.setDate(eta.getDate() + Math.ceil(monthsToGoal * 30));
+          const etaLabel = eta.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+          return `<div style="font-size:11px;color:var(--t3);margin-top:6px;line-height:1.4">~<span data-priv="amount" style="color:var(--t2);font-weight:600">${fmt$0(monthly)}</span>/mo · finishing <b style="color:var(--t1)">${etaLabel}</b></div>`;
+        })();
         return `
           <div class="sav-card">
             <div class="sav-top">
@@ -6760,6 +6789,7 @@ function renderMoney() {
                 <button class="btn sm secondary" onclick="logSavingSheet('${s.id}')">Log</button>
               </div>
             </div>
+            ${paceChip}
           </div>
         `;
       }).join("") : emptyStateHtml({
