@@ -2553,18 +2553,21 @@ async function backendRemoveItem(itemId) {
   return api(`/item/${encodeURIComponent(itemId)}?userId=${encodeURIComponent(ensureUserId())}`, { method: "DELETE" });
 }
 
-/* Open Plaid Link — calls backend for link_token, then launches the SDK */
+/* Open Plaid Link — calls backend for link_token, then launches the SDK.
+   Toast copy avoids the word "Plaid" in user-facing surfaces — most users
+   won't recognize the vendor name, and "bank connect" is what the action
+   actually does. */
 async function connectBank() {
-  if (!window.Plaid) { toast("Plaid Link still loading — try again"); return; }
+  if (!window.Plaid) { toast("Bank connect still loading — try again"); return; }
   if (!_backendReady()) {
-    toast("Set backend URL + Enrollment Key in Settings first");
+    toast("Set up bank sync in Settings first");
     showTab("settings");
     return;
   }
   toast("Opening bank connect…");
   let lt;
   try { lt = await backendLinkToken(); }
-  catch (e) { toast("Link token error: " + e.message); return; }
+  catch (e) { toast("Couldn't open bank connect — try again"); return; }
 
   const handler = window.Plaid.create({
     token: lt.link_token,
@@ -2575,9 +2578,9 @@ async function connectBank() {
         const s = await backendSync();
         toast(`Synced ${s.added} new transactions`);
         render();
-      } catch (e) { toast("Exchange failed: " + e.message); }
+      } catch (e) { toast("Couldn't link bank — try again"); }
     },
-    onExit: (err) => { if (err) toast("Plaid: " + (err.error_message || err.error_code || "exit")); },
+    onExit: (err) => { if (err) toast("Bank connect cancelled"); },
   });
   handler.open();
 }
