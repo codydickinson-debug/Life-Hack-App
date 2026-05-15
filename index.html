@@ -14151,6 +14151,70 @@ function _stocksSetWatchlistSort(s) {
   _stocksRenderWatchlist();
 }
 
+/* ---------- Cornileus long-term memories ----------
+   User-pinned facts that get injected into every Cornileus system
+   prompt. Stored as DB.counselor.memories = [{id, text, addedAt}].
+   Examples: "I'm getting married Oct 2026", "Risk-averse — bonds OK".
+*/
+function cornileusMemoriesSheet() {
+  if (!DB.counselor) DB.counselor = { thread: [], memories: [] };
+  if (!Array.isArray(DB.counselor.memories)) DB.counselor.memories = [];
+  const memories = DB.counselor.memories.slice().reverse();
+  openSheet(`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+      ${cornAvatarHtml(44, false, "neutral")}
+      <div style="flex:1;min-width:0">
+        <h2 style="margin:0">🧠 Cornileus' memory</h2>
+        <div class="muted" style="font-size:12.5px;margin-top:2px">Facts Cornileus references in every conversation.</div>
+      </div>
+    </div>
+    <p style="font-size:12.5px;color:var(--t2);line-height:1.5;margin-bottom:12px">Things you tell Cornileus to remember about you — they show up in every system prompt, so he doesn't forget context across conversations.</p>
+    <label style="font-size:11px">Add a memory</label>
+    <div style="display:flex;gap:6px;margin-bottom:14px">
+      <input id="corn-mem-input" placeholder="e.g. I'm getting married in October 2026"
+        style="flex:1;background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();_cornileusAddMemory(this.value);this.value='';}" />
+      <button class="btn" style="font-size:13px;padding:9px 14px" onclick="_cornileusAddMemory(document.getElementById('corn-mem-input').value);document.getElementById('corn-mem-input').value=''">+ Save</button>
+    </div>
+    ${memories.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">${memories.length} memor${memories.length===1?"y":"ies"}</div>
+      ${memories.map(m => `
+        <div style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px">
+          <div style="flex:1;font-size:12.5px;color:var(--t1);line-height:1.45">${esc(m.text)}</div>
+          <button onclick="_cornileusRemoveMemory(${jsAttr(m.id)})" style="background:transparent;border:0;color:var(--red,#FF3B30);font-size:14px;padding:0 2px;cursor:pointer;flex-shrink:0" aria-label="Remove memory">×</button>
+        </div>
+      `).join("")}
+    ` : `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:12.5px;font-style:italic">No memories yet. Add things Cornileus should always remember about you — life events, preferences, constraints.</div>`}
+    <div style="background:var(--bg-elev);border-radius:8px;padding:10px 12px;margin-top:14px;font-size:11px;color:var(--t2);line-height:1.5">
+      <b style="color:var(--t1)">Good memories to add:</b> "I'm self-employed, income varies", "Wedding in Oct 2026", "Targeting FIRE by 50", "Conservative — avoid leverage", "Wife and I split bills 60/40", "Two kids in 529s", "I prefer dividend ETFs to growth".
+    </div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  setTimeout(() => { const el = document.getElementById("corn-mem-input"); if (el) el.focus(); }, 60);
+}
+
+async function _cornileusAddMemory(text) {
+  const t = (text || "").trim();
+  if (!t) return;
+  if (!DB.counselor) DB.counselor = { thread: [] };
+  if (!Array.isArray(DB.counselor.memories)) DB.counselor.memories = [];
+  if (DB.counselor.memories.length >= 30) {
+    toast("Memory limit reached (30 max) — remove some first");
+    return;
+  }
+  const id = "m_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
+  DB.counselor.memories.push({ id, text: t.slice(0, 240), addedAt: Date.now() });
+  await save();
+  cornileusMemoriesSheet();
+}
+
+async function _cornileusRemoveMemory(id) {
+  if (!DB.counselor || !Array.isArray(DB.counselor.memories)) return;
+  DB.counselor.memories = DB.counselor.memories.filter(m => m.id !== id);
+  await save();
+  cornileusMemoriesSheet();
+}
+
 /* ---------- "What Cornileus knows about you" ----------
    Full transparency: shows the snapshot data Cornileus sees about
    the user, grouped by category, with counts. Builds trust by
@@ -14218,6 +14282,21 @@ function cornileusKnowsSheet() {
       ${row("Money personality", (snap.money_personality && snap.money_personality.primary) || "Not taken")}
       ${row("Risk tolerance", profile.riskTolerance || "Not set")}
     `)}
+
+    ${(() => {
+      const mems = (DB.counselor && Array.isArray(DB.counselor.memories)) ? DB.counselor.memories : [];
+      if (!mems.length) {
+        return section("Memories (pinned)", `
+          <div onclick="closeSheet();setTimeout(()=>cornileusMemoriesSheet(),120)" role="button" tabindex="0" style="background:var(--bg-elev);border-radius:8px;padding:11px 13px;cursor:pointer">
+            <div style="font-size:12.5px;color:var(--t1);font-weight:600">+ Add a memory</div>
+            <div style="font-size:11px;color:var(--t3);margin-top:2px">No memories pinned yet — facts Cornileus should always know.</div>
+          </div>
+        `);
+      }
+      return section(`Memories (${mems.length} pinned)`, mems.map(m => `
+        <div style="background:var(--bg-elev);border-radius:8px;padding:8px 11px;margin-bottom:3px;font-size:12px;color:var(--t1);line-height:1.4">🧠 ${esc(m.text)}</div>
+      `).join("") + `<button class="btn secondary" style="width:100%;margin-top:6px;font-size:12px;padding:8px" onclick="closeSheet();setTimeout(()=>cornileusMemoriesSheet(),120)">Manage memories →</button>`);
+    })()}
 
     ${section("Net worth & wealth", `
       ${row("Net worth", "$" + (snap.net_worth != null ? snap.net_worth.toLocaleString() : "—"))}
@@ -17529,6 +17608,14 @@ function renderSettings() {
         <div class="body"><div class="t1">What Cornileus knows about you</div><div class="t2">Inspect every data point Cornileus sees — full transparency</div></div>
         <div class="trail chev"></div>
       </div>
+      <div class="row tappable" onclick="cornileusMemoriesSheet()" role="button" tabindex="0">
+        <div class="lead">🧠</div>
+        <div class="body"><div class="t1">Cornileus' memory</div><div class="t2">${(() => {
+          const n = ((DB.counselor && DB.counselor.memories) || []).length;
+          return n ? `${n} pinned memor${n===1?"y":"ies"} — facts referenced in every chat` : "Add facts Cornileus should always remember about you";
+        })()}</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="cornileusMorningBriefingSheet()" role="button" tabindex="0">
         <div class="lead">☀️</div>
         <div class="body"><div class="t1">Morning briefing</div><div class="t2">Today's portfolio, top concern, one focus — generated daily</div></div>
@@ -20423,7 +20510,12 @@ async function counselorSend(text) {
       strict:      "\n\nTONE OVERRIDE: Lean STRICT and ACCOUNTABLE. Skip the warm-up. Open with the biggest problem in their finances or plan. Call out avoidance and rationalization. Set hard expectations. End with a specific deadline-bound action.",
       friendly:    "\n\nTONE OVERRIDE: Lean CASUAL and CONVERSATIONAL. Plain speech, no jargon, light analogies. Sound like a financially literate friend at a coffee shop, not an advisor in a suit. Keep it under 150 words.",
     })[tone] || "";
-    const system = COUNSELOR_SYSTEM + ctxHint + toneHint + "\n\nUSER SNAPSHOT (current right now):\n```json\n" + snapshotJson + "\n```";
+    // Long-term memories the user has explicitly told Cornileus to remember
+    const mems = (DB.counselor && Array.isArray(DB.counselor.memories)) ? DB.counselor.memories : [];
+    const memBlock = mems.length
+      ? "\n\nLONG-TERM MEMORIES (the user has pinned these as always-true context):\n" + mems.map(m => "- " + m.text).join("\n")
+      : "";
+    const system = COUNSELOR_SYSTEM + ctxHint + toneHint + memBlock + "\n\nUSER SNAPSHOT (current right now):\n```json\n" + snapshotJson + "\n```";
 
     // Send the last 24 turns — enough for continuity, bounded for cost.
     const recent = DB.counselor.thread.slice(-24);
