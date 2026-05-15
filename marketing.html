@@ -339,6 +339,42 @@
     font-weight: 600;
   }
 </style>
+<!-- Schema.org SoftwareApplication structured data — gives Google a richer
+     understanding of the page (price, OS, category) for better search results
+     and potentially knowledge-panel eligibility. -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "SoftwareApplication",
+  "name": "Ascend",
+  "alternateName": "Ascend — Habits, Goals & Money",
+  "description": "Habits, money, goals, and a financial counselor (Cornileus) that knows your numbers. Local-first, encrypted, no tracking.",
+  "url": "https://life-hack-app.vercel.app/",
+  "applicationCategory": "FinanceApplication",
+  "applicationSubCategory": "Personal Finance",
+  "operatingSystem": "iOS, Android, Web",
+  "offers": {
+    "@type": "Offer",
+    "price": "0",
+    "priceCurrency": "USD"
+  },
+  "image": "https://life-hack-app.vercel.app/icon-1024.png",
+  "screenshot": "https://life-hack-app.vercel.app/icon-1024.png",
+  "featureList": [
+    "Habit tracking with streaks and heatmap",
+    "Goal hierarchy (daily / short-term / life)",
+    "Plan tab with Health snapshot, pace chips, and what-if simulator",
+    "Money tab: spend, savings, net worth, debt payoff, cashflow forecast",
+    "Stocks: live quotes and market scans",
+    "AI counselor (Cornileus) with CFP-level guidance",
+    "Wealth Score with shareable card",
+    "Optional Plaid bank sync (read-only, encrypted at rest)",
+    "Optional client-side AES-GCM encryption with passphrase",
+    "Privacy mode blurs all dollar amounts",
+    "Works offline (PWA)"
+  ]
+}
+</script>
 </head>
 <body>
 
@@ -531,6 +567,8 @@
 <footer class="site">
   <div class="container">
     Made with care. Open source on <a href="https://github.com/codydickinson-debug/Life-Hack-App" target="_blank" rel="noopener noreferrer">GitHub</a>.
+    &nbsp;·&nbsp; <a href="/privacy">Privacy</a>
+    &nbsp;·&nbsp; <a href="/terms">Terms</a>
   </div>
 </footer>
 

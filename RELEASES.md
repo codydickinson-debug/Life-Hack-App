@@ -1,5 +1,93 @@
 # Ascend — Releases
 
+## v3.2 — 2026-05-15
+
+Major round between v3.1 and a future App Store submission. New tabs, new AI persona, new visual hero, App Store paperwork.
+
+### New tabs
+
+- **Plan tab** — Plan Health snapshot (aggregate $ saved + % progress + Next Up plan), per-plan pace chips ("On track" / "↑ 2w ahead" / "↓ 1w behind"), what-if simulator, savings opportunities engine, three-tier plan organization (short / mid / long).
+- **Calendar tab** — month + year heatmap toggle, mood emoji on every day, per-day journal notes, retroactive habit backfill from any past day, jump-to-day from Today's week strip.
+- **Stocks tab** — native rebuild (no iframe). Live quotes, watchlist with sparklines, market scans across S&P 500 / REITs / crypto / ETFs / bonds, predictions, housing/mortgage analyzers.
+
+### Cornileus (was Cylan) — AI counselor
+
+- Renamed across every surface — code, copy, FAB, manifest shortcuts, share cards.
+- 12-step interactive guided tour walks new users through every tab with live demo data, then restores their real data on exit.
+- Mid-flight cancellation guard — closing the chat sheet drops any in-flight reply so it can't ghost-message later.
+- Per-step "Ask Cornileus" handoffs from the tour with context-aware seed prompts.
+- Saved insights — pin any reply so it survives auto-clear; reachable from a dedicated sheet.
+- Action emission — Cornileus can add plans, log spend, deposit to savings, mark goals complete via `<ACTION>{...}</ACTION>` blocks in its replies. Confirmed back as chips under the message.
+
+### Wealth Score hero
+
+- Top-of-Money card with circular SVG gauge (0-100), color-coded band, 7-day delta, top-gap suggestion.
+- 30-day score sparkline.
+- Tangible "you'll cross $X by [date]" projection at current pace.
+- 1080×1080 shareable card via Web Share API or download.
+- "Ask Cornileus how to raise this" CTA wired with the score + biggest gap.
+
+### Today refresh
+
+- **Daily Pulse** — single contextual nudge at the top of Today rotating across plan deadlines, net-worth growth, win streaks, mood check-ins, and stale-backup reminders.
+- "On this day" history (1 week / 1 month / 3 months / 6 months / 1 year ago).
+- Streak milestone banner ("X days from a Y-day streak").
+- "What's new in v3.2" sheet auto-surfaces on first launch after upgrade.
+- Customize Today: hide any of 14 sections via Settings.
+
+### Money / Stats / Goals
+
+- Money Health snapshot card.
+- Achievements system — 22 milestones with unlock toasts and a "Next up" progress card.
+- Year review + share streak card.
+- Net worth milestones with milestone-crossing toasts.
+
+### Mainstream + accessibility
+
+- Eight empty states refreshed with action-led copy.
+- A11y pass: aria-labels on FABs, role="button" + tabindex on tappable rows, swipe gestures between tabs.
+- Keyboard shortcuts: ⌘K global search, ? overlay, T/C/G/P/M/S/A single-key tab switches.
+- Reduced-motion respected across animations.
+- Marketing landing page at `/marketing`.
+- Privacy and Terms pages at `/privacy` and `/terms`.
+- robots.txt + sitemap.xml + .well-known/security.txt.
+- Open Graph + Twitter cards on index.html and marketing.html.
+
+### Safety
+
+- Dropped dead settings (`hideLauncher` was unwired, `weekStartsOn` unused).
+- `safeUrl()` blocks `javascript:` / `data:` / etc. on news headline links.
+- `sanitizeBackendUrl()` requires http(s) on the Settings backend URL.
+- Vercel security headers (XCTO, XFO, Referrer-Policy, Permissions-Policy).
+- `save()` quota-exceeded toast — silent loss eliminated.
+- recentSearches now sanitized.
+- Counselor mid-flight cancellation guard.
+- Reset Everything: type-DELETE confirmation + backup-first prompt (Apple guideline 5.1.1(v) ready).
+- PWA shortcuts in manifest now actually parsed (URL params with whitelist).
+
+### App Store readiness
+
+- `docs/APP_STORE_PRIVACY.md` — pre-written nutrition-label answers.
+- `screenshots/` placeholder + README with sizes for both manifest and App Store.
+- `SECURITY.md` + `.well-known/security.txt` for responsible disclosure.
+- Manifest extended with id, lang, dir, display_override, screenshots[], launch_handler, prefer_related_applications.
+- Privacy Policy + Terms of Use pages live and linked from marketing footer.
+
+### Architecture
+
+- Top-of-script table of contents in index.html (~85 lines, hand-curated, navigable by line number).
+- `emptyStateHtml({...})` shared helper for 13+ callsites.
+- Plan/Money/Stats/Pulse snapshot card pattern documented in CLAUDE.md.
+- index.html grew from ~16k to ~23k lines; same single-file architecture.
+
+### Migration
+
+- Existing DBs continue to work — every new field merges over `DEFAULT_DB`.
+- `lastExportAt` defaults to 0; backup nudge waits 30 days from onboarding before firing.
+- Demo-data factory (`_buildDemoData`) refactored into a reusable function used by both the tour overlay and Settings → Load demo data.
+
+---
+
 ## v3.1 — 2026-05-01 (same-day follow-up)
 
 A follow-up pass adding eight requested features on top of v3.0. Same architectural constraints honored.

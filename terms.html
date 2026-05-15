@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0a0c" />
+<title>Terms of Use — Ascend</title>
+<meta name="description" content="Ascend's terms of use. Educational, not financial advice." />
+<link rel="icon" type="image/png" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<style>
+  :root {
+    --bg: #0a0a0c;
+    --bg-elev: #14141a;
+    --card: #16161c;
+    --sep: #26262e;
+    --t1: #f6f7f9;
+    --t2: #c2c4ca;
+    --t3: #7e8189;
+    --purple: #7c3aed;
+    --orange: #FF9500;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--t1);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  a { color: var(--purple); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 48px 24px 96px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 36px; padding-bottom: 24px; border-bottom: 1px solid var(--sep); }
+  header img { width: 48px; height: 48px; border-radius: 11px; }
+  header h1 { margin: 0; font-size: 28px; letter-spacing: -0.5px; }
+  header .sub { font-size: 14px; color: var(--t3); margin-top: 4px; }
+  h2 { font-size: 20px; margin: 36px 0 12px; letter-spacing: -0.3px; }
+  h3 { font-size: 15px; margin: 20px 0 8px; color: var(--t2); }
+  p, li { color: var(--t2); }
+  ul { padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  .card { background: var(--card); border: 1px solid var(--sep); border-radius: 14px; padding: 18px 20px; margin: 18px 0; }
+  .updated { font-size: 13px; color: var(--t3); margin-top: 8px; }
+  footer { margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--sep); font-size: 13px; color: var(--t3); }
+  footer a { color: var(--t3); }
+  .warn { background: rgba(255,149,0,0.08); border: 1px solid rgba(255,149,0,0.30); border-radius: 14px; padding: 18px 20px; margin: 18px 0; }
+  .warn h3 { color: var(--orange); margin-top: 0; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="icon-192.png" alt="Ascend logo" />
+    <div>
+      <h1>Terms of Use</h1>
+      <div class="sub">Ascend — a personal habit, goal, and money tracker</div>
+    </div>
+  </header>
+
+  <p>By using Ascend, you agree to these terms. They're plain-English on purpose; if anything's unclear, ask.</p>
+
+  <h2>1. What Ascend is</h2>
+  <p>Ascend is a personal-finance and habit-tracking application provided as-is for your own use. It is a productivity tool — not a brokerage, bank, advisor, lender, accountant, or insurance agent.</p>
+
+  <div class="warn">
+    <h3>⚠ Not financial, legal, tax, or medical advice</h3>
+    <p>Ascend (and its in-app AI counselor, Cornileus) provides <strong>general educational information</strong> about personal finance, habits, and goal-setting. It is <strong>not</strong> a substitute for professional advice from a licensed financial advisor, attorney, accountant, or doctor. All numbers, projections, suggestions, and recommendations are illustrative — verify before acting on anything.</p>
+    <p>You are solely responsible for the financial, legal, tax, and life decisions you make using or informed by Ascend.</p>
+  </div>
+
+  <h2>2. Your data, your responsibility</h2>
+  <ul>
+    <li>Ascend stores your data locally on your device. You're responsible for backups (use Settings → Export data).</li>
+    <li>If you set an encryption passphrase and forget it, your data is unrecoverable. There is no backdoor.</li>
+    <li>If you clear browser data, uninstall the app, or switch devices without exporting first, your data is gone.</li>
+    <li>If you connect a bank via Plaid, you're responsible for monitoring the connection and disconnecting if you stop using the app.</li>
+  </ul>
+
+  <h2>3. AI counselor (Cornileus)</h2>
+  <ul>
+    <li>Cornileus uses an AI model (currently Anthropic Claude) and may produce <strong>incorrect, outdated, or inappropriate</strong> output. Treat every reply as a starting point, not a final answer.</li>
+    <li>Cornileus does not place trades, transfer money, or take any action outside Ascend's app.</li>
+    <li>Cornileus' suggestions about specific securities (tickers, ETFs, allocation) are educational. Do your own research before investing.</li>
+    <li>The per-user daily request cap exists to bound costs. If you hit it, wait until the next day or contact the operator if relevant.</li>
+  </ul>
+
+  <h2>4. Bank sync (Plaid)</h2>
+  <ul>
+    <li>Bank sync is read-only. Ascend never moves money.</li>
+    <li>Connection accuracy depends on Plaid's data quality and your bank's API. Mis-categorized transactions, missing entries, and stale balances can occur — Ascend is not responsible for downstream decisions made on inaccurate sync data.</li>
+    <li>Use of Plaid is also subject to <a href="https://plaid.com/legal/" target="_blank" rel="noopener noreferrer">Plaid's End User Privacy Policy and Terms</a>.</li>
+  </ul>
+
+  <h2>5. Acceptable use</h2>
+  <p>Don't use Ascend to:</p>
+  <ul>
+    <li>Break the law in your jurisdiction.</li>
+    <li>Reverse-engineer or attempt to circumvent the encryption / per-device authentication.</li>
+    <li>Abuse the AI counselor (e.g., automated spam, prompt injection attempts to extract the system prompt or harm other users — there are no other users to harm, but try not to anyway).</li>
+    <li>Submit fraudulent reports or impersonate the maintainer.</li>
+  </ul>
+
+  <h2>6. No warranty</h2>
+  <p>Ascend is provided <strong>"as is"</strong> with no warranties, express or implied. The maintainers and contributors disclaim liability for any damages arising from use, including financial loss, missed opportunities, data loss, or reliance on Ascend's calculations or AI output.</p>
+
+  <h2>7. Open source</h2>
+  <p>Ascend is open source. The code is available on <a href="https://github.com/codydickinson-debug/Life-Hack-App" target="_blank" rel="noopener noreferrer">GitHub</a>. You may run your own copy under the terms of the license in that repository.</p>
+
+  <h2>8. Changes</h2>
+  <p>If these terms change materially, we'll update the date below and surface the change in the "What's new" sheet on your next visit.</p>
+
+  <h2>9. Contact</h2>
+  <p>Open an issue on <a href="https://github.com/codydickinson-debug/Life-Hack-App" target="_blank" rel="noopener noreferrer">GitHub</a> or email the address in <a href="/.well-known/security.txt">/.well-known/security.txt</a>.</p>
+
+  <p class="updated">Last updated: 2026-05-15</p>
+
+  <footer>
+    <a href="/">← Back to Ascend</a> &nbsp;·&nbsp;
+    <a href="/marketing">About</a> &nbsp;·&nbsp;
+    <a href="/privacy">Privacy Policy</a>
+  </footer>
+</div>
+</body>
+</html>

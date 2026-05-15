@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0a0c" />
+<title>Privacy Policy — Ascend</title>
+<meta name="description" content="Ascend's privacy policy. Local-first, encrypted, no tracking." />
+<link rel="icon" type="image/png" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<style>
+  :root {
+    --bg: #0a0a0c;
+    --bg-elev: #14141a;
+    --card: #16161c;
+    --sep: #26262e;
+    --t1: #f6f7f9;
+    --t2: #c2c4ca;
+    --t3: #7e8189;
+    --purple: #7c3aed;
+    --pink: #ec4899;
+    --green: #34C759;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--t1);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  a { color: var(--purple); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 48px 24px 96px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 36px; padding-bottom: 24px; border-bottom: 1px solid var(--sep); }
+  header img { width: 48px; height: 48px; border-radius: 11px; }
+  header h1 { margin: 0; font-size: 28px; letter-spacing: -0.5px; }
+  header .sub { font-size: 14px; color: var(--t3); margin-top: 4px; }
+  h2 { font-size: 20px; margin: 36px 0 12px; letter-spacing: -0.3px; }
+  h3 { font-size: 15px; margin: 20px 0 8px; color: var(--t2); }
+  p, li { color: var(--t2); }
+  ul { padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: rgba(52,199,89,0.12); color: var(--green); }
+  .card { background: var(--card); border: 1px solid var(--sep); border-radius: 14px; padding: 18px 20px; margin: 18px 0; }
+  .updated { font-size: 13px; color: var(--t3); margin-top: 8px; }
+  footer { margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--sep); font-size: 13px; color: var(--t3); }
+  footer a { color: var(--t3); }
+  code { background: var(--bg-elev); padding: 2px 6px; border-radius: 4px; font-size: 13px; color: var(--t1); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="icon-192.png" alt="Ascend logo" />
+    <div>
+      <h1>Privacy Policy</h1>
+      <div class="sub">Ascend — a local-first habit, goal, and money tracker</div>
+    </div>
+  </header>
+
+  <p><span class="pill">✓ No accounts</span> &nbsp; <span class="pill">✓ No tracking</span> &nbsp; <span class="pill">✓ Encrypted at rest</span></p>
+
+  <p>Ascend is built around one principle: <strong>your data stays on your device unless you explicitly opt into a cloud feature</strong>. This page explains exactly what's stored, what (if anything) leaves your device, and what choice you have.</p>
+
+  <div class="card">
+    <strong>The short version.</strong> Habits, goals, transactions, wins, mood, notes, and net-worth history live in your browser's local storage. There's no account to sign up for, no analytics, no ad networks, no cookies for tracking. Three optional features call third parties — bank sync (Plaid), AI counselor (Anthropic), and stock quotes (Yahoo Finance) — and only when you opt in. Each is described below.</p>
+  </div>
+
+  <h2>1. What's stored on your device</h2>
+  <p>Everything you enter into Ascend is written to your browser's <code>localStorage</code> under the <code>ascend_v2</code> key. That includes:</p>
+  <ul>
+    <li>Habits, streaks, daily completions, and pause history</li>
+    <li>Goals, plans, and step lists</li>
+    <li>Manual transactions, savings buckets, recurring bills, manual assets and liabilities</li>
+    <li>Wins, mood entries, calendar notes, reflections</li>
+    <li>Net-worth history (90-day rolling)</li>
+    <li>Settings (theme, accent color, hidden tab/section preferences, Cornileus chat history if not auto-cleared)</li>
+    <li>If you connect a bank: account balances, account names, transactions, and an item identifier (no credentials)</li>
+  </ul>
+  <p>This data never leaves your device unless you explicitly trigger an action that requires it (Export, AI counselor message, bank sync).</p>
+
+  <h3>Encryption at rest (optional)</h3>
+  <p>You can set a passphrase in Settings to AES-GCM encrypt your local data. The key is derived via PBKDF2-SHA256 (600,000 iterations) and held only in memory. <strong>If you forget the passphrase, your data is unrecoverable by design</strong> — there is no backdoor. Auto-lock can re-prompt for the passphrase after a configurable idle period.</p>
+
+  <h2>2. What leaves your device (only if you opt in)</h2>
+
+  <h3>2.1 Plaid bank sync</h3>
+  <p>If you tap "Connect a bank" and complete the flow, Ascend talks to your own Cloudflare Worker backend (which you configured) and to Plaid:</p>
+  <ul>
+    <li><strong>Sent to Plaid:</strong> the bank account credentials you enter into Plaid Link (these are never seen by Ascend or by your backend — they go directly to Plaid).</li>
+    <li><strong>Sent to your backend:</strong> a per-device user identifier and the Plaid public token, which is exchanged for an access token. The access token is AES-GCM encrypted with a key only your backend knows before being written to Cloudflare KV.</li>
+    <li><strong>Synced to your device:</strong> account balances, transactions, and account metadata.</li>
+  </ul>
+  <p>You can disconnect a bank at any time from Settings → Bank sync, which removes the encrypted token from your backend.</p>
+
+  <h3>2.2 Cornileus AI counselor</h3>
+  <p>When you send a message to Cornileus, Ascend forwards your message plus a snapshot of your financial situation (recent transactions, savings balances, debts, goals — capped at ~18KB) to a backend AI proxy. The proxy attaches an Anthropic API key (which lives only on the backend, never on your device) and forwards the request to <a href="https://www.anthropic.com" target="_blank" rel="noopener noreferrer">Anthropic</a>.</p>
+  <ul>
+    <li>Anthropic processes the message to generate a response. Per their API terms, inputs and outputs aren't used to train their models.</li>
+    <li>The chat thread is held in your local storage and auto-cleared when you close the counselor sheet (you can disable auto-clear).</li>
+    <li>Per-user daily call cap (default 50) is enforced server-side to bound runaway costs.</li>
+  </ul>
+
+  <h3>2.3 Stock quotes & market data</h3>
+  <p>The Stocks tab fetches live quotes, market scans, and news headlines from a Python backend that proxies <a href="https://finance.yahoo.com" target="_blank" rel="noopener noreferrer">Yahoo Finance</a>. Only the tickers you query are sent — no personal information.</p>
+
+  <h2>3. What we never collect</h2>
+  <ul>
+    <li>No analytics or telemetry of any kind. No Google Analytics, no Mixpanel, no PostHog, no Sentry.</li>
+    <li>No ad networks, no third-party tracking pixels, no Meta/TikTok pixels.</li>
+    <li>No location data.</li>
+    <li>No contacts, photos, or device identifiers (other than the per-device random ID Ascend generates locally to talk to your backend).</li>
+    <li>No cookies for tracking. The site uses no cookies at all.</li>
+  </ul>
+
+  <h2>4. Your controls</h2>
+  <ul>
+    <li><strong>Privacy mode</strong> (eye icon, top-right) blurs every dollar amount across the app for screen-sharing.</li>
+    <li><strong>Encryption</strong> (Settings → Privacy & encryption) AES-encrypts everything at rest behind a passphrase.</li>
+    <li><strong>Auto-lock</strong> re-prompts for your passphrase after a configurable idle period.</li>
+    <li><strong>Export data</strong> (Settings → Data) downloads a full JSON backup, plain or encrypted.</li>
+    <li><strong>Reset everything</strong> (Settings → Data) erases all local data. This action cannot be undone.</li>
+    <li><strong>Disconnect a bank</strong> (Settings → Bank sync) removes the encrypted access token from your backend.</li>
+  </ul>
+
+  <h2>5. Children</h2>
+  <p>Ascend is not directed at children under 13. We do not knowingly collect data from anyone (children or adults) — see "What we never collect" above.</p>
+
+  <h2>6. Changes to this policy</h2>
+  <p>If anything here changes, we'll update the date below and call out the change in the in-app "What's new" sheet on your next visit.</p>
+
+  <h2>7. Contact</h2>
+  <p>Questions, security reports, or requests: open an issue on <a href="https://github.com/codydickinson-debug/Life-Hack-App" target="_blank" rel="noopener noreferrer">GitHub</a> or email the address in <a href="/.well-known/security.txt">/.well-known/security.txt</a>.</p>
+
+  <p class="updated">Last updated: 2026-05-15</p>
+
+  <footer>
+    <a href="/">← Back to Ascend</a> &nbsp;·&nbsp;
+    <a href="/marketing">About</a> &nbsp;·&nbsp;
+    <a href="/terms">Terms of Use</a>
+  </footer>
+</div>
+</body>
+</html>

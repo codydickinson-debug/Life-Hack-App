@@ -1,0 +1,27 @@
+# Responsible disclosure — RFC 9116
+# https://www.rfc-editor.org/rfc/rfc9116
+
+Contact: https://github.com/codydickinson-debug/Life-Hack-App/security/advisories/new
+Contact: https://github.com/codydickinson-debug/Life-Hack-App/issues
+Expires: 2027-05-15T00:00:00.000Z
+Preferred-Languages: en
+Canonical: https://life-hack-app.vercel.app/.well-known/security.txt
+Policy: https://github.com/codydickinson-debug/Life-Hack-App/blob/main/SECURITY.md
+
+# If you've found a vulnerability:
+#   1. Open a private security advisory at the first Contact URL above.
+#   2. If that's unavailable, file a regular GitHub issue prefixed with "[security]"
+#      and mention you'd like to coordinate before details are public.
+#   3. Please don't disclose publicly until we've had a chance to respond.
+#
+# What's in scope:
+#   - The web app at https://life-hack-app.vercel.app
+#   - The Python backend under /api/* and /stockanalyzer
+#   - The Cloudflare Worker code in backend/ (if reachable from your install)
+#
+# What's out of scope:
+#   - Self-XSS via DevTools / paste-into-console
+#   - Issues in third-party services we proxy (Plaid, Anthropic, Yahoo Finance) —
+#     report those directly to the upstream vendor
+#   - Rate limiting strictly tighter than what's documented (the daily AI cap is
+#     intentional, not a vuln)

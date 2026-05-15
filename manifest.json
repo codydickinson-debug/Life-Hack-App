@@ -1,23 +1,39 @@
 {
+  "id": "/?source=pwa",
   "name": "Ascend — Habits, Goals & Money",
   "short_name": "Ascend",
-  "description": "Your daily habits, life goals, and money — in one private, encrypted, offline-first place.",
-  "start_url": "./index.html",
-  "scope": "./",
+  "description": "Habits, money, goals, and a financial counselor (Cornileus) that knows your numbers. Local-first, encrypted, no tracking.",
+  "lang": "en-US",
+  "dir": "ltr",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
+  "display_override": ["window-controls-overlay", "standalone", "browser"],
   "orientation": "portrait",
   "background_color": "#F7F7F5",
   "theme_color": "#F7F7F5",
-  "categories": ["productivity", "lifestyle", "finance"],
+  "categories": ["productivity", "lifestyle", "finance", "utilities"],
   "icons": [
-    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
-    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
-    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+    { "src": "icon-192.png",          "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png",          "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
+    { "src": "icon-1024.png",         "sizes": "1024x1024", "type": "image/png", "purpose": "any" }
+  ],
+  "screenshots": [
+    { "src": "screenshots/today.png",     "sizes": "1170x2532", "type": "image/png", "form_factor": "narrow", "label": "Today tab — habits, wins, daily pulse" },
+    { "src": "screenshots/calendar.png",  "sizes": "1170x2532", "type": "image/png", "form_factor": "narrow", "label": "Calendar — habits and mood by day" },
+    { "src": "screenshots/plan.png",      "sizes": "1170x2532", "type": "image/png", "form_factor": "narrow", "label": "Plan — health snapshot and pace tracking" },
+    { "src": "screenshots/money.png",     "sizes": "1170x2532", "type": "image/png", "form_factor": "narrow", "label": "Money — net worth, spending, debt" },
+    { "src": "screenshots/cornileus.png", "sizes": "1170x2532", "type": "image/png", "form_factor": "narrow", "label": "Cornileus — your AI financial counselor" }
   ],
   "shortcuts": [
-    { "name": "Add spend",  "short_name": "+Spend",  "description": "Log a transaction",                         "url": "./index.html?tab=money&action=add-spend" },
-    { "name": "Add a win",  "short_name": "+Win",    "description": "Capture a small victory",                   "url": "./index.html?tab=today&action=add-win" },
-    { "name": "Talk to Cornileus", "short_name": "Cornileus", "description": "Open the AI financial counselor",   "url": "./index.html?action=counselor" },
-    { "name": "Today",      "short_name": "Today",   "description": "Open today's habits and safe-to-spend",     "url": "./index.html?tab=today" }
-  ]
+    { "name": "Add spend",  "short_name": "+Spend",  "description": "Log a transaction",                       "url": "/?tab=money&action=add-spend" },
+    { "name": "Add a win",  "short_name": "+Win",    "description": "Capture a small victory",                 "url": "/?tab=today&action=add-win" },
+    { "name": "Talk to Cornileus", "short_name": "Cornileus", "description": "Open the AI financial counselor", "url": "/?action=counselor" },
+    { "name": "Today",      "short_name": "Today",   "description": "Open today's habits and safe-to-spend",   "url": "/?tab=today" }
+  ],
+  "launch_handler": {
+    "client_mode": ["navigate-existing", "auto"]
+  },
+  "prefer_related_applications": false
 }

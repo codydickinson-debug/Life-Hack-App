@@ -1,0 +1,11 @@
+User-agent: *
+Allow: /
+
+# Don't index the bare app root or stockanalyzer subroutes — they're not
+# useful as standalone landing pages and produce a poor search snippet.
+# /marketing, /privacy, /terms are the canonical pages for crawlers.
+Disallow: /stockanalyzer
+Disallow: /stockanalyzer-static/
+Disallow: /api/
+
+Sitemap: https://life-hack-app.vercel.app/sitemap.xml
