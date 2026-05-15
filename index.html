@@ -5038,9 +5038,14 @@ function renderToday() {
     <!-- ===== DO TODAY: habits, wins (the daily action lives here) ===== -->
     <div class="hero">
       <div class="h-eyebrow">Today's progress</div>
-      <div class="h-big">${p.done} / ${p.total} habits</div>
-      <div class="h-sub">${p.total ? (p.pct===100 ? "All done — keep the streak alive 🔥" : "You've got this.") : "Add a habit to get started."}</div>
-      <div class="h-bar"><div class="h-fill" style="width:${p.pct}%"></div></div>
+      ${p.total ? `
+        <div class="h-big">${p.done} / ${p.total} habits</div>
+        <div class="h-sub">${p.pct===100 ? "All done — keep the streak alive 🔥" : "You've got this."}</div>
+        <div class="h-bar"><div class="h-fill" style="width:${p.pct}%"></div></div>
+      ` : `
+        <div class="h-big" style="font-size:22px;line-height:1.2">Pick your first habit</div>
+        <div class="h-sub" style="margin-bottom:0">Tap a starter below or roll your own — small wins compound.</div>
+      `}
       <div class="daychips">
         ${days.map(d=>{
           const isToday = todayKey(d) === todayKey();
