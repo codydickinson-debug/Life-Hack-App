@@ -28908,12 +28908,23 @@ function startingBalance() {
   return totalSaved();
 }
 function avgDailyDiscretionary() {
-  // Average daily spend over the past 30 days
+  // Average daily spend over the past 30 days, MINUS the recurring portion.
+  // cashflowProject already subtracts recurring expenses separately via
+  // dailyNetRecurring, so if we returned the raw 30-day average we'd
+  // double-count the recurring chunks (Rent, gym, Netflix, etc.) that show
+  // up in DB.spend AND in DB.recurring. Subtracting recurring/30 cleanly
+  // leaves "discretionary on top of recurring" — exactly what the forecast
+  // wants. Floored at 0 so a quiet 30-day window doesn't produce a negative
+  // discretionary that would mistakenly add to the balance.
   const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - 30);
   const ck = todayKey(cutoff);
   const recent = (DB.spend || []).filter(t => t.date >= ck && (+t.amount) > 0);
   const total = recent.reduce((a, t) => a + (+t.amount || 0), 0);
-  return total / 30;
+  const rawDaily = total / 30;
+  const recurringDaily = (typeof recurringMonthlyTotal === "function")
+    ? recurringMonthlyTotal("expense") / 30
+    : 0;
+  return Math.max(0, rawDaily - recurringDaily);
 }
 function cashflowProject(days) {
   if (days == null) days = 90;
