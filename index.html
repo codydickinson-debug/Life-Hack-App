@@ -5157,6 +5157,24 @@ function renderToday() {
       }
     }
 
+    // 0e) Stocks price alert triggered in the last 72h. Time-sensitive
+    //    market signal — surface above non-urgent net-worth / mood pulses.
+    try {
+      const alerts = (DB.stocks && Array.isArray(DB.stocks.alerts)) ? DB.stocks.alerts : [];
+      const cutoff = Date.now() - 72 * 3600 * 1000;
+      const fresh = alerts.filter(a => a.triggeredAt && a.triggeredAt >= cutoff)
+                          .sort((a, b) => b.triggeredAt - a.triggeredAt)[0];
+      if (fresh) {
+        const dir = fresh.direction === "above" ? "↑" : "↓";
+        const hrs = Math.max(1, Math.round((Date.now() - fresh.triggeredAt) / 3600000));
+        const when = hrs < 24 ? `${hrs}h ago` : `${Math.round(hrs/24)}d ago`;
+        return { emoji: "🔔",
+          text: `${fresh.ticker} ${dir} $${(+fresh.threshold).toFixed(2)}`,
+          suffix: `· alert ${when}`,
+          onclick: `showTab('stocks')` };
+      }
+    } catch {}
+
     // 1) Plan deadline near (≤30d) with $ remaining
     const plans = (DB.plans || []).filter(p => !p.completed && p.target_date && +p.target_amount > 0);
     for (const p of plans.sort((a, b) => new Date(a.target_date) - new Date(b.target_date))) {
@@ -17615,7 +17633,10 @@ function buildCounselorSnapshot() {
     },
     risk_tolerance: DB.investing?.riskTolerance || "moderate",
     retirement_target_age: DB.retirement?.targetAge || 65,
+    retirement_monthly_contribution: +(DB.retirement && DB.retirement.monthlyContribution) || 0,
+    retirement_annual_return_pct: +(DB.retirement && DB.retirement.annualReturn) || 7,
     monthly_savings_target: +DB.settings.monthlySavingsTarget || 0,
+    implied_monthly_savings: (typeof impliedMonthlySavings === "function") ? impliedMonthlySavings() : 0,
     debt_strategy_pref: DB.settings.debtPayoffStrategy || "avalanche",
     extra_debt_payment_monthly: +DB.settings.debtExtraPayment || 0,
     money_personality: personality,
