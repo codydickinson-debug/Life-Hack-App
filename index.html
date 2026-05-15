@@ -6487,7 +6487,7 @@ function renderToday() {
           <div class="lead">📊</div>
           <div class="body">
             <div class="t1">${esc(tk)} ${chg >= 0 ? "is up" : "dropped"} ${Math.abs(chg).toFixed(2)}%</div>
-            <div class="t2" style="font-size:12px;color:${color};font-weight:600">$${(+q.price).toFixed(2)} · ${q.change >= 0 ? "+" : ""}$${(+q.change || 0).toFixed(2)} today</div>
+            <div class="t2" style="font-size:12px;color:${color};font-weight:600" data-priv="amount">$${(+q.price).toFixed(2)} · ${q.change >= 0 ? "+" : ""}$${(+q.change || 0).toFixed(2)} today</div>
           </div>
           <div class="trail chev"></div>
         </div>
@@ -6517,7 +6517,7 @@ function renderToday() {
           <div class="lead">📈</div>
           <div class="body">
             <div class="t1" data-priv="amount">Portfolio ${fmt$0(value)}</div>
-            <div class="t2" style="font-size:12px;color:${dailyColor};font-weight:600">${dailyChg >= 0 ? "+" : "-"}$${Math.abs(dailyChg).toFixed(2)} today (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%) · ${tickers.length} holding${tickers.length===1?"":"s"}${missing>0?` · ${missing} need refresh`:""}</div>
+            <div class="t2" style="font-size:12px;color:${dailyColor};font-weight:600" data-priv="amount">${dailyChg >= 0 ? "+" : "-"}$${Math.abs(dailyChg).toFixed(2)} today (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%) · ${tickers.length} holding${tickers.length===1?"":"s"}${missing>0?` · ${missing} need refresh`:""}</div>
           </div>
           <div class="trail chev"></div>
         </div>
@@ -9775,7 +9775,7 @@ function renderMoney() {
             <div class="lead">💼</div>
             <div class="body">
               <div class="t1">${entries.length} holding${entries.length === 1 ? "" : "s"}</div>
-              <div class="t2" style="font-size:11.5px"><b style="color:${plColor}">${pl >= 0 ? "+" : ""}$${Math.abs(pl).toFixed(2)}</b> unrealized · cost $${costTotal.toFixed(0)}</div>
+              <div class="t2" style="font-size:11.5px" data-priv="amount"><b style="color:${plColor}">${pl >= 0 ? "+" : ""}$${Math.abs(pl).toFixed(2)}</b> unrealized · cost $${costTotal.toFixed(0)}</div>
             </div>
             <div class="trail" style="font-weight:700;color:var(--t1)" data-priv="amount">${fmt$0(total)}</div>
           </div>
@@ -11324,7 +11324,7 @@ function _stocksRenderTopMovers() {
         <div style="display:flex;align-items:center;gap:7px">${_stkTickerAvatar(r.tk, 26)}<div style="font-size:14.5px;font-weight:800;color:var(--t1)">${esc(r.tk)}</div></div>
         <div style="font-size:13px;font-weight:700;color:${color};font-variant-numeric:tabular-nums">${r.chg >= 0 ? "+" : ""}${(r.chg * 100).toFixed(2)}%</div>
       </div>
-      <div style="font-size:10.5px;color:var(--t3);margin-top:3px;font-variant-numeric:tabular-nums">$${(r.price || 0).toFixed(2)} · ${r.abs >= 0 ? "+" : "-"}$${Math.abs(r.abs || 0).toFixed(2)}</div>
+      <div style="font-size:10.5px;color:var(--t3);margin-top:3px;font-variant-numeric:tabular-nums" data-priv="amount">$${(r.price || 0).toFixed(2)} · ${r.abs >= 0 ? "+" : "-"}$${Math.abs(r.abs || 0).toFixed(2)}</div>
     </div>
   `;
   wrap.innerHTML = `
@@ -11583,7 +11583,7 @@ function _stocksRenderPortfolio() {
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;padding:8px 10px;background:var(--bg-elev);border-radius:8px">
           <div>
             <div style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Projected annual dividends${divKnownCount < rows.length ? ` · ${divKnownCount} of ${rows.length} known` : ""}</div>
-            <div style="font-size:11.5px;color:var(--t3);margin-top:1px">≈ $${(annualDiv / 12).toFixed(0)}/mo</div>
+            <div style="font-size:11.5px;color:var(--t3);margin-top:1px" data-priv="amount">≈ $${(annualDiv / 12).toFixed(0)}/mo</div>
           </div>
           <div style="font-size:17px;font-weight:800;color:var(--green,#34C759);font-variant-numeric:tabular-nums" data-priv="amount">$${annualDiv.toFixed(0)}</div>
         </div>
@@ -11614,7 +11614,7 @@ function _stocksRenderPortfolio() {
         const h = (DB.stocks && DB.stocks.holdings && DB.stocks.holdings[r.tk]) || {};
         const stop = +h.stopLoss || 0; const take = +h.takeProfit || 0;
         const limitsRow = (stop || take) ? `
-          <div style="font-size:10px;color:var(--t3);margin-top:2px;font-variant-numeric:tabular-nums">
+          <div style="font-size:10px;color:var(--t3);margin-top:2px;font-variant-numeric:tabular-nums" data-priv="amount">
             ${stop ? `<span style="color:var(--red,#FF3B30)">⊥ $${stop.toFixed(2)}</span>` : ""}
             ${stop && take ? " · " : ""}
             ${take ? `<span style="color:var(--green,#34C759)">⊤ $${take.toFixed(2)}</span>` : ""}
@@ -11634,8 +11634,8 @@ function _stocksRenderPortfolio() {
                 </div>
               </div>
               <div class="body" style="flex:1;min-width:0;margin-left:6px">
-                <div style="font-size:12.5px;color:var(--t2);font-variant-numeric:tabular-nums">${r.price != null ? `$${r.price.toFixed(2)}` : "—"} <span style="color:var(--t3);font-size:10.5px">cost $${r.c.toFixed(2)}</span></div>
-                <div style="font-size:11px;color:${pColor};font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums">${r.pl >= 0 ? "+" : ""}$${Math.abs(r.pl).toFixed(2)} (${r.pl >= 0 ? "+" : ""}${(r.plPct * 100).toFixed(1)}%)</div>
+                <div style="font-size:12.5px;color:var(--t2);font-variant-numeric:tabular-nums" data-priv="amount">${r.price != null ? `$${r.price.toFixed(2)}` : "—"} <span style="color:var(--t3);font-size:10.5px">cost $${r.c.toFixed(2)}</span></div>
+                <div style="font-size:11px;color:${pColor};font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums" data-priv="amount">${r.pl >= 0 ? "+" : ""}$${Math.abs(r.pl).toFixed(2)} (${r.pl >= 0 ? "+" : ""}${(r.plPct * 100).toFixed(1)}%)</div>
                 ${limitsRow}
                 ${noteRow}
               </div>
@@ -11794,7 +11794,7 @@ function _stocksAllocationTargetsSheet() {
       <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px">
         <div style="width:50px;font-weight:700;font-size:13px;flex-shrink:0">${esc(r.tk)}</div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums">cur ${(r.currentPct*100).toFixed(1)}% · $${r.value.toFixed(0)}</div>
+          <div style="font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums" data-priv="amount">cur ${(r.currentPct*100).toFixed(1)}% · $${r.value.toFixed(0)}</div>
         </div>
         <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
           <input type="number" value="${esc(r.targetPct.toFixed(1))}" min="0" max="100" step="0.5"
@@ -11865,7 +11865,7 @@ function _stocksShowRebalancePlan() {
       <div style="display:flex;justify-content:space-between;padding:8px 11px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px">
         <div>
           <div style="font-weight:700;font-size:13px;color:var(--t1)">${isBuy ? "Buy" : "Sell"} ${esc(r.tk)}</div>
-          <div style="font-size:10.5px;color:var(--t3)">${shares.toFixed(2)} sh @ $${r.price.toFixed(2)} · ${((r.value/total)*100).toFixed(1)}% → ${(r.target*100).toFixed(1)}%</div>
+          <div style="font-size:10.5px;color:var(--t3)" data-priv="amount">${shares.toFixed(2)} sh @ $${r.price.toFixed(2)} · ${((r.value/total)*100).toFixed(1)}% → ${(r.target*100).toFixed(1)}%</div>
         </div>
         <div style="font-size:14px;font-weight:700;color:${isBuy?'var(--green,#34C759)':'var(--red,#FF3B30)'};font-variant-numeric:tabular-nums" data-priv="amount">${isBuy?"+":"-"}$${amt.toFixed(0)}</div>
       </div>
@@ -11917,8 +11917,8 @@ function performanceAttributionSheet() {
         return `
           <div onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(r.tk)}),120)" role="button" tabindex="0" style="margin-bottom:8px;cursor:pointer">
             <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:3px">
-              <span style="font-weight:700;color:var(--t1)">${esc(r.tk)} <span style="color:var(--t3);font-weight:500;font-size:10.5px">${r.shares} sh @ $${r.cost.toFixed(2)} → $${r.price.toFixed(2)}</span></span>
-              <span style="color:${c};font-weight:700;font-variant-numeric:tabular-nums">${r.pl >= 0 ? "+" : "-"}$${Math.abs(r.pl).toFixed(0)} <span style="font-size:10.5px;font-weight:500">(${r.plPct >= 0 ? "+" : ""}${(r.plPct*100).toFixed(1)}%)</span></span>
+              <span style="font-weight:700;color:var(--t1)" data-priv="amount">${esc(r.tk)} <span style="color:var(--t3);font-weight:500;font-size:10.5px">${r.shares} sh @ $${r.cost.toFixed(2)} → $${r.price.toFixed(2)}</span></span>
+              <span style="color:${c};font-weight:700;font-variant-numeric:tabular-nums" data-priv="amount">${r.pl >= 0 ? "+" : "-"}$${Math.abs(r.pl).toFixed(0)} <span style="font-size:10.5px;font-weight:500">(${r.plPct >= 0 ? "+" : ""}${(r.plPct*100).toFixed(1)}%)</span></span>
             </div>
             <div style="position:relative;height:6px;background:var(--bg-elev);border-radius:3px;overflow:hidden">
               <div style="position:absolute;${r.pl >= 0 ? 'left:50%' : 'right:50%'};width:${widthPct/2}%;height:100%;background:${c};opacity:0.8"></div>
@@ -11975,7 +11975,7 @@ function taxLossHarvestSheet() {
         <div style="display:flex;align-items:center;gap:8px;padding:9px 11px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px">
           <div style="flex:1">
             <div style="font-weight:700;font-size:13px;color:var(--t1)">${esc(r.tk)} <span style="color:var(--t3);font-weight:500;font-size:11px">${r.shares} sh</span></div>
-            <div style="font-size:10.5px;color:var(--t3)">cost $${r.cost.toFixed(2)} → now $${r.price.toFixed(2)} (${(r.plPct*100).toFixed(1)}%)</div>
+            <div style="font-size:10.5px;color:var(--t3)" data-priv="amount">cost $${r.cost.toFixed(2)} → now $${r.price.toFixed(2)} (${(r.plPct*100).toFixed(1)}%)</div>
           </div>
           <div style="text-align:right">
             <div style="font-size:14px;font-weight:700;color:var(--red,#FF3B30);font-variant-numeric:tabular-nums" data-priv="amount">-$${Math.abs(r.pl).toFixed(0)}</div>
@@ -12102,9 +12102,9 @@ function planPresetsSheet() {
       <div onclick="_stocksLoadPreset(${jsAttr(p.id)})" role="button" tabindex="0" style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:12px 14px;margin-bottom:6px;cursor:pointer">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">
           <div style="font-size:14px;font-weight:700;color:var(--t1)">${esc(p.label)}</div>
-          <div style="font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums">$${(p.goal/1000).toFixed(0)}K · ${p.years}y</div>
+          <div style="font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums" data-priv="amount">$${(p.goal/1000).toFixed(0)}K · ${p.years}y</div>
         </div>
-        <div style="font-size:11.5px;color:var(--t3);line-height:1.4">${esc(p.notes)} · $${p.monthly}/mo</div>
+        <div style="font-size:11.5px;color:var(--t3);line-height:1.4" data-priv="amount">${esc(p.notes)} · $${p.monthly}/mo</div>
       </div>
     `).join("")}
     <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
@@ -13357,7 +13357,7 @@ function _stocksRenderForecast(d) {
             <span style="width:8px;height:8px;border-radius:2px;background:var(--red,#FF3B30)"></span>
             <span style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:700">Bear (10%)</span>
           </div>
-          <div style="font-size:15px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">$${endBear.toFixed(2)}</div>
+          <div style="font-size:15px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${endBear.toFixed(2)}</div>
           <div style="font-size:10.5px;color:var(--red,#FF3B30);font-variant-numeric:tabular-nums">${pct(endBear)>=0?"+":""}${pct(endBear).toFixed(1)}%</div>
         </div>
         <div style="background:rgba(52,199,89,0.10);border:0.5px solid rgba(52,199,89,0.35);border-radius:10px;padding:9px 11px">
@@ -13365,7 +13365,7 @@ function _stocksRenderForecast(d) {
             <span style="width:8px;height:8px;border-radius:2px;background:var(--green,#34C759)"></span>
             <span style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:700">Base (50%)</span>
           </div>
-          <div style="font-size:15px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">$${endBase.toFixed(2)}</div>
+          <div style="font-size:15px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${endBase.toFixed(2)}</div>
           <div style="font-size:10.5px;color:var(--green,#34C759);font-variant-numeric:tabular-nums">${pct(endBase)>=0?"+":""}${pct(endBase).toFixed(1)}%</div>
         </div>
         <div style="background:rgba(154,205,50,0.10);border:0.5px solid rgba(154,205,50,0.35);border-radius:10px;padding:9px 11px">
@@ -13373,7 +13373,7 @@ function _stocksRenderForecast(d) {
             <span style="width:8px;height:8px;border-radius:2px;background:#9ACD32"></span>
             <span style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:700">Bull (90%)</span>
           </div>
-          <div style="font-size:15px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">$${endBull.toFixed(2)}</div>
+          <div style="font-size:15px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${endBull.toFixed(2)}</div>
           <div style="font-size:10.5px;color:#9ACD32;font-variant-numeric:tabular-nums">${pct(endBull)>=0?"+":""}${pct(endBull).toFixed(1)}%</div>
         </div>
       </div>
@@ -14121,7 +14121,7 @@ function _stocksRenderDividendCalendar(calendar, holdings) {
     <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--green,#34C759);border-radius:var(--r);padding:14px;margin-bottom:10px">
       <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Projected annual income</div>
       <div style="font-size:24px;font-weight:800;color:var(--green,#34C759);font-variant-numeric:tabular-nums" data-priv="amount">$${totalAnnual.toFixed(2)}</div>
-      <div style="font-size:11.5px;color:var(--t3);margin-top:2px">≈ $${(totalAnnual / 12).toFixed(2)}/mo if paid evenly</div>
+      <div style="font-size:11.5px;color:var(--t3);margin-top:2px" data-priv="amount">≈ $${(totalAnnual / 12).toFixed(2)}/mo if paid evenly</div>
     </div>
     <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Upcoming ex-dates</div>
     ${rows.map(r => {
@@ -14133,8 +14133,8 @@ function _stocksRenderDividendCalendar(calendar, holdings) {
           <div style="font-weight:700;font-size:13px;width:54px;flex-shrink:0">${esc(r.tk)}</div>
           <div style="flex:1;font-size:11.5px;color:var(--t2)">${esc(dateStr)} · ${esc(lbl)}</div>
           <div style="text-align:right;flex-shrink:0">
-            <div style="font-size:13px;font-weight:700;color:var(--green,#34C759);font-variant-numeric:tabular-nums">+$${r.expected.toFixed(2)}</div>
-            <div style="font-size:10.5px;color:var(--t3);font-variant-numeric:tabular-nums">$${r.rate.toFixed(2)}/yr/sh</div>
+            <div style="font-size:13px;font-weight:700;color:var(--green,#34C759);font-variant-numeric:tabular-nums" data-priv="amount">+$${r.expected.toFixed(2)}</div>
+            <div style="font-size:10.5px;color:var(--t3);font-variant-numeric:tabular-nums" data-priv="amount">$${r.rate.toFixed(2)}/yr/sh</div>
           </div>
         </div>
       `;
@@ -14215,7 +14215,7 @@ function _stocksRenderPortfolioChart() {
     <div style="margin-top:12px;background:var(--bg-elev);border-radius:10px;padding:10px 12px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;gap:8px;flex-wrap:wrap">
         <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Portfolio · ${slice.length}d shown</div>
-        <div style="font-size:11.5px;color:${color};font-weight:700;font-variant-numeric:tabular-nums">${change >= 0 ? "+" : "-"}$${Math.abs(change).toFixed(0)} (${pct >= 0 ? "+" : ""}${(pct * 100).toFixed(1)}%)</div>
+        <div style="font-size:11.5px;color:${color};font-weight:700;font-variant-numeric:tabular-nums" data-priv="amount">${change >= 0 ? "+" : "-"}$${Math.abs(change).toFixed(0)} (${pct >= 0 ? "+" : ""}${(pct * 100).toFixed(1)}%)</div>
       </div>
       <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:60px;display:block">
         <defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
@@ -14539,7 +14539,7 @@ function _stocksDcaRecompute() {
       <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
           <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Total invested</div>
-          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">$${res.invested.toFixed(0)}</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${res.invested.toFixed(0)}</div>
         </div>
         <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
           <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Shares accumulated</div>
@@ -14547,11 +14547,11 @@ function _stocksDcaRecompute() {
         </div>
         <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
           <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Avg cost basis</div>
-          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">$${avgCost.toFixed(2)}</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${avgCost.toFixed(2)}</div>
         </div>
         <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
           <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Last price</div>
-          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">$${res.endPrice.toFixed(2)}</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${res.endPrice.toFixed(2)}</div>
         </div>
       </div>
       <div style="font-size:10.5px;color:var(--t3);margin-top:10px;line-height:1.4;font-style:italic">DCA simulator using historical end-of-month prices. Ignores fees, taxes, and dividends.</div>
@@ -14688,7 +14688,7 @@ function _stocksHoldingLimitsSheet(tk) {
   const price = cur && !cur.error && cur.price != null ? +cur.price : (+h.cost || 0);
   openSheet(`
     <h2 style="margin-bottom:4px">${esc(tk)} stop &amp; target</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Current price <b>$${price.toFixed(2)}</b> · cost <b>$${(+h.cost || 0).toFixed(2)}</b>. Crossing a level fires an in-app alert.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px" data-priv="amount">Current price <b>$${price.toFixed(2)}</b> · cost <b>$${(+h.cost || 0).toFixed(2)}</b>. Crossing a level fires an in-app alert.</p>
     <label>Stop loss ($)</label>
     <input id="lim-stop" type="number" inputmode="decimal" placeholder="e.g. ${(price * 0.9).toFixed(2)}" value="${esc(h.stopLoss || "")}"
       style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
@@ -14801,12 +14801,12 @@ function realizedPLSheet() {
   const yrColor = (v) => v >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
   openSheet(`
     <h2 style="margin-bottom:4px">Realized P&amp;L</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px">${log.length} closed position${log.length === 1 ? "" : "s"} · all time <b style="color:${yrColor(totalPl)}">${totalPl >= 0 ? "+" : "-"}$${Math.abs(totalPl).toFixed(2)}</b></p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px" data-priv="amount">${log.length} closed position${log.length === 1 ? "" : "s"} · all time <b style="color:${yrColor(totalPl)}">${totalPl >= 0 ? "+" : "-"}$${Math.abs(totalPl).toFixed(2)}</b></p>
     <div style="margin-bottom:14px">
       ${Object.entries(byYear).sort((a, b) => b[0].localeCompare(a[0])).map(([y, v]) => `
         <div style="display:flex;justify-content:space-between;padding:7px 11px;background:var(--bg-elev);border-radius:8px;margin-bottom:3px">
           <div style="font-size:13px;color:var(--t1);font-weight:600">${esc(y)}</div>
-          <div style="font-size:13px;color:${yrColor(v)};font-weight:700">${v >= 0 ? "+" : "-"}$${Math.abs(v).toFixed(2)}</div>
+          <div style="font-size:13px;color:${yrColor(v)};font-weight:700" data-priv="amount">${v >= 0 ? "+" : "-"}$${Math.abs(v).toFixed(2)}</div>
         </div>
       `).join("")}
     </div>
@@ -14817,10 +14817,10 @@ function realizedPLSheet() {
         <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 11px;background:var(--card);border:0.5px solid var(--sep);border-radius:8px;margin-bottom:4px">
           <div>
             <div style="font-weight:700;font-size:13px">${esc(r.ticker)}</div>
-            <div style="font-size:10.5px;color:var(--t3)">${esc(r.date)} · ${r.shares} sh · $${(+r.cost).toFixed(2)} → $${(+r.exit).toFixed(2)}</div>
+            <div style="font-size:10.5px;color:var(--t3)" data-priv="amount">${esc(r.date)} · ${r.shares} sh · $${(+r.cost).toFixed(2)} → $${(+r.exit).toFixed(2)}</div>
           </div>
           <div style="text-align:right">
-            <div style="font-size:13px;color:${c};font-weight:700;font-variant-numeric:tabular-nums">${(+r.pl) >= 0 ? "+" : "-"}$${Math.abs(+r.pl).toFixed(2)}</div>
+            <div style="font-size:13px;color:${c};font-weight:700;font-variant-numeric:tabular-nums" data-priv="amount">${(+r.pl) >= 0 ? "+" : "-"}$${Math.abs(+r.pl).toFixed(2)}</div>
             <div style="font-size:10.5px;color:${c};font-variant-numeric:tabular-nums">${(+r.plPct) >= 0 ? "+" : ""}${((+r.plPct)*100).toFixed(1)}%</div>
           </div>
         </div>
@@ -15392,18 +15392,18 @@ function _lsRecompute() {
     <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${delta >= 0 ? 'var(--green,#34C759)' : 'var(--red,#FF3B30)'};border-radius:var(--r);padding:16px;margin-bottom:10px">
       <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">At age ${targetAge}, this scenario</div>
       <div style="font-size:28px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt(bal)}</div>
-      <div style="font-size:12.5px;color:${deltaColor};font-weight:700;margin-top:2px">${delta >= 0 ? "+" : "-"}${fmt(Math.abs(delta))} vs your current trajectory</div>
+      <div style="font-size:12.5px;color:${deltaColor};font-weight:700;margin-top:2px" data-priv="amount">${delta >= 0 ? "+" : "-"}${fmt(Math.abs(delta))} vs your current trajectory</div>
       <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:6px">
         <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
           <div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600">New monthly savings</div>
-          <div style="font-size:14px;font-weight:700;color:${newSavings >= 0 ? 'var(--green,#34C759)' : 'var(--red,#FF3B30)'};font-variant-numeric:tabular-nums">$${newSavings.toFixed(0)}/mo</div>
+          <div style="font-size:14px;font-weight:700;color:${newSavings >= 0 ? 'var(--green,#34C759)' : 'var(--red,#FF3B30)'};font-variant-numeric:tabular-nums" data-priv="amount">$${newSavings.toFixed(0)}/mo</div>
         </div>
         <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
           <div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600">Total saved over ${years}y</div>
-          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${fmt(newSavings * 12 * years)}</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt(newSavings * 12 * years)}</div>
         </div>
       </div>
-      <div style="font-size:11.5px;color:var(--t3);margin-top:10px;line-height:1.5;font-style:italic">Income ${incomeChg >= 0 ? "+" : ""}${incomeChg}% → $${newIncome.toFixed(0)}/mo · Expense ${expenseChg >= 0 ? "+" : ""}${expenseChg}% → $${newExpense.toFixed(0)}/mo · ${retPct}%/yr return · ${years} years to age ${targetAge}.</div>
+      <div style="font-size:11.5px;color:var(--t3);margin-top:10px;line-height:1.5;font-style:italic" data-priv="amount">Income ${incomeChg >= 0 ? "+" : ""}${incomeChg}% → $${newIncome.toFixed(0)}/mo · Expense ${expenseChg >= 0 ? "+" : ""}${expenseChg}% → $${newExpense.toFixed(0)}/mo · ${retPct}%/yr return · ${years} years to age ${targetAge}.</div>
     </div>
   `;
 }
@@ -15728,7 +15728,7 @@ function _rlmRecompute() {
     <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--blue,#007AFF);border-radius:var(--r);padding:16px;margin-bottom:10px">
       <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Required nest egg at age ${targetAge}</div>
       <div style="font-size:30px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt(targetNW)}</div>
-      <div style="font-size:12.5px;color:var(--t3);margin-top:2px">$${monthlyNeed.toLocaleString()}/mo × 12 × (1/${swr/100}) using the ${swr}% safe-withdrawal rule</div>
+      <div style="font-size:12.5px;color:var(--t3);margin-top:2px" data-priv="amount">$${monthlyNeed.toLocaleString()}/mo × 12 × (1/${swr/100}) using the ${swr}% safe-withdrawal rule</div>
       <div style="margin-top:14px;background:var(--bg-elev);border-radius:10px;padding:11px 13px">
         <div style="font-size:10.5px;color:var(--blue,#007AFF);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">What it takes</div>
         <div style="font-size:18px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt(requiredMonthly)}/mo</div>
@@ -16354,7 +16354,7 @@ function moneyMoodPatternsSheet() {
   const grandTotal = rows.reduce((s, [, v]) => s + v.total, 0);
   openSheet(`
     <h2 style="margin-bottom:4px">😶 Money mood patterns</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">${tagged.length} mood-tagged transactions, $${grandTotal.toFixed(0)} total. The story your spending tells about your emotional life.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5" data-priv="amount">${tagged.length} mood-tagged transactions, $${grandTotal.toFixed(0)} total. The story your spending tells about your emotional life.</p>
     ${rows.map(([mood, stats]) => {
       const cfg = MOOD_EMOJIS.find(m => m.e === mood) || { lbl: "Unknown" };
       const pct = (stats.total / grandTotal) * 100;
@@ -16362,7 +16362,7 @@ function moneyMoodPatternsSheet() {
         <div style="margin-bottom:10px">
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
             <div style="font-size:14px;color:var(--t1);font-weight:700">${mood} ${esc(cfg.lbl)}</div>
-            <div style="font-size:13px;color:var(--t1);font-weight:700;font-variant-numeric:tabular-nums">$${stats.total.toFixed(0)} <span style="color:var(--t3);font-weight:400;font-size:11px">${stats.count} tx</span></div>
+            <div style="font-size:13px;color:var(--t1);font-weight:700;font-variant-numeric:tabular-nums" data-priv="amount">$${stats.total.toFixed(0)} <span style="color:var(--t3);font-weight:400;font-size:11px">${stats.count} tx</span></div>
           </div>
           <div style="height:6px;background:var(--bg-elev);border-radius:3px;overflow:hidden"><div style="height:100%;width:${pct}%;background:#7c3aed"></div></div>
           <div style="font-size:10.5px;color:var(--t3);margin-top:2px;font-variant-numeric:tabular-nums">${pct.toFixed(1)}% of mood-tagged spending</div>
@@ -16507,7 +16507,7 @@ function wishlistSheet() {
           <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${ready ? 'var(--green,#34C759)' : 'var(--orange,#FF9500)'};border-radius:10px;padding:11px 13px;margin-bottom:6px">
             <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:3px">
               <div style="font-size:13.5px;color:var(--t1);font-weight:700;flex:1;min-width:0">${esc(w.name)}</div>
-              ${w.cost ? `<div style="font-size:13px;color:var(--t1);font-weight:700;font-variant-numeric:tabular-nums">$${(+w.cost).toFixed(0)}</div>` : ""}
+              ${w.cost ? `<div style="font-size:13px;color:var(--t1);font-weight:700;font-variant-numeric:tabular-nums" data-priv="amount">$${(+w.cost).toFixed(0)}</div>` : ""}
             </div>
             <div style="font-size:11px;color:${ready ? 'var(--green,#34C759)' : 'var(--t3)'};margin-bottom:6px">
               ${ready ? `✓ ${days} days have passed — decide now` : `⏳ Day ${days} of 30 — wait ${remaining} more day${remaining===1?"":"s"} before deciding`}
@@ -16529,7 +16529,7 @@ function wishlistSheet() {
         const ic = w.decision === "buy" ? "✓" : "✗";
         return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 11px;background:var(--bg-elev);border-radius:6px;margin-bottom:3px;opacity:${w.decision==="buy"?1:0.85}">
           <div style="flex:1;min-width:0;font-size:11.5px;color:${c}">${ic} ${esc(w.name)}</div>
-          ${w.cost ? `<div style="font-size:11px;color:${c};font-variant-numeric:tabular-nums">$${(+w.cost).toFixed(0)}</div>` : ""}
+          ${w.cost ? `<div style="font-size:11px;color:${c};font-variant-numeric:tabular-nums" data-priv="amount">$${(+w.cost).toFixed(0)}</div>` : ""}
         </div>`;
       }).join("")}
     ` : ""}
@@ -16627,7 +16627,7 @@ function lifeEventsSheet() {
                   <div style="font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums">${esc(dateLbl)}</div>
                 </div>
                 <div style="font-size:12.5px;color:var(--t1);line-height:1.45">${esc(e.label)}</div>
-                ${isFinite(impact) && impact !== 0 ? `<div style="font-size:11.5px;color:${impact > 0 ? 'var(--green,#34C759)' : 'var(--red,#FF3B30)'};font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums">${impact > 0 ? "+" : "-"}$${Math.abs(impact).toLocaleString()}</div>` : ""}
+                ${isFinite(impact) && impact !== 0 ? `<div style="font-size:11.5px;color:${impact > 0 ? 'var(--green,#34C759)' : 'var(--red,#FF3B30)'};font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums" data-priv="amount">${impact > 0 ? "+" : "-"}$${Math.abs(impact).toLocaleString()}</div>` : ""}
                 <button onclick="_leRemove(${jsAttr(e.id)})" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:2px 4px;cursor:pointer;text-decoration:underline;margin-top:2px">Remove</button>
               </div>
             </div>
@@ -16771,8 +16771,8 @@ function paperTradingSheet() {
             ${_stkTickerAvatar(tk, 26)}
             <div style="width:48px;font-weight:700;font-size:13px">${esc(tk)}</div>
             <div style="flex:1;min-width:0">
-              <div style="font-size:11.5px;color:var(--t2)">${p.shares.toFixed(2)} sh @ avg $${p.costBasis.toFixed(2)}</div>
-              ${livePrice != null ? `<div style="font-size:10.5px;color:${c}">now $${livePrice.toFixed(2)} · ${pl >= 0 ? "+" : "-"}$${Math.abs(pl).toFixed(0)} (${plPct >= 0 ? "+" : ""}${plPct.toFixed(1)}%)</div>` : `<div style="font-size:10.5px;color:var(--t3)">live price unavailable</div>`}
+              <div style="font-size:11.5px;color:var(--t2)" data-priv="amount">${p.shares.toFixed(2)} sh @ avg $${p.costBasis.toFixed(2)}</div>
+              ${livePrice != null ? `<div style="font-size:10.5px;color:${c}" data-priv="amount">now $${livePrice.toFixed(2)} · ${pl >= 0 ? "+" : "-"}$${Math.abs(pl).toFixed(0)} (${plPct >= 0 ? "+" : ""}${plPct.toFixed(1)}%)</div>` : `<div style="font-size:10.5px;color:var(--t3)">live price unavailable</div>`}
             </div>
           </div>
         `;
@@ -16783,12 +16783,12 @@ function paperTradingSheet() {
       ${trades.slice(0, 30).map(t => `
         <div style="display:flex;align-items:center;gap:8px;padding:8px 11px;background:var(--bg-elev);border-radius:6px;margin-bottom:3px">
           ${_stkTickerAvatar(t.ticker, 22)}
-          <div style="flex:1;font-size:11.5px;color:var(--t1)"><b style="color:${t.action==='buy'?'var(--green,#34C759)':'var(--red,#FF3B30)'}">${t.action === "buy" ? "Buy" : "Sell"}</b> ${esc(t.ticker)} · ${t.shares} sh @ $${(+t.price).toFixed(2)}</div>
+          <div style="flex:1;font-size:11.5px;color:var(--t1)" data-priv="amount"><b style="color:${t.action==='buy'?'var(--green,#34C759)':'var(--red,#FF3B30)'}">${t.action === "buy" ? "Buy" : "Sell"}</b> ${esc(t.ticker)} · ${t.shares} sh @ $${(+t.price).toFixed(2)}</div>
           <div style="font-size:10.5px;color:var(--t3);font-variant-numeric:tabular-nums">${esc(t.date)}</div>
           <button onclick="_ptRemove(${jsAttr(t.id)})" style="background:transparent;border:0;color:var(--t3);font-size:13px;padding:0 4px;cursor:pointer">×</button>
         </div>
       `).join("")}
-    ` : ""}
+    ` : `<div style="text-align:center;padding:18px 14px;color:var(--t3);font-size:12.5px;font-style:italic;background:var(--bg-elev);border-radius:10px;line-height:1.5">No paper trades yet. Log your first hypothetical buy above — see if your conviction holds up before risking real money.</div>`}
     <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
   `);
   setTimeout(() => { const el = document.getElementById("pt-ticker"); if (el) el.focus(); }, 60);
@@ -16991,7 +16991,7 @@ function fuMoneySheet() {
   const fmt = (v) => v >= 1e6 ? "$" + (v/1e6).toFixed(2) + "M" : v >= 1e3 ? "$" + (v/1e3).toFixed(0) + "K" : "$" + Math.round(v);
   openSheet(`
     <h2 style="margin-bottom:4px">💸 FU money</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">"Fuck You money" — the amount that gives you optionality. Five tiers. Built from your real annual expenses ($${(annualExpense).toLocaleString()}).</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">"Fuck You money" — the amount that gives you optionality. Five tiers. Built from your real annual expenses <span data-priv="amount">($${(annualExpense).toLocaleString()})</span>.</p>
     ${currentNW > 0 ? `
       <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:11px 13px;margin-bottom:14px;text-align:center">
         <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Your current net worth</div>
@@ -17202,7 +17202,7 @@ function purchaseRegretSheet() {
           <div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 11px;background:var(--bg-elev);border-radius:6px;margin-bottom:3px">
             <div style="flex:1;min-width:0">
               <div style="font-size:12px;color:var(--t1);font-weight:600">${esc(r.label)}</div>
-              <div style="font-size:10.5px;color:var(--t3);font-variant-numeric:tabular-nums">$${(+r.cost).toFixed(0)} · bought ${esc(r.boughtAt)}</div>
+              <div style="font-size:10.5px;color:var(--t3);font-variant-numeric:tabular-nums" data-priv="amount">$${(+r.cost).toFixed(0)} · bought ${esc(r.boughtAt)}</div>
             </div>
             <div style="font-size:14px;color:${c};font-weight:800;font-variant-numeric:tabular-nums">${r.regretScore}/5</div>
           </div>
@@ -17552,11 +17552,11 @@ function charitableSheet() {
       <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${pct>=100?'var(--green,#34C759)':'var(--orange,#FF9500)'};border-radius:var(--r);padding:14px;margin-bottom:14px">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
           <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">${yearStr} progress</div>
-          <div style="font-size:11.5px;color:var(--t3)">$${givenYTD.toLocaleString()} of $${annualTarget.toLocaleString()}</div>
+          <div style="font-size:11.5px;color:var(--t3)" data-priv="amount">$${givenYTD.toLocaleString()} of $${annualTarget.toLocaleString()}</div>
         </div>
         <div style="font-size:24px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">${pct.toFixed(0)}%</div>
         <div style="height:6px;background:var(--bg-elev);border-radius:3px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${pct}%;background:${pct>=100?'var(--green,#34C759)':'#9ACD32'}"></div></div>
-        <div style="font-size:11px;color:var(--t3);margin-top:6px">${target}% of $${annualIncome.toLocaleString()}/yr income = $${annualTarget.toLocaleString()}/yr · $${(annualTarget/12).toFixed(0)}/mo</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:6px" data-priv="amount">${target}% of $${annualIncome.toLocaleString()}/yr income = $${annualTarget.toLocaleString()}/yr · $${(annualTarget/12).toFixed(0)}/mo</div>
       </div>
     ` : ""}
     <label>Log a donation</label>
@@ -17581,7 +17581,7 @@ function charitableSheet() {
           <button onclick="_chRemove(${jsAttr(g.id)})" style="background:transparent;border:0;color:var(--t3);font-size:14px;padding:0 6px;cursor:pointer;margin-left:6px">×</button>
         </div>
       `).join("")}
-    ` : ""}
+    ` : `<div style="text-align:center;padding:18px 14px;color:var(--t3);font-size:12.5px;font-style:italic;background:var(--bg-elev);border-radius:10px;line-height:1.5">No donations logged yet. Log one above — even small. The act of writing it down changes how you see your money.</div>`}
     <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
   `);
 }
@@ -18485,8 +18485,8 @@ function priceAlertsSheet() {
         return `
           <div style="display:flex;align-items:center;gap:8px;padding:8px 11px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px">
             <div style="width:48px;font-weight:700;font-size:13px;flex-shrink:0">${esc(a.ticker)}</div>
-            <div style="flex:1;font-size:12px;color:var(--t2)">${a.direction === "above" ? "↑ Above" : "↓ Below"} <b style="color:var(--t1)">$${(+a.threshold).toFixed(2)}</b></div>
-            ${price != null ? `<div style="font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums">now $${price.toFixed(2)}${dist != null ? ` (${dist >= 0 ? "+" : ""}${dist.toFixed(1)}%)` : ""}</div>` : ""}
+            <div style="flex:1;font-size:12px;color:var(--t2)" data-priv="amount">${a.direction === "above" ? "↑ Above" : "↓ Below"} <b style="color:var(--t1)">$${(+a.threshold).toFixed(2)}</b></div>
+            ${price != null ? `<div style="font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums" data-priv="amount">now $${price.toFixed(2)}${dist != null ? ` (${dist >= 0 ? "+" : ""}${dist.toFixed(1)}%)` : ""}</div>` : ""}
             <button onclick="_stocksRemoveAlert(${jsAttr(a.id)})" style="background:transparent;border:0;color:var(--red,#FF3B30);font-size:14px;padding:2px 4px;cursor:pointer">×</button>
           </div>
         `;
@@ -18607,8 +18607,8 @@ function _stocksTickerRowHtml(tk, q) {
         <span style="font-weight:700;font-size:12.5px;letter-spacing:0.02em;color:var(--t1);min-width:42px">${esc(tk)}</span>
       </div>
       <div class="body">
-        <div class="t1" style="font-variant-numeric:tabular-nums">$${(+q.price).toFixed(2)}</div>
-        <div class="t2" style="color:${color};font-variant-numeric:tabular-nums;font-weight:600">${arrow} ${change >= 0 ? "+" : ""}$${Math.abs(change).toFixed(2)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)</div>
+        <div class="t1" style="font-variant-numeric:tabular-nums" data-priv="amount">$${(+q.price).toFixed(2)}</div>
+        <div class="t2" style="color:${color};font-variant-numeric:tabular-nums;font-weight:600" data-priv="amount">${arrow} ${change >= 0 ? "+" : ""}$${Math.abs(change).toFixed(2)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)</div>
       </div>
       <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
         ${spark}
@@ -19287,11 +19287,11 @@ function _stocksWhatIfRecompute() {
         </div>
         <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
           <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Buy price</div>
-          <div style="font-size:13px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">$${res.startPrice.toFixed(2)}</div>
+          <div style="font-size:13px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${res.startPrice.toFixed(2)}</div>
         </div>
         <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
           <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Now</div>
-          <div style="font-size:13px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">$${res.endPrice.toFixed(2)}</div>
+          <div style="font-size:13px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${res.endPrice.toFixed(2)}</div>
         </div>
       </div>
       <div style="font-size:10.5px;color:var(--t3);margin-top:10px;line-height:1.4;font-style:italic">Past performance ≠ future performance. Doesn't account for dividends or taxes.</div>
@@ -19479,7 +19479,7 @@ function _stocksRenderDetail(q) {
         ${q.target_mean != null ? `
           <div style="display:flex;justify-content:space-between;font-size:12px;color:var(--t3);margin-top:6px">
             <span>12-mo target</span>
-            <span><b style="color:var(--t1);font-variant-numeric:tabular-nums">$${(+q.target_mean).toFixed(2)}</b>${targetPct != null ? ` <span style="color:${tgtColor};font-weight:600">(${targetPct >= 0 ? '+' : ''}${targetPct.toFixed(1)}%)</span>` : ""}</span>
+            <span><b style="color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${(+q.target_mean).toFixed(2)}</b>${targetPct != null ? ` <span style="color:${tgtColor};font-weight:600">(${targetPct >= 0 ? '+' : ''}${targetPct.toFixed(1)}%)</span>` : ""}</span>
           </div>
           ${q.target_low != null && q.target_high != null ? `
             <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-top:2px">
@@ -19590,10 +19590,10 @@ function _stocksRenderDetail(q) {
         </div>
       </div>
       <div style="display:flex;align-items:baseline;gap:10px;margin:8px 0 8px;flex-wrap:wrap">
-        <div style="font-size:38px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-0.02em">$${(+q.price).toFixed(2)}</div>
-        <div style="font-size:14px;font-weight:700;color:${color};font-variant-numeric:tabular-nums">${arrow} ${change >= 0 ? "+" : ""}$${Math.abs(change).toFixed(2)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)</div>
+        <div style="font-size:38px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-0.02em" data-priv="amount">$${(+q.price).toFixed(2)}</div>
+        <div style="font-size:14px;font-weight:700;color:${color};font-variant-numeric:tabular-nums" data-priv="amount">${arrow} ${change >= 0 ? "+" : ""}$${Math.abs(change).toFixed(2)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)</div>
       </div>
-      <div style="display:flex;gap:14px;font-size:11.5px;color:var(--t3);margin-bottom:10px;flex-wrap:wrap">
+      <div style="display:flex;gap:14px;font-size:11.5px;color:var(--t3);margin-bottom:10px;flex-wrap:wrap" data-priv="amount">
         <span>Day ${q.day_low != null ? '$' + (+q.day_low).toFixed(2) : '—'} – ${q.day_high != null ? '$' + (+q.day_high).toFixed(2) : '—'}</span>
         <span>Open $${q.open != null ? (+q.open).toFixed(2) : '—'}</span>
         <span>Prev $${q.prev_close != null ? (+q.prev_close).toFixed(2) : '—'}</span>
@@ -19938,7 +19938,7 @@ function _stocksScrRenderMatches(matches, preset) {
           ${_stkTickerAvatar(m.ticker, 28)}
           <div style="width:48px;flex-shrink:0">
             <div style="font-weight:700;font-size:13px">${esc(m.ticker)}</div>
-            ${m.price != null ? `<div style="font-size:10.5px;color:var(--t3)">$${(+m.price).toFixed(2)}</div>` : ""}
+            ${m.price != null ? `<div style="font-size:10.5px;color:var(--t3)" data-priv="amount">$${(+m.price).toFixed(2)}</div>` : ""}
           </div>
           <div style="flex:1;min-width:0;overflow:hidden">
             <div style="font-size:12px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.name || "")}</div>
@@ -20029,7 +20029,7 @@ function _stocksRenderCompare(a, b) {
       <div style="display:flex;justify-content:center;margin-bottom:6px">${_stkTickerAvatar(q.ticker, 36)}</div>
       <div style="font-size:18px;font-weight:800;color:var(--t1)">${esc(q.ticker)}</div>
       <div style="font-size:11px;color:var(--t3);margin-top:2px;height:26px;overflow:hidden">${esc(q.name || "")}</div>
-      <div style="font-size:14px;font-weight:700;color:${color};margin-top:4px">$${(+q.price).toFixed(2)}</div>
+      <div style="font-size:14px;font-weight:700;color:${color};margin-top:4px" data-priv="amount">$${(+q.price).toFixed(2)}</div>
     </div>
   `;
   const colA = (+a.change_pct || 0) >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
