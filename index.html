@@ -8627,8 +8627,18 @@ function renderStats() {
     return { daysTracking, totalHabitDones, totalWins, totalSaved, perfectDays, monthDaysSoFar };
   })();
 
+  // Achievement summary chip for the Stats header — quick "X/Y unlocked"
+  // tappable that opens the full achievements sheet.
+  const achList = _achievementsList();
+  const achEarned = achList.filter(a => a.earned).length;
+  const achChip = achList.length ? `
+    <button onclick="achievementsSheet()" style="background:var(--card);border:0.5px solid rgba(255,149,0,0.35);border-radius:var(--r-pill,999px);padding:5px 12px;font-size:11px;color:var(--t1);cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-weight:600;margin-left:10px;vertical-align:middle">
+      <span>🏆</span><span>${achEarned}/${achList.length}</span><span style="color:var(--t3);font-weight:500">unlocked</span>
+    </button>
+  ` : "";
+
   $("#page-stats").innerHTML = `
-    <div class="lg-title">Stats</div>
+    <div style="display:flex;align-items:baseline;flex-wrap:wrap"><div class="lg-title" style="margin-right:0">Stats</div>${achChip}</div>
 
     ${journey.daysTracking > 0 ? `
       <div style="background:var(--card);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
@@ -13339,6 +13349,117 @@ function debtMetaSheet(accountId) {
   `);
 }
 function debtSettingsSheet() { showTab("settings"); }
+
+// ===== ACHIEVEMENTS =====
+// Catalog of unlockable milestones across the app. Each entry computes its
+// unlocked state from DB at render time (no separate persisted "earned at"
+// state — keeps things simple and means demo data / imports light up
+// retroactively). 20 achievements grouped: getting-started → habits →
+// money → milestones → mastery. Renders as a celebratory sheet from Stats.
+function _achievementsList() {
+  const wins = DB.wins || [];
+  const habits = DB.habits || [];
+  const goals = DB.goals || [];
+  const savings = DB.savings || [];
+  const spend = DB.spend || [];
+  const roadmaps = DB.roadmaps || [];
+  const totalHabitDones = habits.reduce((s, h) => {
+    let n = 0;
+    for (const [, v] of Object.entries(h.log || {})) {
+      const did = h.type === "count" ? (+v || 0) >= (+h.target || 1) : !!v;
+      if (did) n++;
+    }
+    return s + n;
+  }, 0);
+  const maxStreak = Math.max(0, ...habits.map(h => streakOf(h)));
+  const totalSavedAmt = savings.reduce((s, x) => s + (+x.current || 0), 0);
+  const nw = (DB.netWorthHistory || []).slice(-1)[0]?.total || 0;
+  const cornInsights = (DB.counselor && DB.counselor.insights || []).length;
+  const counselorThreadEver = (DB.counselor && DB.counselor.lastOpenedAt) > 0;
+  const subAuditDone = Object.values(DB.subscriptionUsage || {}).some(s => s && s.decision);
+  // Day with all habits done
+  const perfectDayHit = (() => {
+    if (!habits.length) return false;
+    for (const h of habits) {
+      for (const [k, v] of Object.entries(h.log || {})) {
+        const did = h.type === "count" ? (+v || 0) >= (+h.target || 1) : !!v;
+        if (!did) continue;
+        const allDone = habits.every(hh => {
+          const vv = hh.log?.[k];
+          return hh.type === "count" ? (+vv || 0) >= (+hh.target || 1) : !!vv;
+        });
+        if (allDone) return true;
+      }
+    }
+    return false;
+  })();
+  return [
+    { id: "first-habit",      emoji: "✓",  group: "Start", title: "First habit",        desc: "Add your first habit",                    earned: habits.length > 0 },
+    { id: "first-check",      emoji: "🔥", group: "Start", title: "First check-off",    desc: "Mark a habit done once",                  earned: totalHabitDones > 0 },
+    { id: "first-win",        emoji: "⭐", group: "Start", title: "First win",          desc: "Capture a win",                           earned: wins.length > 0 },
+    { id: "first-goal",       emoji: "◎",  group: "Start", title: "First goal",         desc: "Set a goal",                              earned: goals.length > 0 },
+    { id: "first-saving",     emoji: "💰", group: "Start", title: "First bucket",       desc: "Create a savings goal",                   earned: savings.length > 0 },
+    { id: "first-spend",      emoji: "💸", group: "Start", title: "First spend",        desc: "Log a transaction",                       earned: spend.length > 0 },
+    { id: "talked-cornileus", emoji: "✨", group: "Start", title: "Met Cornileus",      desc: "Open the AI counselor",                   earned: !!counselorThreadEver },
+    { id: "streak-7",         emoji: "🔥", group: "Habits", title: "7-day streak",      desc: "Hit a 7-day streak on any habit",          earned: maxStreak >= 7 },
+    { id: "streak-30",        emoji: "🔥", group: "Habits", title: "30-day streak",     desc: "30-day streak on a habit",                 earned: maxStreak >= 30 },
+    { id: "streak-100",       emoji: "🏆", group: "Habits", title: "100-day streak",    desc: "Triple-digit streak — rare territory",     earned: maxStreak >= 100 },
+    { id: "perfect-day",      emoji: "🌟", group: "Habits", title: "Perfect day",       desc: "All habits done on a single day",          earned: perfectDayHit },
+    { id: "five-wins",        emoji: "⭐", group: "Habits", title: "5 wins captured",    desc: "Build your wins log",                     earned: wins.length >= 5 },
+    { id: "twenty-wins",      emoji: "🌟", group: "Habits", title: "20 wins captured",   desc: "Compounding momentum",                    earned: wins.length >= 20 },
+    { id: "first-goal-done",  emoji: "🎯", group: "Goals", title: "First goal done",    desc: "Finish what you started",                  earned: goals.some(g => g.done) },
+    { id: "first-roadmap",    emoji: "🗺️", group: "Goals", title: "Built a roadmap",   desc: "Cornileus or you laid out a roadmap",      earned: roadmaps.length > 0 },
+    { id: "saved-1k",         emoji: "💵", group: "Money", title: "Saved $1k",          desc: "First $1,000 across all buckets",          earned: totalSavedAmt >= 1000 },
+    { id: "saved-10k",        emoji: "💵", group: "Money", title: "Saved $10k",         desc: "Five figures of cushion",                  earned: totalSavedAmt >= 10000 },
+    { id: "nw-10k",           emoji: "📈", group: "Money", title: "Net worth $10k",     desc: "Crossed the $10,000 line",                 earned: nw >= 10000 },
+    { id: "nw-100k",          emoji: "🏔", group: "Money", title: "Net worth $100k",    desc: "Six figures",                              earned: nw >= 100000 },
+    { id: "audit-done",       emoji: "🔍", group: "Mastery", title: "Subscription audit", desc: "Reviewed your recurring charges",         earned: !!subAuditDone },
+    { id: "five-insights",    emoji: "📌", group: "Mastery", title: "5 insights pinned", desc: "Save Cornileus's best replies",            earned: cornInsights >= 5 },
+    { id: "encrypted",        emoji: "🔒", group: "Mastery", title: "Locked it down",   desc: "Set a passphrase",                         earned: !!DB.settings.encrypted },
+  ];
+}
+
+function achievementsSheet() {
+  const list = _achievementsList();
+  const earned = list.filter(a => a.earned);
+  const pct = list.length ? Math.round(100 * earned.length / list.length) : 0;
+  // Group by group label, in original order
+  const groups = {};
+  for (const a of list) {
+    if (!groups[a.group]) groups[a.group] = [];
+    groups[a.group].push(a);
+  }
+  const groupHtml = Object.entries(groups).map(([g, items]) => `
+    <div style="margin-top:14px">
+      <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">${esc(g)}</div>
+      <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
+        ${items.map(a => `
+          <div style="background:var(--card);border:0.5px solid ${a.earned ? 'rgba(255,149,0,0.45)' : 'var(--sep)'};border-radius:var(--r2,12px);padding:12px;display:flex;flex-direction:column;align-items:flex-start;gap:4px;position:relative;${a.earned ? '' : 'opacity:0.5'}">
+            <div style="font-size:24px;line-height:1">${a.earned ? a.emoji : '🔒'}</div>
+            <div style="font-size:13px;font-weight:700;color:var(--t1);line-height:1.25">${esc(a.title)}</div>
+            <div style="font-size:11px;color:var(--t3);line-height:1.4">${esc(a.desc)}</div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `).join("");
+  openSheet(`
+    <h2 style="margin-bottom:4px">Achievements</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:6px">Milestones unlocked as you use the app. They light up retroactively when you hit each one.</p>
+    <div style="background:linear-gradient(135deg,rgba(255,149,0,0.10),rgba(124,58,237,0.06));border:0.5px solid rgba(255,149,0,0.32);border-radius:var(--r);padding:12px 14px;margin:10px 0 6px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <div style="font-size:11px;color:var(--t3);font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Unlocked</div>
+        <div style="font-size:22px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">${earned.length}/${list.length} <span style="font-size:13px;font-weight:500;color:var(--t3)">${pct}%</span></div>
+      </div>
+      <div style="height:6px;background:var(--bg-elev);border-radius:3px;overflow:hidden">
+        <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#FF9500,#7c3aed);border-radius:3px;transition:width 0.4s ease"></div>
+      </div>
+    </div>
+    ${groupHtml}
+    <div class="actions" style="margin-top:18px"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
 function yearReviewSheet() {
   const r = yearReview();
   const list = (arr) => arr.length ? arr.slice(0,8).map(x => `<div style="display:flex;justify-content:space-between;font-size:13px;margin:4px 0"><span>${x.emoji||""} ${esc(x.name||x.title||"")}</span><span class="muted" style="font-weight:600">${x.count||x.streak||""}</span></div>`).join("") : `<div class="muted" style="font-size:13px">—</div>`;
