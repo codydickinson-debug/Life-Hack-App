@@ -10223,6 +10223,21 @@ function renderStocks() {
         <div class="body"><div class="t1">Learn the basics</div><div class="t2">P/E, beta, RSI, dividends — explained plainly</div></div>
         <div class="trail chev"></div>
       </div>
+      <div class="row tappable" onclick="startInvestingSheet()" role="button" tabindex="0" style="background:linear-gradient(135deg,rgba(14,165,233,0.10),rgba(124,58,237,0.06));border-left:3px solid #0ea5e9">
+        <div class="lead">🚀</div>
+        <div class="body"><div class="t1">Start investing — guided</div><div class="t2">Pick a starter portfolio · risk quiz · compound interest visualizer</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="compoundVisualSheet()" role="button" tabindex="0">
+        <div class="lead">📈</div>
+        <div class="body"><div class="t1">Compound interest visualizer</div><div class="t2">Interactive: monthly $ × years × return → final balance</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="riskToleranceQuizSheet()" role="button" tabindex="0">
+        <div class="lead">🧭</div>
+        <div class="body"><div class="t1">Risk tolerance quiz</div><div class="t2">4 questions → conservative / balanced / growth / aggressive</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="_stocksAllocationTargetsSheet()" role="button" tabindex="0">
         <div class="lead">🎯</div>
         <div class="body"><div class="t1">Allocation targets</div><div class="t2">Set target % per holding · rebalance plan</div></div>
@@ -11066,6 +11081,381 @@ function _stocksLoadPreset(id) {
       _stocksPlanRecompute();
     }, 200);
   }, 200);
+}
+
+/* ============================================================
+   PHASE 13 — "Make investing easy and visual"
+   Starter portfolios · risk quiz · compound visual · guided setup
+   ============================================================ */
+
+// 5 starter portfolio templates with rationale, allocations, and concrete tickers
+const STK_STARTER_PORTFOLIOS = [
+  {
+    id: "three-fund",
+    label: "🌍 Three-fund classic",
+    tagline: "The Boglehead default. Globally diversified, ~0.05% fees.",
+    risk: "balanced",
+    tickers: [
+      { tk: "VOO",  weight: 60, role: "US large-cap stocks (S&P 500)",         er: 0.0003 },
+      { tk: "VXUS", weight: 20, role: "International stocks (ex-US)",          er: 0.0008 },
+      { tk: "BND",  weight: 20, role: "US total bond market",                   er: 0.0003 },
+    ],
+    why: "Three funds. One decision. You own thousands of companies plus the entire US bond market. Costs almost nothing. Beats most actively managed portfolios over 10+ years.",
+  },
+  {
+    id: "aggressive-growth",
+    label: "🚀 Aggressive growth",
+    tagline: "Younger investors with 20+ years. 100% equities, no bonds.",
+    risk: "aggressive",
+    tickers: [
+      { tk: "VOO",  weight: 50, role: "US large-cap stocks (S&P 500)",         er: 0.0003 },
+      { tk: "QQQ",  weight: 25, role: "Nasdaq-100 tech-heavy growth",          er: 0.002  },
+      { tk: "VXUS", weight: 25, role: "International stocks (ex-US)",          er: 0.0008 },
+    ],
+    why: "Maximum compounding for long horizons. Skips bonds — you can ride out bear markets. Tilts toward tech-heavy QQQ for higher expected return.",
+  },
+  {
+    id: "conservative",
+    label: "🛡️ Conservative",
+    tagline: "Approaching or in retirement. Capital preservation > growth.",
+    risk: "conservative",
+    tickers: [
+      { tk: "VOO",  weight: 30, role: "US stocks (modest equity exposure)",     er: 0.0003 },
+      { tk: "BND",  weight: 50, role: "US total bond market (anchor)",          er: 0.0003 },
+      { tk: "BIL",  weight: 15, role: "Short-term Treasury bills (cash-like)",  er: 0.0014 },
+      { tk: "VXUS", weight: 5,  role: "International diversification (small)",  er: 0.0008 },
+    ],
+    why: "Lower volatility, prioritizes not losing money. Bond-heavy with a Treasury-bill cash position. 30% equities still grows ahead of inflation over time.",
+  },
+  {
+    id: "dividend",
+    label: "💵 Dividend income",
+    tagline: "Built for passive income. Pays you while you hold.",
+    risk: "balanced",
+    tickers: [
+      { tk: "SCHD", weight: 40, role: "Dividend Equity ETF (Morningstar Quality)", er: 0.0006 },
+      { tk: "VYM",  weight: 30, role: "High Dividend Yield ETF",                    er: 0.0006 },
+      { tk: "VOO",  weight: 20, role: "S&P 500 for growth backbone",               er: 0.0003 },
+      { tk: "BND",  weight: 10, role: "Bond ballast",                              er: 0.0003 },
+    ],
+    why: "Roughly 3-4% yield with growth potential. Designed for monthly/quarterly cash income — useful in retirement or as a 'pay myself' system.",
+  },
+  {
+    id: "all-weather",
+    label: "🌦️ All-weather (Dalio-inspired)",
+    tagline: "Designed to perform in any economic environment.",
+    risk: "balanced",
+    tickers: [
+      { tk: "VTI",  weight: 30, role: "US total stock market",                   er: 0.0003 },
+      { tk: "TLT",  weight: 40, role: "Long-term Treasury bonds",                er: 0.0015 },
+      { tk: "IEF",  weight: 15, role: "Intermediate Treasury bonds",             er: 0.0015 },
+      { tk: "GLD",  weight: 8,  role: "Gold for inflation protection",           er: 0.004  },
+      { tk: "DBC",  weight: 7,  role: "Broad commodities basket",                er: 0.0085 },
+    ],
+    why: "Bridgewater's permanent portfolio philosophy: stocks for growth, long bonds for deflation, gold for inflation, commodities for stagflation. Smaller swings, more reliable real returns.",
+  },
+];
+
+function startInvestingSheet() {
+  const profile = DB.profile || {};
+  const age = +profile.age || null;
+  // Suggest a default starter based on age
+  let suggested = "three-fund";
+  if (age != null) {
+    if (age < 35) suggested = "aggressive-growth";
+    else if (age >= 55) suggested = "conservative";
+  }
+  openSheet(`
+    <h2 style="margin-bottom:4px">🚀 Start investing</h2>
+    <p class="muted" style="font-size:13px;margin-bottom:14px;line-height:1.5">Pick a starter portfolio. You don't have to know what each ticker does — we'll explain. Tap one to load it into your watchlist + see the math.</p>
+    <button class="btn" style="width:100%;margin-bottom:12px;font-size:13px;padding:11px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="riskToleranceQuizSheet()">🧭 Take the 4-question risk quiz first</button>
+    <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Starter portfolios</div>
+    ${STK_STARTER_PORTFOLIOS.map(p => `
+      <div onclick="starterPortfolioSheet(${jsAttr(p.id)})" role="button" tabindex="0" style="background:var(--card);border:0.5px solid ${p.id === suggested ? 'var(--blue,#007AFF)' : 'var(--sep)'};${p.id === suggested ? 'border-left:3px solid var(--blue,#007AFF);' : ''}border-radius:10px;padding:12px 14px;margin-bottom:6px;cursor:pointer">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">
+          <div style="font-size:14px;font-weight:700;color:var(--t1)">${esc(p.label)}${p.id === suggested ? ' <span style="background:rgba(0,122,255,0.15);color:var(--blue,#007AFF);font-size:9.5px;padding:2px 6px;border-radius:999px;margin-left:6px;text-transform:uppercase;letter-spacing:0.05em">Suggested</span>' : ''}</div>
+          <div style="font-size:11px;color:var(--t3)">${p.tickers.length} tickers</div>
+        </div>
+        <div style="font-size:11.5px;color:var(--t3);line-height:1.4">${esc(p.tagline)}</div>
+        <div style="margin-top:6px;display:flex;width:100%;height:5px;border-radius:3px;overflow:hidden;background:var(--bg-elev)">
+          ${(() => {
+            const cols = ["#34C759","#007AFF","#FF9500","#AF52DE","#FF3B30"];
+            return p.tickers.map((t, i) => `<div style="background:${cols[i % cols.length]};width:${t.weight}%;height:100%"></div>`).join("");
+          })()}
+        </div>
+      </div>
+    `).join("")}
+    <button class="btn secondary" style="width:100%;margin-top:8px;font-size:12.5px;padding:9px" onclick="compoundVisualSheet()">📈 See how $X/mo compounds — interactive</button>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+function starterPortfolioSheet(id) {
+  const p = STK_STARTER_PORTFOLIOS.find(x => x.id === id);
+  if (!p) return;
+  const avgER = p.tickers.reduce((s, t) => s + t.weight * t.er, 0) / 100;
+  const cols = ["#34C759","#007AFF","#FF9500","#AF52DE","#FF3B30"];
+  openSheet(`
+    <h2 style="margin-bottom:4px">${esc(p.label)}</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">${esc(p.tagline)}</p>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:10px">Allocation</div>
+      <div style="display:flex;width:100%;height:14px;border-radius:7px;overflow:hidden;background:var(--bg-elev);margin-bottom:12px">
+        ${p.tickers.map((t, i) => `<div title="${esc(t.tk)} ${t.weight}%" style="background:${cols[i % cols.length]};width:${t.weight}%;height:100%"></div>`).join("")}
+      </div>
+      ${p.tickers.map((t, i) => `
+        <div style="display:flex;align-items:center;gap:10px;padding:9px 11px;background:var(--bg-elev);border-radius:8px;margin-bottom:5px">
+          <span style="width:10px;height:10px;border-radius:3px;background:${cols[i % cols.length]};flex-shrink:0"></span>
+          <div style="width:48px;font-weight:700;font-size:13px;flex-shrink:0">${esc(t.tk)}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12px;color:var(--t1);line-height:1.35">${esc(t.role)}</div>
+            <div style="font-size:10.5px;color:var(--t3);margin-top:1px">Expense ratio ${(t.er*100).toFixed(2)}%</div>
+          </div>
+          <div style="font-size:14px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;flex-shrink:0">${t.weight}%</div>
+        </div>
+      `).join("")}
+      <div style="margin-top:10px;padding:8px 10px;background:var(--bg-elev);border-radius:8px;display:flex;justify-content:space-between;align-items:baseline">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;font-weight:700">Weighted expense ratio</div>
+        <div style="font-size:14px;font-weight:800;color:var(--green,#34C759);font-variant-numeric:tabular-nums">${(avgER*100).toFixed(3)}%/yr</div>
+      </div>
+    </div>
+    <div style="background:rgba(0,122,255,0.08);border:0.5px solid rgba(0,122,255,0.30);border-radius:10px;padding:11px 13px;margin-bottom:10px">
+      <div style="font-size:10.5px;color:var(--blue,#007AFF);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Why this works</div>
+      <div style="font-size:13px;color:var(--t1);line-height:1.5">${esc(p.why)}</div>
+    </div>
+    <button class="btn" style="width:100%;margin-bottom:6px;font-size:13px;background:linear-gradient(135deg,#0ea5e9,#7c3aed);color:#fff;border:none" onclick="_stocksApplyStarter(${jsAttr(p.id)})">📋 Add these tickers to my watchlist</button>
+    <button class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px" onclick="closeSheet();setTimeout(()=>compoundVisualSheet(),120)">📈 See how this grows over time</button>
+    <button class="btn secondary" style="width:100%;font-size:13px" onclick="closeSheet();setTimeout(()=>startInvestingSheet(),120)">← Back to starter portfolios</button>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+async function _stocksApplyStarter(id) {
+  const p = STK_STARTER_PORTFOLIOS.find(x => x.id === id);
+  if (!p) return;
+  if (!DB.stocks) DB.stocks = {};
+  if (!Array.isArray(DB.stocks.watchlist)) DB.stocks.watchlist = [];
+  if (!DB.stocks.allocationTargets) DB.stocks.allocationTargets = {};
+  let added = 0;
+  for (const t of p.tickers) {
+    if (!DB.stocks.watchlist.includes(t.tk)) { DB.stocks.watchlist.push(t.tk); added++; }
+    DB.stocks.allocationTargets[t.tk] = t.weight;
+  }
+  await save();
+  closeSheet();
+  toast(`${p.label}: ${added} new ticker${added===1?"":"s"} added · targets set`);
+  if (typeof renderStocks === "function" && document.getElementById("page-stocks")) renderStocks();
+}
+
+/* ---------- Risk tolerance quiz ---------- */
+const RISK_QUESTIONS = [
+  {
+    q: "Your portfolio drops 30% in a month. What do you do?",
+    options: [
+      { text: "Sell everything to stop the bleeding", score: 1 },
+      { text: "Sell some, hold the rest, wait it out", score: 2 },
+      { text: "Hold and ignore — markets recover", score: 3 },
+      { text: "Buy more — this is a sale", score: 4 },
+    ],
+  },
+  {
+    q: "When do you need the money?",
+    options: [
+      { text: "Within 2 years", score: 1 },
+      { text: "5-10 years away", score: 2 },
+      { text: "10-20 years away", score: 3 },
+      { text: "20+ years (or retirement income)", score: 4 },
+    ],
+  },
+  {
+    q: "What matters more?",
+    options: [
+      { text: "Not losing money is everything", score: 1 },
+      { text: "Steady, moderate growth", score: 2 },
+      { text: "High long-term return", score: 3 },
+      { text: "Maximum growth — I can stomach the swings", score: 4 },
+    ],
+  },
+  {
+    q: "How much investing experience do you have?",
+    options: [
+      { text: "None — this is new", score: 1 },
+      { text: "A little — I have a 401k or savings", score: 2 },
+      { text: "Comfortable — I've held through one drawdown", score: 3 },
+      { text: "Experienced — I've ridden out multiple cycles", score: 4 },
+    ],
+  },
+];
+
+function riskToleranceQuizSheet() {
+  window._riskAnswers = [];
+  _riskShowQuestion(0);
+}
+
+function _riskShowQuestion(idx) {
+  if (idx >= RISK_QUESTIONS.length) { _riskShowResult(); return; }
+  const q = RISK_QUESTIONS[idx];
+  openSheet(`
+    <h2 style="margin-bottom:4px">🧭 Risk tolerance · Q${idx + 1} of ${RISK_QUESTIONS.length}</h2>
+    <p class="muted" style="font-size:13px;margin-bottom:14px;line-height:1.5">${esc(q.q)}</p>
+    ${q.options.map((opt, i) => `
+      <button onclick="_riskAnswer(${idx}, ${opt.score})" style="width:100%;text-align:left;background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:14px 16px;margin-bottom:8px;color:var(--t1);font-size:13.5px;line-height:1.4;cursor:pointer">
+        ${esc(opt.text)}
+      </button>
+    `).join("")}
+    <div style="display:flex;gap:4px;margin-top:14px;justify-content:center">
+      ${RISK_QUESTIONS.map((_, i) => `<span style="width:8px;height:8px;border-radius:50%;background:${i <= idx ? 'var(--blue,#007AFF)' : 'var(--sep)'}"></span>`).join("")}
+    </div>
+    <div class="actions"><button class="btn secondary" onclick="closeSheet()">Cancel</button></div>
+  `);
+}
+
+function _riskAnswer(idx, score) {
+  window._riskAnswers[idx] = score;
+  _riskShowQuestion(idx + 1);
+}
+
+function _riskShowResult() {
+  const answers = window._riskAnswers || [];
+  const total = answers.reduce((s, x) => s + (x || 0), 0);
+  // Max 16, min 4. Map to band.
+  let profile, color, suggested;
+  if (total <= 7)       { profile = "Conservative";  color = "var(--green,#34C759)"; suggested = "conservative"; }
+  else if (total <= 11) { profile = "Balanced";      color = "#9ACD32";              suggested = "three-fund"; }
+  else if (total <= 14) { profile = "Growth";        color = "var(--orange,#FF9500)"; suggested = "dividend"; }
+  else                  { profile = "Aggressive";    color = "var(--red,#FF3B30)";    suggested = "aggressive-growth"; }
+  const recPortfolio = STK_STARTER_PORTFOLIOS.find(p => p.id === suggested);
+  // Stash on profile so we remember
+  if (!DB.profile) DB.profile = {};
+  DB.profile.riskTolerance = profile.toLowerCase();
+  DB.profile.riskAssessedAt = Date.now();
+  save();
+  openSheet(`
+    <h2 style="margin-bottom:4px">Your risk profile</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Based on your answers (${total}/16 risk-taking score).</p>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${color};border-radius:var(--r);padding:18px;margin-bottom:14px;text-align:center">
+      <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Your profile</div>
+      <div style="font-size:30px;font-weight:800;color:${color};letter-spacing:-0.02em;margin-top:4px">${esc(profile)}</div>
+    </div>
+    ${recPortfolio ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Recommended starter</div>
+      <div onclick="closeSheet();setTimeout(()=>starterPortfolioSheet(${jsAttr(recPortfolio.id)}),120)" role="button" tabindex="0" style="background:var(--card);border:0.5px solid var(--blue,#007AFF);border-left:3px solid var(--blue,#007AFF);border-radius:10px;padding:14px;margin-bottom:14px;cursor:pointer">
+        <div style="font-size:14px;font-weight:700;margin-bottom:3px">${esc(recPortfolio.label)}</div>
+        <div style="font-size:11.5px;color:var(--t3);line-height:1.4">${esc(recPortfolio.tagline)}</div>
+        <div style="display:inline-flex;align-items:center;gap:4px;color:var(--blue,#007AFF);font-size:11.5px;font-weight:600;margin-top:8px">See the allocation <span style="font-size:13px">→</span></div>
+      </div>
+    ` : ""}
+    <div style="background:var(--bg-elev);border-radius:10px;padding:11px 13px;font-size:12px;color:var(--t2);line-height:1.5;margin-bottom:10px">
+      Risk tolerance changes with life stage. Re-take the quiz any time your situation shifts — major life events, market shocks, or every 2-3 years as a default.
+    </div>
+    <div class="actions">
+      <button class="btn secondary" onclick="closeSheet();setTimeout(()=>startInvestingSheet(),120)">See all starters</button>
+      <button class="btn" onclick="closeSheet()">Done</button>
+    </div>
+  `);
+}
+
+/* ---------- Compound interest visualizer ---------- */
+function compoundVisualSheet() {
+  openSheet(`
+    <h2 style="margin-bottom:4px">📈 Compound interest, visualized</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Time is the secret ingredient. Watch how a small monthly contribution becomes life-changing.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
+      <div>
+        <label style="font-size:11px">Monthly ($)</label>
+        <input id="ci-monthly" type="number" value="500" min="10" oninput="_compoundRecompute()"
+          style="background:var(--bg-elev);padding:9px 12px;border-radius:8px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px">Years</label>
+        <input id="ci-years" type="number" value="30" min="1" max="60" oninput="_compoundRecompute()"
+          style="background:var(--bg-elev);padding:9px 12px;border-radius:8px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px">Annual return (%)</label>
+        <input id="ci-return" type="number" value="7" min="-5" max="30" step="0.5" oninput="_compoundRecompute()"
+          style="background:var(--bg-elev);padding:9px 12px;border-radius:8px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;box-sizing:border-box" />
+      </div>
+      <div>
+        <label style="font-size:11px">Starting ($)</label>
+        <input id="ci-start" type="number" value="0" min="0" oninput="_compoundRecompute()"
+          style="background:var(--bg-elev);padding:9px 12px;border-radius:8px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;box-sizing:border-box" />
+      </div>
+    </div>
+    <div id="ci-result"></div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  _compoundRecompute();
+}
+
+function _compoundRecompute() {
+  const monthly = parseFloat((document.getElementById("ci-monthly")||{}).value) || 0;
+  const years = parseFloat((document.getElementById("ci-years")||{}).value) || 30;
+  const rate = parseFloat((document.getElementById("ci-return")||{}).value) || 7;
+  const start = parseFloat((document.getElementById("ci-start")||{}).value) || 0;
+  const out = document.getElementById("ci-result");
+  if (!out) return;
+  const monthlyR = Math.pow(1 + rate/100, 1/12) - 1;
+  const points = [];   // [{year, bal, contributed}]
+  let bal = start;
+  let contributed = start;
+  points.push({ year: 0, bal, contributed });
+  for (let m = 1; m <= years * 12; m++) {
+    bal = bal * (1 + monthlyR) + monthly;
+    contributed += monthly;
+    if (m % 12 === 0) points.push({ year: m/12, bal, contributed });
+  }
+  const final = points[points.length - 1].bal;
+  const totalContrib = points[points.length - 1].contributed;
+  const compoundGrowth = final - totalContrib;
+  const growthMult = totalContrib > 0 ? final / totalContrib : 1;
+
+  // Twin-line SVG: red = total contributed, green = balance
+  const W = 320, H = 160;
+  const max = final * 1.05;
+  const xAt = (y) => (y / years) * W;
+  const yAt = (v) => H - (v / max) * H;
+  const balPts = points.map(p => xAt(p.year).toFixed(1) + "," + yAt(p.bal).toFixed(1)).join(" ");
+  const conPts = points.map(p => xAt(p.year).toFixed(1) + "," + yAt(p.contributed).toFixed(1)).join(" ");
+  const conePath = `M ${conPts.replace(/ /g, ' L ')} L ${xAt(years).toFixed(1)},${yAt(final).toFixed(1)} L ${balPts.split(' ').reverse().join(' L ')} Z`;
+
+  const fmt = (v) => v >= 1e6 ? "$" + (v/1e6).toFixed(2) + "M" : v >= 1e3 ? "$" + (v/1e3).toFixed(0) + "K" : "$" + v.toFixed(0);
+
+  out.innerHTML = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--green,#34C759);border-radius:var(--r);padding:16px;margin-bottom:10px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">In ${years} years</div>
+      <div style="font-size:32px;font-weight:800;color:var(--t1);letter-spacing:-0.02em;font-variant-numeric:tabular-nums" data-priv="amount">${fmt(final)}</div>
+      <div style="font-size:13px;color:var(--green,#34C759);font-weight:700;margin-top:2px">${growthMult.toFixed(1)}× what you put in</div>
+      <svg viewBox="0 0 ${W} ${H+18}" style="width:100%;height:auto;display:block;margin-top:12px">
+        <defs><linearGradient id="ci-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#34C759" stop-opacity="0.30"/>
+          <stop offset="100%" stop-color="#34C759" stop-opacity="0.02"/>
+        </linearGradient></defs>
+        <path d="${conePath}" fill="url(#ci-grad)"/>
+        <polyline points="${conPts}" fill="none" stroke="var(--t3)" stroke-width="1.6" stroke-dasharray="4 3" opacity="0.7"/>
+        <polyline points="${balPts}" fill="none" stroke="var(--green,#34C759)" stroke-width="2.4" stroke-linecap="round"/>
+        <text x="0" y="${H+14}" font-size="9" fill="var(--t3)">year 0</text>
+        <text x="${W}" y="${H+14}" font-size="9" fill="var(--t3)" text-anchor="end">year ${years}</text>
+      </svg>
+      <div style="display:flex;gap:14px;justify-content:center;font-size:11px;color:var(--t3);margin-top:6px">
+        <span><span style="display:inline-block;width:14px;height:2px;background:var(--green,#34C759);vertical-align:middle;margin-right:4px"></span>Balance</span>
+        <span><span style="display:inline-block;width:14px;height:1px;background:var(--t3);border-top:1px dashed;vertical-align:middle;margin-right:4px"></span>What you contributed</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:14px">
+        <div style="background:var(--bg-elev);border-radius:8px;padding:9px 11px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600">You contribute</div>
+          <div style="font-size:15px;font-weight:700;color:var(--t1)" data-priv="amount">${fmt(totalContrib)}</div>
+        </div>
+        <div style="background:rgba(52,199,89,0.10);border:0.5px solid rgba(52,199,89,0.35);border-radius:8px;padding:9px 11px">
+          <div style="font-size:10px;color:var(--green,#34C759);text-transform:uppercase;font-weight:600">Free money from compounding</div>
+          <div style="font-size:15px;font-weight:700;color:var(--green,#34C759)" data-priv="amount">${fmt(compoundGrowth)}</div>
+        </div>
+      </div>
+      <div style="margin-top:12px;background:var(--bg-elev);border-radius:10px;padding:10px 12px;font-size:12px;color:var(--t2);line-height:1.5">
+        ${monthly > 0 && years >= 10 ? `That's <b style="color:var(--green,#34C759)">${(compoundGrowth/totalContrib*100).toFixed(0)}%</b> more than you actually put in. The market did the rest.` : `Try ${years < 10 ? "a longer horizon" : "a bigger monthly contribution"} — compounding needs both time and consistent deposits to work its magic.`}
+      </div>
+    </div>
+  `;
 }
 
 /* ---------- Portfolio-wide forecast ----------
@@ -13422,11 +13812,15 @@ function _stocksRenderWatchlist() {
   if (!out) return;
   const watchlist = (DB.stocks && DB.stocks.watchlist) || [];
   if (!watchlist.length) {
-    out.innerHTML = `<div class="empty" style="padding:24px 14px">
-      <div class="e-emoji">📊</div>
-      <div class="e-title">Watchlist is empty</div>
-      <div class="e-sub">Add a ticker above to start tracking.</div>
-    </div>`;
+    out.innerHTML = `
+      <div style="background:linear-gradient(135deg,rgba(14,165,233,0.10),rgba(124,58,237,0.06));border:0.5px solid rgba(14,165,233,0.30);border-left:3px solid #0ea5e9;border-radius:var(--r);padding:18px;text-align:center">
+        <div style="font-size:30px;margin-bottom:6px">🚀</div>
+        <div style="font-size:15px;font-weight:700;color:var(--t1);margin-bottom:4px">New to investing?</div>
+        <div style="font-size:12.5px;color:var(--t3);margin-bottom:12px;line-height:1.5">Pick a starter portfolio — 3 to 5 ETFs that cover the whole market. We'll explain each one and load them into your watchlist.</div>
+        <button class="btn" style="width:100%;background:linear-gradient(135deg,#0ea5e9,#7c3aed);color:#fff;border:none;font-size:13px;padding:11px" onclick="startInvestingSheet()">🚀 Start investing — guided</button>
+        <button class="btn secondary" style="width:100%;margin-top:6px;font-size:12.5px;padding:9px" onclick="compoundVisualSheet()">📈 See compound interest in action first</button>
+      </div>
+    `;
     return;
   }
   const cache = (DB.stocks && DB.stocks.quoteCache) || {};
