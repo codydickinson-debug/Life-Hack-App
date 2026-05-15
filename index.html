@@ -6688,9 +6688,13 @@ function renderToday() {
               <div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px">✨</div>
               <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Today's insight</div>
             </div>
-            <button class="btn sm secondary" style="font-size:11px;padding:4px 10px" onclick="runAiInsight()">Refresh</button>
+            <button class="btn sm secondary" style="font-size:11px;padding:4px 10px" ${DB._aiInsightLoading ? 'disabled' : ''} onclick="runAiInsight()">${DB._aiInsightLoading ? "Thinking…" : "Refresh"}</button>
           </div>
-          <div style="font-size:13.5px;line-height:1.55;color:var(--t1);white-space:pre-wrap">${esc(last.response)}</div>
+          ${DB._aiInsightLoading ? `
+            <div style="font-size:13.5px;line-height:1.55;color:var(--t3);font-style:italic">Cornileus is reading your latest numbers…</div>
+          ` : `
+            <div style="font-size:13.5px;line-height:1.55;color:var(--t1);white-space:pre-wrap">${esc(last.response)}</div>
+          `}
           <div style="font-size:11px;color:var(--t4);margin-top:8px">Refreshed daily · Tap "Talk to Cornileus" below to dig deeper.</div>
         </div>
       `;
@@ -7652,9 +7656,11 @@ function renderRoadmapsSection() {
       <div class="rm-empty">
         <div style="font-size:30px;margin-bottom:6px">🗺️</div>
         <div style="font-weight:700;margin-bottom:4px">No roadmaps yet</div>
-        <div style="font-size:12.5px;color:var(--t3);margin-bottom:14px;line-height:1.5">Roadmaps are multi-phase plans with milestones &amp; monthly actions per phase. Have Cornileus build one for you in one tap.</div>
-        <button class="btn" style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-size:13px;max-width:280px;margin:0 auto;display:block"
-          onclick="openCounselor(${jsAttr(`Build me a complete multi-phase roadmap based on my actual situation in the snapshot. Use the add_roadmap action with at least 4 phases. Each phase should have: title, period (e.g. "Months 1-3", "Year 2"), targetAmount if money-related, optional targetDate (YYYY-MM-DD), short note, 3-5 milestones, and 2-4 monthly actions. Make it practical and specific to MY numbers — not generic. Tell me what plan you built and why before emitting the action.`)})">✨ Ask Cornileus to build me a roadmap</button>
+        <div style="font-size:12.5px;color:var(--t3);margin-bottom:14px;line-height:1.5">Roadmaps are multi-phase plans with milestones &amp; monthly actions per phase.</div>
+        <button class="btn" style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-size:13px;max-width:280px;margin:0 auto 8px;display:block"
+          onclick="openCounselor(${jsAttr(`Build me a complete multi-phase roadmap based on my actual situation in the snapshot. Use the add_roadmap action with at least 4 phases. Each phase should have: title, period (e.g. "Months 1-3", "Year 2"), targetAmount if money-related, optional targetDate (YYYY-MM-DD), short note, 3-5 milestones, and 2-4 monthly actions. Make it practical and specific to MY numbers — not generic. Tell me what plan you built and why before emitting the action.`)})">✨ Ask Cornileus to build me one</button>
+        <button class="btn secondary" style="font-size:12.5px;max-width:280px;margin:0 auto;display:block"
+          onclick="createBlankRoadmap()">Start with a blank roadmap</button>
       </div>
     `;
   }
@@ -7668,6 +7674,29 @@ function renderRoadmapsSection() {
     </div>
     ${list.map(rm => _roadmapCardHtml(rm)).join("")}
   `;
+}
+
+// Create a blank starter roadmap — for users who don't have AI configured
+// or just want to author one by hand. Drops them straight into the new
+// roadmap's edit view so they can fill in phases.
+function createBlankRoadmap() {
+  if (!DB.roadmaps) DB.roadmaps = [];
+  const id = uid();
+  DB.roadmaps.push({
+    id,
+    title: "My roadmap",
+    emoji: "🗺️",
+    note: "Edit this — break a big goal into phases with milestones.",
+    phases: [
+      { id: uid(), title: "Phase 1", period: "Months 1-3", note: "", milestones: [{ id: uid(), text: "First milestone", done: false }], actions: [] },
+      { id: uid(), title: "Phase 2", period: "Months 4-6", note: "", milestones: [], actions: [] },
+      { id: uid(), title: "Phase 3", period: "Months 7-12", note: "", milestones: [], actions: [] },
+    ],
+    createdAt: Date.now(),
+  });
+  save(); render();
+  setTimeout(() => roadmapSheet(id), 200);
+  toast("Roadmap created — tap each phase to fill it in");
 }
 
 // Manage a single roadmap — view all phases expanded, mark phases done,
@@ -10252,26 +10281,44 @@ function renderMoney() {
       <div class="section-h"><span class="lbl">Recent</span><span class="muted" style="font-size:12px">${filteredSpend().length}${(DB.spendSearch||"").trim()?` of ${DB.spend.length}`:""} total</span></div>
       <input placeholder="Search transactions" maxlength="${TEXT_MAX}" value="${esc(DB.spendSearch||"")}"
         style="background:var(--card);padding:12px 14px;border-radius:var(--r3);font-size:14px;width:100%;margin-bottom:8px;border:1px solid var(--sep);box-sizing:border-box"
-        oninput="DB.spendSearch=sanitizeText(this.value);saveDebounced();" onchange="renderMoney()" onblur="flushPendingSave();renderMoney()" />
+        oninput="DB.spendSearch=sanitizeText(this.value);saveDebounced();window._spendVisibleLimit=40;" onchange="renderMoney()" onblur="flushPendingSave();renderMoney()" />
       <div class="list">
-        ${filteredSpend().length ? filteredSpend().slice(0,40).map(t=>`
-          <div class="row">
-            <div class="lead">${t.source === "plaid" ? (+t.amount < 0 ? "💵" : "🔗") : "💳"}</div>
-            <div class="body">
-              <div class="t1">${esc(t.category)} <span class="amt" style="${(+t.amount)<0?'color:var(--green)':''}">${(+t.amount)<0?'+':''}${fmt$0(Math.abs(+t.amount||0))}</span>${t.pending ? ` <span class="muted" style="font-size:11px">pending</span>` : ""}${t._ruleId ? ` <span class="muted" style="font-size:10px;background:var(--bg-elev);padding:2px 6px;border-radius:6px">rule</span>` : ""}</div>
-              <div class="t2">${t.date}${t.note?' · '+esc(t.note):''}</div>
+        ${(() => {
+          const all = filteredSpend();
+          if (!all.length) {
+            return (DB.spendSearch||"").trim()
+              ? `<div class="row"><div class="body"><div class="t2 muted">No matches.</div></div></div>`
+              : emptyStateHtml({
+                  emoji: "💳",
+                  title: "Log your first spend",
+                  sub: "Tap the form above for a quick entry, or connect a bank in Settings to auto-import everything.",
+                  primary: { label: "📷 Scan a receipt", onclick: "quickAddSpendSheet()" },
+                  secondary: { label: "+ Quick add", onclick: "quickAddSpendSheet()" },
+                });
+          }
+          // Pagination: default to 40 visible, user can tap "Show more"
+          // to bump by another 40 each time. Stays in component state via
+          // a module-level variable that resets when the search changes.
+          const limit = (window._spendVisibleLimit || 40);
+          const visible = all.slice(0, limit);
+          const more = all.length - visible.length;
+          const rows = visible.map(t => `
+            <div class="row">
+              <div class="lead">${t.source === "plaid" ? (+t.amount < 0 ? "💵" : "🔗") : "💳"}</div>
+              <div class="body">
+                <div class="t1">${esc(t.category)} <span class="amt" style="${(+t.amount)<0?'color:var(--green)':''}">${(+t.amount)<0?'+':''}${fmt$0(Math.abs(+t.amount||0))}</span>${t.pending ? ` <span class="muted" style="font-size:11px">pending</span>` : ""}${t._ruleId ? ` <span class="muted" style="font-size:10px;background:var(--bg-elev);padding:2px 6px;border-radius:6px">rule</span>` : ""}</div>
+                <div class="t2">${t.date}${t.note?' · '+esc(t.note):''}</div>
+              </div>
+              ${t.source === "plaid" ? `<button class="del-x" style="font-size:14px" onclick="quickRuleFromTx(${jsAttr(t.id)})" title="Recategorize">↻</button>` : `<button class="del-x" onclick="deleteSpend(${jsAttr(t.id)})">×</button>`}
             </div>
-            ${t.source === "plaid" ? `<button class="del-x" style="font-size:14px" onclick="quickRuleFromTx(${jsAttr(t.id)})" title="Recategorize">↻</button>` : `<button class="del-x" onclick="deleteSpend(${jsAttr(t.id)})">×</button>`}
-          </div>
-        `).join("") : ((DB.spendSearch||"").trim()
-          ? `<div class="row"><div class="body"><div class="t2 muted">No matches.</div></div></div>`
-          : emptyStateHtml({
-              emoji: "💳",
-              title: "Log your first spend",
-              sub: "Tap the form above for a quick entry, or connect a bank in Settings to auto-import everything.",
-              primary: { label: "📷 Scan a receipt", onclick: "quickAddSpendSheet()" },
-              secondary: { label: "+ Quick add", onclick: "quickAddSpendSheet()" },
-            }))}
+          `).join("");
+          const loadMore = more > 0 ? `
+            <div class="row tappable" onclick="window._spendVisibleLimit=(window._spendVisibleLimit||40)+40;renderMoney()" style="text-align:center;justify-content:center">
+              <div class="body" style="text-align:center"><div class="t2" style="color:var(--purple,#7c3aed);font-weight:600">Show ${Math.min(more, 40)} more · ${more} hidden</div></div>
+            </div>
+          ` : "";
+          return rows + loadMore;
+        })()}
       </div>
     `;
   }
@@ -21110,6 +21157,17 @@ function renderSettings() {
           <div class="trail chev"></div>
         </div>
       ` : ""}
+      ${(() => {
+        const lm = (DB.settings || {}).dismissedLeaks || {};
+        const count = Object.values(lm).reduce((s, arr) => s + (Array.isArray(arr) ? arr.length : 0), 0);
+        return count > 0 ? `
+          <div class="row tappable" onclick="resetDismissedLeaks()">
+            <div class="lead">↺</div>
+            <div class="body"><div class="t1">Reset dismissed spending leaks</div><div class="t2">${count} dismissed — re-surface them all</div></div>
+            <div class="trail chev"></div>
+          </div>
+        ` : "";
+      })()}
       <div class="row">
         <div class="lead">✨</div>
         <div class="body"><div class="t1">Show Cornileus ✨ button</div><div class="t2">The floating counselor button at the bottom-right</div></div>
@@ -21161,11 +21219,13 @@ function renderSettings() {
       <div class="row tappable" onclick="customizeTabsSheet()">
         <div class="lead">▦</div>
         <div class="body">
-          <div class="t1">Customize tabs</div>
+          <div class="t1">Customize tabs${((DB.settings && DB.settings.hiddenTabs) || []).length ? ` <span style="background:var(--orange,#FF9500);color:#fff;border-radius:999px;padding:2px 8px;font-size:10px;margin-left:6px;font-weight:700">${((DB.settings && DB.settings.hiddenTabs) || []).length} HIDDEN</span>` : ""}</div>
           <div class="t2">${(() => {
-            const hiddenCount = ((DB.settings && DB.settings.hiddenTabs) || []).length;
-            if (hiddenCount === 0) return "Hide tabs you don't use from the bottom nav";
-            return `${hiddenCount} tab${hiddenCount===1?'':'s'} hidden`;
+            const hidden = ((DB.settings && DB.settings.hiddenTabs) || []);
+            if (hidden.length === 0) return "Hide tabs you don't use from the bottom nav";
+            // Capitalize tab ids for display
+            const cap = s => s.charAt(0).toUpperCase() + s.slice(1);
+            return `Hidden: ${hidden.map(cap).join(", ")} · tap to restore`;
           })()}</div>
         </div>
         <div class="trail chev"></div>
@@ -21560,11 +21620,11 @@ function renderSettings() {
       ${(DB.reflections||[]).length > 3 ? `<div class="row"><div class="body"><div class="t2 muted">${DB.reflections.length - 3} more saved</div></div></div>` : ""}
     </div>
 
-    <div class="section-h"><span class="lbl">Share with a friend</span></div>
+    <div class="section-h"><span class="lbl">Recommend to someone</span></div>
     <div class="list">
       <div class="row tappable" onclick="shareWithRoommateSheet()">
         <div class="lead">👥</div>
-        <div class="body"><div class="t1">Set up a friend on Ascend</div><div class="t2">Each install has its own private userId — encrypted separately</div></div>
+        <div class="body"><div class="t1">Invite a friend to Ascend</div><div class="t2">Share the install link. They get their own separate account — nothing is connected. (For couples sharing finances, see "🤝 Share with partner" in Bank sync.)</div></div>
         <div class="trail chev"></div>
       </div>
     </div>
@@ -24692,12 +24752,16 @@ function counselorRender() {
     ? (keep ? "📌 Saved — won't be cleared" : "Closes private — tap 📌 to keep")
     : (keep ? "Your financial counselor · 📌 Saving conversations"
             : "Your financial counselor · conversations are private (cleared on close — tap 📌 to keep)");
-  const headerControls = thread.length ? `
-    <button onclick="counselorToggleKeep()" title="${keep ? 'Stop keeping this chat' : 'Keep this chat across opens'}"
-      style="background:${keep ? 'rgba(124,58,237,0.18)' : 'var(--bg-elev)'};border:0.5px solid ${keep ? 'var(--purple,#8957d9)' : 'var(--sep)'};color:${keep ? 'var(--purple,#8957d9)' : 'var(--t2)'};padding:6px 10px;border-radius:var(--r-pill,999px);font-size:11.5px;cursor:pointer;font-weight:600;flex-shrink:0">${keep ? '📌 Kept' : '📌 Keep'}</button>
-    <button onclick="counselorNewChat()" title="Start a new chat"
-      style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t2);padding:6px 10px;border-radius:var(--r-pill,999px);font-size:11.5px;cursor:pointer;font-weight:600;flex-shrink:0">New</button>
-  ` : "";
+  const headerControls = `
+    <button onclick="closeSheet();setTimeout(()=>cornileusKnowsSheet(),120);" title="What does Cornileus know about me?"
+      style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t2);padding:6px 10px;border-radius:var(--r-pill,999px);font-size:11.5px;cursor:pointer;font-weight:600;flex-shrink:0">🔍 Knows</button>
+    ${thread.length ? `
+      <button onclick="counselorToggleKeep()" title="${keep ? 'Stop keeping this chat' : 'Keep this chat across opens'}"
+        style="background:${keep ? 'rgba(124,58,237,0.18)' : 'var(--bg-elev)'};border:0.5px solid ${keep ? 'var(--purple,#8957d9)' : 'var(--sep)'};color:${keep ? 'var(--purple,#8957d9)' : 'var(--t2)'};padding:6px 10px;border-radius:var(--r-pill,999px);font-size:11.5px;cursor:pointer;font-weight:600;flex-shrink:0">${keep ? '📌 Kept' : '📌 Keep'}</button>
+      <button onclick="counselorNewChat()" title="Start a new chat"
+        style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t2);padding:6px 10px;border-radius:var(--r-pill,999px);font-size:11.5px;cursor:pointer;font-weight:600;flex-shrink:0">New</button>
+    ` : ""}
+  `;
 
   // Header avatar removed — Cornileus' real entrance is the big peeking
   // character next to the greeting bubble. The greeting block is rendered
@@ -26309,7 +26373,8 @@ function showLockScreen() {
       <button id="lock-go" style="margin-top:14px;padding:14px 24px;background:var(--blue);color:#fff;border-radius:12px;font-weight:600;font-size:16px;width:100%;max-width:300px;border:none">Unlock</button>
       <div id="lock-err" style="color:var(--red);margin-top:14px;font-size:13px;height:16px"></div>
       <div id="lock-cool" style="color:var(--t3);margin-top:6px;font-size:12px;height:16px"></div>
-      <div style="margin-top:24px;font-size:12px;color:var(--t4);max-width:300px;line-height:1.5">Forgot your passphrase? There's no recovery — your data is unrecoverable. <a href="#" id="lock-reset" style="color:var(--red)">Reset and start over</a></div>
+      <div style="margin-top:24px;font-size:13px;color:var(--t3);max-width:300px;line-height:1.55">Forgot your passphrase? There's no recovery — your data is unrecoverable.</div>
+      <button type="button" id="lock-reset" style="margin-top:10px;padding:10px 18px;background:transparent;color:var(--red,#FF3B30);border:1px solid var(--red,#FF3B30);border-radius:10px;font-size:13px;font-weight:600;min-height:44px;min-width:44px;cursor:pointer">Reset and start over</button>
     </div>
   `;
 
@@ -26379,12 +26444,23 @@ function showLockScreen() {
 
 
 async function runAiInsight() {
-  toast("Asking Claude…");
+  // Set a transient flag so the card can show a "Thinking…" state on
+  // BOTH the Today and Money cards while the request flies (the user
+  // might tap Refresh on either). Cleared in finally so we never leave
+  // the UI stuck.
+  DB._aiInsightLoading = true;
+  render();
+  toast("Asking Cornileus…");
   try {
     const r = await getMonthlyInsight();
+    DB._aiInsightLoading = false;
     render();
     toast("Insight ready");
-  } catch (e) { toast(_friendlyApiError("AI insight", e)); }
+  } catch (e) {
+    DB._aiInsightLoading = false;
+    render();
+    toast(_friendlyApiError("AI insight", e));
+  }
 }
 
 // Map common error patterns to user-actionable messages. Anything we don't
@@ -30449,6 +30525,17 @@ async function dismissSpendingLeak(category) {
   }
   await save();
   render();
+  toast(`Dismissed ${category} leak alert for this month — undo from Settings`);
+}
+
+// Reset dismissed leak alerts so they can resurface. Mirrors the pattern
+// of resetDismissedPlays/etc. Called from Settings.
+async function resetDismissedLeaks() {
+  if (!confirm("Re-surface every spending-leak alert you've dismissed this month?")) return;
+  DB.settings.dismissedLeaks = {};
+  await save();
+  render();
+  toast("Leak alerts reset");
 }
 
 // Heuristic detector for recurring expenses the user hasn't told the app
@@ -35586,7 +35673,7 @@ function init() {
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,
     applyRules, applyRulesToAll, addCategoryRule, deleteCategoryRule, ruleSheet, quickRuleFromTx,
     upcomingBills, dismissBill,
-    computeSmartPlays, smartPlaysSheet, dismissPlay, resetDismissedPlays, profileSheet,
+    computeSmartPlays, smartPlaysSheet, dismissPlay, resetDismissedPlays, resetDismissedLeaks, profileSheet,
     wealthComposition, setWealthRange, filteredNwHistory, scrollToWealthSection,
     currentInvested, projectRetirement, retirementChart, retirementSheet,
     computeFinancialCalendar, financialCalendarSheet, addCalendarDateSheet,
