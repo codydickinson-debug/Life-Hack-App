@@ -19764,6 +19764,27 @@ function _achievementsList() {
     { id: "audit-done",       emoji: "🔍", group: "Mastery", title: "Subscription audit", desc: "Reviewed your recurring charges",         earned: !!subAuditDone },
     { id: "five-insights",    emoji: "📌", group: "Mastery", title: "5 insights pinned", desc: "Save Cornileus's best replies",            earned: cornInsights >= 5, progress: Math.min(1, cornInsights / 5) },
     { id: "encrypted",        emoji: "🔒", group: "Mastery", title: "Locked it down",   desc: "Set a passphrase",                         earned: !!DB.settings.encrypted },
+    // Integration-aware achievements — recognize when the user actually wires
+    // their systems together. These showed up after the v3.3 integration push.
+    ...(() => {
+      const linkedPlans = (DB.plans || []).filter(p => Array.isArray(p.linkedSavingsIds) && p.linkedSavingsIds.length).length;
+      const reflections = (DB.reflections || []).length;
+      const moodDates = Object.keys(DB.moods || {}).sort();
+      // Longest consecutive run of mood-logged days
+      let maxMoodRun = 0, run = 0, prev = null;
+      for (const d of moodDates) {
+        if (prev && (new Date(d) - new Date(prev)) === 86400000) run++;
+        else run = 1;
+        if (run > maxMoodRun) maxMoodRun = run;
+        prev = d;
+      }
+      return [
+        { id: "first-linked-plan", emoji: "🔗",  group: "Integration", title: "First link",          desc: "Link a plan to a savings bucket",        earned: linkedPlans >= 1 },
+        { id: "three-linked",      emoji: "🔗",  group: "Integration", title: "Three linked plans",  desc: "Three+ plans connected to their buckets",earned: linkedPlans >= 3, progress: Math.min(1, linkedPlans / 3) },
+        { id: "mood-streak-7",     emoji: "🌤", group: "Integration", title: "Mood streak",         desc: "Log your mood 7 days in a row",          earned: maxMoodRun >= 7,  progress: Math.min(1, maxMoodRun / 7) },
+        { id: "reflective",        emoji: "📝",  group: "Integration", title: "Reflective practice", desc: "Write 10 daily reflections",             earned: reflections >= 10, progress: Math.min(1, reflections / 10) },
+      ];
+    })(),
   ];
 }
 
