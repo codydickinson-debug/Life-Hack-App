@@ -19709,6 +19709,37 @@ function _achievementsList() {
     { id: "saved-10k",        emoji: "💵", group: "Money", title: "Saved $10k",         desc: "Five figures of cushion",                  earned: totalSavedAmt >= 10000, progress: Math.min(1, totalSavedAmt / 10000) },
     { id: "nw-10k",           emoji: "📈", group: "Money", title: "Net worth $10k",     desc: "Crossed the $10,000 line",                 earned: nw >= 10000,  progress: Math.min(1, Math.max(0, nw) / 10000) },
     { id: "nw-100k",          emoji: "🏔", group: "Money", title: "Net worth $100k",    desc: "Six figures",                              earned: nw >= 100000, progress: Math.min(1, Math.max(0, nw) / 100000) },
+    ...(() => {
+      // Stocks/investing milestones — computed here so they pick up any
+      // imported holdings retroactively.
+      const holdings = (DB.stocks && DB.stocks.holdings) || {};
+      const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+      const tickers = Object.keys(holdings).filter(tk => +holdings[tk].shares > 0);
+      let portfolio = 0;
+      for (const tk of tickers) {
+        const h = holdings[tk]; const q = cache[tk];
+        const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+        portfolio += price * (+h.shares || 0);
+      }
+      const realized = (DB.stocks && DB.stocks.realizedPL) || [];
+      const totalRealized = realized.reduce((s, r) => s + (+r.pl || 0), 0);
+      const watchlist = ((DB.stocks && DB.stocks.watchlist) || []).length;
+      const advisorRun = !!(DB.stocks && DB.stocks.lastAdvisorReview);
+      const reviewRun = !!(DB.stocks && DB.stocks.lastPortfolioReview);
+      const targetsSet = Object.keys((DB.stocks && DB.stocks.allocationTargets) || {}).length > 0;
+      return [
+        { id: "first-holding",   emoji: "📈", group: "Investing", title: "First holding",   desc: "Track shares of any stock or ETF",      earned: tickers.length >= 1 },
+        { id: "portfolio-1k",    emoji: "💼", group: "Investing", title: "$1k portfolio",   desc: "Build a four-figure portfolio",        earned: portfolio >= 1000,   progress: Math.min(1, portfolio / 1000) },
+        { id: "portfolio-10k",   emoji: "💼", group: "Investing", title: "$10k portfolio",  desc: "Five-figure portfolio milestone",      earned: portfolio >= 10000,  progress: Math.min(1, portfolio / 10000) },
+        { id: "portfolio-100k",  emoji: "💎", group: "Investing", title: "$100k portfolio", desc: "Cross the six-figure threshold",       earned: portfolio >= 100000, progress: Math.min(1, portfolio / 100000) },
+        { id: "diversified",     emoji: "🎯", group: "Investing", title: "Diversified",     desc: "Hold 5+ different positions",          earned: tickers.length >= 5,  progress: Math.min(1, tickers.length / 5) },
+        { id: "watchlist-10",    emoji: "👀", group: "Investing", title: "Curious watcher", desc: "Track 10+ tickers on your watchlist",  earned: watchlist >= 10,      progress: Math.min(1, watchlist / 10) },
+        { id: "advisor-ran",     emoji: "✨", group: "Investing", title: "Met your advisor",desc: "Ask Cornileus for a full financial review", earned: advisorRun },
+        { id: "review-ran",      emoji: "📊", group: "Investing", title: "First review",    desc: "Get a Cornileus portfolio review",     earned: reviewRun },
+        { id: "rebalance-set",   emoji: "⚖️", group: "Investing", title: "Set targets",     desc: "Set allocation targets for rebalancing", earned: targetsSet },
+        { id: "realized-profit", emoji: "🏆", group: "Investing", title: "First realized win", desc: "Close a position at a profit",      earned: totalRealized > 0 || realized.some(r => +r.pl > 0) },
+      ];
+    })(),
     { id: "audit-done",       emoji: "🔍", group: "Mastery", title: "Subscription audit", desc: "Reviewed your recurring charges",         earned: !!subAuditDone },
     { id: "five-insights",    emoji: "📌", group: "Mastery", title: "5 insights pinned", desc: "Save Cornileus's best replies",            earned: cornInsights >= 5, progress: Math.min(1, cornInsights / 5) },
     { id: "encrypted",        emoji: "🔒", group: "Mastery", title: "Locked it down",   desc: "Set a passphrase",                         earned: !!DB.settings.encrypted },
