@@ -1,38 +1,38 @@
 .stk-app {
-  /* Dark-first palette tuned to match the parent Ascend app. Scoped to
-     .stk-app (instead of :root) so the standalone /stockanalyzer page —
-     which now has class="stk-app" on <body> — picks these up, AND when
-     this stylesheet is loaded by the parent app the variables don't leak
-     out to the parent's :root and overwrite Ascend's colors. */
-  --bg: #0a0a0c;
-  --bg-2: #131318;
-  --panel: #18181c;
-  --panel-2: #1d1d23;
-  --panel-3: #232329;
-  --border: #2a2a32;
-  --border-soft: #1f1f25;
-  --text: #f4f4f6;
-  --text-soft: #c7c7cc;
-  --muted: #8e8e93;
-  --muted-2: #636366;
+  /* Palette aligned EXACTLY to Ascend's dark theme so the StockAnalyzer
+     reads as part of the same app, not a separate visual world. All
+     scoped to .stk-app so values don't bleed into the parent app's
+     :root — and the standalone /stockanalyzer page picks them up via
+     <body class="stk-app">. */
+  --bg:        #0A0A0C;                       /* Ascend --bg */
+  --bg-2:      #111114;                       /* slightly raised: between bg and card */
+  --panel:     #16161A;                       /* Ascend --card */
+  --panel-2:   #1C1C20;                       /* layered surfaces */
+  --panel-3:   #232329;
+  --border:    rgba(255,255,255,0.06);        /* Ascend --sep */
+  --border-soft: rgba(255,255,255,0.04);
+  --text:      #F5F5F7;                       /* Ascend --t1 */
+  --text-soft: #B5B5BA;                       /* Ascend --t2 */
+  --muted:     #7A7A82;                       /* Ascend --t3 */
+  --muted-2:   #4A4A52;                       /* Ascend --t4 */
 
-  --accent: #7c3aed;
-  --accent-2: #a855f7;
+  --accent:   #8957D9;                        /* Ascend --purple */
+  --accent-2: #A87BE3;
 
-  --green: #34c759;
-  --green-soft: #30b653;
-  --green-bg: rgba(52, 199, 89, 0.14);
-  --green-bg-strong: rgba(52, 199, 89, 0.22);
+  --green:        #2EB875;                    /* Ascend --green */
+  --green-soft:   #2BA56A;
+  --green-bg:     rgba(46, 184, 117, 0.12);
+  --green-bg-strong: rgba(46, 184, 117, 0.20);
 
-  --yellow: #f59e0b;
-  --yellow-bg: rgba(245, 158, 11, 0.14);
+  --yellow:    #E0B520;                       /* Ascend --yellow */
+  --yellow-bg: rgba(224, 181, 32, 0.12);
 
-  --red: #ef4444;
-  --red-bg: rgba(239, 68, 68, 0.14);
-  --red-bg-strong: rgba(239, 68, 68, 0.22);
+  --red:           #E04545;                   /* Ascend --red */
+  --red-bg:        rgba(224, 69, 69, 0.12);
+  --red-bg-strong: rgba(224, 69, 69, 0.20);
 
-  --shadow: 0 2px 14px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 28px rgba(0, 0, 0, 0.5);
+  --shadow:    0 1px 2px rgba(0,0,0,0.30), 0 1px 3px rgba(0,0,0,0.20);
+  --shadow-lg: 0 4px 12px rgba(0,0,0,0.40), 0 16px 40px rgba(0,0,0,0.45);
 }
 
 * { box-sizing: border-box; }

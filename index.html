@@ -9069,7 +9069,7 @@ async function _loadStockAnalyzer(page) {
   if (!document.querySelector('link[data-stk-css]')) {
     const css = document.createElement("link");
     css.rel = "stylesheet";
-    css.href = "/stockanalyzer-static/style.css?v=6";
+    css.href = "/stockanalyzer-static/style.css?v=7";
     css.setAttribute("data-stk-css", "1");
     document.head.appendChild(css);
   }
@@ -9077,7 +9077,7 @@ async function _loadStockAnalyzer(page) {
   try {
     // 2. Fetch the server-rendered StockAnalyzer page (Jinja fills in the
     // markets list, etc.) and extract its body content.
-    const res = await fetch("/stockanalyzer?v=6", { cache: "no-store" });
+    const res = await fetch("/stockanalyzer?v=7", { cache: "no-store" });
     const html = await res.text();
     const doc = new DOMParser().parseFromString(html, "text/html");
     const host = document.getElementById("stk-host");
