@@ -1989,7 +1989,7 @@ const DEFAULT_DB = {
   budget: { income: 0, expenses: [] },
   spend:  [],   // manual + auto-imported transactions: [{id, date, category, amount, note, source:'manual'|'plaid', plaid_id?, merchant_name?, pending?}]
   wins:   [],
-  stocks: { recentTickers: [], account: 10000, watchlist: [], holdings: {}, quoteCache: {}, alerts: [] },
+  stocks: { recentTickers: [], account: 10000, watchlist: [], holdings: {}, quoteCache: {}, alerts: [], realizedPL: [], watchlistSort: "default", portfolioHistory: [] },
   // Timestamp (ms) of the user's last successful exportData() — drives the
   // backup-reminder Pulse on Today. 0 = never exported.
   lastExportAt: 0,
@@ -9673,6 +9673,11 @@ function renderStocks() {
         <div class="body"><div class="t1">Price alerts</div><div class="t2">Notify me when a ticker crosses a target price</div></div>
         <div class="trail chev"></div>
       </div>
+      <div class="row tappable" onclick="realizedPLSheet()" role="button" tabindex="0">
+        <div class="lead">📒</div>
+        <div class="body"><div class="t1">Realized P&amp;L log</div><div class="t2">Closed positions, gain/loss history by year</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="window.open('/stockanalyzer','_blank')" role="button" tabindex="0">
         <div class="lead">🏠</div>
         <div class="body"><div class="t1">Housing &amp; mortgages</div><div class="t2">Live mortgage rates, ZIP-level housing data, affordability calc</div></div>
@@ -9913,6 +9918,7 @@ function _stocksRenderPortfolio() {
         <div style="display:flex;width:100%;height:8px;border-radius:4px;overflow:hidden;margin-top:12px;background:var(--bg-elev)">${allocBar}</div>
         <div style="margin-top:6px;line-height:1.6">${allocLegend}</div>
       ` : ""}
+      ${_stocksRenderPortfolioChart()}
       ${annualDiv > 0 ? `
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;padding:8px 10px;background:var(--bg-elev);border-radius:8px">
           <div>
@@ -9922,7 +9928,9 @@ function _stocksRenderPortfolio() {
           <div style="font-size:17px;font-weight:800;color:var(--green,#34C759);font-variant-numeric:tabular-nums" data-priv="amount">$${annualDiv.toFixed(0)}</div>
         </div>
       ` : ""}
-      <button onclick="_stocksAddHoldingSheet()" class="btn secondary" style="width:100%;margin-top:12px;font-size:12.5px;padding:7px">+ Add holding</button>
+      ${_stocksRenderDiversificationLine()}
+      <button onclick="portfolioReviewSheet()" class="btn" style="width:100%;margin-top:10px;font-size:12.5px;padding:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none">✨ Cornileus portfolio review</button>
+      <button onclick="_stocksAddHoldingSheet()" class="btn secondary" style="width:100%;margin-top:6px;font-size:12.5px;padding:7px">+ Add holding</button>
     </div>
   `;
   // Render the rows
@@ -9931,6 +9939,14 @@ function _stocksRenderPortfolio() {
     <div class="list">
       ${rows.map(r => {
         const pColor = r.pl >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+        const h = (DB.stocks && DB.stocks.holdings && DB.stocks.holdings[r.tk]) || {};
+        const stop = +h.stopLoss || 0; const take = +h.takeProfit || 0;
+        const limitsRow = (stop || take) ? `
+          <div style="font-size:10px;color:var(--t3);margin-top:2px;font-variant-numeric:tabular-nums">
+            ${stop ? `<span style="color:var(--red,#FF3B30)">⊥ $${stop.toFixed(2)}</span>` : ""}
+            ${stop && take ? " · " : ""}
+            ${take ? `<span style="color:var(--green,#34C759)">⊤ $${take.toFixed(2)}</span>` : ""}
+          </div>` : "";
         return `
           <div class="row tappable" onclick="_stocksOpenDetail(${jsAttr(r.tk)})" role="button" tabindex="0" style="align-items:center">
             <div style="width:48px;flex-shrink:0">
@@ -9940,10 +9956,15 @@ function _stocksRenderPortfolio() {
             <div class="body" style="flex:1;min-width:0;margin-left:6px">
               <div style="font-size:12.5px;color:var(--t2);font-variant-numeric:tabular-nums">${r.price != null ? `$${r.price.toFixed(2)}` : "—"} <span style="color:var(--t3);font-size:10.5px">cost $${r.c.toFixed(2)}</span></div>
               <div style="font-size:11px;color:${pColor};font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums">${r.pl >= 0 ? "+" : ""}$${Math.abs(r.pl).toFixed(2)} (${r.pl >= 0 ? "+" : ""}${(r.plPct * 100).toFixed(1)}%)</div>
+              ${limitsRow}
             </div>
             <div style="text-align:right;flex-shrink:0">
               <div style="font-weight:700;font-size:13.5px;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${r.m.toFixed(2)}</div>
-              <button onclick="event.stopPropagation();_stocksEditHoldingSheet(${jsAttr(r.tk)})" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:2px 4px;cursor:pointer;text-decoration:underline">edit</button>
+              <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:2px">
+                <button onclick="event.stopPropagation();_stocksHoldingLimitsSheet(${jsAttr(r.tk)})" title="Stop/target" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:2px 4px;cursor:pointer;text-decoration:underline">stop</button>
+                <button onclick="event.stopPropagation();_stocksClosePositionSheet(${jsAttr(r.tk)})" title="Sell" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:2px 4px;cursor:pointer;text-decoration:underline">sell</button>
+                <button onclick="event.stopPropagation();_stocksEditHoldingSheet(${jsAttr(r.tk)})" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:2px 4px;cursor:pointer;text-decoration:underline">edit</button>
+              </div>
             </div>
           </div>
         `;
@@ -10038,6 +10059,684 @@ async function _stocksRemoveHolding(tk) {
   closeSheet();
   toast(`Removed ${tk} from portfolio`);
   if (typeof renderStocks === "function" && document.getElementById("page-stocks")) renderStocks();
+}
+
+/* ---------- Portfolio history snapshot ----------
+   Once per calendar day, snapshot portfolio market value into
+   DB.stocks.portfolioHistory = [{date: 'YYYY-MM-DD', value}].
+   Capped at 365 days. */
+function _stocksSnapshotPortfolio() {
+  if (!DB.stocks) DB.stocks = {};
+  if (!Array.isArray(DB.stocks.portfolioHistory)) DB.stocks.portfolioHistory = [];
+  const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  const holdings = (DB.stocks && DB.stocks.holdings) || {};
+  let value = 0;
+  for (const [tk, h] of Object.entries(holdings)) {
+    const shares = +h.shares || 0;
+    if (shares <= 0) continue;
+    const q = cache[tk];
+    if (!q || q.error || q.price == null) return; // skip snapshot if we don't have live prices
+    value += +q.price * shares;
+  }
+  if (value <= 0) return;
+  const today = new Date().toISOString().slice(0, 10);
+  const last = DB.stocks.portfolioHistory[DB.stocks.portfolioHistory.length - 1];
+  if (last && last.date === today) {
+    last.value = value; // update today's snapshot with latest intraday
+  } else {
+    DB.stocks.portfolioHistory.push({ date: today, value });
+  }
+  if (DB.stocks.portfolioHistory.length > 365) DB.stocks.portfolioHistory.splice(0, DB.stocks.portfolioHistory.length - 365);
+  save();
+}
+
+function _stocksRenderPortfolioChart() {
+  const hist = (DB.stocks && DB.stocks.portfolioHistory) || [];
+  if (hist.length < 2) return "";
+  // Last 90 days
+  const slice = hist.slice(-90);
+  const W = 320, H = 80;
+  const vals = slice.map(s => +s.value);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = (max - min) || 1;
+  const xAt = (i) => (i / (slice.length - 1)) * W;
+  const yAt = (v) => H - ((v - min) / range) * H;
+  const pts = vals.map((v, i) => xAt(i).toFixed(1) + "," + yAt(v).toFixed(1)).join(" ");
+  const areaPath = `M 0,${H} L ${pts.split(' ').join(' L ')} L ${W},${H} Z`;
+  const change = vals[vals.length - 1] - vals[0];
+  const pct = vals[0] > 0 ? change / vals[0] : 0;
+  const color = change >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+  const gradId = "pp-grad-" + Math.floor(Math.random() * 1e9).toString(36);
+  return `
+    <div style="margin-top:12px;background:var(--bg-elev);border-radius:10px;padding:10px 12px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Portfolio (${slice.length}d)</div>
+        <div style="font-size:11.5px;color:${color};font-weight:700;font-variant-numeric:tabular-nums">${change >= 0 ? "+" : "-"}$${Math.abs(change).toFixed(0)} (${pct >= 0 ? "+" : ""}${(pct * 100).toFixed(1)}%)</div>
+      </div>
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:60px;display:block">
+        <defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${color}" stop-opacity="0.35"/>
+          <stop offset="100%" stop-color="${color}" stop-opacity="0.02"/>
+        </linearGradient></defs>
+        <path d="${areaPath}" fill="url(#${gradId})"/>
+        <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+    </div>
+  `;
+}
+
+/* ---------- Portfolio diversification score ----------
+   Concentration risk via Herfindahl-Hirschman Index (HHI).
+   HHI = Σ(weight²). 1/HHI = "effective number of holdings".
+
+   Bands:
+     < 0.15 → diversified (effective N >= 7)
+     < 0.30 → moderate
+     < 0.50 → concentrated
+     ≥ 0.50 → heavily concentrated (single-name risk)
+*/
+function _stkDiversificationScore() {
+  const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  const holdings = (DB.stocks && DB.stocks.holdings) || {};
+  const entries = Object.entries(holdings).filter(([_, h]) => h && +h.shares > 0);
+  if (entries.length < 2) return null;
+  let total = 0;
+  const vals = entries.map(([tk, h]) => {
+    const q = cache[tk];
+    const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+    const v = price * (+h.shares || 0);
+    total += v;
+    return { tk, v };
+  });
+  if (total <= 0) return null;
+  const hhi = vals.reduce((s, { v }) => s + Math.pow(v / total, 2), 0);
+  const effN = 1 / hhi;
+  let band, color, msg;
+  if (hhi < 0.15)      { band = "Well diversified"; color = "var(--green,#34C759)"; msg = "Effective holdings: " + effN.toFixed(1) + ". Single-name risk is low."; }
+  else if (hhi < 0.30) { band = "Moderate";         color = "#9ACD32";              msg = "Effective holdings: " + effN.toFixed(1) + ". Reasonable spread but a couple of names dominate."; }
+  else if (hhi < 0.50) { band = "Concentrated";     color = "var(--orange,#FF9500)"; msg = "Effective holdings: " + effN.toFixed(1) + ". One or two positions drive most of the move."; }
+  else                 { band = "Heavily concentrated"; color = "var(--red,#FF3B30)"; msg = "Effective holdings: " + effN.toFixed(1) + ". A single name dominates — high single-stock risk."; }
+  // Top position weight
+  vals.sort((a, b) => b.v - a.v);
+  const topWeight = vals[0].v / total;
+  return { hhi, effN, band, color, msg, topTicker: vals[0].tk, topWeight, total, count: entries.length };
+}
+
+function _stocksRenderDiversificationLine() {
+  const d = _stkDiversificationScore();
+  if (!d) return "";
+  return `
+    <div style="margin-top:10px;padding:8px 10px;background:var(--bg-elev);border-radius:8px;border-left:3px solid ${d.color}">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:2px">
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Diversification</div>
+        <div style="font-size:11px;color:${d.color};font-weight:700">${esc(d.band)}</div>
+      </div>
+      <div style="font-size:11.5px;color:var(--t2);line-height:1.4">${esc(d.msg)} Largest position: <b style="color:var(--t1)">${esc(d.topTicker)} ${(d.topWeight*100).toFixed(0)}%</b>.</div>
+    </div>
+  `;
+}
+
+/* ---------- Cornileus AI portfolio review ----------
+   One-shot: serialize the portfolio (positions, cost basis, returns,
+   diversification, dividend income) and ask Cornileus for a structured
+   critique. Cached for an hour in DB.stocks.lastPortfolioReview so
+   re-opening doesn't re-bill the user. */
+async function portfolioReviewSheet() {
+  const holdings = (DB.stocks && DB.stocks.holdings) || {};
+  const entries = Object.entries(holdings).filter(([_, h]) => h && +h.shares > 0);
+  if (!entries.length) {
+    openSheet(`
+      <h2 style="margin-bottom:4px">Cornileus portfolio review</h2>
+      <p class="muted" style="font-size:12.5px;margin-bottom:14px">Add some holdings first, then come back for an AI critique of how your portfolio is built.</p>
+      <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+    `);
+    return;
+  }
+  const last = DB.stocks && DB.stocks.lastPortfolioReview;
+  const fresh = last && (Date.now() - last.fetchedAt < 3600000);
+  openSheet(`
+    <h2 style="margin-bottom:4px">✨ Cornileus portfolio review</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Honest take on what you own and what's at risk.</p>
+    <div id="rev-result">${fresh ? _stocksRenderPortfolioReview(last.parsed, last.fetchedAt) : `<div style="text-align:center;padding:30px 14px;color:var(--t3);font-size:13px">📊 Cornileus is reading your portfolio…</div>`}</div>
+    <div class="actions">
+      <button class="btn secondary" onclick="DB.stocks.lastPortfolioReview=null;portfolioReviewSheet()">↻ Refresh</button>
+      <button class="btn" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+  if (fresh) return;
+  await _stocksRunPortfolioReview();
+}
+
+async function _stocksRunPortfolioReview() {
+  const out = document.getElementById("rev-result");
+  if (!out) return;
+  try {
+    const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+    const divCache = (DB.stocks && DB.stocks.dividendCache) || {};
+    const holdings = (DB.stocks && DB.stocks.holdings) || {};
+    let mkt = 0, cost = 0, dailyChg = 0, annualDiv = 0;
+    const rows = Object.entries(holdings).filter(([_, h]) => h && +h.shares > 0).map(([tk, h]) => {
+      const q = cache[tk];
+      const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+      const shares = +h.shares || 0;
+      const m = price * shares;
+      const c = (+h.cost || 0) * shares;
+      const pl = m - c;
+      const plPct = c > 0 ? pl / c : 0;
+      mkt += m; cost += c;
+      const dch = q && q.change != null ? +q.change * shares : 0;
+      dailyChg += dch;
+      const yld = divCache[tk] && divCache[tk].yield != null ? +divCache[tk].yield : null;
+      if (yld != null) annualDiv += yld * m;
+      return { tk, shares, costPerShare: +h.cost || 0, price, m, c, pl, plPct, weight: 0, yield: yld };
+    });
+    rows.forEach(r => r.weight = mkt > 0 ? r.m / mkt : 0);
+    const totalPl = mkt - cost;
+    const totalPlPct = cost > 0 ? totalPl / cost : 0;
+    const div = _stkDiversificationScore();
+
+    // Build the prompt
+    const positionsText = rows
+      .sort((a, b) => b.m - a.m)
+      .map(r => `- ${r.tk}: ${r.shares} sh @ avg $${r.costPerShare.toFixed(2)} → now $${r.price.toFixed(2)} (${(r.weight*100).toFixed(1)}% of portfolio, ${r.plPct>=0?"+":""}${(r.plPct*100).toFixed(1)}% return${r.yield!=null?`, ${(r.yield*100).toFixed(2)}% yield`:""})`)
+      .join("\n");
+    const userMsg = `Review my stock portfolio and give me an honest, structured take. Total value $${mkt.toFixed(0)}, cost basis $${cost.toFixed(0)}, unrealized P&L ${totalPl>=0?"+":""}$${totalPl.toFixed(0)} (${(totalPlPct*100).toFixed(1)}%). Today's move ${dailyChg>=0?"+":""}$${dailyChg.toFixed(0)}. Projected annual dividends $${annualDiv.toFixed(0)}.
+
+Diversification: ${div ? `${div.band}, effective ${div.effN.toFixed(1)} holdings, top position ${div.topTicker} at ${(div.topWeight*100).toFixed(0)}%` : "single position"}.
+
+Positions:
+${positionsText}
+
+Reply with this exact structure (no preamble, no markdown headers):
+GRADE: <A | A- | B+ | B | B- | C+ | C | C- | D | F>
+ONE-LINE: <single-sentence summary of the portfolio's shape>
+STRENGTHS: <comma-separated 1-3 things working well>
+RISKS: <comma-separated 1-3 risks or vulnerabilities — be specific>
+BIG-WIN: <name the single position contributing most to the gain, with a one-sentence note>
+BIG-PAIN: <name the single position to worry about, with a one-sentence note>
+SUGGESTION: <2-3 sentences of plain-English actionable advice — what to trim, what to add, what to rebalance>`;
+    const ai = await aiApi({
+      model: DB.settings.anthropicModel || "claude-haiku-4-5-20251001",
+      max_tokens: 700,
+      temperature: 0.4,
+      system: "You are Cornileus, a candid AI financial counselor. You give portfolio critiques without hedging or jargon. Be direct. Never invent positions or numbers — only reference what's in the prompt. Never suggest specific tickers the user doesn't already own (you can suggest 'add a broad index fund' but not 'buy XYZ').",
+      messages: [{ role: "user", content: userMsg }],
+    });
+    const text = (ai.content && ai.content[0] && ai.content[0].text) || "";
+    if (!text) throw new Error("Empty AI response");
+    const parse = (key) => {
+      const m = text.match(new RegExp("^" + key + ":\\s*(.*?)$", "im"));
+      return m ? m[1].trim() : "";
+    };
+    const parsed = {
+      grade: parse("GRADE") || "B",
+      oneLine: parse("ONE-LINE"),
+      strengths: parse("STRENGTHS"),
+      risks: parse("RISKS"),
+      bigWin: parse("BIG-WIN"),
+      bigPain: parse("BIG-PAIN"),
+      suggestion: parse("SUGGESTION"),
+      stats: { mkt, cost, totalPl, totalPlPct, dailyChg, annualDiv, count: rows.length },
+    };
+    DB.stocks.lastPortfolioReview = { parsed, fetchedAt: Date.now() };
+    save();
+    const out2 = document.getElementById("rev-result");
+    if (out2) out2.innerHTML = _stocksRenderPortfolioReview(parsed, Date.now());
+  } catch (e) {
+    const out2 = document.getElementById("rev-result");
+    if (out2) out2.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">Portfolio review failed: ${esc(e.message)}</div>`;
+  }
+}
+
+function _stocksRenderPortfolioReview(p, fetchedAt) {
+  if (!p) return "";
+  const g = (p.grade || "B").trim().toUpperCase();
+  const gradeColor = g.startsWith("A") ? "var(--green,#34C759)" :
+                     g.startsWith("B") ? "#9ACD32" :
+                     g.startsWith("C") ? "var(--orange,#FF9500)" :
+                                          "var(--red,#FF3B30)";
+  const splitList = (s) => (s || "").split(/[;,•·]/).map(x => x.trim()).filter(x => x && x.toLowerCase() !== "none");
+  const strengths = splitList(p.strengths);
+  const risks = splitList(p.risks);
+  const age = Math.floor((Date.now() - fetchedAt) / 60000);
+  return `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${gradeColor};border-radius:var(--r);padding:16px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
+        <div style="width:62px;height:62px;border-radius:50%;background:var(--bg-elev);display:flex;align-items:center;justify-content:center;border:2px solid ${gradeColor};flex-shrink:0">
+          <div style="font-size:26px;font-weight:800;color:${gradeColor};letter-spacing:-0.02em">${esc(g)}</div>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Cornileus grade</div>
+          <div style="font-size:13.5px;color:var(--t1);font-weight:600;line-height:1.35;margin-top:2px">${esc(p.oneLine || "Reviewing your positions…")}</div>
+        </div>
+      </div>
+      ${p.suggestion ? `
+        <div style="background:var(--bg-elev);border-radius:10px;padding:11px 12px;margin-bottom:10px">
+          <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Cornileus says</div>
+          <div style="font-size:13px;color:var(--t1);line-height:1.5">${esc(p.suggestion)}</div>
+        </div>
+      ` : ""}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+        <div style="background:rgba(52,199,89,0.06);border:0.5px solid rgba(52,199,89,0.25);border-radius:10px;padding:9px 11px">
+          <div style="font-size:10px;color:var(--green,#34C759);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Strengths</div>
+          ${strengths.length ? strengths.map(s => `<div style="font-size:11.5px;color:var(--t1);line-height:1.4;margin-bottom:3px">+ ${esc(s)}</div>`).join("") : `<div style="font-size:11.5px;color:var(--t3);font-style:italic">Cornileus didn't call any out</div>`}
+        </div>
+        <div style="background:rgba(255,59,48,0.06);border:0.5px solid rgba(255,59,48,0.25);border-radius:10px;padding:9px 11px">
+          <div style="font-size:10px;color:var(--red,#FF3B30);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Risks</div>
+          ${risks.length ? risks.map(s => `<div style="font-size:11.5px;color:var(--t1);line-height:1.4;margin-bottom:3px">– ${esc(s)}</div>`).join("") : `<div style="font-size:11.5px;color:var(--t3);font-style:italic">None flagged</div>`}
+        </div>
+      </div>
+      ${p.bigWin ? `<div style="background:var(--bg-elev);border-left:3px solid var(--green,#34C759);border-radius:8px;padding:8px 11px;margin-bottom:6px"><div style="font-size:10px;color:var(--green,#34C759);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:2px">🏆 Big win</div><div style="font-size:12px;color:var(--t1);line-height:1.4">${esc(p.bigWin)}</div></div>` : ""}
+      ${p.bigPain ? `<div style="background:var(--bg-elev);border-left:3px solid var(--red,#FF3B30);border-radius:8px;padding:8px 11px;margin-bottom:6px"><div style="font-size:10px;color:var(--red,#FF3B30);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:2px">⚠️ Big pain point</div><div style="font-size:12px;color:var(--t1);line-height:1.4">${esc(p.bigPain)}</div></div>` : ""}
+      <div style="font-size:10px;color:var(--t3);margin-top:8px;line-height:1.4;font-style:italic">AI critique based on your positions and recent prices${age > 0 ? ` · refreshed ${age} min ago` : " · just now"}. Not financial advice.</div>
+    </div>
+  `;
+}
+
+/* ---------- DCA simulator ----------
+   "What if I dollar-cost averaged $X every month into this for N years?"
+   Iterates the 5Y close array, buys at each month-start price (every 21 trading
+   days from the end backwards), and computes total invested vs end value. */
+function _stkDcaSimulate(q, monthly, years) {
+  const closes = (q.timeframes && q.timeframes["5Y"] && q.timeframes["5Y"].closes) || [];
+  if (closes.length < 50) return null;
+  const stepDays = 21; // ~1 month
+  const targetDays = Math.round(years * 252);
+  const start = Math.max(0, closes.length - 1 - targetDays);
+  const months = Math.floor((closes.length - 1 - start) / stepDays);
+  if (months < 1) return null;
+  let shares = 0, invested = 0;
+  for (let i = 0; i < months; i++) {
+    const idx = start + i * stepDays;
+    if (idx >= closes.length) break;
+    const price = closes[idx];
+    if (price > 0) {
+      shares += monthly / price;
+      invested += monthly;
+    }
+  }
+  const endPrice = closes[closes.length - 1];
+  const endValue = shares * endPrice;
+  const profit = endValue - invested;
+  const pct = invested > 0 ? profit / invested : 0;
+  return { shares, invested, endValue, profit, pct, months, endPrice };
+}
+
+function _stocksDcaSheet(tk) {
+  const q = (window._stkDetail && window._stkDetail.q) || null;
+  if (!q) { toast("Open the ticker first"); return; }
+  openSheet(`
+    <h2 style="margin-bottom:4px">DCA into ${esc(q.ticker)}</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">What if you'd bought $X of ${esc(q.ticker)} every month for N years?</p>
+    <label>Monthly amount ($)</label>
+    <input id="dca-amt" type="number" inputmode="decimal" value="500" min="10" oninput="_stocksDcaRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Years</label>
+    <select id="dca-yrs" onchange="_stocksDcaRecompute()" style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box">
+      <option value="1">1 year</option>
+      <option value="2">2 years</option>
+      <option value="3" selected>3 years</option>
+      <option value="5">5 years</option>
+    </select>
+    <div id="dca-result"></div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  _stocksDcaRecompute();
+}
+
+function _stocksDcaRecompute() {
+  const q = (window._stkDetail && window._stkDetail.q) || null;
+  const amtEl = document.getElementById("dca-amt");
+  const yrsEl = document.getElementById("dca-yrs");
+  const out = document.getElementById("dca-result");
+  if (!q || !amtEl || !yrsEl || !out) return;
+  const amt = parseFloat(amtEl.value) || 0;
+  const years = parseFloat(yrsEl.value) || 1;
+  if (amt <= 0) { out.innerHTML = ""; return; }
+  const res = _stkDcaSimulate(q, amt, years);
+  if (!res) {
+    out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;color:var(--t3);font-size:13px;text-align:center">Not enough historical data for ${years} year(s) of DCA.</div>`;
+    return;
+  }
+  const color = res.profit >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+  const avgCost = res.shares > 0 ? res.invested / res.shares : 0;
+  out.innerHTML = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${color};border-radius:var(--r);padding:16px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">After ${res.months} monthly buys</div>
+      <div style="font-size:30px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-0.02em" data-priv="amount">$${res.endValue.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+      <div style="font-size:14px;color:${color};font-weight:700;margin-top:2px;font-variant-numeric:tabular-nums" data-priv="amount">${res.profit >= 0 ? "+" : ""}$${Math.abs(res.profit).toFixed(2)} (${res.pct >= 0 ? "+" : ""}${(res.pct * 100).toFixed(1)}%)</div>
+      <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Total invested</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">$${res.invested.toFixed(0)}</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Shares accumulated</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${res.shares.toFixed(2)}</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Avg cost basis</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">$${avgCost.toFixed(2)}</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Last price</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">$${res.endPrice.toFixed(2)}</div>
+        </div>
+      </div>
+      <div style="font-size:10.5px;color:var(--t3);margin-top:10px;line-height:1.4;font-style:italic">DCA simulator using historical end-of-month prices. Ignores fees, taxes, and dividends.</div>
+    </div>
+  `;
+}
+
+/* ---------- Insider / institutional holders ----------
+   Fetches /api/holders/<ticker> and renders inside the detail sheet.
+   Lazy: only loaded when the user taps the button so we don't pay
+   the cost for every detail open. */
+async function _stocksLoadHolders(tk) {
+  const btn = document.getElementById("stk-holders-btn");
+  const out = document.getElementById("stk-holders-result");
+  if (btn) { btn.textContent = "Loading…"; btn.disabled = true; }
+  if (out) out.innerHTML = `<div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:10px;text-align:center;color:var(--t3);font-size:13px">🏛️ Pulling holders + insider trades…</div>`;
+  try {
+    const r = await fetch("/api/holders/" + encodeURIComponent(tk));
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || "HTTP " + r.status);
+    out.innerHTML = _stocksRenderHolders(data);
+  } catch (e) {
+    out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;margin-bottom:10px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  } finally {
+    if (btn) { btn.textContent = "🏛️ Show holders + insiders"; btn.disabled = false; }
+  }
+}
+
+function _stocksRenderHolders(d) {
+  const fmtShares = (n) => {
+    if (n == null || !isFinite(n)) return "—";
+    if (n >= 1e9) return (n/1e9).toFixed(2) + "B";
+    if (n >= 1e6) return (n/1e6).toFixed(2) + "M";
+    if (n >= 1e3) return (n/1e3).toFixed(1) + "K";
+    return Math.round(n).toString();
+  };
+  const fmtVal = (n) => {
+    if (n == null || !isFinite(n)) return "—";
+    if (n >= 1e9) return "$" + (n/1e9).toFixed(2) + "B";
+    if (n >= 1e6) return "$" + (n/1e6).toFixed(2) + "M";
+    return "$" + Math.round(n).toLocaleString();
+  };
+  // Helper that accepts the JSON-safe record (snake_case after pandas reset_index)
+  const pickHolder   = (r) => r.Holder || r.holder || r.Name || r.name || "—";
+  const pickShares   = (r) => r.Shares || r.shares || r["Shares Held"] || null;
+  const pickDate     = (r) => r["Date Reported"] || r["dateReported"] || r["date_reported"] || r.Date || r.date || "—";
+  const pickValue    = (r) => r.Value || r.value || null;
+  const pickPctOut   = (r) => r["pctHeld"] || r["% Out"] || r["pct_out"] || r["% Out"] || r.pctOut || null;
+
+  const renderInst = (rows, title) => {
+    if (!rows || !rows.length) return "";
+    return `
+      <div style="margin-bottom:10px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">${esc(title)}</div>
+        ${rows.slice(0, 8).map(r => {
+          const sh = pickShares(r);
+          const val = pickValue(r);
+          const pct = pickPctOut(r);
+          return `
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;padding:6px 10px;background:var(--bg-elev);border-radius:8px;margin-bottom:3px">
+              <div style="flex:1;min-width:0;font-size:12px;color:var(--t1);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(pickHolder(r))}</div>
+              <div style="text-align:right;flex-shrink:0">
+                <div style="font-size:12.5px;color:var(--t1);font-variant-numeric:tabular-nums">${esc(fmtShares(sh))}</div>
+                <div style="font-size:10px;color:var(--t3);font-variant-numeric:tabular-nums">${esc(fmtVal(val))}${pct ? ` · ${(typeof pct === 'number' ? (pct*100).toFixed(2) + "%" : esc(String(pct)))}` : ""}</div>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  };
+
+  const renderInsiderTx = (rows) => {
+    if (!rows || !rows.length) return "";
+    const pickInsider = (r) => r.Insider || r.insider || r.Name || r.name || "—";
+    const pickTrans   = (r) => r.Transaction || r.transaction || r.text || "—";
+    const pickPos     = (r) => r.Position || r.position || r.title || "";
+    return `
+      <div style="margin-bottom:10px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Recent insider transactions</div>
+        ${rows.slice(0, 10).map(r => {
+          const trans = String(pickTrans(r) || "");
+          const isBuy = /buy|purchase/i.test(trans);
+          const isSell = /sell|sale/i.test(trans);
+          const color = isBuy ? "var(--green,#34C759)" : isSell ? "var(--red,#FF3B30)" : "var(--t2)";
+          const arrow = isBuy ? "↑" : isSell ? "↓" : "•";
+          const sh = pickShares(r);
+          const val = pickValue(r);
+          const date = pickDate(r);
+          return `
+            <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:var(--bg-elev);border-radius:8px;margin-bottom:3px">
+              <div style="width:14px;color:${color};font-weight:800;flex-shrink:0">${arrow}</div>
+              <div style="flex:1;min-width:0">
+                <div style="font-size:12px;color:var(--t1);font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(pickInsider(r))}</div>
+                <div style="font-size:10.5px;color:var(--t3)">${esc(pickPos(r))} · ${esc(date)}</div>
+              </div>
+              <div style="text-align:right;flex-shrink:0">
+                <div style="font-size:12px;color:${color};font-weight:700;font-variant-numeric:tabular-nums">${esc(trans)}</div>
+                <div style="font-size:10.5px;color:var(--t3);font-variant-numeric:tabular-nums">${esc(fmtShares(sh))} sh${val ? ` · ${esc(fmtVal(val))}` : ""}</div>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  };
+
+  const sum = d.summary || {};
+  const summaryRow = (sum.held_insiders != null || sum.held_institutions != null) ? `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+      ${sum.held_insiders != null ? `<div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Insiders</div><div style="font-size:14px;font-weight:700;color:var(--t1)">${(+sum.held_insiders*100).toFixed(2)}%</div></div>` : ""}
+      ${sum.held_institutions != null ? `<div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Institutions</div><div style="font-size:14px;font-weight:700;color:var(--t1)">${(+sum.held_institutions*100).toFixed(2)}%</div></div>` : ""}
+    </div>` : "";
+
+  return `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:10px">Holders &amp; insiders</div>
+      ${summaryRow}
+      ${renderInst(d.institutional, "Top institutional holders")}
+      ${renderInst(d.mutual_funds,  "Top mutual fund holders")}
+      ${renderInsiderTx(d.insider_tx)}
+    </div>
+  `;
+}
+
+/* ---------- Stop loss / take profit per holding ----------
+   Stored on the holding object: { shares, cost, stopLoss?, takeProfit? }.
+   When the live quote crosses a threshold, the same alert system
+   (_stocksAlertsCheck) fires a toast. We piggyback on it by lazily
+   converting holding limits into alert rows when the user sets them. */
+function _stocksHoldingLimitsSheet(tk) {
+  const h = (DB.stocks && DB.stocks.holdings && DB.stocks.holdings[tk]) || {};
+  const cur = (DB.stocks.quoteCache || {})[tk];
+  const price = cur && !cur.error && cur.price != null ? +cur.price : (+h.cost || 0);
+  openSheet(`
+    <h2 style="margin-bottom:4px">${esc(tk)} stop &amp; target</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Current price <b>$${price.toFixed(2)}</b> · cost <b>$${(+h.cost || 0).toFixed(2)}</b>. Crossing a level fires an in-app alert.</p>
+    <label>Stop loss ($)</label>
+    <input id="lim-stop" type="number" inputmode="decimal" placeholder="e.g. ${(price * 0.9).toFixed(2)}" value="${esc(h.stopLoss || "")}"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Take profit ($)</label>
+    <input id="lim-take" type="number" inputmode="decimal" placeholder="e.g. ${(price * 1.2).toFixed(2)}" value="${esc(h.takeProfit || "")}"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box" />
+    <div class="actions">
+      <button class="btn secondary" onclick="closeSheet()">Cancel</button>
+      <button class="btn" onclick="_stocksSaveHoldingLimits(${jsAttr(tk)})">Save</button>
+    </div>
+  `);
+}
+
+async function _stocksSaveHoldingLimits(tk) {
+  if (!DB.stocks || !DB.stocks.holdings || !DB.stocks.holdings[tk]) { toast("Holding not found"); return; }
+  const stop = parseFloat(document.getElementById("lim-stop").value);
+  const take = parseFloat(document.getElementById("lim-take").value);
+  const h = DB.stocks.holdings[tk];
+  h.stopLoss = isFinite(stop) && stop > 0 ? stop : null;
+  h.takeProfit = isFinite(take) && take > 0 ? take : null;
+  // Mirror as alerts so the existing checker fires them
+  if (!Array.isArray(DB.stocks.alerts)) DB.stocks.alerts = [];
+  // Clean any auto-managed alerts for this ticker from a previous save
+  DB.stocks.alerts = DB.stocks.alerts.filter(a => !(a.auto && a.ticker === tk));
+  if (h.stopLoss) DB.stocks.alerts.push({
+    id: "auto_" + tk + "_stop", ticker: tk, threshold: h.stopLoss, direction: "below",
+    auto: true, createdAt: Date.now(),
+  });
+  if (h.takeProfit) DB.stocks.alerts.push({
+    id: "auto_" + tk + "_take", ticker: tk, threshold: h.takeProfit, direction: "above",
+    auto: true, createdAt: Date.now(),
+  });
+  await save();
+  closeSheet();
+  toast(`${tk} limits saved`);
+}
+
+/* ---------- Realized P&L log ----------
+   When a holding is reduced or closed, we save a realized P&L event:
+   DB.stocks.realizedPL = [{date, ticker, shares, cost, exit, pl, plPct}]
+   _stocksClosePositionSheet lets user enter exit price + shares sold. */
+function _stocksClosePositionSheet(tk) {
+  const h = (DB.stocks && DB.stocks.holdings && DB.stocks.holdings[tk]) || {};
+  const cur = (DB.stocks.quoteCache || {})[tk];
+  const price = cur && !cur.error && cur.price != null ? +cur.price : (+h.cost || 0);
+  openSheet(`
+    <h2 style="margin-bottom:4px">Close / reduce ${esc(tk)}</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">You hold ${h.shares || 0} sh at $${(+h.cost || 0).toFixed(2)}. Log a sale to track realized P&amp;L.</p>
+    <label>Shares to sell</label>
+    <input id="cls-shares" type="number" inputmode="decimal" value="${esc(h.shares || "")}" min="0"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Sale price per share ($)</label>
+    <input id="cls-price" type="number" inputmode="decimal" value="${price.toFixed(2)}" min="0"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box" />
+    <div class="actions">
+      <button class="btn secondary" onclick="closeSheet()">Cancel</button>
+      <button class="btn" onclick="_stocksConfirmClose(${jsAttr(tk)})">Log sale</button>
+    </div>
+  `);
+}
+
+async function _stocksConfirmClose(tk) {
+  const h = (DB.stocks && DB.stocks.holdings && DB.stocks.holdings[tk]) || {};
+  const shares = parseFloat(document.getElementById("cls-shares").value);
+  const price = parseFloat(document.getElementById("cls-price").value);
+  if (!isFinite(shares) || shares <= 0) { toast("Shares > 0"); return; }
+  if (!isFinite(price) || price <= 0) { toast("Price > 0"); return; }
+  const remaining = (+h.shares || 0) - shares;
+  if (remaining < -0.0001) { toast("Can't sell more than you own"); return; }
+  const cost = +h.cost || 0;
+  const pl = (price - cost) * shares;
+  const plPct = cost > 0 ? (price - cost) / cost : 0;
+  if (!Array.isArray(DB.stocks.realizedPL)) DB.stocks.realizedPL = [];
+  DB.stocks.realizedPL.push({
+    date: new Date().toISOString().slice(0, 10),
+    ticker: tk, shares, cost, exit: price, pl, plPct,
+  });
+  if (remaining <= 0.0001) {
+    delete DB.stocks.holdings[tk];
+  } else {
+    DB.stocks.holdings[tk] = { ...h, shares: remaining };
+  }
+  await save();
+  closeSheet();
+  toast(`${pl >= 0 ? "+" : "-"}$${Math.abs(pl).toFixed(2)} realized on ${tk}`);
+  if (typeof renderStocks === "function" && document.getElementById("page-stocks")) renderStocks();
+}
+
+function realizedPLSheet() {
+  const log = (DB.stocks && DB.stocks.realizedPL) || [];
+  if (!log.length) {
+    openSheet(`
+      <h2 style="margin-bottom:4px">Realized P&amp;L</h2>
+      <p class="muted" style="font-size:12.5px;margin-bottom:14px">No closed positions yet. Sales you log will appear here.</p>
+      <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+    `);
+    return;
+  }
+  const totalPl = log.reduce((s, r) => s + (+r.pl || 0), 0);
+  const byYear = {};
+  for (const r of log) {
+    const y = (r.date || "").slice(0, 4);
+    byYear[y] = (byYear[y] || 0) + (+r.pl || 0);
+  }
+  const yrColor = (v) => v >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+  openSheet(`
+    <h2 style="margin-bottom:4px">Realized P&amp;L</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">${log.length} closed position${log.length === 1 ? "" : "s"} · all time <b style="color:${yrColor(totalPl)}">${totalPl >= 0 ? "+" : "-"}$${Math.abs(totalPl).toFixed(2)}</b></p>
+    <div style="margin-bottom:14px">
+      ${Object.entries(byYear).sort((a, b) => b[0].localeCompare(a[0])).map(([y, v]) => `
+        <div style="display:flex;justify-content:space-between;padding:7px 11px;background:var(--bg-elev);border-radius:8px;margin-bottom:3px">
+          <div style="font-size:13px;color:var(--t1);font-weight:600">${esc(y)}</div>
+          <div style="font-size:13px;color:${yrColor(v)};font-weight:700">${v >= 0 ? "+" : "-"}$${Math.abs(v).toFixed(2)}</div>
+        </div>
+      `).join("")}
+    </div>
+    <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">All transactions</div>
+    ${log.slice().reverse().slice(0, 50).map(r => {
+      const c = (+r.pl) >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+      return `
+        <div style="display:flex;justify-content:space-between;align-items:center;padding:7px 11px;background:var(--card);border:0.5px solid var(--sep);border-radius:8px;margin-bottom:4px">
+          <div>
+            <div style="font-weight:700;font-size:13px">${esc(r.ticker)}</div>
+            <div style="font-size:10.5px;color:var(--t3)">${esc(r.date)} · ${r.shares} sh · $${(+r.cost).toFixed(2)} → $${(+r.exit).toFixed(2)}</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:13px;color:${c};font-weight:700;font-variant-numeric:tabular-nums">${(+r.pl) >= 0 ? "+" : "-"}$${Math.abs(+r.pl).toFixed(2)}</div>
+            <div style="font-size:10.5px;color:${c};font-variant-numeric:tabular-nums">${(+r.plPct) >= 0 ? "+" : ""}${((+r.plPct)*100).toFixed(1)}%</div>
+          </div>
+        </div>
+      `;
+    }).join("")}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+/* ---------- Watchlist smart-sort ----------
+   Ranks each watchlist ticker by a composite "buy candidate" score
+   combining today's move + relative position vs 52w high + simple
+   momentum. Only needs the lightweight quote cache. */
+function _stkWatchlistScore(q) {
+  if (!q || q.error || q.change_pct == null) return 0;
+  let s = 50;
+  s += Math.max(-15, Math.min(15, (+q.change_pct) * 100));  // bias to today's mover
+  // Sparkline trend: last vs first close
+  const sp = q.spark_30d || [];
+  if (sp.length >= 5) {
+    const first = sp[0]; const last = sp[sp.length - 1];
+    if (first > 0) {
+      const trend = (last - first) / first;
+      s += Math.max(-10, Math.min(10, trend * 100));
+    }
+  }
+  return Math.round(s);
+}
+
+function _stocksGetWatchlistSorted() {
+  const list = (DB.stocks && DB.stocks.watchlist) || [];
+  const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  const sort = (DB.stocks && DB.stocks.watchlistSort) || "default";
+  if (sort === "default") return list.slice();
+  const decorated = list.map(tk => ({ tk, q: cache[tk] }));
+  if (sort === "gainers") {
+    decorated.sort((a, b) => ((b.q && b.q.change_pct) || -Infinity) - ((a.q && a.q.change_pct) || -Infinity));
+  } else if (sort === "losers") {
+    decorated.sort((a, b) => ((a.q && a.q.change_pct) || Infinity) - ((b.q && b.q.change_pct) || Infinity));
+  } else if (sort === "buy") {
+    decorated.sort((a, b) => _stkWatchlistScore(b.q) - _stkWatchlistScore(a.q));
+  } else if (sort === "alpha") {
+    decorated.sort((a, b) => a.tk.localeCompare(b.tk));
+  }
+  return decorated.map(d => d.tk);
+}
+
+function _stocksSetWatchlistSort(s) {
+  if (!DB.stocks) DB.stocks = {};
+  DB.stocks.watchlistSort = s;
+  save();
+  _stocksRenderWatchlist();
 }
 
 /* ---------- Price alerts ----------
@@ -10174,7 +10873,19 @@ function _stocksRenderWatchlist() {
     return;
   }
   const cache = (DB.stocks && DB.stocks.quoteCache) || {};
-  out.innerHTML = watchlist.map(tk => _stocksTickerRowHtml(tk, cache[tk])).join("");
+  const sort = (DB.stocks && DB.stocks.watchlistSort) || "default";
+  const sortChip = (id, label) => `<button onclick="_stocksSetWatchlistSort(${jsAttr(id)})" style="background:${sort===id?'var(--blue,#007AFF)':'var(--bg-elev)'};color:${sort===id?'#fff':'var(--t2)'};border:0.5px solid var(--sep);border-radius:8px;padding:3px 8px;font-size:10.5px;font-weight:600;cursor:pointer">${esc(label)}</button>`;
+  const sorter = `
+    <div style="display:flex;gap:4px;margin-bottom:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px">
+      ${sortChip("default", "Default")}
+      ${sortChip("buy",     "🎯 Buy candidates")}
+      ${sortChip("gainers", "↑ Gainers")}
+      ${sortChip("losers",  "↓ Losers")}
+      ${sortChip("alpha",   "A-Z")}
+    </div>
+  `;
+  const sortedList = _stocksGetWatchlistSorted();
+  out.innerHTML = sorter + sortedList.map(tk => _stocksTickerRowHtml(tk, cache[tk])).join("");
 }
 
 function _stocksTickerRowHtml(tk, q) {
@@ -10238,6 +10949,7 @@ async function _stocksRefreshAll() {
       DB.stocks.quoteCache = data.quotes;
       DB.stocks.lastFetched = Date.now();
       await save();
+      _stocksSnapshotPortfolio();
       _stocksRenderWatchlist();
       _stocksRenderPortfolio();
       _stocksRenderTopMovers();
@@ -11151,7 +11863,10 @@ function _stocksRenderDetail(q) {
       <div id="stk-news-result"></div>
       <button onclick="_stocksRunAnalyze(${jsAttr(q.ticker)})" id="stk-analyze-btn" class="btn" style="width:100%;margin-bottom:6px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none">✨ Run full analysis (buy/hold/sell)</button>
       <button onclick="_stocksWhatIfSheet(${jsAttr(q.ticker)})" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">💸 What if I'd invested $1k…</button>
+      <button onclick="_stocksDcaSheet(${jsAttr(q.ticker)})" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">📆 DCA simulator</button>
       <button onclick="_stocksAddHoldingSheet(${jsAttr(q.ticker)})" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">💼 I own this — track P&amp;L</button>
+      <button onclick="_stocksLoadHolders(${jsAttr(q.ticker)})" id="stk-holders-btn" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">🏛️ Show holders + insiders</button>
+      <div id="stk-holders-result"></div>
       <button onclick="_stocksLoadPeers(${jsAttr(q.ticker)})" id="stk-peers-btn" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">Show sector peers</button>
       <button onclick="openCounselor(${jsAttr(`What's your read on ${q.ticker}? Currently $${(+q.price).toFixed(2)}, ${(pct).toFixed(1)}% today${q.ytd_return != null ? `, ${((+q.ytd_return) * 100).toFixed(1)}% YTD` : ''}, P/E ${q.trailing_pe ? (+q.trailing_pe).toFixed(1) : 'n/a'}, RSI ${q.rsi14 ? (+q.rsi14).toFixed(0) : 'n/a'}, analyst target ${q.target_mean ? '$' + (+q.target_mean).toFixed(0) : 'n/a'}. Should I add it to my portfolio given my situation? Give me the why, not just a verdict.`)})" class="btn secondary" style="width:100%;margin-bottom:14px;font-size:13px">✨ Ask Cornileus about ${esc(q.ticker)}</button>
       <div id="stk-analyze-result"></div>

@@ -565,6 +565,138 @@ def api_ticker_broker(ticker):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/etf/<ticker>")
+def api_etf_holdings(ticker):
+    """ETF holdings + sector exposure. For non-ETF tickers, returns {}.
+
+    Returns:
+      type: 'ETF' or 'fund'
+      top_holdings: [{symbol, name, weight}]
+      sector_weights: {sector: pct}
+      expense_ratio, total_assets, ytd_return
+    """
+    import yfinance as yf
+    try:
+        t = yf.Ticker(ticker)
+        info = {}
+        try: info = t.info or {}
+        except Exception: pass
+        quote_type = (info.get("quoteType") or "").upper()
+        if quote_type not in ("ETF", "MUTUALFUND"):
+            return jsonify({"type": quote_type or None, "etf": False})
+        # yfinance .funds_data API
+        out = {"type": quote_type, "etf": True}
+        try:
+            fd = t.funds_data
+            if fd is not None:
+                try:
+                    th = fd.top_holdings
+                    if th is not None and not getattr(th, "empty", True):
+                        records = []
+                        df_reset = th.head(15).reset_index()
+                        for r in df_reset.to_dict("records"):
+                            sym = r.get("Symbol") or r.get("symbol") or r.get("index")
+                            name = r.get("Name") or r.get("holdingName") or r.get("name")
+                            wt   = r.get("Holding Percent") or r.get("holdingPercent") or r.get("Weight")
+                            records.append({
+                                "symbol": str(sym) if sym is not None else None,
+                                "name": str(name) if name is not None else None,
+                                "weight": float(wt) if wt is not None else None,
+                            })
+                        out["top_holdings"] = records
+                except Exception: pass
+                try:
+                    sw = fd.sector_weightings
+                    if sw is not None and isinstance(sw, dict):
+                        out["sector_weights"] = {str(k): float(v) for k, v in sw.items() if v is not None}
+                except Exception: pass
+                try:
+                    eq = fd.equity_holdings
+                    if eq is not None and hasattr(eq, "to_dict"):
+                        out["equity_metrics"] = {k: (float(v) if isinstance(v, (int, float)) else str(v)) for k, v in eq.iloc[:, 0].to_dict().items() if v is not None}
+                except Exception: pass
+        except Exception:
+            pass
+        out["expense_ratio"]  = info.get("annualReportExpenseRatio")
+        out["total_assets"]   = info.get("totalAssets")
+        out["ytd_return"]     = info.get("ytdReturn")
+        out["nav_price"]      = info.get("navPrice")
+        out["category"]       = info.get("category")
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/holders/<ticker>")
+def api_holders(ticker):
+    """Top institutional holders + recent insider activity for a ticker.
+
+    Returns:
+      institutional: [{holder, shares, date_reported, value, pct_out}]
+      mutual_funds:  [{holder, shares, date_reported, value, pct_out}]
+      insider_tx:    [{insider, position, transaction, shares, value, date, ownership}]
+      insider_roster:[{name, position, since, ownership, latest_tx_date}]
+
+    Each list is capped at 10 entries to keep the response light. Sourced
+    via yfinance — same data Yahoo Finance shows on the Holders tab.
+    """
+    import yfinance as yf
+    out = {"institutional": [], "mutual_funds": [], "insider_tx": [], "insider_roster": []}
+    try:
+        t = yf.Ticker(ticker)
+
+        def df_to_records(df, max_rows=10):
+            try:
+                if df is None or getattr(df, "empty", True):
+                    return []
+                df2 = df.head(max_rows).reset_index()
+                # JSON-safe values
+                recs = []
+                for r in df2.to_dict("records"):
+                    safe = {}
+                    for k, v in r.items():
+                        if hasattr(v, "strftime"):
+                            safe[str(k)] = v.strftime("%Y-%m-%d")
+                        elif hasattr(v, "item"):
+                            try: safe[str(k)] = v.item()
+                            except Exception: safe[str(k)] = str(v)
+                        else:
+                            try:
+                                safe[str(k)] = float(v) if isinstance(v, (int, float)) else (str(v) if v is not None else None)
+                            except Exception:
+                                safe[str(k)] = str(v)
+                    recs.append(safe)
+                return recs
+            except Exception:
+                return []
+
+        try: out["institutional"] = df_to_records(t.institutional_holders, 10)
+        except Exception: pass
+        try: out["mutual_funds"] = df_to_records(t.mutualfund_holders, 10)
+        except Exception: pass
+        try: out["insider_tx"] = df_to_records(t.insider_transactions, 15)
+        except Exception: pass
+        try: out["insider_roster"] = df_to_records(t.insider_roster_holders, 10)
+        except Exception: pass
+
+        # Add summary stats from .info if available
+        try:
+            info = t.info or {}
+            out["summary"] = {
+                "held_insiders": info.get("heldPercentInsiders"),
+                "held_institutions": info.get("heldPercentInstitutions"),
+                "shares_out": info.get("sharesOutstanding"),
+                "float_shares": info.get("floatShares"),
+                "short_pct_float": info.get("shortPercentOfFloat"),
+            }
+        except Exception:
+            out["summary"] = {}
+
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/news/<ticker>")
 def api_news_ticker(ticker):
     """Extended per-ticker news feed (up to 15 headlines) for the news-driven
