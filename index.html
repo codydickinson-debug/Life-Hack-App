@@ -1226,8 +1226,9 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 }
 
 /* Slide-in animation — Cornileus strides into frame from the left
-   with a slight overshoot + tilt, like a Victorian gentleman entering
-   the stage. Used when the counselor sheet opens. */
+   ~0.8s after the sheet opens, like a Victorian gentleman taking
+   the stage. The delay gives the sheet itself time to settle so the
+   character entrance is its own beat. */
 @keyframes corn-pop-in {
   0%   { transform: translateX(-180%) rotate(-12deg); opacity: 0; }
   55%  { transform: translateX(14%)   rotate(5deg);   opacity: 1; }
@@ -1235,8 +1236,51 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   100% { transform: translateX(0)     rotate(0deg);   opacity: 1; }
 }
 .corn-pop {
-  animation: corn-pop-in 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation: corn-pop-in 0.65s cubic-bezier(0.34, 1.56, 0.64, 1) 0.8s both;
   transform-origin: center center;
+}
+/* Greeting speech bubble that fades in just after Cornileus lands. */
+@keyframes corn-greet-in {
+  0%   { transform: translateY(6px) scale(0.92); opacity: 0; }
+  100% { transform: translateY(0)   scale(1);    opacity: 1; }
+}
+.corn-greeting {
+  animation: corn-greet-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) 1.45s both;
+}
+.corn-greeting-bubble {
+  position: relative;
+  background: var(--bg-elev);
+  padding: 10px 14px;
+  border-radius: 16px;
+  border-top-left-radius: 4px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--t1);
+  max-width: 84%;
+}
+.corn-greeting-bubble::after {
+  content: ""; position: absolute; left: -6px; top: 12px;
+  width: 0; height: 0;
+  border: 6px solid transparent;
+  border-right-color: var(--bg-elev);
+  border-left: 0;
+}
+/* Animated dots shown next to the avatar while Cornileus is "thinking". */
+.corn-think-dots {
+  display: inline-flex; gap: 4px; align-items: center;
+  padding: 8px 12px; background: var(--bg-elev);
+  border-radius: 14px; border-top-left-radius: 4px;
+}
+.corn-think-dots span {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--t3, #888); opacity: 0.5;
+  animation: corn-dot 1.1s ease-in-out infinite;
+}
+.corn-think-dots span:nth-child(2) { animation-delay: 0.18s; }
+.corn-think-dots span:nth-child(3) { animation-delay: 0.36s; }
+@keyframes corn-dot {
+  0%, 80%, 100% { transform: translateY(0);    opacity: 0.4; }
+  40%           { transform: translateY(-3px); opacity: 1; }
 }
 
 /* Cornileus action confirmation chips — shown under assistant bubbles when
@@ -11210,7 +11254,64 @@ async function getMonthlyInsight() {
    gray-streaked eyebrows + mustache, gold-rimmed monocle with chain,
    subtle nose shading, suit lapels, proper bowtie with knot, hat with
    gradient sheen. Designed to read clearly at 32-44px. */
-const CORNILEUS_SVG = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-label="Cornileus" role="img">
+// Mood-specific face parts. Cornileus reacts to what the user says — happy
+// for wins, concerned for stress/debt, curious for questions, surprised for
+// big numbers, thinking while the AI is generating. Each mood swaps brows,
+// eyes, and mouth; everything else (skin, monocle, mustache, hat, suit)
+// stays constant so transitions feel like the same character emoting.
+const _CORN_FACES = {
+  neutral: {
+    browL: `<path d="M22 27.6 Q25 25.3 30 27.2" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M23.5 27 L26.5 26.3" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
+    browR: `<path d="M34 27.2 Q39 25.3 42 27.6" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M35.5 26.3 L38.5 27" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
+    eyeL: `<ellipse cx="27" cy="30.5" rx="2.1" ry="1.6" fill="#fafafa"/><circle cx="27" cy="30.5" r="1.15" fill="#4a3a25"/><circle cx="27" cy="30.5" r="0.55" fill="#0a0a10"/><circle cx="27.4" cy="30.0" r="0.28" fill="#fff"/>`,
+    eyeR: `<ellipse cx="37" cy="30.5" rx="2.1" ry="1.6" fill="#fafafa"/><circle cx="37" cy="30.5" r="1.15" fill="#4a3a25"/><circle cx="37" cy="30.5" r="0.55" fill="#0a0a10"/><circle cx="37.4" cy="30.0" r="0.28" fill="#fff"/>`,
+    mouth: `<path d="M30.5 44.4 Q32 44.9 33.5 44.4" stroke="#5a3a25" stroke-width="0.55" fill="none" stroke-linecap="round"/>`,
+  },
+  happy: {
+    browL: `<path d="M22 26.0 Q25 24.0 30 26.4" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M23.5 26.4 L26.5 25.6" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
+    browR: `<path d="M34 26.4 Q39 24.0 42 26.0" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M35.5 25.6 L38.5 26.4" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
+    eyeL: `<ellipse cx="27" cy="30.5" rx="2.1" ry="1.0" fill="#fafafa"/><path d="M25 30.6 Q27 29.0 29 30.6" stroke="#4a3a25" stroke-width="0.9" fill="none" stroke-linecap="round"/>`,
+    eyeR: `<ellipse cx="37" cy="30.5" rx="2.1" ry="1.0" fill="#fafafa"/><path d="M35 30.6 Q37 29.0 39 30.6" stroke="#4a3a25" stroke-width="0.9" fill="none" stroke-linecap="round"/>`,
+    mouth: `<path d="M29.5 44.0 Q32 46.2 34.5 44.0" stroke="#5a3a25" stroke-width="0.75" fill="none" stroke-linecap="round"/>`,
+  },
+  concerned: {
+    browL: `<path d="M22 28.8 Q26 26.6 30 28.6" stroke="#6a5a45" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M23.5 28.0 L26.5 27.5" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
+    browR: `<path d="M34 28.6 Q38 26.6 42 28.8" stroke="#6a5a45" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M35.5 27.5 L38.5 28.0" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
+    eyeL: `<ellipse cx="27" cy="30.8" rx="2.1" ry="1.5" fill="#fafafa"/><circle cx="27" cy="30.9" r="1.15" fill="#4a3a25"/><circle cx="27" cy="30.9" r="0.55" fill="#0a0a10"/><circle cx="27.4" cy="30.5" r="0.26" fill="#fff"/>`,
+    eyeR: `<ellipse cx="37" cy="30.8" rx="2.1" ry="1.5" fill="#fafafa"/><circle cx="37" cy="30.9" r="1.15" fill="#4a3a25"/><circle cx="37" cy="30.9" r="0.55" fill="#0a0a10"/><circle cx="37.4" cy="30.5" r="0.26" fill="#fff"/>`,
+    mouth: `<path d="M30 45.2 Q32 44.5 34 45.2" stroke="#5a3a25" stroke-width="0.6" fill="none" stroke-linecap="round"/>`,
+  },
+  surprised: {
+    browL: `<path d="M22 25.0 Q25 22.8 30 25.2" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M23.5 25.0 L26.5 24.2" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
+    browR: `<path d="M34 25.2 Q39 22.8 42 25.0" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M35.5 24.2 L38.5 25.0" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
+    eyeL: `<ellipse cx="27" cy="30.5" rx="2.4" ry="2.0" fill="#fafafa"/><circle cx="27" cy="30.5" r="1.0" fill="#4a3a25"/><circle cx="27" cy="30.5" r="0.5" fill="#0a0a10"/><circle cx="27.5" cy="30.0" r="0.32" fill="#fff"/>`,
+    eyeR: `<ellipse cx="37" cy="30.5" rx="2.4" ry="2.0" fill="#fafafa"/><circle cx="37" cy="30.5" r="1.0" fill="#4a3a25"/><circle cx="37" cy="30.5" r="0.5" fill="#0a0a10"/><circle cx="37.5" cy="30.0" r="0.32" fill="#fff"/>`,
+    mouth: `<ellipse cx="32" cy="44.8" rx="0.9" ry="1.1" fill="#3a2515"/>`,
+  },
+  curious: {
+    browL: `<path d="M22 27.4 Q25 25.7 30 27.0" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M23.5 27.0 L26.5 26.3" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
+    browR: `<path d="M34 25.8 Q39 23.4 42 25.4" stroke="#6a5a45" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M35.5 24.6 L38.5 25.0" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
+    eyeL: `<ellipse cx="27" cy="30.5" rx="2.1" ry="1.6" fill="#fafafa"/><circle cx="27" cy="30.5" r="1.15" fill="#4a3a25"/><circle cx="27" cy="30.5" r="0.55" fill="#0a0a10"/><circle cx="27.4" cy="30.0" r="0.28" fill="#fff"/>`,
+    eyeR: `<ellipse cx="37" cy="30.4" rx="2.1" ry="1.7" fill="#fafafa"/><circle cx="37" cy="30.4" r="1.2" fill="#4a3a25"/><circle cx="37" cy="30.4" r="0.58" fill="#0a0a10"/><circle cx="37.4" cy="29.9" r="0.3" fill="#fff"/>`,
+    mouth: `<path d="M30.6 44.4 Q32 45.2 33.4 44.4" stroke="#5a3a25" stroke-width="0.6" fill="none" stroke-linecap="round"/>`,
+  },
+  // Classic "thinking" — one brow up, eyes glancing up-and-right, mouth pursed.
+  // The eye movement is bigger than usual to read clearly at small sizes.
+  thinking: {
+    browL: `<path d="M22 27.6 Q25 26.0 30 27.4" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M23.5 27.0 L26.5 26.4" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
+    browR: `<path d="M34 25.2 Q39 22.8 42 24.6" stroke="#6a5a45" stroke-width="2.3" fill="none" stroke-linecap="round"/><path d="M35.5 24.0 L38.5 24.5" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
+    eyeL: `<ellipse cx="27" cy="30.5" rx="2.1" ry="1.4" fill="#fafafa"/><circle cx="27.6" cy="30.0" r="1.05" fill="#4a3a25"/><circle cx="27.6" cy="30.0" r="0.5" fill="#0a0a10"/>`,
+    eyeR: `<ellipse cx="37" cy="30.5" rx="2.1" ry="1.4" fill="#fafafa"/><circle cx="37.6" cy="30.0" r="1.05" fill="#4a3a25"/><circle cx="37.6" cy="30.0" r="0.5" fill="#0a0a10"/>`,
+    mouth: `<path d="M30.4 44.6 L33.6 44.6" stroke="#5a3a25" stroke-width="0.6" fill="none" stroke-linecap="round"/>`,
+  },
+};
+
+// Build Cornileus' SVG with a given mood. The static parts (gradients, hat,
+// monocle, suit, mustache, nose) never change so the character stays
+// recognizable; the face parts (brows, eyes, mouth) swap based on mood.
+function cornileusSvg(mood) {
+  const f = _CORN_FACES[mood] || _CORN_FACES.neutral;
+  return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-label="Cornileus" role="img">
   <defs>
     <radialGradient id="cn-skin" cx="50%" cy="38%" r="60%">
       <stop offset="0%" stop-color="#f7e2b8"/>
@@ -11232,54 +11333,30 @@ const CORNILEUS_SVG = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/sv
       <stop offset="100%" stop-color="#0a0a10"/>
     </linearGradient>
   </defs>
-  <!-- Suit shoulders + lapels + shirt + bowtie (drawn first, behind everything) -->
   <polygon points="13,52 32,46 51,52 51,64 13,64" fill="url(#cn-suit)"/>
   <polygon points="26,48.2 32,46 32,57 28,55" fill="#1f1f28"/>
   <polygon points="38,48.2 32,46 32,57 36,55" fill="#1f1f28"/>
   <polygon points="30,49 34,49 33.2,57 30.8,57" fill="#f5f5f7"/>
-  <!-- Neck -->
   <rect x="29" y="43.5" width="6" height="5" fill="#c9a878"/>
-  <!-- Bowtie -->
   <path d="M27 50.2 L32 52.2 L37 50.2 L37 54.6 L32 52.6 L27 54.6 Z" fill="#8957D9"/>
   <rect x="31" y="51.2" width="2" height="2.6" rx="0.6" fill="#6f3fbf"/>
-  <!-- Head -->
   <ellipse cx="32" cy="34" rx="13.5" ry="14.6" fill="url(#cn-skin)"/>
-  <!-- Forehead shadow from hat -->
   <ellipse cx="32" cy="22.5" rx="13" ry="2.6" fill="rgba(0,0,0,0.22)"/>
-  <!-- Subtle wrinkle / age line -->
   <path d="M23 25.2 Q28 24.5 32 25.2" stroke="rgba(80,55,30,0.18)" stroke-width="0.4" fill="none"/>
-  <!-- Bushy eyebrows, gray-streaked -->
-  <path d="M22 27.6 Q25 25.3 30 27.2" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/>
-  <path d="M34 27.2 Q39 25.3 42 27.6" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/>
-  <path d="M23.5 27 L26.5 26.3" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>
-  <path d="M35.5 26.3 L38.5 27" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>
-  <!-- Eyes: whites, iris, pupil, highlight -->
-  <ellipse cx="27" cy="30.5" rx="2.1" ry="1.6" fill="#fafafa"/>
-  <ellipse cx="37" cy="30.5" rx="2.1" ry="1.6" fill="#fafafa"/>
-  <circle cx="27" cy="30.5" r="1.15" fill="#4a3a25"/>
-  <circle cx="37" cy="30.5" r="1.15" fill="#4a3a25"/>
-  <circle cx="27" cy="30.5" r="0.55" fill="#0a0a10"/>
-  <circle cx="37" cy="30.5" r="0.55" fill="#0a0a10"/>
-  <circle cx="27.4" cy="30.0" r="0.28" fill="#fff"/>
-  <circle cx="37.4" cy="30.0" r="0.28" fill="#fff"/>
-  <!-- Gold-rimmed monocle around right eye -->
+  ${f.browL}${f.browR}
+  ${f.eyeL}${f.eyeR}
   <circle cx="37" cy="30.5" r="5" fill="url(#cn-mono)" stroke="#c9a14a" stroke-width="0.95"/>
   <path d="M33.4 28 A4.6 4.6 0 0 1 36 26.6" stroke="rgba(255,255,255,0.45)" stroke-width="0.55" fill="none"/>
-  <!-- Monocle chain trailing to suit -->
   <path d="M41.8 32.6 Q44 36 43.2 41" stroke="#9a8866" stroke-width="0.55" fill="none"/>
-  <!-- Nose -->
   <path d="M31.8 31 Q31 35.2 31.6 37 Q32 37.4 32.4 37 Q33 35.2 32.2 31" fill="rgba(80,55,30,0.10)"/>
   <ellipse cx="31.4" cy="37" rx="0.45" ry="0.4" fill="rgba(60,40,20,0.30)"/>
   <ellipse cx="32.6" cy="37" rx="0.45" ry="0.4" fill="rgba(60,40,20,0.30)"/>
-  <!-- Mustache: thick, twirled tips, gray highlights -->
   <path d="M22 40.8 Q24.5 39.2 27.5 40.2 Q30 41.5 32 41.5 Q34 41.5 36.5 40.2 Q39.5 39.2 42 40.8 Q43 42.2 41 43.1 Q38 44 35 43.6 Q33 43.9 32 43.6 Q31 43.9 29 43.6 Q26 44 23 43.1 Q21 42.2 22 40.8 Z" fill="#5a4a35"/>
   <path d="M24 41.2 Q26 40.8 28 41.3" stroke="#7a6a55" stroke-width="0.5" fill="none" stroke-linecap="round"/>
   <path d="M36 41.3 Q38 40.8 40 41.2" stroke="#7a6a55" stroke-width="0.5" fill="none" stroke-linecap="round"/>
   <path d="M22 40.8 Q20.4 40.2 20.4 41.8" stroke="#5a4a35" stroke-width="1.3" fill="none" stroke-linecap="round"/>
   <path d="M42 40.8 Q43.6 40.2 43.6 41.8" stroke="#5a4a35" stroke-width="1.3" fill="none" stroke-linecap="round"/>
-  <!-- Mouth peeking from under mustache -->
-  <path d="M30.5 44.4 Q32 44.9 33.5 44.4" stroke="#5a3a25" stroke-width="0.55" fill="none" stroke-linecap="round"/>
-  <!-- Top hat (drawn last so it sits on top of head) -->
+  ${f.mouth}
   <ellipse cx="32" cy="20.2" rx="20" ry="2.9" fill="url(#cn-hat)"/>
   <ellipse cx="32" cy="19.7" rx="20" ry="2.4" fill="#181820"/>
   <rect x="22" y="3" width="20" height="17" rx="0.9" fill="url(#cn-hat)"/>
@@ -11288,12 +11365,43 @@ const CORNILEUS_SVG = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/sv
   <rect x="23" y="5" width="1.9" height="8" fill="rgba(255,255,255,0.14)" rx="0.4"/>
   <rect x="24.7" y="5" width="0.5" height="6" fill="rgba(255,255,255,0.09)"/>
 </svg>`;
+}
+
+// Back-compat alias — earlier code referenced the constant directly.
+const CORNILEUS_SVG = cornileusSvg("neutral");
+
+// Heuristic mood detection from a free-text message. Used to react to the
+// user's prompt and to Cornileus' own reply so the avatar emotes naturally.
+function detectCornMood(text) {
+  const t = (text || "").toString().toLowerCase();
+  if (!t) return "neutral";
+  if (/\?\s*$/.test(t.trim())) return "curious";
+  if (/\b(worried|stress|stressed|anxious|scared|debt|broke|cant afford|can't afford|behind|losing|lost|fail|crisis|emergency|overdraft|overspent|tight|struggle|struggling|panic|fuck|shit|damn)\b/.test(t)) return "concerned";
+  if (/\b(great|awesome|excited|happy|love|amazing|win|won|achieved|paid off|crushing|killed it|nailed|stoked|hyped|let'?s go|yes+|finally|reached|hit my goal)\b/.test(t)) return "happy";
+  if (/\b(wow|whoa|woah|really|seriously|incredible|crazy|huge|massive|insane|holy|wtf|no way|unbelievable)\b/.test(t)) return "surprised";
+  if (/\b(how|why|what|when|where|should i|can i|is it|are these|help|explain|tell me|advice|recommend|suggest)\b/.test(t)) return "curious";
+  return "neutral";
+}
 
 // Helper: returns an avatar element of the given pixel size. `popIn=true`
-// triggers the entrance animation defined in CSS.
-function cornAvatarHtml(size, popIn) {
+// triggers the entrance animation. `mood` controls the facial expression;
+// `id` lets callers update the avatar live (used for header avatar in the
+// counselor sheet so we can swap moods without re-rendering the whole UI).
+function cornAvatarHtml(size, popIn, mood, id) {
   const cls = "corn-avatar" + (popIn ? " corn-pop" : "");
-  return `<span class="${cls}" style="width:${size}px;height:${size}px">${CORNILEUS_SVG}</span>`;
+  const idAttr = id ? ` id="${id}"` : "";
+  const m = mood || "neutral";
+  return `<span class="${cls}" data-corn-mood="${m}"${idAttr} style="width:${size}px;height:${size}px">${cornileusSvg(m)}</span>`;
+}
+
+// Live-update the mood of any Cornileus avatar by id. Used by the counselor
+// sheet to make him react to messages and show a thinking face while the AI
+// is generating, without re-rendering the whole sheet.
+function setCornileusMood(id, mood) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.dataset.cornMood = mood;
+  el.innerHTML = cornileusSvg(mood);
 }
 
 const COUNSELOR_SYSTEM = `You are Cornileus — a senior personal-finance counselor embedded in the Ascend app. You combine the disciplined planning instincts of a fee-only Certified Financial Planner (CFP) with the framework thinking of a CFA portfolio strategist. You are the user's trusted, candid guide for money decisions.
@@ -11911,19 +12019,28 @@ function counselorRender() {
   }).join("");
 
   const suggestions = COUNSELOR_SUGGESTIONS[ctx] || COUNSELOR_SUGGESTIONS.default;
-  const introLine = ({
-    goals:    "Hey, I'm Cornileus. From your <b>Goals</b> tab — let's make these real. Pick what to tackle first or break a big one down.",
-    planning: "Hey, I'm Cornileus. From your <b>Plan</b> tab — let's map your short, mid, and long-term roadmap. I'll talk priorities, sequencing, and what's actually realistic.",
-    money:    "Hey, I'm Cornileus. From your <b>Money</b> tab — let's tighten cash flow, find leaks, and lock in a plan that sticks.",
-    stocks:   "Hey, I'm Cornileus. From your <b>Stocks</b> tab — ask me for specific tickers, ETFs, or where to move your next dollar. I'll give the why behind each pick, but you do the final research and click.",
-    default:  "I'm Cornileus — your financial counselor inside Ascend. I know your numbers. Ask me anything — planning, debt, investing, big decisions. I'll be candid and reference your actual situation.",
-  })[ctx];
+  // Speech-bubble greeting that animates in alongside Cornileus on first
+  // open. Replaces the old plain-text intro paragraph with something that
+  // feels like he's actually talking to you.
+  const greetingText = ({
+    goals:    "How are you today? Pick a goal to talk through — or tell me what's on your mind.",
+    planning: "How are you today? Want to sketch out a short-, mid-, or long-term plan?",
+    money:    "How are you today? Want me to look at where your money's going this month?",
+    stocks:   "How are you today? Ask me about tickers, ETFs, or where to put your next dollar.",
+    default:  "How are you today? Ask me anything — money, goals, big decisions. I'll be candid.",
+  })[ctx] || "How are you today?";
+  const greetingHtml = !thread.length ? `
+    <div class="corn-greeting" style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-start">
+      ${cornAvatarHtml(32, false, "happy")}
+      <div class="corn-greeting-bubble">
+        ${esc(greetingText)}
+        <div style="font-size:11px;color:var(--t4);margin-top:6px">Educational guidance — not licensed financial advice.</div>
+      </div>
+    </div>
+  ` : "";
   const suggested = !thread.length ? `
     <div style="padding:6px 2px 4px">
-      <div style="font-size:13px;color:var(--t2);line-height:1.45;margin-bottom:12px">
-        ${introLine}
-        <div style="font-size:11px;color:var(--t4);margin-top:6px">Educational guidance — not licensed financial advice. Do your own research before acting.</div>
-      </div>
+      ${greetingHtml}
       ${(() => {
         // Data-driven personalized starters — drawn from current snapshot.
         // Only shown when we have at least one meaningful nudge. Pre-pended
@@ -11960,8 +12077,18 @@ function counselorRender() {
   ` : "";
 
   const voiceSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
+  // While Cornileus is thinking, show animated dots next to a small avatar
+  // (so the thinking face in the header is reinforced in the chat itself).
+  const thinkingBubble = busy ? `
+    <div style="display:flex;gap:8px;margin-bottom:12px;align-items:flex-start">
+      ${cornAvatarHtml(32, false, "thinking")}
+      <div class="corn-think-dots"><span></span><span></span><span></span></div>
+    </div>
+  ` : "";
   const footer = busy ? `
-    <div style="text-align:center;color:var(--t3);font-size:13px;padding:12px">Thinking…</div>
+    <div style="display:flex;gap:8px;align-items:flex-end;padding-top:8px;border-top:1px solid var(--sep);opacity:0.55;pointer-events:none">
+      <div style="flex:1;background:var(--bg-elev);padding:10px 14px;border-radius:18px;font-size:15px;color:var(--t3)">Cornileus is thinking…</div>
+    </div>
   ` : `
     <div style="display:flex;gap:8px;align-items:flex-end;padding-top:8px;border-top:1px solid var(--sep)">
       <textarea id="cns-input" rows="1" placeholder="Ask anything about your money…"
@@ -11992,9 +12119,13 @@ function counselorRender() {
       style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t2);padding:6px 10px;border-radius:var(--r-pill,999px);font-size:11.5px;cursor:pointer;font-weight:600;flex-shrink:0">New</button>
   ` : "";
 
+  // Header avatar mood: respect any live mood set by counselorSend (so the
+  // current reaction persists across re-renders); default to "thinking"
+  // while busy, otherwise neutral.
+  const headerMood = (_counselorState && _counselorState.mood) || (busy ? "thinking" : "neutral");
   openSheet(`
     <div data-counselor-sheet style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      ${cornAvatarHtml(44, true)}
+      ${cornAvatarHtml(44, true, headerMood, "corn-header-avatar")}
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:15px">Cornileus</div>
         <div style="font-size:11px;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${subtitleText}</div>
@@ -12004,6 +12135,7 @@ function counselorRender() {
     </div>
     <div id="cns-scroll" style="max-height:55vh;overflow-y:auto;padding-right:4px;margin-bottom:6px">
       ${bubbles}
+      ${thinkingBubble}
       ${suggested}
     </div>
     ${footer}
@@ -12011,7 +12143,9 @@ function counselorRender() {
 
   setTimeout(() => {
     const scroll = document.getElementById("cns-scroll");
-    if (scroll) scroll.scrollTop = scroll.scrollHeight;
+    // Only scroll to bottom if there's actual conversation; on first open
+    // we keep the greeting bubble at the top of the scroll area visible.
+    if (scroll && thread.length) scroll.scrollTop = scroll.scrollHeight;
     const inp = document.getElementById("cns-input");
     if (inp && !busy) inp.focus();
   }, 30);
@@ -12157,6 +12291,18 @@ async function counselorSend(text) {
   // Bound a single message to keep tokens reasonable
   if (text.length > 4000) text = text.slice(0, 4000);
 
+  // React to what the user said: brief facial reaction (curious/concerned/
+  // happy/etc) → settle into thinking face while waiting on the API.
+  const userMood = detectCornMood(text);
+  _counselorState.mood = userMood;
+  setCornileusMood("corn-header-avatar", userMood);
+  setTimeout(() => {
+    if (_counselorState && _counselorState.busy) {
+      _counselorState.mood = "thinking";
+      setCornileusMood("corn-header-avatar", "thinking");
+    }
+  }, 700);
+
   // Capture a session token so we can detect mid-flight cancellation. The
   // counselor sheet auto-wipes the thread on close (privacy); without this
   // guard, an in-flight reply that lands AFTER close pushes a ghost message
@@ -12227,6 +12373,10 @@ async function counselorSend(text) {
       actions: parsed.confirmations,
       t: Date.now(),
     });
+    // React to his own reply with the matching mood (happy for wins,
+    // concerned for tough-love advice, etc). Settles back to neutral after
+    // a couple of seconds so the avatar doesn't lock into one expression.
+    _counselorState.replyMood = detectCornMood(parsed.cleanedText);
     await save();
   } catch (e) {
     // Same cancellation guard for the error path — don't push an error
@@ -12241,7 +12391,19 @@ async function counselorSend(text) {
     await save();
   } finally {
     _counselorState.busy = false;
+    // Settle the header avatar on the reply mood (or neutral) so the
+    // re-render below picks it up. Then drift back to neutral after a beat
+    // so the avatar isn't frozen in one expression.
+    _counselorState.mood = _counselorState.replyMood || "neutral";
     counselorRender();
+    if (_counselorState.mood !== "neutral") {
+      setTimeout(() => {
+        if (_counselorState && !_counselorState.busy) {
+          _counselorState.mood = "neutral";
+          setCornileusMood("corn-header-avatar", "neutral");
+        }
+      }, 2400);
+    }
   }
 }
 
@@ -21450,7 +21612,7 @@ function init() {
     debtConsolidationSheet,
     fetchInsight, getMonthlyInsight, runAiInsight, maybeFireDailyInsight,
     openCounselor, toggleCounselorLauncher, counselorRender, counselorSend, counselorClear, buildCounselorSnapshot,
-    CORNILEUS_SVG, cornAvatarHtml,
+    CORNILEUS_SVG, cornAvatarHtml, cornileusSvg, setCornileusMood, detectCornMood,
     counselorToggleKeep, counselorNewChat,
     saveCornileusInsight, cylanInsightsSheet, _copyInsightText, _removeInsight,
     _parseAndRunActions, _runCornileusAction, _renderActionChips,
