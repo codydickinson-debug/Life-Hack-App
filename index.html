@@ -3995,6 +3995,7 @@ var calendarView = "month";
 // conditional render below. Adding a new toggleable section means adding
 // here + wrapping its render block in `if (!isTodaySectionHidden(id))`.
 const TODAY_TOGGLEABLE_SECTIONS = [
+  { id: "dailyPulse",      label: "Daily Pulse",            desc: "One contextual nudge at the top — net worth, plan deadlines, mood" },
   { id: "weeklyRecap",     label: "Weekly recap (Sundays)", desc: "Tap-to-summarize your week with Cylan, only on Sunday" },
   { id: "onThisDay",       label: "On this day",            desc: "What happened a week / month / year ago today" },
   { id: "milestoneBanner", label: "Streak milestone alert", desc: "Banner when a habit is days from its next milestone" },
@@ -4851,7 +4852,7 @@ function renderToday() {
   $("#page-today").innerHTML = `
     <div class="lg-title">Today</div>
     <div class="muted" style="margin:-12px 0 6px;font-size:14px">${dateLabel()}</div>
-    ${dailyPulse ? `
+    ${(dailyPulse && !isTodaySectionHidden('dailyPulse')) ? `
       <button onclick="${dailyPulse.onclick}" style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--orange);border-radius:var(--r);padding:10px 14px;margin:8px 0 12px;display:flex;align-items:center;gap:10px;width:100%;text-align:left;cursor:pointer;font:inherit;transition:transform .1s ease">
         <span style="font-size:18px;flex-shrink:0;line-height:1">${dailyPulse.emoji}</span>
         <span style="flex:1;min-width:0;font-size:13px;color:var(--t1);line-height:1.35">${esc(dailyPulse.text)}${dailyPulse.amount ? ` <span data-priv="amount" style="font-weight:600">${esc(dailyPulse.amount)}</span>` : ""}${dailyPulse.suffix ? ` ${esc(dailyPulse.suffix)}` : ""}</span>
