@@ -565,6 +565,152 @@ def api_ticker_broker(ticker):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/breadth")
+def api_breadth():
+    """Market breadth — composite Fear/Greed-style readout. Computes:
+      - SPY current vs 50/200-day SMAs (trend)
+      - VIX level (volatility / fear proxy)
+      - 10Y treasury yield (rates)
+      - Gold YTD vs SPX YTD (safe-haven flow)
+      - 5-day SPY momentum
+    Returns a 0-100 sentiment score plus the individual signals so the UI
+    can render each one with its own color.
+    """
+    import yfinance as yf
+    out = {"score": 50, "band": "Neutral", "signals": [], "as_of": None}
+    try:
+        spy = yf.Ticker("SPY").history(period="1y", auto_adjust=True)
+        if spy is None or spy.empty or len(spy) < 200:
+            return jsonify({"error": "no breadth data"}), 503
+        closes = [float(x) for x in spy["Close"].tolist()]
+        last = closes[-1]
+        sma50  = sum(closes[-50:])  / 50.0
+        sma200 = sum(closes[-200:]) / 200.0
+        mom5d  = (last - closes[-5]) / closes[-5] if len(closes) >= 5 and closes[-5] > 0 else 0
+        ytd_pct = (last - closes[0]) / closes[0] if closes[0] > 0 else 0
+        out["as_of"] = spy.index[-1].strftime("%Y-%m-%d")
+
+        score = 50
+        # Trend vs 200d (±20)
+        d200 = (last - sma200) / sma200 if sma200 > 0 else 0
+        c20 = max(-20, min(20, d200 * 200))
+        score += c20
+        out["signals"].append({
+            "label": "S&P 500 vs 200d SMA",
+            "value": f"{'+' if d200 >= 0 else ''}{(d200*100):.1f}%",
+            "score": round(c20),
+            "tone": "bullish" if d200 > 0.02 else "bearish" if d200 < -0.02 else "neutral",
+        })
+        # Trend vs 50d (±10)
+        d50 = (last - sma50) / sma50 if sma50 > 0 else 0
+        c10 = max(-10, min(10, d50 * 200))
+        score += c10
+        out["signals"].append({
+            "label": "S&P 500 vs 50d SMA",
+            "value": f"{'+' if d50 >= 0 else ''}{(d50*100):.1f}%",
+            "score": round(c10),
+            "tone": "bullish" if d50 > 0.01 else "bearish" if d50 < -0.01 else "neutral",
+        })
+        # 5d momentum (±10)
+        cm = max(-10, min(10, mom5d * 200))
+        score += cm
+        out["signals"].append({
+            "label": "5-day momentum",
+            "value": f"{'+' if mom5d >= 0 else ''}{(mom5d*100):.1f}%",
+            "score": round(cm),
+            "tone": "bullish" if mom5d > 0.005 else "bearish" if mom5d < -0.005 else "neutral",
+        })
+        # VIX (inverted — high VIX = fear)
+        try:
+            vix = yf.Ticker("^VIX").history(period="5d", auto_adjust=True)
+            if vix is not None and not vix.empty:
+                vix_last = float(vix["Close"].iloc[-1])
+                # VIX 12 = greedy, 20 = neutral, 30+ = fearful
+                cv = (20 - vix_last) * 1.2
+                cv = max(-15, min(15, cv))
+                score += cv
+                out["signals"].append({
+                    "label": "VIX",
+                    "value": f"{vix_last:.1f}",
+                    "score": round(cv),
+                    "tone": "bullish" if vix_last < 18 else "bearish" if vix_last > 25 else "neutral",
+                })
+        except Exception: pass
+
+        # 10Y vs 6mo prior (rising rates = bearish, falling = bullish)
+        try:
+            tnx = yf.Ticker("^TNX").history(period="6mo", auto_adjust=True)
+            if tnx is not None and not tnx.empty and len(tnx) >= 30:
+                t_now = float(tnx["Close"].iloc[-1])
+                t_then = float(tnx["Close"].iloc[0])
+                t_delta = t_now - t_then
+                cr = max(-5, min(5, -t_delta * 5))
+                score += cr
+                out["signals"].append({
+                    "label": "10Y treasury",
+                    "value": f"{t_now:.2f}% ({'+' if t_delta>=0 else ''}{t_delta:.2f} 6mo)",
+                    "score": round(cr),
+                    "tone": "bearish" if t_delta > 0.3 else "bullish" if t_delta < -0.3 else "neutral",
+                })
+        except Exception: pass
+
+        score = max(5, min(95, round(score)))
+        out["score"] = score
+        if score < 25:    out["band"] = "Extreme fear"
+        elif score < 45:  out["band"] = "Fear"
+        elif score < 55:  out["band"] = "Neutral"
+        elif score < 75:  out["band"] = "Greed"
+        else:             out["band"] = "Extreme greed"
+        return jsonify(out)
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/dividends/calendar")
+def api_dividends_calendar():
+    """For each ticker, return next ex-dividend date + dividend rate (per share).
+    Used by the dividend calendar to show 'AAPL pays $0.25/sh on May 19 →
+    you'll get $2.50' for the user's holdings.
+
+    Usage: GET /api/dividends/calendar?tickers=AAPL,MSFT,JNJ
+    Returns: {ticker: {ex_dividend_date, dividend_rate, payment_date?}}
+    """
+    import yfinance as yf
+    tickers_arg = (request.args.get("tickers") or "").strip()
+    if not tickers_arg:
+        return jsonify({"error": "tickers query param required"}), 400
+    tickers = [t.strip().upper() for t in tickers_arg.split(",") if t.strip()][:30]
+    out = {}
+    def lookup(tk):
+        try:
+            t = yf.Ticker(tk)
+            info = {}
+            try: info = t.info or {}
+            except Exception: pass
+            ex_date = info.get("exDividendDate")
+            if ex_date and isinstance(ex_date, (int, float)) and ex_date > 0:
+                try:
+                    ex_date_str = datetime.fromtimestamp(int(ex_date)).strftime("%Y-%m-%d")
+                except Exception:
+                    ex_date_str = None
+            else:
+                ex_date_str = None
+            rate = info.get("dividendRate")
+            try: rate = float(rate) if rate is not None else None
+            except (TypeError, ValueError): rate = None
+            return tk, {
+                "ex_dividend_date": ex_date_str,
+                "dividend_rate":    rate,             # annual $/share
+                "dividend_yield":   _norm_yield(info.get("dividendYield")),
+            }
+        except Exception as e:
+            return tk, {"error": str(e)}
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for tk, res in pool.map(lookup, tickers):
+            out[tk] = res
+    return jsonify({"calendar": out})
+
+
 @app.route("/api/etf/<ticker>")
 def api_etf_holdings(ticker):
     """ETF holdings + sector exposure. For non-ETF tickers, returns {}.

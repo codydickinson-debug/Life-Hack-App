@@ -9629,6 +9629,9 @@ function renderStocks() {
       <button class="btn" style="font-size:13px;padding:10px 16px" onclick="_stocksAddTicker(document.getElementById('stk-add-input').value)">Add</button>
     </div>
 
+    <!-- Market sentiment / breadth gauge -->
+    <div id="stk-breadth-wrap"></div>
+
     <!-- Sector heatmap -->
     <div id="stk-heatmap-wrap"></div>
 
@@ -9678,6 +9681,16 @@ function renderStocks() {
         <div class="body"><div class="t1">Realized P&amp;L log</div><div class="t2">Closed positions, gain/loss history by year</div></div>
         <div class="trail chev"></div>
       </div>
+      <div class="row tappable" onclick="dividendCalendarSheet()" role="button" tabindex="0">
+        <div class="lead">💵</div>
+        <div class="body"><div class="t1">Dividend calendar</div><div class="t2">Ex-dividend dates &amp; estimated payments for your holdings</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="weeklyDigestSheet()" role="button" tabindex="0">
+        <div class="lead">📰</div>
+        <div class="body"><div class="t1">Cornileus weekly digest</div><div class="t2">AI commentary on what changed for you this week</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="window.open('/stockanalyzer','_blank')" role="button" tabindex="0">
         <div class="lead">🏠</div>
         <div class="body"><div class="t1">Housing &amp; mortgages</div><div class="t2">Live mortgage rates, ZIP-level housing data, affordability calc</div></div>
@@ -9696,6 +9709,7 @@ function renderStocks() {
   _stocksRenderTopMovers();
   _stocksRefreshAll();
   _stocksLoadHeatmap();
+  _stocksLoadBreadth();
 }
 
 /* ---------- Top movers card ----------
@@ -10059,6 +10073,381 @@ async function _stocksRemoveHolding(tk) {
   closeSheet();
   toast(`Removed ${tk} from portfolio`);
   if (typeof renderStocks === "function" && document.getElementById("page-stocks")) renderStocks();
+}
+
+/* ---------- Cornileus weekly digest ----------
+   "What changed for you this week" — looks at the 7-day portfolio history,
+   each holding's % change vs 7d ago, market breadth, and asks Cornileus
+   for a brief commentary. 1-per-day cache to avoid burning AI on rebuild. */
+async function weeklyDigestSheet() {
+  const last = DB.stocks && DB.stocks.lastWeeklyDigest;
+  const today = new Date().toISOString().slice(0, 10);
+  const fresh = last && last.date === today && last.parsed;
+  openSheet(`
+    <h2 style="margin-bottom:4px">📰 Weekly digest</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">${esc(today)} — Cornileus' read on your week.</p>
+    <div id="dig-result">${fresh ? _stocksRenderDigest(last.parsed) : `<div style="text-align:center;padding:30px 14px;color:var(--t3);font-size:13px">📊 Reading your portfolio + the market…</div>`}</div>
+    <div class="actions">
+      <button class="btn secondary" onclick="DB.stocks.lastWeeklyDigest=null;weeklyDigestSheet()">↻ Regenerate</button>
+      <button class="btn" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+  if (fresh) return;
+  await _stocksRunDigest();
+}
+
+async function _stocksRunDigest() {
+  const out = document.getElementById("dig-result");
+  if (!out) return;
+  try {
+    const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+    const holdings = (DB.stocks && DB.stocks.holdings) || {};
+    const hist = (DB.stocks && DB.stocks.portfolioHistory) || [];
+    const breadthCache = DB.stocks && DB.stocks.breadthCache && DB.stocks.breadthCache.data;
+    let mkt = 0, cost = 0;
+    const rows = Object.entries(holdings).filter(([_, h]) => +h.shares > 0).map(([tk, h]) => {
+      const q = cache[tk];
+      const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+      const shares = +h.shares;
+      mkt += price * shares;
+      cost += (+h.cost || 0) * shares;
+      return { tk, shares, price, today: q && q.change_pct != null ? +q.change_pct : 0, costPS: +h.cost || 0 };
+    });
+    if (!rows.length) {
+      out.innerHTML = `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:13px">Add some holdings first to get a weekly digest.</div>`;
+      return;
+    }
+    // 7-day portfolio change
+    let weekChange = null, weekChangePct = null;
+    if (hist.length >= 7) {
+      const today = +hist[hist.length - 1].value;
+      const wk = +hist[Math.max(0, hist.length - 8)].value;
+      weekChange = today - wk;
+      weekChangePct = wk > 0 ? (weekChange / wk) : 0;
+    }
+    rows.sort((a, b) => Math.abs(b.today) - Math.abs(a.today));
+    const positionsText = rows.slice(0, 8)
+      .map(r => `- ${r.tk}: ${r.shares} sh @ now $${r.price.toFixed(2)}, today ${r.today >= 0 ? "+" : ""}${(r.today*100).toFixed(2)}%`)
+      .join("\n");
+    const breadthLine = breadthCache ? `Market sentiment: ${breadthCache.band} (${breadthCache.score}/100). Signals: ${(breadthCache.signals||[]).slice(0,3).map(s => s.label + " " + s.value).join("; ")}.` : "Market sentiment data unavailable.";
+    const userMsg = `Give me a weekly digest of what happened in my portfolio.
+
+Portfolio value: $${mkt.toFixed(0)}, cost $${cost.toFixed(0)} (${mkt > cost ? "+" : ""}${(((mkt-cost)/cost)*100).toFixed(1)}% unrealized).
+${weekChangePct !== null ? `7-day portfolio change: ${weekChange >= 0 ? "+" : ""}$${weekChange.toFixed(0)} (${(weekChangePct*100).toFixed(2)}%).` : "Not enough history for a 7-day comparison yet."}
+
+Today's moves in my positions:
+${positionsText}
+
+${breadthLine}
+
+Reply with this exact structure (no preamble, no markdown headers):
+HEADLINE: <single punchy sentence summing up the week for this portfolio>
+WIN: <one-sentence note on what worked best>
+WATCH: <one-sentence note on what to keep an eye on>
+NEXT-MOVE: <one-sentence suggestion of one concrete thing to do this coming week — not a buy/sell recommendation, more like "review your concentration" or "set a stop on X">`;
+    const ai = await aiApi({
+      model: DB.settings.anthropicModel || "claude-haiku-4-5-20251001",
+      max_tokens: 500,
+      temperature: 0.5,
+      system: "You are Cornileus, a candid AI financial counselor. You write a short weekly digest about the user's portfolio — what moved, what to watch, one suggested next move. No hedging, no jargon, no disclaimers. Refer to the user's actual positions, never invent ones.",
+      messages: [{ role: "user", content: userMsg }],
+    });
+    const text = (ai.content && ai.content[0] && ai.content[0].text) || "";
+    if (!text) throw new Error("Empty AI response");
+    const parse = (key) => {
+      const m = text.match(new RegExp("^" + key + ":\\s*(.*?)$", "im"));
+      return m ? m[1].trim() : "";
+    };
+    const parsed = {
+      headline: parse("HEADLINE"),
+      win: parse("WIN"),
+      watch: parse("WATCH"),
+      nextMove: parse("NEXT-MOVE"),
+      stats: { mkt, cost, weekChange, weekChangePct },
+    };
+    DB.stocks.lastWeeklyDigest = { date: new Date().toISOString().slice(0, 10), parsed };
+    save();
+    const out2 = document.getElementById("dig-result");
+    if (out2) out2.innerHTML = _stocksRenderDigest(parsed);
+  } catch (e) {
+    const out2 = document.getElementById("dig-result");
+    if (out2) out2.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">Digest failed: ${esc(e.message)}</div>`;
+  }
+}
+
+function _stocksRenderDigest(p) {
+  if (!p) return "";
+  const stats = p.stats || {};
+  const wkColor = (stats.weekChange || 0) >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+  return `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--blue,#007AFF);border-radius:var(--r);padding:16px;margin-bottom:10px">
+      ${p.headline ? `
+        <div style="display:flex;gap:10px;align-items:flex-start;margin-bottom:12px">
+          <div style="font-size:20px;flex-shrink:0">📰</div>
+          <div style="flex:1;font-size:14px;color:var(--t1);font-weight:600;line-height:1.4">${esc(p.headline)}</div>
+        </div>
+      ` : ""}
+      ${stats.weekChange != null ? `
+        <div style="background:var(--bg-elev);border-radius:10px;padding:9px 12px;margin-bottom:12px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:2px">7-day portfolio</div>
+          <div style="font-size:18px;font-weight:800;color:${wkColor};font-variant-numeric:tabular-nums" data-priv="amount">${stats.weekChange >= 0 ? "+" : "-"}$${Math.abs(stats.weekChange).toFixed(0)} (${(stats.weekChangePct*100).toFixed(2)}%)</div>
+        </div>
+      ` : ""}
+      ${p.win ? `
+        <div style="background:rgba(52,199,89,0.06);border:0.5px solid rgba(52,199,89,0.25);border-radius:10px;padding:10px 12px;margin-bottom:6px">
+          <div style="font-size:10px;color:var(--green,#34C759);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">🏆 Win of the week</div>
+          <div style="font-size:12.5px;color:var(--t1);line-height:1.45">${esc(p.win)}</div>
+        </div>
+      ` : ""}
+      ${p.watch ? `
+        <div style="background:rgba(255,149,0,0.06);border:0.5px solid rgba(255,149,0,0.25);border-radius:10px;padding:10px 12px;margin-bottom:6px">
+          <div style="font-size:10px;color:var(--orange,#FF9500);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">👀 Watch</div>
+          <div style="font-size:12.5px;color:var(--t1);line-height:1.45">${esc(p.watch)}</div>
+        </div>
+      ` : ""}
+      ${p.nextMove ? `
+        <div style="background:rgba(0,122,255,0.06);border:0.5px solid rgba(0,122,255,0.25);border-radius:10px;padding:10px 12px">
+          <div style="font-size:10px;color:var(--blue,#007AFF);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">📌 Next move</div>
+          <div style="font-size:12.5px;color:var(--t1);line-height:1.45">${esc(p.nextMove)}</div>
+        </div>
+      ` : ""}
+      <div style="font-size:10px;color:var(--t3);margin-top:10px;line-height:1.4;font-style:italic">AI commentary based on your portfolio + market signals. Not financial advice.</div>
+    </div>
+  `;
+}
+
+/* ---------- Market breadth card ----------
+   Composite Fear/Greed-style readout via /api/breadth. Cached in
+   DB.stocks.breadthCache for 30 minutes since underlying signals don't
+   move much faster than that. */
+async function _stocksLoadBreadth() {
+  const wrap = document.getElementById("stk-breadth-wrap");
+  if (!wrap) return;
+  if (!DB.stocks) DB.stocks = {};
+  const cache = DB.stocks.breadthCache;
+  const fresh = cache && cache.fetchedAt && (Date.now() - cache.fetchedAt < 30 * 60 * 1000) && cache.data;
+  if (fresh) { wrap.innerHTML = _stocksRenderBreadth(cache.data); return; }
+  wrap.innerHTML = `
+    <div class="section-h" style="margin-top:14px"><span class="lbl">Market sentiment</span></div>
+    <div style="background:var(--bg-elev);border-radius:10px;height:80px;animation:pulse 1.5s ease-in-out infinite"></div>
+  `;
+  try {
+    const r = await fetch("/api/breadth");
+    const data = await r.json();
+    if (!r.ok || data.error) { wrap.innerHTML = ""; return; }
+    DB.stocks.breadthCache = { data, fetchedAt: Date.now() };
+    await save();
+    wrap.innerHTML = _stocksRenderBreadth(data);
+  } catch (e) {
+    wrap.innerHTML = "";
+  }
+}
+
+function _stocksRenderBreadth(d) {
+  if (!d || d.score == null) return "";
+  const score = d.score | 0;
+  const band = d.band || "Neutral";
+  const color = score < 25 ? "var(--red,#FF3B30)"
+              : score < 45 ? "var(--orange,#FF9500)"
+              : score < 55 ? "var(--t2)"
+              : score < 75 ? "#9ACD32"
+              :              "var(--green,#34C759)";
+  const W = 260, H = 110, cx = W / 2, cy = H - 12, R = 100;
+  const pct = score / 100;
+  const ang = Math.PI + Math.PI * pct;
+  const nx = cx + (R - 8) * Math.cos(ang), ny = cy + (R - 8) * Math.sin(ang);
+  return `
+    <div class="section-h" style="margin-top:14px;display:flex;align-items:center;gap:8px">
+      <span class="lbl">Market sentiment</span>
+      <div style="background:var(--bg-elev);color:${color};border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase">${esc(band)}</div>
+      <div style="flex:1"></div>
+      <button class="act" onclick="DB.stocks.breadthCache=null;_stocksLoadBreadth()" style="font-size:11px">↻</button>
+    </div>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:6px">
+      <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
+        <div style="position:relative;flex-shrink:0">
+          <svg viewBox="0 0 ${W} ${H}" style="display:block;width:160px;height:75px">
+            <defs><linearGradient id="brg" x1="0" y1="0" x2="1" y2="0">
+              <stop offset="0%" stop-color="#FF3B30"/><stop offset="35%" stop-color="#FF9500"/>
+              <stop offset="55%" stop-color="#9ACD32"/><stop offset="100%" stop-color="#34C759"/>
+            </linearGradient></defs>
+            <path d="M ${cx - R},${cy} A ${R},${R} 0 0 1 ${cx + R},${cy}" fill="none" stroke="url(#brg)" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
+            <line x1="${cx}" y1="${cy}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" stroke="${color}" stroke-width="3" stroke-linecap="round"/>
+            <circle cx="${cx}" cy="${cy}" r="6" fill="${color}"/>
+            <text x="${cx}" y="${cy - 22}" text-anchor="middle" font-size="32" font-weight="800" fill="var(--t1)">${score}</text>
+          </svg>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11.5px;color:var(--t3);line-height:1.45">
+            Composite of S&amp;P 500 trend, momentum, VIX, and 10Y treasury direction. Sourced via SPY / ^VIX / ^TNX.
+          </div>
+          ${d.as_of ? `<div style="font-size:10px;color:var(--t3);margin-top:4px">As of ${esc(d.as_of)}</div>` : ""}
+        </div>
+      </div>
+      ${(d.signals || []).length ? `
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
+          ${(d.signals || []).map(s => {
+            const sc = s.tone === "bullish" ? "var(--green,#34C759)"
+                     : s.tone === "bearish" ? "var(--red,#FF3B30)"
+                     : "var(--t2)";
+            return `
+              <div style="display:flex;justify-content:space-between;align-items:baseline;background:var(--bg-elev);border-radius:6px;padding:5px 8px;gap:4px">
+                <span style="font-size:10.5px;color:var(--t3);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.label)}</span>
+                <span style="font-size:11px;color:${sc};font-weight:700;font-variant-numeric:tabular-nums;flex-shrink:0">${esc(s.value)}</span>
+              </div>
+            `;
+          }).join("")}
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+/* ---------- ETF inside-the-fund view ----------
+   When the user opens an ETF, an extra "Inside the fund" button appears. */
+async function _stocksLoadEtf(tk) {
+  const btn = document.getElementById("stk-etf-btn");
+  const out = document.getElementById("stk-etf-result");
+  if (btn) { btn.textContent = "Loading…"; btn.disabled = true; }
+  if (out) out.innerHTML = `<div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:10px;text-align:center;color:var(--t3);font-size:13px">📦 Looking up fund holdings…</div>`;
+  try {
+    const r = await fetch("/api/etf/" + encodeURIComponent(tk));
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || "HTTP " + r.status);
+    if (!data.etf) {
+      out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px;color:var(--t3);font-size:13px;text-align:center">${esc(tk)} isn't an ETF or mutual fund — no inside-the-fund data.</div>`;
+      return;
+    }
+    out.innerHTML = _stocksRenderEtf(data);
+  } catch (e) {
+    out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;margin-bottom:10px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  } finally {
+    if (btn) { btn.textContent = "📦 Inside the fund"; btn.disabled = false; }
+  }
+}
+
+function _stocksRenderEtf(d) {
+  const holdings = d.top_holdings || [];
+  const sectorWts = d.sector_weights || {};
+  const sectorEntries = Object.entries(sectorWts).sort((a, b) => (b[1] || 0) - (a[1] || 0));
+  const sectorColors = ["#34C759","#007AFF","#FF9500","#AF52DE","#FF3B30","#5856D6","#FF2D55","#5AC8FA","#FFCC00","#8E8E93","#34C7A8"];
+  const exp = d.expense_ratio != null ? (+d.expense_ratio * 100).toFixed(2) + "%" : "—";
+  const ytd = d.ytd_return != null ? ((+d.ytd_return * 100).toFixed(2) + "%") : "—";
+  const ytdColor = (+d.ytd_return || 0) >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+  return `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:10px">Inside the fund</div>
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:12px">
+        <div style="background:var(--bg-elev);border-radius:8px;padding:7px 9px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Expense</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1)">${esc(exp)}</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:7px 9px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">YTD return</div>
+          <div style="font-size:14px;font-weight:700;color:${ytdColor}">${esc(ytd)}</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:7px 9px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">AUM</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1)">${esc(_stkFmtNum(d.total_assets))}</div>
+        </div>
+      </div>
+      ${holdings.length ? `
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;margin-bottom:6px">Top holdings</div>
+        ${holdings.slice(0, 10).map(h => `
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:6px 10px;background:var(--bg-elev);border-radius:8px;margin-bottom:3px;cursor:pointer" onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(h.symbol||"")}),120)" role="button" tabindex="0">
+            <div style="width:56px;font-weight:700;font-size:12px">${esc(h.symbol || "—")}</div>
+            <div style="flex:1;min-width:0;font-size:11.5px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.name || "")}</div>
+            <div style="font-size:12px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${h.weight != null ? ((+h.weight * 100).toFixed(2) + "%") : "—"}</div>
+          </div>
+        `).join("")}
+      ` : ""}
+      ${sectorEntries.length ? `
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;margin:12px 0 6px">Sector mix</div>
+        <div style="display:flex;width:100%;height:10px;border-radius:5px;overflow:hidden;background:var(--bg-elev);margin-bottom:8px">
+          ${sectorEntries.map(([s, w], i) => `<div title="${esc(s)} · ${(w*100).toFixed(1)}%" style="background:${sectorColors[i % sectorColors.length]};width:${(w*100).toFixed(2)}%;height:100%"></div>`).join("")}
+        </div>
+        ${sectorEntries.slice(0, 6).map(([s, w], i) => `
+          <div style="display:flex;justify-content:space-between;font-size:11.5px;color:var(--t2);padding:3px 0">
+            <span style="display:inline-flex;align-items:center;gap:6px"><span style="width:8px;height:8px;border-radius:2px;background:${sectorColors[i % sectorColors.length]}"></span>${esc(s.replace(/_/g, " "))}</span>
+            <span style="font-variant-numeric:tabular-nums">${(w * 100).toFixed(1)}%</span>
+          </div>
+        `).join("")}
+      ` : ""}
+    </div>
+  `;
+}
+
+/* ---------- Dividend payout calendar ---------- */
+async function dividendCalendarSheet() {
+  const holdings = (DB.stocks && DB.stocks.holdings) || {};
+  const tickers = Object.keys(holdings).filter(tk => (+holdings[tk].shares || 0) > 0);
+  if (!tickers.length) {
+    openSheet(`
+      <h2 style="margin-bottom:4px">Dividend calendar</h2>
+      <p class="muted" style="font-size:12.5px;margin-bottom:14px">Add holdings first to see your dividend payment schedule.</p>
+      <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+    `);
+    return;
+  }
+  openSheet(`
+    <h2 style="margin-bottom:4px">Dividend calendar</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Upcoming ex-dividend dates and estimated payments across your holdings.</p>
+    <div id="div-result" style="text-align:center;padding:30px 14px;color:var(--t3);font-size:13px">📅 Pulling dividend dates…</div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  try {
+    const r = await fetch("/api/dividends/calendar?tickers=" + encodeURIComponent(tickers.join(",")));
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || "HTTP " + r.status);
+    _stocksRenderDividendCalendar(data.calendar || {}, holdings);
+  } catch (e) {
+    const out = document.getElementById("div-result");
+    if (out) out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  }
+}
+
+function _stocksRenderDividendCalendar(calendar, holdings) {
+  const out = document.getElementById("div-result");
+  if (!out) return;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const rows = Object.entries(calendar).map(([tk, info]) => {
+    if (!info || info.error || !info.ex_dividend_date || info.dividend_rate == null) return null;
+    const d = new Date(info.ex_dividend_date + "T00:00:00");
+    if (isNaN(d.getTime())) return null;
+    const days = Math.ceil((d.getTime() - today.getTime()) / 86400000);
+    const shares = +holdings[tk].shares || 0;
+    const quarterly = (info.dividend_rate / 4) * shares;
+    return { tk, date: d, days, rate: info.dividend_rate, yield: info.dividend_yield, shares, expected: quarterly };
+  }).filter(x => x).sort((a, b) => a.days - b.days);
+  if (!rows.length) {
+    out.innerHTML = `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:13px">No upcoming dividend dates found for your holdings.</div>`;
+    return;
+  }
+  const totalAnnual = rows.reduce((s, r) => s + r.rate * r.shares, 0);
+  out.innerHTML = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--green,#34C759);border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Projected annual income</div>
+      <div style="font-size:24px;font-weight:800;color:var(--green,#34C759);font-variant-numeric:tabular-nums" data-priv="amount">$${totalAnnual.toFixed(2)}</div>
+      <div style="font-size:11.5px;color:var(--t3);margin-top:2px">≈ $${(totalAnnual / 12).toFixed(2)}/mo if paid evenly</div>
+    </div>
+    <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Upcoming ex-dates</div>
+    ${rows.map(r => {
+      const lbl = r.days < 0 ? `${-r.days}d ago` : r.days === 0 ? "Today" : r.days === 1 ? "Tomorrow" : `in ${r.days}d`;
+      const dateStr = r.date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+      const past = r.days < 0;
+      return `
+        <div style="display:flex;align-items:center;gap:8px;padding:9px 11px;background:${past?'var(--card)':'var(--bg-elev)'};border:0.5px solid var(--sep);border-radius:8px;margin-bottom:4px;${past?'opacity:0.6':''}" onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(r.tk)}),120)" role="button" tabindex="0">
+          <div style="font-weight:700;font-size:13px;width:54px;flex-shrink:0">${esc(r.tk)}</div>
+          <div style="flex:1;font-size:11.5px;color:var(--t2)">${esc(dateStr)} · ${esc(lbl)}</div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:13px;font-weight:700;color:var(--green,#34C759);font-variant-numeric:tabular-nums">+$${r.expected.toFixed(2)}</div>
+            <div style="font-size:10.5px;color:var(--t3);font-variant-numeric:tabular-nums">$${r.rate.toFixed(2)}/yr/sh</div>
+          </div>
+        </div>
+      `;
+    }).join("")}
+    <div style="font-size:10.5px;color:var(--t3);margin-top:8px;line-height:1.4;font-style:italic">Per-payment estimate assumes quarterly schedule. Actual ex-dividend dates and per-quarter rates vary.</div>
+  `;
 }
 
 /* ---------- Portfolio history snapshot ----------
@@ -11867,6 +12256,8 @@ function _stocksRenderDetail(q) {
       <button onclick="_stocksAddHoldingSheet(${jsAttr(q.ticker)})" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">💼 I own this — track P&amp;L</button>
       <button onclick="_stocksLoadHolders(${jsAttr(q.ticker)})" id="stk-holders-btn" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">🏛️ Show holders + insiders</button>
       <div id="stk-holders-result"></div>
+      <button onclick="_stocksLoadEtf(${jsAttr(q.ticker)})" id="stk-etf-btn" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">📦 Inside the fund</button>
+      <div id="stk-etf-result"></div>
       <button onclick="_stocksLoadPeers(${jsAttr(q.ticker)})" id="stk-peers-btn" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">Show sector peers</button>
       <button onclick="openCounselor(${jsAttr(`What's your read on ${q.ticker}? Currently $${(+q.price).toFixed(2)}, ${(pct).toFixed(1)}% today${q.ytd_return != null ? `, ${((+q.ytd_return) * 100).toFixed(1)}% YTD` : ''}, P/E ${q.trailing_pe ? (+q.trailing_pe).toFixed(1) : 'n/a'}, RSI ${q.rsi14 ? (+q.rsi14).toFixed(0) : 'n/a'}, analyst target ${q.target_mean ? '$' + (+q.target_mean).toFixed(0) : 'n/a'}. Should I add it to my portfolio given my situation? Give me the why, not just a verdict.`)})" class="btn secondary" style="width:100%;margin-bottom:14px;font-size:13px">✨ Ask Cornileus about ${esc(q.ticker)}</button>
       <div id="stk-analyze-result"></div>
