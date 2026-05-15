@@ -2822,6 +2822,11 @@ function renderHeader() {
     if (tagline) { tlEl.textContent = '"' + tagline + '"'; tlEl.style.display = ""; }
     else { tlEl.style.display = "none"; }
   }
+  // Honor DB.counselor.hideLauncher — the flag has existed in DEFAULT_DB
+  // for a while but never gated the FAB, so toggling it from DevTools
+  // had no visible effect. Now wired through the .hidden CSS class.
+  const fab = document.getElementById("counselor-fab");
+  if (fab) fab.classList.toggle("hidden", !!(DB.counselor && DB.counselor.hideLauncher));
 }
 
 /* ================ HABITS ================ */
@@ -9571,6 +9576,12 @@ function renderSettings() {
           <div class="trail chev"></div>
         </div>
       ` : ""}
+      <div class="row">
+        <div class="lead">✨</div>
+        <div class="body"><div class="t1">Show Cylan ✨ button</div><div class="t2">The floating counselor button at the bottom-right</div></div>
+        <input type="checkbox" ${(DB.counselor && DB.counselor.hideLauncher) ? '' : 'checked'}
+          onchange="toggleCounselorLauncher(this.checked)" style="width:50px;height:30px" />
+      </div>
     </div>
 
     <div class="section-h"><span class="lbl">Appearance</span></div>
@@ -11208,6 +11219,15 @@ let _counselorState = null; // { busy: boolean, context: string }
 //               suggested-prompt set. If omitted, auto-detected from the
 //               currently active tab so the FAB and inline CTAs each get
 //               appropriate suggestions without per-caller plumbing.
+// Toggle the floating Cylan ✨ FAB. Wired from a Settings checkbox.
+// `show` true = hideLauncher false (button visible), and vice versa.
+function toggleCounselorLauncher(show) {
+  if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false };
+  DB.counselor.hideLauncher = !show;
+  try { save(); } catch {}
+  if (typeof renderHeader === "function") renderHeader();
+}
+
 function openCounselor(seedPrompt, context) {
   // Same-origin /api/ai/messages handles auth; if not configured, falls back
   // to the user's Cloudflare Worker if one is set. No pre-flight gate here.
@@ -20948,7 +20968,7 @@ function init() {
     debtAccounts, setDebtMeta, payoffSchedule, debtMetaSheet, debtSettingsSheet,
     debtConsolidationSheet,
     fetchInsight, getMonthlyInsight, runAiInsight, maybeFireDailyInsight,
-    openCounselor, counselorRender, counselorSend, counselorClear, buildCounselorSnapshot,
+    openCounselor, toggleCounselorLauncher, counselorRender, counselorSend, counselorClear, buildCounselorSnapshot,
     counselorToggleKeep, counselorNewChat,
     saveCylanInsight, cylanInsightsSheet, _copyInsightText, _removeInsight,
     _parseAndRunActions, _runCylanAction, _renderActionChips,
