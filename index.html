@@ -1989,7 +1989,7 @@ const DEFAULT_DB = {
   budget: { income: 0, expenses: [] },
   spend:  [],   // manual + auto-imported transactions: [{id, date, category, amount, note, source:'manual'|'plaid', plaid_id?, merchant_name?, pending?}]
   wins:   [],
-  stocks: { recentTickers: [], account: 10000, watchlist: [], holdings: {}, quoteCache: {} },
+  stocks: { recentTickers: [], account: 10000, watchlist: [], holdings: {}, quoteCache: {}, alerts: [] },
   // Timestamp (ms) of the user's last successful exportData() — drives the
   // backup-reminder Pulse on Today. 0 = never exported.
   lastExportAt: 0,
@@ -8458,6 +8458,34 @@ function renderMoney() {
       ${learnEntry}
 
       <div id="wh-assets"></div>
+      ${(() => {
+        const holdings = (DB.stocks && DB.stocks.holdings) || {};
+        const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+        const entries = Object.entries(holdings).filter(([_, h]) => h && +h.shares > 0);
+        if (!entries.length) return "";
+        let total = 0, costTotal = 0;
+        for (const [tk, h] of entries) {
+          const shares = +h.shares || 0;
+          const q = cache[tk];
+          const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+          total += price * shares;
+          costTotal += (+h.cost || 0) * shares;
+        }
+        const pl = total - costTotal;
+        const plColor = pl >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+        return `
+          <div class="section-h"><span class="lbl">Stock portfolio</span><button class="act" onclick="showTab('stocks')">View →</button></div>
+          <div class="row tappable" onclick="showTab('stocks')" style="background:var(--card);border-radius:var(--r);padding:12px 14px;align-items:center;cursor:pointer">
+            <div class="lead">💼</div>
+            <div class="body">
+              <div class="t1">${entries.length} holding${entries.length === 1 ? "" : "s"}</div>
+              <div class="t2" style="font-size:11.5px"><b style="color:${plColor}">${pl >= 0 ? "+" : ""}$${Math.abs(pl).toFixed(2)}</b> unrealized · cost $${costTotal.toFixed(0)}</div>
+            </div>
+            <div class="trail" style="font-weight:700;color:var(--t1)" data-priv="amount">${fmt$0(total)}</div>
+          </div>
+        `;
+      })()}
+
       <div class="section-h">
         <span class="lbl">Manual assets</span>
         <span style="display:flex;gap:8px">
@@ -9628,6 +9656,11 @@ function renderStocks() {
         <div class="body"><div class="t1">Upcoming earnings</div><div class="t2">Next earnings dates across your watchlist + holdings</div></div>
         <div class="trail chev"></div>
       </div>
+      <div class="row tappable" onclick="priceAlertsSheet()" role="button" tabindex="0">
+        <div class="lead">🔔</div>
+        <div class="body"><div class="t1">Price alerts</div><div class="t2">Notify me when a ticker crosses a target price</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="window.open('/stockanalyzer','_blank')" role="button" tabindex="0">
         <div class="lead">🏠</div>
         <div class="body"><div class="t1">Housing &amp; mortgages</div><div class="t2">Live mortgage rates, ZIP-level housing data, affordability calc</div></div>
@@ -9995,6 +10028,126 @@ async function _stocksRemoveHolding(tk) {
   if (typeof renderStocks === "function" && document.getElementById("page-stocks")) renderStocks();
 }
 
+/* ---------- Price alerts ----------
+   DB.stocks.alerts = [{id, ticker, threshold, direction: 'above'|'below',
+                        createdAt, triggeredAt, message?}]
+   Evaluated client-side every time the quote cache refreshes. When a price
+   crosses the threshold, we mark the alert as triggered, fire a notification
+   (if granted), and toast the user. Triggered alerts are kept on the list
+   (with a strikethrough + 'Re-arm' option) so the user has a history. */
+function _stocksAlertsCheck() {
+  if (!DB.stocks || !Array.isArray(DB.stocks.alerts) || !DB.stocks.alerts.length) return;
+  const cache = DB.stocks.quoteCache || {};
+  let triggered = 0;
+  for (const a of DB.stocks.alerts) {
+    if (a.triggeredAt) continue;
+    const q = cache[a.ticker];
+    if (!q || q.error || q.price == null) continue;
+    const price = +q.price;
+    const crossed = a.direction === "above" ? price >= +a.threshold : price <= +a.threshold;
+    if (crossed) {
+      a.triggeredAt = Date.now();
+      triggered++;
+      const msg = `${a.ticker} ${a.direction === "above" ? "crossed above" : "fell below"} $${(+a.threshold).toFixed(2)} (now $${price.toFixed(2)})`;
+      try { toast(msg); } catch {}
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        try { new Notification("Price alert", { body: msg, icon: "icon-180.png" }); } catch {}
+      }
+    }
+  }
+  if (triggered) {
+    save();
+    if (typeof renderStocks === "function" && document.getElementById("page-stocks")) renderStocks();
+  }
+}
+
+function priceAlertsSheet() {
+  if (!DB.stocks) DB.stocks = {};
+  if (!Array.isArray(DB.stocks.alerts)) DB.stocks.alerts = [];
+  const alerts = DB.stocks.alerts;
+  const active = alerts.filter(a => !a.triggeredAt);
+  const fired = alerts.filter(a => a.triggeredAt);
+  openSheet(`
+    <h2 style="margin-bottom:4px">Price alerts</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Get a ping when a ticker crosses your target. Evaluated each time quotes refresh.</p>
+    <div style="display:grid;grid-template-columns:1.2fr 0.8fr 0.7fr auto;gap:6px;margin-bottom:12px">
+      <input id="alert-tk" placeholder="Ticker" autocapitalize="characters" autocorrect="off"
+        style="background:var(--bg-elev);padding:10px 11px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box" />
+      <input id="alert-price" type="number" inputmode="decimal" placeholder="Price"
+        style="background:var(--bg-elev);padding:10px 11px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box" />
+      <select id="alert-dir" style="background:var(--bg-elev);padding:10px 6px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:12px;box-sizing:border-box">
+        <option value="above">↑ above</option>
+        <option value="below">↓ below</option>
+      </select>
+      <button class="btn" onclick="_stocksAddAlert()" style="padding:10px 12px;font-size:12.5px">Add</button>
+    </div>
+    ${typeof Notification !== "undefined" && Notification.permission !== "granted" ? `
+      <div style="background:var(--card);border:0.5px solid var(--orange,#FF9500);border-radius:10px;padding:10px 12px;margin-bottom:12px;font-size:11.5px;color:var(--t2);line-height:1.4">
+        🔔 To get a system notification when alerts fire, <a href="#" onclick="Notification.requestPermission().then(()=>toast('Updated'));return false" style="color:var(--blue,#007AFF);font-weight:600">grant notification permission</a>. Alerts will still toast in-app either way.
+      </div>` : ""}
+    ${active.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Active (${active.length})</div>
+      ${active.map(a => {
+        const q = (DB.stocks.quoteCache || {})[a.ticker];
+        const price = q && !q.error && q.price != null ? +q.price : null;
+        const dist = price != null ? ((+a.threshold - price) / price) * 100 : null;
+        return `
+          <div style="display:flex;align-items:center;gap:8px;padding:8px 11px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px">
+            <div style="width:48px;font-weight:700;font-size:13px;flex-shrink:0">${esc(a.ticker)}</div>
+            <div style="flex:1;font-size:12px;color:var(--t2)">${a.direction === "above" ? "↑ Above" : "↓ Below"} <b style="color:var(--t1)">$${(+a.threshold).toFixed(2)}</b></div>
+            ${price != null ? `<div style="font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums">now $${price.toFixed(2)}${dist != null ? ` (${dist >= 0 ? "+" : ""}${dist.toFixed(1)}%)` : ""}</div>` : ""}
+            <button onclick="_stocksRemoveAlert(${jsAttr(a.id)})" style="background:transparent;border:0;color:var(--red,#FF3B30);font-size:14px;padding:2px 4px;cursor:pointer">×</button>
+          </div>
+        `;
+      }).join("")}` : `<div style="color:var(--t3);font-size:12.5px;font-style:italic;margin-bottom:10px">No active alerts yet.</div>`}
+    ${fired.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:14px 0 6px">Triggered</div>
+      ${fired.map(a => `
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 11px;background:var(--card);border:0.5px solid var(--sep);border-radius:8px;margin-bottom:4px;opacity:0.7">
+          <div style="width:48px;font-weight:700;font-size:13px;flex-shrink:0;text-decoration:line-through">${esc(a.ticker)}</div>
+          <div style="flex:1;font-size:11.5px;color:var(--t3)">${a.direction === "above" ? "↑" : "↓"} $${(+a.threshold).toFixed(2)} · ${esc(new Date(a.triggeredAt).toLocaleDateString())}</div>
+          <button onclick="_stocksRearmAlert(${jsAttr(a.id)})" style="background:transparent;border:0.5px solid var(--sep);color:var(--t2);border-radius:6px;font-size:10.5px;padding:3px 8px;cursor:pointer">Re-arm</button>
+          <button onclick="_stocksRemoveAlert(${jsAttr(a.id)})" style="background:transparent;border:0;color:var(--red,#FF3B30);font-size:14px;padding:2px 4px;cursor:pointer">×</button>
+        </div>
+      `).join("")}` : ""}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  setTimeout(() => { const el = document.getElementById("alert-tk"); if (el) el.focus(); }, 60);
+}
+
+async function _stocksAddAlert() {
+  const tk = (document.getElementById("alert-tk").value || "").trim().toUpperCase().replace(/[^A-Z0-9.-]/g, "");
+  const price = parseFloat(document.getElementById("alert-price").value);
+  const direction = document.getElementById("alert-dir").value || "above";
+  if (!tk) { toast("Ticker required"); return; }
+  if (!isFinite(price) || price <= 0) { toast("Price must be > 0"); return; }
+  if (!DB.stocks) DB.stocks = {};
+  if (!Array.isArray(DB.stocks.alerts)) DB.stocks.alerts = [];
+  const id = "a_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
+  DB.stocks.alerts.push({ id, ticker: tk, threshold: price, direction, createdAt: Date.now() });
+  // Auto-add ticker to watchlist so quotes are fetched
+  if (!Array.isArray(DB.stocks.watchlist)) DB.stocks.watchlist = [];
+  if (!DB.stocks.watchlist.includes(tk)) DB.stocks.watchlist.push(tk);
+  await save();
+  toast(`Alert set for ${tk}`);
+  priceAlertsSheet();
+}
+
+async function _stocksRemoveAlert(id) {
+  if (!DB.stocks || !Array.isArray(DB.stocks.alerts)) return;
+  DB.stocks.alerts = DB.stocks.alerts.filter(a => a.id !== id);
+  await save();
+  priceAlertsSheet();
+}
+
+async function _stocksRearmAlert(id) {
+  if (!DB.stocks || !Array.isArray(DB.stocks.alerts)) return;
+  const a = DB.stocks.alerts.find(x => x.id === id);
+  if (a) a.triggeredAt = 0;
+  await save();
+  priceAlertsSheet();
+}
+
 // Renders the watchlist with cached data (no fetch). Refresh fetches.
 function _stocksRenderWatchlist() {
   const out = document.getElementById("stk-watchlist");
@@ -10076,6 +10229,7 @@ async function _stocksRefreshAll() {
       _stocksRenderWatchlist();
       _stocksRenderPortfolio();
       _stocksRenderTopMovers();
+      _stocksAlertsCheck();
     }
   } catch (e) {
     toast("Couldn't fetch quotes: " + (e.message || "network"));
