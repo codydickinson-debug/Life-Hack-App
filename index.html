@@ -21435,7 +21435,28 @@ function renderSettings() {
       </div>
       <div class="row tappable" onclick="syncNow()">
         <div class="lead">↻</div>
-        <div class="body"><div class="t1">Sync transactions now</div><div class="t2">Pull latest from connected accounts</div></div>
+        <div class="body">
+          <div class="t1">Sync transactions now</div>
+          <div class="t2">${(() => {
+            // Compute the most recent successful sync across all items so
+            // the user knows the freshness state at a glance — was just
+            // "Pull latest from connected accounts" with no context.
+            const items = DB.items || [];
+            const recent = items
+              .map(it => it.last_sync_at ? new Date(it.last_sync_at).getTime() : 0)
+              .filter(t => t > 0)
+              .sort((a, b) => b - a)[0];
+            if (!recent) return "Pull latest — no syncs yet";
+            const ageMin = Math.floor((Date.now() - recent) / 60000);
+            const ageHr  = Math.floor(ageMin / 60);
+            const ageDay = Math.floor(ageHr / 24);
+            const label = ageMin < 2 ? "just now"
+                        : ageMin < 60 ? `${ageMin} min ago`
+                        : ageHr  < 24 ? `${ageHr} hour${ageHr===1?"":"s"} ago`
+                        :                `${ageDay} day${ageDay===1?"":"s"} ago`;
+            return `Last synced ${label}`;
+          })()}</div>
+        </div>
         <div class="trail chev"></div>
       </div>
       ${((DB.plaidRecurringSuggestions || {}).inflows || []).length + ((DB.plaidRecurringSuggestions || {}).outflows || []).length > 0 ? `
@@ -29041,9 +29062,24 @@ function smartPlaysSheet() {
     })}
   `;
   const dismissedCount = Object.keys(DB.dismissedPlays || {}).length;
+  // Profile prompt — Smart Plays leans heavily on age, filing status,
+  // 401k match, HSA eligibility. Without them, recommendations stay
+  // generic. Surface a banner if the user hasn't filled in age yet.
+  const profileMissing = !(+(DB.profile && DB.profile.age) > 0);
+  const profileBanner = profileMissing ? `
+    <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.30);border-radius:10px;padding:12px 14px;margin-bottom:12px;display:flex;align-items:flex-start;gap:10px;cursor:pointer" onclick="closeSheet();setTimeout(()=>profileSheet(),120)">
+      <div style="font-size:20px;flex-shrink:0">👤</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--t1)">Sharper plays in 30 seconds</div>
+        <div style="font-size:11.5px;color:var(--t2);margin-top:2px">Add your age + filing status + 401k match — recommendations get noticeably better. Tap to open.</div>
+      </div>
+      <div class="trail chev" style="margin-top:2px"></div>
+    </div>
+  ` : "";
   openSheet(`
     <h2>💡 Smart money plays</h2>
     <p class="muted" style="font-size:12px;margin-bottom:14px">Personalized next moves based on your situation. Education, not advice.</p>
+    ${profileBanner}
     ${body}
     ${dismissedCount > 0 ? `<button class="btn secondary" style="width:100%;margin-top:10px;font-size:12px" onclick="resetDismissedPlays();closeSheet();smartPlaysSheet()">Reset dismissed plays (${dismissedCount})</button>` : ""}
     <div class="actions" style="margin-top:14px">
