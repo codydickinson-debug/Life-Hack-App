@@ -4079,6 +4079,9 @@ function renderToday() {
   // wins streak, mood). Habits are intentionally NOT in this rotation —
   // they have their own milestone banner farther down the page.
   const dailyPulse = (() => {
+    // Each insight may have an optional `amount` string. The renderer
+    // wraps it in <span data-priv="amount"> so privacy mode blurs it
+    // the same way every other $ on the page is blurred.
     // 1) Plan deadline near (≤30d) with $ remaining
     const plans = (DB.plans || []).filter(p => !p.completed && p.target_date && +p.target_amount > 0);
     for (const p of plans.sort((a, b) => new Date(a.target_date) - new Date(b.target_date))) {
@@ -4086,7 +4089,9 @@ function renderToday() {
       const remaining = (+p.target_amount || 0) - (+p.current_amount || 0);
       if (tdays >= 0 && tdays <= 30 && remaining > 0) {
         return { emoji: p.emoji || "🎯",
-          text: `${p.title} — ${fmt$0(remaining)} to go in ${tdays}d`,
+          text: `${p.title} —`,
+          amount: fmt$0(remaining),
+          suffix: `to go in ${tdays}d`,
           onclick: `showTab('planning')` };
       }
     }
@@ -4100,7 +4105,9 @@ function renderToday() {
         const change = (hist[hist.length - 1].total || 0) - (past[past.length - 1].total || 0);
         if (change >= 100) {
           return { emoji: "📈",
-            text: `Net worth up ${fmt$0(change)} this month`,
+            text: `Net worth up`,
+            amount: fmt$0(change),
+            suffix: `this month`,
             onclick: `showTab('money')` };
         }
       }
@@ -4277,7 +4284,7 @@ function renderToday() {
     ${dailyPulse ? `
       <button onclick="${dailyPulse.onclick}" style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--orange);border-radius:var(--r);padding:10px 14px;margin:8px 0 12px;display:flex;align-items:center;gap:10px;width:100%;text-align:left;cursor:pointer;font:inherit;transition:transform .1s ease">
         <span style="font-size:18px;flex-shrink:0;line-height:1">${dailyPulse.emoji}</span>
-        <span style="flex:1;min-width:0;font-size:13px;color:var(--t1);line-height:1.35">${esc(dailyPulse.text)}</span>
+        <span style="flex:1;min-width:0;font-size:13px;color:var(--t1);line-height:1.35">${esc(dailyPulse.text)}${dailyPulse.amount ? ` <span data-priv="amount" style="font-weight:600">${esc(dailyPulse.amount)}</span>` : ""}${dailyPulse.suffix ? ` ${esc(dailyPulse.suffix)}` : ""}</span>
         <span style="color:var(--t3);font-size:14px;flex-shrink:0">›</span>
       </button>
     ` : ""}
