@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0a0c" />
+<title>Support — Ascend</title>
+<meta name="description" content="Get help with Ascend — habits, money, and your AI counselor." />
+<link rel="icon" type="image/png" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<style>
+  :root {
+    --bg: #0a0a0c;
+    --bg-elev: #14141a;
+    --card: #16161c;
+    --sep: #26262e;
+    --t1: #f6f7f9;
+    --t2: #c2c4ca;
+    --t3: #7e8189;
+    --purple: #7c3aed;
+    --pink: #ec4899;
+    --green: #34C759;
+    --orange: #FF9500;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--t1);
+    font: 16px/1.6 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  a { color: var(--purple); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 48px 24px 96px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 36px; padding-bottom: 24px; border-bottom: 1px solid var(--sep); }
+  header img { width: 48px; height: 48px; border-radius: 11px; }
+  header h1 { margin: 0; font-size: 28px; letter-spacing: -0.5px; }
+  header .sub { font-size: 14px; color: var(--t3); margin-top: 4px; }
+  h2 { font-size: 20px; margin: 36px 0 12px; letter-spacing: -0.3px; }
+  p, li { color: var(--t2); }
+  ul { padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  .card { background: var(--card); border: 1px solid var(--sep); border-radius: 14px; padding: 18px 20px; margin: 14px 0; }
+  .card h3 { margin: 0 0 6px; font-size: 16px; color: var(--t1); display: flex; align-items: center; gap: 10px; }
+  .card .e { font-size: 22px; }
+  .card p { margin: 4px 0 0; font-size: 14px; }
+  .btn-row { display: flex; gap: 10px; margin-top: 14px; flex-wrap: wrap; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 10px 16px;
+    background: var(--bg-elev); border: 1px solid var(--sep); border-radius: 10px;
+    color: var(--t1); font-size: 14px; font-weight: 600;
+  }
+  .btn.primary { background: linear-gradient(135deg, var(--purple), var(--pink)); border-color: transparent; color: #fff; }
+  .btn:hover { transform: translateY(-1px); }
+  details { background: var(--card); border: 1px solid var(--sep); border-radius: 12px; padding: 14px 18px; margin: 10px 0; }
+  details summary { cursor: pointer; font-weight: 600; font-size: 15px; color: var(--t1); }
+  details[open] summary { margin-bottom: 10px; }
+  details p, details li { font-size: 14px; }
+  code { background: var(--bg-elev); padding: 2px 6px; border-radius: 4px; font-size: 13px; color: var(--t1); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  footer { margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--sep); font-size: 13px; color: var(--t3); }
+  footer a { color: var(--t3); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="icon-192.png" alt="Ascend logo" />
+    <div>
+      <h1>Support</h1>
+      <div class="sub">Help with Ascend — habits, money, and Cornileus</div>
+    </div>
+  </header>
+
+  <p>Ascend is open source and built by a small team. Below are the fastest ways to get help, report a bug, or send feedback.</p>
+
+  <h2>Get help</h2>
+
+  <div class="card">
+    <h3><span class="e">💡</span> Try the in-app tour first</h3>
+    <p>Open Settings → 🧭 Take the tour. 12 quick steps with live demo data show every feature in action.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="e">✨</span> Ask Cornileus</h3>
+    <p>Tap the ✨ button on any screen. Cornileus is the in-app counselor — it knows the app and can answer "where do I…?" questions about features as well as money questions.</p>
+  </div>
+
+  <div class="card">
+    <h3><span class="e">📋</span> Open a GitHub issue</h3>
+    <p>For bug reports, feature requests, or "this isn't working" — fastest path to a fix.</p>
+    <div class="btn-row">
+      <a class="btn primary" href="https://github.com/codydickinson-debug/Life-Hack-App/issues/new" target="_blank" rel="noopener noreferrer">New issue ↗</a>
+      <a class="btn" href="https://github.com/codydickinson-debug/Life-Hack-App/issues" target="_blank" rel="noopener noreferrer">Existing issues ↗</a>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3><span class="e">🔒</span> Report a security issue</h3>
+    <p>Found a vulnerability? Please report privately first — see our <a href="/.well-known/security.txt">security.txt</a> or open a <a href="https://github.com/codydickinson-debug/Life-Hack-App/security/advisories/new" target="_blank" rel="noopener noreferrer">private security advisory</a> on GitHub.</p>
+  </div>
+
+  <h2>Common questions</h2>
+
+  <details>
+    <summary>I forgot my passphrase. Can I recover my data?</summary>
+    <p><strong>No, by design.</strong> Encryption is zero-knowledge — the passphrase derives a key that's never stored or sent anywhere. There's no recovery code, no server backdoor. The only way forward is Settings → Reset everything, which wipes the encrypted blob and starts you over.</p>
+    <p>Always export a backup (Settings → Export data) BEFORE you set a passphrase, and again whenever you make big changes.</p>
+  </details>
+
+  <details>
+    <summary>I cleared my browser data / uninstalled the PWA. Where's my data?</summary>
+    <p>Local storage is gone with the browser data. If you exported a backup (.json or .ascend) it's still on your device — Settings → Import data restores it.</p>
+    <p>No remote copy exists; nothing leaves your device unless you opt into bank sync, AI counselor, or stocks queries.</p>
+  </details>
+
+  <details>
+    <summary>How do I connect my bank?</summary>
+    <p>Settings → Show advanced features → Bank sync. Requires a backend you control (Cloudflare Worker, free tier). Full walkthrough in <a href="https://github.com/codydickinson-debug/Life-Hack-App/blob/main/DEPLOY.md" target="_blank" rel="noopener noreferrer">DEPLOY.md</a>.</p>
+    <p>Bank sync is read-only — Ascend never moves money.</p>
+  </details>
+
+  <details>
+    <summary>Cornileus isn't answering. Why?</summary>
+    <p>Most likely the backend AI proxy hit the per-user daily call cap (default 50). Try again tomorrow. If you've configured your own Cloudflare Worker with an Anthropic key, check the Worker logs.</p>
+    <p>Cornileus also goes silent if you close the chat sheet mid-request — that's intentional (chat auto-clears on close for privacy).</p>
+  </details>
+
+  <details>
+    <summary>My data feels off — wrong totals, missing transactions, etc.</summary>
+    <p>Settings → Export data first (preserve a snapshot), then check:</p>
+    <ul>
+      <li>Privacy mode (👁 top-right) blurs amounts. If everything looks blurry, that's why.</li>
+      <li>Money sub-tabs filter the view — check you're on the right one.</li>
+      <li>Plaid sync can be delayed by hours for some banks. Settings → Bank sync → Sync now forces a refresh.</li>
+      <li>Hidden tabs/sections (Settings → Customize Today / Customize tabs) might be removing what you expected.</li>
+    </ul>
+    <p>If something's still off, open an issue with the export attached (you can redact amounts first).</p>
+  </details>
+
+  <details>
+    <summary>How do I install Ascend on my iPhone?</summary>
+    <p>Open <a href="https://life-hack-app.vercel.app">life-hack-app.vercel.app</a> in <strong>Safari</strong> (not Chrome), tap Share → "Add to Home Screen". It'll launch fullscreen and feel like a native app.</p>
+    <p>An App Store build is in the works.</p>
+  </details>
+
+  <details>
+    <summary>Can I sync across devices?</summary>
+    <p>Not yet — Ascend is local-first by design (one of the trade-offs of having no accounts and no central server). Use Settings → Export data on one device, then Settings → Import data on the other. The encrypted export format includes everything.</p>
+  </details>
+
+  <details>
+    <summary>How do I send feedback (not a bug, just an idea)?</summary>
+    <p>Settings → Help → Send feedback in the app generates a pre-filled debug snapshot. Or open a GitHub issue tagged "enhancement".</p>
+  </details>
+
+  <h2>What you can do without help</h2>
+
+  <ul>
+    <li><strong>Export everything:</strong> Settings → Data → Export data (encrypted or plaintext).</li>
+    <li><strong>Reset everything:</strong> Settings → Data → Reset everything (requires typing DELETE; backup-first prompt).</li>
+    <li><strong>Replay the tour:</strong> Settings → 🧭 Take the tour.</li>
+    <li><strong>Toggle privacy mode:</strong> 👁 icon in the top-right blurs every dollar amount.</li>
+    <li><strong>Set a passphrase:</strong> Settings → Privacy & encryption → Set a passphrase. AES-encrypts everything at rest.</li>
+  </ul>
+
+  <footer>
+    <a href="/">← Back to Ascend</a> &nbsp;·&nbsp;
+    <a href="/marketing">About</a> &nbsp;·&nbsp;
+    <a href="/privacy">Privacy</a> &nbsp;·&nbsp;
+    <a href="/terms">Terms</a>
+  </footer>
+</div>
+</body>
+</html>

@@ -10,7 +10,8 @@
     { "source": "/stockanalyzer-static/(.*)", "destination": "/api/index" },
     { "source": "/marketing", "destination": "/marketing.html" },
     { "source": "/privacy",   "destination": "/privacy.html" },
-    { "source": "/terms",     "destination": "/terms.html" }
+    { "source": "/terms",     "destination": "/terms.html" },
+    { "source": "/support",   "destination": "/support.html" }
   ],
   "functions": {
     "api/index.py": {

@@ -6010,6 +6010,7 @@ function renderGoals() {
 
   $("#page-goals").innerHTML = `
     <div class="lg-title">Goals</div>
+    <div class="muted" style="margin:-12px 0 18px;font-size:14px">What you're chasing — daily, this quarter, and life-tier.</div>
     ${overviewHtml}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
       <button class="add-row" style="margin:0" onclick="addGoalSheet()"><span class="plus">+</span> New goal</button>
@@ -9076,6 +9077,7 @@ function renderStats() {
 
   $("#page-stats").innerHTML = `
     <div style="display:flex;align-items:baseline;flex-wrap:wrap"><div class="lg-title" style="margin-right:0">Stats</div>${achChip}</div>
+    <div class="muted" style="margin:-12px 0 18px;font-size:14px">Streaks, completion rates, and what's working over time.</div>
 
     ${journey.daysTracking > 0 ? `
       <div style="background:var(--card);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
@@ -13900,6 +13902,11 @@ function renderSettings() {
       <div class="row tappable" onclick="sendFeedbackSheet()">
         <div class="lead">✉️</div>
         <div class="body"><div class="t1">Send feedback</div><div class="t2">Report a bug or share an idea</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="window.open('/support','_blank','noopener')">
+        <div class="lead">🆘</div>
+        <div class="body"><div class="t1">Support &amp; FAQ</div><div class="t2">Common questions, security reports, and contact</div></div>
         <div class="trail chev"></div>
       </div>
     </div>
