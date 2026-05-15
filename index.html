@@ -4730,6 +4730,79 @@ function globalSearchSheet() {
 // Quick-reference tips sheet — answers the most common 'how do I…?' questions
 // without making the user dig through the tabs. Replaces the lack of a real
 // help page in a mainstream app.
+// "Explore Ascend" — feature catalog. The app has grown so many features
+// across so many sheets that even existing users miss capabilities. This
+// is a single-page index with a tappable card per category — opens the
+// relevant sheet or tab directly. Searchable so power users can find a
+// feature by typing.
+function exploreAscendSheet() {
+  const sections = [
+    { group: "Habits", items: [
+      { emoji: "✓",  title: "Add a habit",         desc: "Daily check-off or count-based tracking", onclick: "closeSheet();setTimeout(()=>addHabitSheet(),100)" },
+      { emoji: "↕",  title: "Reorder habits",      desc: "Drag your habit list into a custom order",  onclick: "closeSheet();setTimeout(()=>reorderHabitsSheet(),100)", show: () => (DB.habits || []).length >= 2 },
+      { emoji: "⏸",  title: "Pause a habit",       desc: "Vacation-friendly streak protection",       onclick: "closeSheet();setTimeout(()=>{showTab('today');toast('Tap the streak pill on any habit')},120)", show: () => (DB.habits || []).length > 0 },
+    ]},
+    { group: "Goals + plans", items: [
+      { emoji: "◎",  title: "Set a goal",          desc: "With up to 8 milestones",                   onclick: "closeSheet();setTimeout(()=>addGoalSheet(),100)" },
+      { emoji: "🗺️", title: "Build a roadmap",     desc: "Multi-phase plans with milestones + chart", onclick: `closeSheet();setTimeout(()=>openCounselor("Build me a complete multi-phase roadmap based on my actual situation. Use add_roadmap with at least 4 phases, each including targetAmount, targetDate, 3-5 milestones, and 2-4 monthly actions tied to my real numbers."),100)` },
+      { emoji: "📚", title: "Goal templates",      desc: "Common starter goals with steps pre-set",   onclick: "closeSheet();setTimeout(()=>goalTemplatesSheet(),100)" },
+    ]},
+    { group: "Money", items: [
+      { emoji: "💸", title: "Log a transaction",   desc: "Quick add, scan a receipt, or bulk import", onclick: "closeSheet();setTimeout(()=>quickAddSpendSheet(),100)" },
+      { emoji: "💰", title: "Add a savings goal",  desc: "Earmark for any target",                    onclick: "closeSheet();setTimeout(()=>addSavingSheet(),100)" },
+      { emoji: "🔍", title: "Subscription audit",  desc: "Keep / negotiate / cancel each recurring",  onclick: "closeSheet();setTimeout(()=>subscriptionAuditSheet(),100)" },
+      { emoji: "🔎", title: "Detected recurring",  desc: "Charges that look periodic but untracked",  onclick: "closeSheet();setTimeout(()=>detectedRecurringSheet(),100)" },
+      { emoji: "💡", title: "Smart Plays",         desc: "Personalized money next-steps",             onclick: "closeSheet();setTimeout(()=>smartPlaysSheet(),100)" },
+    ]},
+    { group: "Cornileus", items: [
+      { emoji: "✨", title: "Open Cornileus",      desc: "AI counselor that knows your numbers",       onclick: "closeSheet();setTimeout(()=>openCounselor(),100)" },
+      { emoji: "📌", title: "Saved insights",      desc: "Pinned replies that survive auto-clear",     onclick: "closeSheet();setTimeout(()=>cylanInsightsSheet(),100)" },
+    ]},
+    { group: "Stats + history", items: [
+      { emoji: "🏆", title: "Achievements",        desc: "22 milestones across the app",               onclick: "closeSheet();setTimeout(()=>achievementsSheet(),100)" },
+      { emoji: "📊", title: "Year in review",      desc: "Heatmap + bar charts of your year",          onclick: "closeSheet();setTimeout(()=>yearReviewSheet(),100)" },
+      { emoji: "📝", title: "Weekly review",       desc: "Reflect on the last 7 days",                 onclick: "closeSheet();setTimeout(()=>weeklyReviewSheet(),100)" },
+      { emoji: "🔍", title: "Global search",       desc: "Cmd/Ctrl+K — search across everything",      onclick: "closeSheet();setTimeout(()=>globalSearchSheet(),100)" },
+    ]},
+    { group: "Setup + privacy", items: [
+      { emoji: "🎛️", title: "Customize Today",    desc: "Toggle which sections show on the main tab", onclick: "closeSheet();setTimeout(()=>customizeTodaySheet(),100)" },
+      { emoji: "🔒", title: "Set a passphrase",    desc: "AES-GCM encrypt all data on this device",    onclick: "closeSheet();setTimeout(()=>showTab('settings'),120)" },
+      { emoji: "👁",  title: "Privacy mode",        desc: "Blur every $ amount on screen",              onclick: "closeSheet();togglePrivacyMode()" },
+      { emoji: "⌨️",  title: "Keyboard shortcuts",  desc: "Tab navigation + search hotkey",             onclick: "closeSheet();setTimeout(()=>keyboardShortcutsSheet(),100)" },
+      { emoji: "▶",  title: "Take the tour",       desc: "Replay the guided walkthrough",              onclick: "closeSheet();setTimeout(()=>startTutorial(),100)" },
+    ]},
+  ];
+  const grpHtml = sections.map(g => {
+    const items = g.items.filter(it => !it.show || it.show());
+    if (!items.length) return "";
+    return `
+      <div style="margin-top:14px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">${esc(g.group)}</div>
+        <div class="list">
+          ${items.map(it => `
+            <button class="row tappable" onclick="${it.onclick}" style="background:none;border:0;width:100%;text-align:left;color:inherit;font:inherit;padding:0">
+              <div class="row" style="margin:0;padding:12px 14px">
+                <div class="lead">${it.emoji}</div>
+                <div class="body">
+                  <div class="t1">${esc(it.title)}</div>
+                  <div class="t2">${esc(it.desc)}</div>
+                </div>
+                <div class="trail chev"></div>
+              </div>
+            </button>
+          `).join("")}
+        </div>
+      </div>
+    `;
+  }).join("");
+  openSheet(`
+    <h2 style="margin-bottom:4px">Explore Ascend</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Every major feature in one place. Tap any to jump straight in.</p>
+    ${grpHtml}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Done</button></div>
+  `);
+}
+
 function helpTipsSheet() {
   const tips = [
     { icon: "✓", title: "Check off a habit",        body: "Tap the circle next to a habit on Today. Tap the 🔥 streak pill to see its full history." },
@@ -10458,6 +10531,11 @@ function renderSettings() {
     <div id="sec-data"></div>
     <div class="section-h"><span class="lbl">Data</span></div>
     <div class="list">
+      <div class="row tappable" onclick="exploreAscendSheet()">
+        <div class="lead">🧰</div>
+        <div class="body"><div class="t1">Explore Ascend</div><div class="t2">Feature catalog — every capability in one place, tappable</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="startTutorial()">
         <div class="lead">🧭</div>
         <div class="body"><div class="t1">Take the tour</div><div class="t2">30-second walkthrough of the tabs</div></div>
