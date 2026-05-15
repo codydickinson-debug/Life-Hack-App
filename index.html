@@ -1887,6 +1887,9 @@ const DEFAULT_DB = {
   spend:  [],   // manual + auto-imported transactions: [{id, date, category, amount, note, source:'manual'|'plaid', plaid_id?, merchant_name?, pending?}]
   wins:   [],
   stocks: { recentTickers: [], account: 10000 },
+  // Timestamp (ms) of the user's last successful exportData() — drives the
+  // backup-reminder Pulse on Today. 0 = never exported.
+  lastExportAt: 0,
   // Plaid-connected items {item_id, institution_name, last_sync_at, created_at}
   items:  [],
   // Plaid accounts (balances) by account_id
@@ -4739,6 +4742,25 @@ function renderToday() {
       return { emoji: "💭",
         text: `Quick check-in: how's the day going?`,
         onclick: `calendarDaySheet(${jsAttr(todayKey())})` };
+    }
+    // 5) Backup nudge — only when nothing more pressing surfaced. Targets
+    //    users who haven't exported in >60 days (or never), AND who have
+    //    enough data to be worth backing up, AND who've been onboarded
+    //    for at least 30 days so we don't pester new users.
+    const onboardedDays = DB.user && DB.user.onboardedAt
+      ? (Date.now() - DB.user.onboardedAt) / 86400000 : 0;
+    const lastExp = +DB.lastExportAt || 0;
+    const daysSinceExport = lastExp ? (Date.now() - lastExp) / 86400000 : Infinity;
+    const hasMeaningfulData =
+      (DB.habits || []).length >= 3 ||
+      (DB.wins   || []).length >= 5 ||
+      (DB.spend  || []).length >= 10;
+    if (onboardedDays >= 30 && daysSinceExport >= 60 && hasMeaningfulData) {
+      return { emoji: "💾",
+        text: lastExp
+          ? `It's been a while — back up your data`
+          : `Back up your data — keep what you've built safe`,
+        onclick: `exportData()` };
     }
     return null;
   })();
@@ -10255,6 +10277,8 @@ async function exportData() {
                  "name, and note in clear text. Files in Downloads are often synced to " +
                  "cloud storage. Continue with plaintext?")) return;
     _downloadBlob(JSON.stringify(DB, null, 2), `ascend-backup-${todayKey()}.json`, "application/json");
+    DB.lastExportAt = Date.now();
+    try { save(); } catch {}
     toast("Plaintext backup downloaded");
     return;
   }
@@ -10283,6 +10307,8 @@ async function exportData() {
       salt, iv: env.iv, ct: env.ct,
     };
     _downloadBlob(JSON.stringify(blob, null, 2), `ascend-backup-${todayKey()}.ascend`, "application/octet-stream");
+    DB.lastExportAt = Date.now();
+    try { save(); } catch {}
     toast("Encrypted backup downloaded");
   } catch (e) {
     alert("Export failed. Try again.");
