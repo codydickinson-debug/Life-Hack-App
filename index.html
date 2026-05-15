@@ -1209,8 +1209,34 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 }
 .holdings-check.on { background: var(--green); color: #fff; border-color: var(--green); }
 
-/* Cylan action confirmation chips — shown under assistant bubbles when
-   Cylan emits <ACTION> blocks that the frontend executed. */
+/* Cornileus — the distinguished gentleman avatar for the AI counselor.
+   Inline SVG with a top hat, monocle, mustache, and bowtie. Renders at
+   whatever size the wrapper specifies. */
+.corn-avatar {
+  display: inline-flex; align-items: center; justify-content: center;
+  flex-shrink: 0; line-height: 1;
+}
+.corn-avatar.gradient {
+  background: linear-gradient(135deg,#7c3aed,#ec4899);
+  border-radius: 50%; overflow: hidden;
+}
+.corn-avatar svg { width: 100%; height: 100%; display: block; }
+
+/* "Pops up" animation — bouncy scale-in with a tiny tilt, used when the
+   counselor sheet opens so Cornileus literally appears with character. */
+@keyframes corn-pop-in {
+  0%   { transform: scale(0.2) rotate(-22deg); opacity: 0; }
+  55%  { transform: scale(1.12) rotate(6deg);  opacity: 1; }
+  78%  { transform: scale(0.96) rotate(-2deg); }
+  100% { transform: scale(1) rotate(0deg);     opacity: 1; }
+}
+.corn-pop {
+  animation: corn-pop-in 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  transform-origin: center bottom;
+}
+
+/* Cornileus action confirmation chips — shown under assistant bubbles when
+   Cornileus emits <ACTION> blocks that the frontend executed. */
 .cns-actions { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
 .cns-action-chip {
   display: inline-flex; align-items: center;
@@ -1826,13 +1852,13 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
      L9974  NET WORTH CHARTS  — sparkline + breakdown
      L10092 DEBT PAYOFF
      L10305 AI INSIGHTS       — Today summary card
-     L10374 FINANCIAL COUNSELOR — Cylan chat sheet (CFP system prompt)
+     L10374 FINANCIAL COUNSELOR — Cornileus chat sheet (CFP system prompt)
 
    ONBOARDING + TOUR
      L12248 DEMO DATA         — _buildDemoData factory + loadDemoData
-     L12552 ONBOARDING        — manual 4-step + Cylan AI flow
+     L12552 ONBOARDING        — manual 4-step + Cornileus AI flow
      L12684 POST-ONBOARDING TOUR — 12-step interactive walkthrough
-     L13207 AI ONBOARDING     — Cylan-driven setup conversation
+     L13207 AI ONBOARDING     — Cornileus-driven setup conversation
 
    FEATURE FLOWS (mostly self-contained sheets — alphabetical-ish)
      L13705 SMART MONEY PLAYS
@@ -1973,7 +1999,7 @@ const DEFAULT_DB = {
     insights: [],            // [{id, text, savedAt, context}] — user-saved
                              // standout replies. Survives thread auto-clear.
   },
-  roadmaps: [],              // multi-phase visual plans Cylan can author.
+  roadmaps: [],              // multi-phase visual plans Cornileus can author.
                              // {id, title, emoji, note, createdAt, archived,
                              //  phases:[{id, title, period, targetAmount,
                              //    targetDate, note, completed, completedAt,
@@ -3156,7 +3182,7 @@ function habitDetailSheet(id) {
     })()}
 
     <div class="actions">
-      <button class="btn secondary" onclick="closeSheet();setTimeout(()=>openCounselor(${jsAttr(`Tell me about my "${h.name}" habit. I have a ${streak}-day streak and did it ${done30} of the last 30 days. What's one specific thing I could do to make this habit stickier?`)}),120)" style="font-size:13px">✨ Ask Cylan</button>
+      <button class="btn secondary" onclick="closeSheet();setTimeout(()=>openCounselor(${jsAttr(`Tell me about my "${h.name}" habit. I have a ${streak}-day streak and did it ${done30} of the last 30 days. What's one specific thing I could do to make this habit stickier?`)}),120)" style="font-size:13px">✨ Ask Cornileus</button>
       <button class="btn secondary" onclick="closeSheet();setTimeout(()=>addHabitSheet(DB.habits.find(x=>x.id==='${h.id}')),120)">Edit</button>
       <button class="btn" onclick="closeSheet()">Close</button>
     </div>
@@ -3328,7 +3354,7 @@ function goalCelebrationSheet(goalId) {
       <div style="font-size:12px;color:var(--t3);margin-bottom:18px">${esc(tierLabel)} tier${days ? ` · ${days} day${days===1?'':'s'} from start to finish` : ''}</div>
       <div style="display:flex;flex-direction:column;gap:8px">
         <button class="btn" style="background:linear-gradient(135deg,#34C759,#30B956);color:#fff;border:none" onclick="_captureGoalAsWin(${jsAttr(g.id)})">⭐ Capture as a win</button>
-        <button class="btn secondary" style="font-size:13px" onclick="closeSheet();setTimeout(()=>openCounselor(${jsAttr(`I just completed my goal: "${g.title}". What should I focus on next given where I am?`)}),100)">✨ Ask Cylan what's next</button>
+        <button class="btn secondary" style="font-size:13px" onclick="closeSheet();setTimeout(()=>openCounselor(${jsAttr(`I just completed my goal: "${g.title}". What should I focus on next given where I am?`)}),100)">✨ Ask Cornileus what's next</button>
         <button class="btn secondary" style="font-size:13px;color:var(--t3)" onclick="closeSheet()">Close</button>
       </div>
     </div>
@@ -4070,7 +4096,7 @@ var calendarView = "month";
 // here + wrapping its render block in `if (!isTodaySectionHidden(id))`.
 const TODAY_TOGGLEABLE_SECTIONS = [
   { id: "dailyPulse",      label: "Daily Pulse",            desc: "One contextual nudge at the top — net worth, plan deadlines, mood" },
-  { id: "weeklyRecap",     label: "Weekly recap (Sundays)", desc: "Tap-to-summarize your week with Cylan, only on Sunday" },
+  { id: "weeklyRecap",     label: "Weekly recap (Sundays)", desc: "Tap-to-summarize your week with Cornileus, only on Sunday" },
   { id: "onThisDay",       label: "On this day",            desc: "What happened a week / month / year ago today" },
   { id: "milestoneBanner", label: "Streak milestone alert", desc: "Banner when a habit is days from its next milestone" },
   { id: "safeToSpend",     label: "Safe to spend",          desc: "Daily budget snapshot card" },
@@ -4083,7 +4109,7 @@ const TODAY_TOGGLEABLE_SECTIONS = [
   { id: "moneyReflection", label: "Money reflection",       desc: "Rotating money question prompt" },
   { id: "weeklyReview",    label: "Weekly review banner",   desc: "Sunday-only reminder to review your week" },
   { id: "setupChecklist",  label: "Setup checklist",        desc: "Onboarding progress card" },
-  { id: "counselor",       label: "Cylan counselor card",   desc: "Talk-to-AI quick link" },
+  { id: "counselor",       label: "Cornileus counselor card",   desc: "Talk-to-AI quick link" },
   { id: "mood",            label: "How's today? mood",      desc: "5-emoji daily mood picker" },
   { id: "reminder",        label: "Daily quote",            desc: "Rotating inspirational quote" },
 ];
@@ -4317,27 +4343,27 @@ function _computeSearchResults(query) {
   const goals = (f === "all" || f === "goals") ? (DB.goals || []).filter(g => (((g.title || "") + " " + (g.note || "")).toLowerCase()).includes(q)) : [];
   const savings = (f === "all" || f === "goals") ? (DB.savings || []).filter(s => (s.name || "").toLowerCase().includes(q)) : [];
   const total = habits.length + wins.length + notes.length + spend.length + goals.length + savings.length;
-  // Always show an "Ask Cylan" entry at the top so the search bar doubles as
+  // Always show an "Ask Cornileus" entry at the top so the search bar doubles as
   // an AI entry point — even when there are no matching records in DB. We
-  // wrap the raw query in a leading phrase so Cylan answers it in-context.
-  const askCylanPrompt = `Tell me about "${q}" — based on my actual data and situation, what should I know or do about this?`;
-  const askCylanRow = `
-    <div class="row tappable" onclick="closeSheet();setTimeout(()=>openCounselor(${jsAttr(askCylanPrompt)}),120)"
+  // wrap the raw query in a leading phrase so Cornileus answers it in-context.
+  const askCornileusPrompt = `Tell me about "${q}" — based on my actual data and situation, what should I know or do about this?`;
+  const askCornileusRow = `
+    <div class="row tappable" onclick="closeSheet();setTimeout(()=>openCounselor(${jsAttr(askCornileusPrompt)}),120)"
       style="background:linear-gradient(135deg,rgba(124,58,237,0.10),rgba(236,72,153,0.10));border:0.5px solid rgba(124,58,237,0.35);border-radius:var(--r2,14px);margin-bottom:10px">
       <div class="lead" style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:14px">✨</div>
       <div class="body">
-        <div class="t1" style="color:var(--purple,#8957d9);font-weight:700">Ask Cylan about "${esc(q.slice(0, 40))}${q.length > 40 ? '…' : ''}"</div>
+        <div class="t1" style="color:var(--purple,#8957d9);font-weight:700">Ask Cornileus about "${esc(q.slice(0, 40))}${q.length > 40 ? '…' : ''}"</div>
         <div class="t2" style="font-size:12px">Get a candid answer that knows your numbers</div>
       </div>
       <div class="trail" style="color:var(--purple,#8957d9);font-size:18px">→</div>
     </div>
   `;
-  if (!total) return `${askCylanRow}<div class="muted" style="font-size:13px;padding:14px 4px;text-align:center">No matches for "${esc(q)}" in your records.</div>`;
+  if (!total) return `${askCornileusRow}<div class="muted" style="font-size:13px;padding:14px 4px;text-align:center">No matches for "${esc(q)}" in your records.</div>`;
   const sect = (label, count, rowsHtml) => count ? `
     <div class="section-h" style="margin-top:14px;margin-bottom:8px"><span class="lbl">${label} (${count})</span></div>
     <div class="list">${rowsHtml}</div>
   ` : "";
-  let html = askCylanRow + `<div style="font-size:11px;color:var(--t3);margin:6px 0 4px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">${total} match${total === 1 ? '' : 'es'}</div>`;
+  let html = askCornileusRow + `<div style="font-size:11px;color:var(--t3);margin:6px 0 4px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">${total} match${total === 1 ? '' : 'es'}</div>`;
   html += sect("Habits", habits.length, habits.map(h => `
     <div class="row tappable" onclick="closeSheet();setTimeout(()=>habitDetailSheet('${h.id}'),120)">
       <div class="lead">${h.emoji || '✦'}</div>
@@ -5034,7 +5060,7 @@ function renderToday() {
     })()}
 
     ${(!isTodaySectionHidden('weeklyRecap') && new Date().getDay() === 0) ? (() => {
-      // Sunday-only recap. Cylan summarizes the user's last 7 days when tapped.
+      // Sunday-only recap. Cornileus summarizes the user's last 7 days when tapped.
       const sow = new Date(); sow.setDate(sow.getDate() - 6);
       const sowK = todayKey(sow);
       const todayK2 = todayKey();
@@ -5054,7 +5080,7 @@ function renderToday() {
           style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--blue);border-radius:var(--r);padding:14px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:12px">
           <div style="width:32px;height:32px;border-radius:50%;background:rgba(47,111,235,0.12);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">📊</div>
           <div style="flex:1;min-width:0">
-            <div style="font-size:13px;color:var(--t1);font-weight:600;line-height:1.2">It's Sunday — recap your week with Cylan</div>
+            <div style="font-size:13px;color:var(--t1);font-weight:600;line-height:1.2">It's Sunday — recap your week with Cornileus</div>
             <div style="font-size:11.5px;color:var(--t3);margin-top:2px">${habitDone}/${habitPoss} habits · ${winsW} wins · <span data-priv="amount">${fmt$0(spendW)}</span> spent</div>
           </div>
           <div style="font-size:18px;color:var(--t3)">›</div>
@@ -5326,7 +5352,7 @@ function renderToday() {
             <button class="btn sm secondary" style="font-size:11px;padding:4px 10px" onclick="runAiInsight()">Refresh</button>
           </div>
           <div style="font-size:13.5px;line-height:1.55;color:var(--t1);white-space:pre-wrap">${esc(last.response)}</div>
-          <div style="font-size:11px;color:var(--t4);margin-top:8px">Refreshed daily · Tap "Talk to Cylan" below to dig deeper.</div>
+          <div style="font-size:11px;color:var(--t4);margin-top:8px">Refreshed daily · Tap "Talk to Cornileus" below to dig deeper.</div>
         </div>
       `;
     })()}
@@ -5334,7 +5360,7 @@ function renderToday() {
     ${isTodaySectionHidden('spendLeaks') ? "" : (() => {
       // Auto-flag spending categories that surged month-over-month. Showing
       // them on Today (rather than buried in Money) means the user sees the
-      // leak BEFORE they overspend further. Each leak has a Cylan deep-dive
+      // leak BEFORE they overspend further. Each leak has a Cornileus deep-dive
       // and a Dismiss-for-the-month action.
       const leaks = detectSpendingLeaks();
       if (!leaks.length) return "";
@@ -5363,7 +5389,7 @@ function renderToday() {
                   </div>
                 </div>
                 <div style="display:flex;gap:6px;margin-top:6px">
-                  <button class="btn sm" style="flex:1;font-size:11.5px;padding:7px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="openCounselor(${jsAttr(`My ${l.category} spend jumped from $${Math.round(l.previous)} last month to $${Math.round(l.current)} so far this month — that's +${l.deltaPct === 999 ? "all new" : l.deltaPct + "%"}. What happened and what should I do about it?`)})">✨ Ask Cylan</button>
+                  <button class="btn sm" style="flex:1;font-size:11.5px;padding:7px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="openCounselor(${jsAttr(`My ${l.category} spend jumped from $${Math.round(l.previous)} last month to $${Math.round(l.current)} so far this month — that's +${l.deltaPct === 999 ? "all new" : l.deltaPct + "%"}. What happened and what should I do about it?`)})">✨ Ask Cornileus</button>
                   <button class="btn secondary sm" style="flex:0 0 auto;font-size:11.5px;padding:7px 12px;color:var(--t3)" onclick="dismissSpendingLeak(${jsAttr(l.category)})">Dismiss</button>
                 </div>
               </div>
@@ -5375,7 +5401,7 @@ function renderToday() {
 
     ${isTodaySectionHidden('counselor') ? "" : (() => {
       // Prefer data-driven personalized starters (e.g. "Your biggest category
-      // is Food at $200 — fix it?"). They reference real numbers so Cylan's
+      // is Food at $200 — fix it?"). They reference real numbers so Cornileus's
       // reply starts concrete. Fall back to generic chips when the user has
       // too little data for a meaningful personalized question.
       const personalized = _personalizedStarters("default");
@@ -5416,7 +5442,7 @@ function renderToday() {
           <div onclick="openCounselor()" role="button" tabindex="0" style="display:flex;align-items:center;cursor:pointer;margin-bottom:10px">
             <div style="width:36px;height:36px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;color:var(--purple);margin-right:12px">✨</div>
             <div style="flex:1;min-width:0">
-              <div class="t1" style="margin:0">Ask Cylan</div>
+              <div class="t1" style="margin:0">Ask Cornileus</div>
               <div class="t2">${subtitle}</div>
             </div>
             <div class="trail chev"></div>
@@ -5547,7 +5573,7 @@ function renderGoals() {
       style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;align-items:center;cursor:pointer">
       <div style="width:32px;height:32px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;color:var(--purple);margin-right:10px">✨</div>
       <div class="body">
-        <div class="t1" style="margin:0;font-size:13.5px">Ask Cylan to prioritize my goals</div>
+        <div class="t1" style="margin:0;font-size:13.5px">Ask Cornileus to prioritize my goals</div>
       </div>
       <div class="trail chev"></div>
     </div>
@@ -5881,7 +5907,7 @@ function planHealthCardHtml() {
 }
 
 // ===== ROADMAPS =====
-// Multi-phase visual plans. Cylan can author a full roadmap in one shot
+// Multi-phase visual plans. Cornileus can author a full roadmap in one shot
 // via the add_roadmap action. Each phase has its own milestones + actions
 // + optional target dollar amount + target date.
 
@@ -6104,9 +6130,9 @@ function renderRoadmapsSection() {
       <div class="rm-empty">
         <div style="font-size:30px;margin-bottom:6px">🗺️</div>
         <div style="font-weight:700;margin-bottom:4px">No roadmaps yet</div>
-        <div style="font-size:12.5px;color:var(--t3);margin-bottom:14px;line-height:1.5">Roadmaps are multi-phase plans with milestones &amp; monthly actions per phase. Have Cylan build one for you in one tap.</div>
+        <div style="font-size:12.5px;color:var(--t3);margin-bottom:14px;line-height:1.5">Roadmaps are multi-phase plans with milestones &amp; monthly actions per phase. Have Cornileus build one for you in one tap.</div>
         <button class="btn" style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-size:13px;max-width:280px;margin:0 auto;display:block"
-          onclick="openCounselor(${jsAttr(`Build me a complete multi-phase roadmap based on my actual situation in the snapshot. Use the add_roadmap action with at least 4 phases. Each phase should have: title, period (e.g. "Months 1-3", "Year 2"), targetAmount if money-related, optional targetDate (YYYY-MM-DD), short note, 3-5 milestones, and 2-4 monthly actions. Make it practical and specific to MY numbers — not generic. Tell me what plan you built and why before emitting the action.`)})">✨ Ask Cylan to build me a roadmap</button>
+          onclick="openCounselor(${jsAttr(`Build me a complete multi-phase roadmap based on my actual situation in the snapshot. Use the add_roadmap action with at least 4 phases. Each phase should have: title, period (e.g. "Months 1-3", "Year 2"), targetAmount if money-related, optional targetDate (YYYY-MM-DD), short note, 3-5 milestones, and 2-4 monthly actions. Make it practical and specific to MY numbers — not generic. Tell me what plan you built and why before emitting the action.`)})">✨ Ask Cornileus to build me a roadmap</button>
       </div>
     `;
   }
@@ -6116,14 +6142,14 @@ function renderRoadmapsSection() {
         <div class="rm-section-label">🗺️ Roadmaps</div>
         <div class="rm-section-sub">${list.length} active · multi-phase plans</div>
       </div>
-      <button class="plan-section-add" onclick="openCounselor(${jsAttr(`Build me a complete multi-phase roadmap based on my actual situation. Use add_roadmap with at least 4 phases. Each phase should include: title, period, optional targetAmount + targetDate, note, 3-5 milestones, 2-4 monthly actions. Make it practical and tied to MY numbers from the snapshot.`)})" title="Have Cylan build one">+</button>
+      <button class="plan-section-add" onclick="openCounselor(${jsAttr(`Build me a complete multi-phase roadmap based on my actual situation. Use add_roadmap with at least 4 phases. Each phase should include: title, period, optional targetAmount + targetDate, note, 3-5 milestones, 2-4 monthly actions. Make it practical and tied to MY numbers from the snapshot.`)})" title="Have Cornileus build one">+</button>
     </div>
     ${list.map(rm => _roadmapCardHtml(rm)).join("")}
   `;
 }
 
 // Manage a single roadmap — view all phases expanded, mark phases done,
-// rename / delete the roadmap, or "Ask Cylan about this".
+// rename / delete the roadmap, or "Ask Cornileus about this".
 function roadmapSheet(id) {
   const rm = (DB.roadmaps || []).find(r => r.id === id);
   if (!rm) return;
@@ -6194,7 +6220,7 @@ function roadmapSheet(id) {
       }).join('')}
     </div>
     <div style="display:flex;gap:6px;margin-bottom:8px">
-      <button class="btn secondary" style="flex:1;font-size:13px" onclick="closeSheet();setTimeout(()=>openCounselor(${jsAttr(`I'm looking at my "${rm.title}" roadmap. Where am I behind, what's working, and what's the highest-leverage thing I should focus on this week?`)}),100)">✨ Ask Cylan</button>
+      <button class="btn secondary" style="flex:1;font-size:13px" onclick="closeSheet();setTimeout(()=>openCounselor(${jsAttr(`I'm looking at my "${rm.title}" roadmap. Where am I behind, what's working, and what's the highest-leverage thing I should focus on this week?`)}),100)">✨ Ask Cornileus</button>
       <button class="btn danger sm" style="font-size:13px;padding:0 14px" onclick="if(confirm('Delete this roadmap?')){deleteRoadmap(${jsAttr(rm.id)});closeSheet();}">Delete</button>
     </div>
     <div class="actions"><button class="btn" onclick="closeSheet()">Done</button></div>
@@ -6275,7 +6301,7 @@ function renderPlanning() {
       style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:14px;margin-bottom:14px;align-items:center;cursor:pointer">
       <div style="width:36px;height:36px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0;color:var(--purple);margin-right:12px">✨</div>
       <div class="body">
-        <div class="t1" style="margin:0">Build my plan with Cylan</div>
+        <div class="t1" style="margin:0">Build my plan with Cornileus</div>
         <div class="t2">Talk through priorities, timelines, what to tackle first</div>
       </div>
       <div class="trail chev"></div>
@@ -6987,7 +7013,7 @@ function renderMoney() {
       style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:12px 14px;margin-bottom:12px;align-items:center;cursor:pointer">
       <div style="width:32px;height:32px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;color:var(--purple);margin-right:10px">✨</div>
       <div class="body">
-        <div class="t1" style="margin:0;font-size:13.5px">Talk to Cylan</div>
+        <div class="t1" style="margin:0;font-size:13.5px">Talk to Cornileus</div>
         <div class="t2" style="font-size:11.5px">Your financial counselor — budget, debt, investing</div>
       </div>
       <div class="trail chev"></div>
@@ -7076,7 +7102,7 @@ function renderMoney() {
         title: "Start a savings bucket",
         sub: "Emergency fund, truck down payment, retirement, that trip you keep putting off — name it and watch it grow.",
         primary: { label: "+ New savings goal", onclick: "addSavingSheet()" },
-        secondary: { label: "✨ Let Cylan help me pick", onclick: "openCounselor('What savings buckets should I have given my situation? Suggest 3-5 specific ones with target amounts.')" },
+        secondary: { label: "✨ Let Cornileus help me pick", onclick: "openCounselor('What savings buckets should I have given my situation? Suggest 3-5 specific ones with target amounts.')" },
       })}
     `;
   }
@@ -7210,7 +7236,7 @@ function renderMoney() {
         </div>
         <div style="display:flex;gap:8px;margin-top:14px">
           <button class="btn secondary" style="flex:1;font-size:12px" onclick="retirementSheet()">Adjust assumptions →</button>
-          <button class="btn secondary" style="flex:1;font-size:12px;color:var(--purple);border-color:var(--purple)" onclick="openCounselor(${jsAttr(`Looking at my retirement projection: at $${baseMonthly}/mo I'd have $${scenarios[0].final.toLocaleString()} at age ${targetAge}; +$200/mo gets me to $${scenarios[1].final.toLocaleString()}; +$500/mo gets me to $${scenarios[2].final.toLocaleString()}. Walk me through what each scenario actually means for my retirement and which is realistic for me.`)})">✨ Ask Cylan</button>
+          <button class="btn secondary" style="flex:1;font-size:12px;color:var(--purple);border-color:var(--purple)" onclick="openCounselor(${jsAttr(`Looking at my retirement projection: at $${baseMonthly}/mo I'd have $${scenarios[0].final.toLocaleString()} at age ${targetAge}; +$200/mo gets me to $${scenarios[1].final.toLocaleString()}; +$500/mo gets me to $${scenarios[2].final.toLocaleString()}. Walk me through what each scenario actually means for my retirement and which is realistic for me.`)})">✨ Ask Cornileus</button>
         </div>
       </div>
 
@@ -7563,7 +7589,7 @@ function renderMoney() {
                 </div>
               `).join("")}
             </div>
-            <button class="btn secondary" style="width:100%;margin-top:14px;font-size:12px;color:var(--purple);border-color:var(--purple)" onclick="openCounselor(${jsAttr(`My net worth is currently $${overallNet.toLocaleString()}. In 10 years at current pace I'd have $${scenarios[0].final.toLocaleString()}; +$200/mo gets to $${scenarios[1].final.toLocaleString()}; +$500/mo to $${scenarios[2].final.toLocaleString()}. Help me think through which scenario is realistic and what one specific thing I should do this month to move toward it.`)})">✨ Ask Cylan</button>
+            <button class="btn secondary" style="width:100%;margin-top:14px;font-size:12px;color:var(--purple);border-color:var(--purple)" onclick="openCounselor(${jsAttr(`My net worth is currently $${overallNet.toLocaleString()}. In 10 years at current pace I'd have $${scenarios[0].final.toLocaleString()}; +$200/mo gets to $${scenarios[1].final.toLocaleString()}; +$500/mo to $${scenarios[2].final.toLocaleString()}. Help me think through which scenario is realistic and what one specific thing I should do this month to move toward it.`)})">✨ Ask Cornileus</button>
           </div>
         `;
       })();
@@ -8270,7 +8296,7 @@ function renderMoney() {
             <div style="font-size:13px;font-weight:600;color:var(--t2)">Where it went</div>
             <div style="font-size:11.5px;color:var(--t3)">${spendByCat.rows.length} categor${spendByCat.rows.length===1?'y':'ies'} · <span data-priv="amount">${fmt$0(spendByCat.total)}</span></div>
           </div>
-          <button onclick="openCounselor(${jsAttr(`Looking at my spending breakdown this month: ${spendByCat.rows.slice(0,7).map(r => `${r.cat} $${Math.round(r.amt)}`).join(", ")}. What stands out? Where am I overspending and what should I cut first?`)})" style="background:rgba(137,87,217,0.12);border:0.5px solid var(--purple);color:var(--purple);padding:6px 10px;border-radius:var(--r-pill,999px);font-size:11.5px;cursor:pointer;font-weight:600;white-space:nowrap;flex-shrink:0">✨ Ask Cylan</button>
+          <button onclick="openCounselor(${jsAttr(`Looking at my spending breakdown this month: ${spendByCat.rows.slice(0,7).map(r => `${r.cat} $${Math.round(r.amt)}`).join(", ")}. What stands out? Where am I overspending and what should I cut first?`)})" style="background:rgba(137,87,217,0.12);border:0.5px solid var(--purple);color:var(--purple);padding:6px 10px;border-radius:var(--r-pill,999px);font-size:11.5px;cursor:pointer;font-weight:600;white-space:nowrap;flex-shrink:0">✨ Ask Cornileus</button>
         </div>
         ${spendByCat.rows.slice(0, 7).map(r => {
           const pct = spendByCat.total > 0 ? (r.amt / spendByCat.total) * 100 : 0;
@@ -8625,7 +8651,7 @@ function renderStats() {
       }
       if (!insights.length) return "";
       // Strip HTML tags from insight text for the AI prompt — just the plain
-      // sentence so Cylan gets the meaning without markup.
+      // sentence so Cornileus gets the meaning without markup.
       const plainText = (s) => s.replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
       return `
         <div class="section-h"><span class="lbl">Insights</span><span class="muted" style="font-size:12px">auto-detected · tap to dig in</span></div>
@@ -8731,17 +8757,17 @@ function renderStats() {
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <div style="display:flex;align-items:center;gap:8px">
               <div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px">✨</div>
-              <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Cylan</div>
+              <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Cornileus</div>
             </div>
             <button class="btn sm secondary" style="font-size:11px;padding:4px 10px" onclick="runAiInsight()">${last?'Refresh':'Monthly review'}</button>
           </div>
           ${last ? `
             <div style="font-size:13.5px;line-height:1.55;color:var(--t1);white-space:pre-wrap">${esc(last.response)}</div>
             <div style="font-size:11px;color:var(--t4);margin-top:8px">${last.date} · ${esc(last.model||"")}</div>
-            <button class="btn" style="width:100%;margin-top:12px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-size:13px" onclick="openCounselor()">✨ Talk to Cylan</button>
+            <button class="btn" style="width:100%;margin-top:12px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-size:13px" onclick="openCounselor()">✨ Talk to Cornileus</button>
           ` : `
             <div style="font-size:13.5px;color:var(--t1);line-height:1.5;margin-bottom:10px">Get a candid review of your spending, goals, and next moves — like a fee-only planner who knows your numbers.</div>
-            <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="openCounselor()">✨ Talk to Cylan</button>
+            <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="openCounselor()">✨ Talk to Cornileus</button>
             <div style="font-size:11px;color:var(--t4);margin-top:8px;text-align:center">Educational guidance — not licensed advice</div>
           `}
         </div>
@@ -9051,7 +9077,7 @@ function renderStocks() {
           style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:10px 12px;align-items:center;cursor:pointer;margin:0">
           <div style="width:30px;height:30px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;color:var(--purple);margin-right:10px">✨</div>
           <div class="body">
-            <div class="t1" style="margin:0;font-size:13px">Ask Cylan: stocks, ETFs, money moves</div>
+            <div class="t1" style="margin:0;font-size:13px">Ask Cornileus: stocks, ETFs, money moves</div>
             <div class="t2" style="font-size:11px;margin-top:1px">Specific ideas with the why — you do the final research</div>
           </div>
           <div class="trail chev"></div>
@@ -9476,7 +9502,7 @@ function calendarDaySheet(dateKey) {
     ${billsThatDay.length ? section("Bills due", billRows) : ""}
     ${(eligibleHabits.length || wins.length || spendDay.length || savingsLogs.length) ? `
       <div style="margin-top:14px">
-        <button class="btn secondary" style="width:100%;color:var(--purple);border-color:var(--purple);font-size:13px" onclick="openCounselor(${jsAttr(`On ${titleLbl}: ${eligibleHabits.length ? `${eligibleHabits.filter(h => h.type==='count' ? (h.log[dateKey]||0)>=(h.target||1) : !!h.log[dateKey]).length}/${eligibleHabits.length} habits done, ` : ""}${wins.length} wins (${wins.map(w => `"${w.text.slice(0,50)}"`).join("; ")}), $${Math.round(spendTotal)} spent across ${spendDay.length} transactions${currentMood ? `, felt ${currentMood}` : ""}${existingNote ? `. Note: "${existingNote.slice(0,80)}"` : ""}. Help me reflect on this day.`)})">✨ Ask Cylan to reflect on this day</button>
+        <button class="btn secondary" style="width:100%;color:var(--purple);border-color:var(--purple);font-size:13px" onclick="openCounselor(${jsAttr(`On ${titleLbl}: ${eligibleHabits.length ? `${eligibleHabits.filter(h => h.type==='count' ? (h.log[dateKey]||0)>=(h.target||1) : !!h.log[dateKey]).length}/${eligibleHabits.length} habits done, ` : ""}${wins.length} wins (${wins.map(w => `"${w.text.slice(0,50)}"`).join("; ")}), $${Math.round(spendTotal)} spent across ${spendDay.length} transactions${currentMood ? `, felt ${currentMood}` : ""}${existingNote ? `. Note: "${existingNote.slice(0,80)}"` : ""}. Help me reflect on this day.`)})">✨ Ask Cornileus to reflect on this day</button>
       </div>
     ` : ""}
     <div class="actions"><button class="btn secondary" onclick="closeSheet()">Close</button></div>
@@ -9731,7 +9757,7 @@ function renderSettings() {
       ${[
         { id: "sec-you",       label: "You" },
         { id: "sec-customize", label: "Customize" },
-        { id: "sec-cylan",     label: "Cylan" },
+        { id: "sec-cylan",     label: "Cornileus" },
         { id: "sec-money",     label: "Money" },
         { id: "sec-privacy",   label: "Privacy" },
         { id: "sec-advanced",  label: "Advanced" },
@@ -9782,7 +9808,7 @@ function renderSettings() {
       ` : ""}
       <div class="row">
         <div class="lead">✨</div>
-        <div class="body"><div class="t1">Show Cylan ✨ button</div><div class="t2">The floating counselor button at the bottom-right</div></div>
+        <div class="body"><div class="t1">Show Cornileus ✨ button</div><div class="t2">The floating counselor button at the bottom-right</div></div>
         <input type="checkbox" ${(DB.counselor && DB.counselor.hideLauncher) ? '' : 'checked'}
           onchange="toggleCounselorLauncher(this.checked)" style="width:50px;height:30px" />
       </div>
@@ -9940,7 +9966,7 @@ function renderSettings() {
     </div>
 
     <div id="sec-cylan"></div>
-    <div class="section-h"><span class="lbl">Cylan (powered by Claude)</span></div>
+    <div class="section-h"><span class="lbl">Cornileus (powered by Claude)</span></div>
     <div class="list">
       <div class="row">
         <div class="lead">🛡️</div>
@@ -9948,7 +9974,7 @@ function renderSettings() {
       </div>
       <div class="row">
         <div class="lead">⚙︎</div>
-        <div class="body"><div class="t1">Cylan's model</div><div class="t2">Sonnet 4.6 = balanced. Haiku 4.5 = cheap. Opus 4.7 = deepest reasoning.</div></div>
+        <div class="body"><div class="t1">Cornileus's model</div><div class="t2">Sonnet 4.6 = balanced. Haiku 4.5 = cheap. Opus 4.7 = deepest reasoning.</div></div>
         <select style="background:var(--bg-elev);padding:8px;border-radius:8px;font-size:11px;max-width:170px"
           onchange="DB.settings.anthropicModel=this.value;save()">
           <option value="claude-haiku-4-5-20251001" ${DB.settings.anthropicModel==='claude-haiku-4-5-20251001'?'selected':''}>Haiku 4.5</option>
@@ -9958,7 +9984,7 @@ function renderSettings() {
       </div>
       <div class="row tappable" onclick="closeSheet&&closeSheet();openCounselor()">
         <div class="lead">✨</div>
-        <div class="body"><div class="t1">Talk to Cylan</div><div class="t2">Your financial counselor — budget, debt, investing, life decisions</div></div>
+        <div class="body"><div class="t1">Talk to Cornileus</div><div class="t2">Your financial counselor — budget, debt, investing, life decisions</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="runAiInsight()">
@@ -9968,7 +9994,7 @@ function renderSettings() {
       </div>
       <div class="row tappable" onclick="cylanInsightsSheet()">
         <div class="lead">📌</div>
-        <div class="body"><div class="t1">Saved Cylan insights</div><div class="t2">${((DB.counselor && DB.counselor.insights) || []).length} pinned${((DB.counselor && DB.counselor.insights) || []).length ? ' · stays even after chat auto-clears' : ''}</div></div>
+        <div class="body"><div class="t1">Saved Cornileus insights</div><div class="t2">${((DB.counselor && DB.counselor.insights) || []).length} pinned${((DB.counselor && DB.counselor.insights) || []).length ? ' · stays even after chat auto-clears' : ''}</div></div>
         <div class="trail chev"></div>
       </div>
     </div>
@@ -10167,7 +10193,7 @@ function renderSettings() {
       </div>
       <div class="row tappable" onclick="aiOnboardingStart()">
         <div class="lead">✨</div>
-        <div class="body"><div class="t1">Retake AI setup</div><div class="t2">Talk to Cylan to refresh your habits, goals, and tagline</div></div>
+        <div class="body"><div class="t1">Retake AI setup</div><div class="t2">Talk to Cornileus to refresh your habits, goals, and tagline</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="exportData()">
@@ -11118,7 +11144,7 @@ async function getMonthlyInsight() {
     open_goals: goals,
   };
 
-  const system = `You are Cylan — a sharp, candid personal-finance counselor inside the Ascend app, giving ${DB.user.name||"the user"} a quick monthly review based on their actual numbers. Be warm but direct. Reference real numbers and merchants. Skip generic advice. Prefer short paragraphs over bullet lists. Keep it under 220 words. End with one sentence of encouragement. Educational guidance, not licensed financial advice.`;
+  const system = `You are Cornileus — a sharp, candid personal-finance counselor inside the Ascend app, giving ${DB.user.name||"the user"} a quick monthly review based on their actual numbers. Be warm but direct. Reference real numbers and merchants. Skip generic advice. Prefer short paragraphs over bullet lists. Keep it under 220 words. End with one sentence of encouragement. Educational guidance, not licensed financial advice.`;
 
   const model = "claude-haiku-4-5-20251001";
   const data = await aiApi({
@@ -11149,7 +11175,52 @@ async function getMonthlyInsight() {
    always answering against current numbers. Uses feature="counselor" so the
    worker rate-limits it independently from the monthly insight feature. */
 
-const COUNSELOR_SYSTEM = `You are Cylan — a senior personal-finance counselor embedded in the Ascend app. You combine the disciplined planning instincts of a fee-only Certified Financial Planner (CFP) with the framework thinking of a CFA portfolio strategist. You are the user's trusted, candid guide for money decisions.
+/* Cornileus — the distinguished gentleman avatar. Top hat, monocle, twirled
+   mustache, purple bowtie. Returns the inline SVG so it can be embedded
+   anywhere we'd previously have used the ✨ emoji. */
+const CORNILEUS_SVG = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-label="Cornileus" role="img">
+  <!-- Hat brim -->
+  <ellipse cx="32" cy="20" rx="20" ry="2.5" fill="#0e0e12"/>
+  <!-- Hat top -->
+  <rect x="22" y="4" width="20" height="16" rx="1.5" fill="#0e0e12"/>
+  <!-- Hat band -->
+  <rect x="22" y="14" width="20" height="3" fill="#8957D9"/>
+  <!-- Hat sheen -->
+  <rect x="23" y="6" width="2" height="9" fill="rgba(255,255,255,0.15)"/>
+  <!-- Head -->
+  <ellipse cx="32" cy="34" rx="13" ry="14" fill="#f3d8a8"/>
+  <!-- Forehead shadow from hat -->
+  <ellipse cx="32" cy="22" rx="12" ry="2" fill="rgba(0,0,0,0.18)"/>
+  <!-- Eyebrows -->
+  <path d="M23 27 Q27 24.5 30 26.5" stroke="#3d2817" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+  <path d="M34 26.5 Q37 24.5 41 27" stroke="#3d2817" stroke-width="1.6" fill="none" stroke-linecap="round"/>
+  <!-- Left eye -->
+  <circle cx="27" cy="30" r="1.1" fill="#1a1a20"/>
+  <!-- Monocle (right eye): glass ring, lens tint, chain -->
+  <circle cx="37" cy="30" r="4.6" fill="rgba(137,87,217,0.08)" stroke="#8957D9" stroke-width="1.2"/>
+  <circle cx="37" cy="30" r="1.1" fill="#1a1a20"/>
+  <path d="M41.4 32 Q44 36 43 41" stroke="#7a7a82" stroke-width="0.55" fill="none"/>
+  <!-- Mustache (twirled) -->
+  <path d="M23 39 Q26 41 30 40 L32 41 L34 40 Q38 41 41 39 Q42.5 41 40 42.2 Q35.5 43.2 32 42.2 Q28.5 43.2 24 42.2 Q21.5 41 23 39 Z" fill="#3d2817"/>
+  <!-- Mouth -->
+  <path d="M30 43.5 Q32 44.5 34 43.5" stroke="#1a1a20" stroke-width="0.7" fill="none" stroke-linecap="round"/>
+  <!-- Suit shoulders/collar -->
+  <polygon points="18,52 32,46 46,52 46,64 18,64" fill="#0e0e12"/>
+  <!-- White shirt collar peek -->
+  <polygon points="29,52 32,48 35,52 32,55" fill="#f5f5f7"/>
+  <!-- Bowtie -->
+  <path d="M28 49.5 L32 51.5 L36 49.5 L36 53.5 L32 51.5 L28 53.5 Z" fill="#8957D9"/>
+  <circle cx="32" cy="51.5" r="0.9" fill="#0e0e12"/>
+</svg>`;
+
+// Helper: returns an avatar element of the given pixel size. `popIn=true`
+// triggers the entrance animation defined in CSS.
+function cornAvatarHtml(size, popIn) {
+  const cls = "corn-avatar" + (popIn ? " corn-pop" : "");
+  return `<span class="${cls}" style="width:${size}px;height:${size}px">${CORNILEUS_SVG}</span>`;
+}
+
+const COUNSELOR_SYSTEM = `You are Cornileus — a senior personal-finance counselor embedded in the Ascend app. You combine the disciplined planning instincts of a fee-only Certified Financial Planner (CFP) with the framework thinking of a CFA portfolio strategist. You are the user's trusted, candid guide for money decisions.
 
 YOUR SCOPE:
 - Personal financial planning: cash flow, emergency fund, debt strategy (avalanche vs snowball), insurance gaps, big-life-event prep (marriage, kids, home, retirement).
@@ -11184,7 +11255,7 @@ ASCEND FEATURES YOU CAN REFER TO (only these — do not invent features):
 - Settings (backend / AI / privacy / encryption)
 
 IDENTITY:
-If asked who you are: "I'm Cylan — your financial counselor inside Ascend. CFP-level planning meets index-fund discipline." Always sign off as Cylan when it feels natural (don't force it into every reply, but own the name when introductions or sign-offs come up). If the conversation drifts to high-stakes regulated topics (specific tax filings, specific securities trades, legal contracts), be clear you're an educational guide and recommend a licensed pro.
+If asked who you are: "I'm Cornileus — your financial counselor inside Ascend. CFP-level planning meets index-fund discipline." Always sign off as Cornileus when it feels natural (don't force it into every reply, but own the name when introductions or sign-offs come up). If the conversation drifts to high-stakes regulated topics (specific tax filings, specific securities trades, legal contracts), be clear you're an educational guide and recommend a licensed pro.
 
 ACTIONS YOU CAN TAKE:
 You can DO things in the user's app — not just advise. When the user asks you to add/log/set something concrete, emit ONE or MORE action blocks INSIDE your reply, on their own lines, in this exact format:
@@ -11433,7 +11504,7 @@ let _counselorState = null; // { busy: boolean, context: string }
 //               suggested-prompt set. If omitted, auto-detected from the
 //               currently active tab so the FAB and inline CTAs each get
 //               appropriate suggestions without per-caller plumbing.
-// Toggle the floating Cylan ✨ FAB. Wired from a Settings checkbox.
+// Toggle the floating Cornileus ✨ FAB. Wired from a Settings checkbox.
 // `show` true = hideLauncher false (button visible), and vice versa.
 function toggleCounselorLauncher(show) {
   if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false };
@@ -11579,7 +11650,7 @@ function _pickFollowups(ctx, n = 3) {
 }
 
 // Build 1–3 personalized starter questions for the empty-chat state, based
-// on what's actually in DB right now. Each starter is a one-liner Cylan
+// on what's actually in DB right now. Each starter is a one-liner Cornileus
 // can run with — phrased as a question the user would naturally ask, with
 // specific numbers baked in so the answer can be concrete. Returns [] when
 // the user has nothing meaningful to surface yet.
@@ -11741,14 +11812,14 @@ function counselorRender() {
       // saved state so the icon reflects "already pinned" vs "save".
       const isSaved = _isInsightSaved(m.content || "");
       const saveBtn = `
-        <button onclick="saveCylanInsight(${jsAttr(m.content || "")}, ${jsAttr(ctx)})" title="${isSaved ? 'Remove from insights' : 'Save to insights'}"
+        <button onclick="saveCornileusInsight(${jsAttr(m.content || "")}, ${jsAttr(ctx)})" title="${isSaved ? 'Remove from insights' : 'Save to insights'}"
           style="background:none;border:none;cursor:pointer;font-size:12px;color:${isSaved ? 'var(--purple,#8957d9)' : 'var(--t3)'};padding:4px 6px;margin-top:4px;display:inline-flex;align-items:center;gap:4px;line-height:1.2">
           <span>${isSaved ? '📌' : '📍'}</span>
           <span style="font-weight:600">${isSaved ? 'Saved' : 'Save'}</span>
         </button>`;
       return `
         <div style="display:flex;gap:8px;margin-bottom:12px;align-items:flex-start">
-          <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✨</div>
+          ${cornAvatarHtml(32, false)}
           <div style="max-width:84%">
             <div style="background:var(--bg-elev);padding:10px 14px;border-radius:16px;border-top-left-radius:4px;font-size:14px;line-height:1.5;color:var(--t1);overflow-wrap:break-word">${_mdLite(m.content || "")}</div>
             ${_renderActionChips(m.actions)}
@@ -11765,11 +11836,11 @@ function counselorRender() {
 
   const suggestions = COUNSELOR_SUGGESTIONS[ctx] || COUNSELOR_SUGGESTIONS.default;
   const introLine = ({
-    goals:    "Hey, I'm Cylan. From your <b>Goals</b> tab — let's make these real. Pick what to tackle first or break a big one down.",
-    planning: "Hey, I'm Cylan. From your <b>Plan</b> tab — let's map your short, mid, and long-term roadmap. I'll talk priorities, sequencing, and what's actually realistic.",
-    money:    "Hey, I'm Cylan. From your <b>Money</b> tab — let's tighten cash flow, find leaks, and lock in a plan that sticks.",
-    stocks:   "Hey, I'm Cylan. From your <b>Stocks</b> tab — ask me for specific tickers, ETFs, or where to move your next dollar. I'll give the why behind each pick, but you do the final research and click.",
-    default:  "I'm Cylan — your financial counselor inside Ascend. I know your numbers. Ask me anything — planning, debt, investing, big decisions. I'll be candid and reference your actual situation.",
+    goals:    "Hey, I'm Cornileus. From your <b>Goals</b> tab — let's make these real. Pick what to tackle first or break a big one down.",
+    planning: "Hey, I'm Cornileus. From your <b>Plan</b> tab — let's map your short, mid, and long-term roadmap. I'll talk priorities, sequencing, and what's actually realistic.",
+    money:    "Hey, I'm Cornileus. From your <b>Money</b> tab — let's tighten cash flow, find leaks, and lock in a plan that sticks.",
+    stocks:   "Hey, I'm Cornileus. From your <b>Stocks</b> tab — ask me for specific tickers, ETFs, or where to move your next dollar. I'll give the why behind each pick, but you do the final research and click.",
+    default:  "I'm Cornileus — your financial counselor inside Ascend. I know your numbers. Ask me anything — planning, debt, investing, big decisions. I'll be candid and reference your actual situation.",
   })[ctx];
   const suggested = !thread.length ? `
     <div style="padding:6px 2px 4px">
@@ -11842,10 +11913,10 @@ function counselorRender() {
   ` : "";
 
   openSheet(`
-    <div data-counselor-sheet style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
-      <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">✨</div>
+    <div data-counselor-sheet style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
+      ${cornAvatarHtml(44, true)}
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:15px">Cylan</div>
+        <div style="font-weight:700;font-size:15px">Cornileus</div>
         <div style="font-size:11px;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${subtitleText}</div>
       </div>
       ${headerControls}
@@ -11866,11 +11937,11 @@ function counselorRender() {
   }, 30);
 }
 
-// Save a Cylan reply to the Insights archive — survives chat auto-clear so
+// Save a Cornileus reply to the Insights archive — survives chat auto-clear so
 // the user keeps the gems even after the rest of the conversation is wiped.
 // Idempotent: re-tapping save on the same text removes it from the archive
 // instead of duplicating.
-async function saveCylanInsight(text, ctx) {
+async function saveCornileusInsight(text, ctx) {
   if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false, insights: [] };
   if (!Array.isArray(DB.counselor.insights)) DB.counselor.insights = [];
   const norm = (text || "").toString().trim();
@@ -11905,7 +11976,7 @@ function _isInsightSaved(text) {
 }
 
 // Browse + manage saved insights. Standalone sheet so the user can reread
-// the gems Cylan has said without re-running an AI call.
+// the gems Cornileus has said without re-running an AI call.
 function cylanInsightsSheet() {
   const list = (DB.counselor && DB.counselor.insights) || [];
   const rows = list.length ? list.map(i => `
@@ -11922,12 +11993,12 @@ function cylanInsightsSheet() {
   `).join("") : `
     <div class="muted" style="text-align:center;padding:30px 14px;line-height:1.5;font-size:13px">
       No saved insights yet.<br><br>
-      Open Cylan, tap 📌 next to any reply you want to remember, and it'll show up here.<br>
+      Open Cornileus, tap 📌 next to any reply you want to remember, and it'll show up here.<br>
       Insights survive the chat auto-clear.
     </div>
   `;
   openSheet(`
-    <h2 style="margin-bottom:4px">Cylan Insights</h2>
+    <h2 style="margin-bottom:4px">Cornileus Insights</h2>
     <p class="muted" style="font-size:12.5px;margin-bottom:12px">Standout replies you've pinned. They stay here even after the chat clears.</p>
     ${list.length ? `<div style="font-size:11px;color:var(--t3);margin-bottom:10px;text-transform:uppercase;letter-spacing:0.06em;font-weight:600">${list.length} insight${list.length === 1 ? '' : 's'}</div>` : ''}
     ${rows}
@@ -11983,7 +12054,7 @@ function counselorToggleKeep() {
 async function counselorNewChat() {
   if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false };
   if (_counselorState && _counselorState.busy) {
-    toast("Hold on — Cylan is still thinking");
+    toast("Hold on — Cornileus is still thinking");
     return;
   }
   DB.counselor.thread = [];
@@ -12065,7 +12136,7 @@ async function counselorSend(text) {
     const stillThere = (DB.counselor.thread || []).some(m => m === userTurn || (m.role === "user" && m.t === userTurn.t && m.content === userTurn.content));
     if (!stillThere) return;
 
-    // Parse any <ACTION>{...}</ACTION> blocks Cylan emitted, execute them
+    // Parse any <ACTION>{...}</ACTION> blocks Cornileus emitted, execute them
     // against DB, strip the tags from the displayed message, and attach a
     // list of confirmation chips to the assistant turn so the UI can show
     // "✓ Added plan…" / "✓ Logged $25 on Food" / etc.
@@ -12094,22 +12165,22 @@ async function counselorSend(text) {
   }
 }
 
-// ===== Cylan action handlers =====
-// Cylan can emit <ACTION>{...json...}</ACTION> blocks in its replies. This
-// parser extracts them, executes each via _runCylanAction(), and returns
+// ===== Cornileus action handlers =====
+// Cornileus can emit <ACTION>{...json...}</ACTION> blocks in its replies. This
+// parser extracts them, executes each via _runCornileusAction(), and returns
 // the message text with the tags removed plus a list of human-readable
 // confirmations (or errors) the UI shows as small chips under the bubble.
-const _CYLAN_ACTION_RE = /<ACTION>\s*([\s\S]*?)\s*<\/ACTION>/g;
+const _CORNILEUS_ACTION_RE = /<ACTION>\s*([\s\S]*?)\s*<\/ACTION>/g;
 function _parseAndRunActions(rawText) {
   const confirmations = [];
-  let cleaned = rawText.replace(_CYLAN_ACTION_RE, (match, json) => {
+  let cleaned = rawText.replace(_CORNILEUS_ACTION_RE, (match, json) => {
     let action;
     try { action = JSON.parse(json.trim()); }
     catch (e) {
-      confirmations.push({ ok: false, label: "Couldn't parse an action Cylan sent" });
+      confirmations.push({ ok: false, label: "Couldn't parse an action Cornileus sent" });
       return "";
     }
-    const result = _runCylanAction(action);
+    const result = _runCornileusAction(action);
     confirmations.push(result);
     return ""; // strip the block from the visible message
   });
@@ -12121,7 +12192,7 @@ function _parseAndRunActions(rawText) {
 // Dispatch a single action. Each handler does its own validation. Returns
 // {ok:true, label:string, icon?:string, link?:fnName} for success and
 // {ok:false, label:string} on failure.
-function _runCylanAction(action) {
+function _runCornileusAction(action) {
   if (!action || typeof action !== "object" || !action.type) {
     return { ok: false, label: "Skipped malformed action" };
   }
@@ -13481,7 +13552,7 @@ function onboardingStep1() {
     <label style="font-size:12px;color:var(--t3);font-weight:600;margin-bottom:6px;display:block">What should we call you?</label>
     <input id="onb-name" placeholder="Your first name" autofocus value="${esc(_onbState.name)}" />
   `, `
-    <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="(()=>{const n=$('#onb-name').value.trim();_onbState.name=n;closeSheet();aiOnboardingStart({name:n,fromOnboarding:true});})()">✨ Set up with Cylan (~3 min)</button>
+    <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="(()=>{const n=$('#onb-name').value.trim();_onbState.name=n;closeSheet();aiOnboardingStart({name:n,fromOnboarding:true});})()">✨ Set up with Cornileus (~3 min)</button>
     <button class="btn secondary" style="width:100%;margin-top:8px" onclick="(()=>{_onbState.name=$('#onb-name').value.trim();onboardingStep2();})()">Quick setup instead</button>
   `);
 }
@@ -13576,14 +13647,14 @@ function finishOnboarding() {
    above/below the spotlight based on viewport space; for steps without
    a target, the tooltip centers and the spotlight is hidden.
 
-   Each step has an "Ask Cylan" button that hands off to openCounselor
+   Each step has an "Ask Cornileus" button that hands off to openCounselor
    with a context-aware seed prompt so users can ask anything about
    what they're currently looking at. */
 // Interactive tour — 5 steps, each prompts a real tap on a real element.
 // Each step with a `target` attaches a one-time click listener so tapping
 // the highlighted element advances the tour automatically (after a short
 // delay so the user sees the result of their action). Otherwise the Next
-// button advances manually. No Ask-Cylan button per step — Cylan has its
+// button advances manually. No Ask-Cornileus button per step — Cornileus has its
 // own dedicated tab/FAB, the tour is for learning by doing.
 const TUTORIAL_STEPS = [
   { emoji: "👋", title: "Welcome to Ascend", tab: "today",
@@ -13624,7 +13695,7 @@ const TUTORIAL_STEPS = [
   { emoji: "▦", title: "Stats — what's working", tab: "stats",
     body: "Streaks, completion rates, year review. Open weekly to spot patterns." },
 
-  { emoji: "🤖", title: "Meet Cylan, your counselor", tab: "today",
+  { emoji: "🤖", title: "Meet Cornileus, your counselor", tab: "today",
     target: "#counselor-fab",
     body: "Tap ✨ any time to ask anything about your money. CFP-level planning, 24/7." },
 ];
@@ -13847,7 +13918,7 @@ function _tourAttachAdvanceListener(el) {
       // Stale-fire guard: user might have tapped Next/Back manually.
       if (_tutStep !== stepAtAttach) return;
       if (isLast) {
-        // Tapping the Cylan FAB on the last step ends the tour AND
+        // Tapping the Cornileus FAB on the last step ends the tour AND
         // opens the counselor — natural end-of-tutorial transition.
         tutorialFinish();
       } else {
@@ -14075,7 +14146,7 @@ function tutorialFinish() {
 function tutorialAsk() {
   const s = TUTORIAL_STEPS[_tutStep];
   _tourTearDownChrome();
-  // Exit tour mode so Cylan reads the user's actual snapshot (real
+  // Exit tour mode so Cornileus reads the user's actual snapshot (real
   // habits, real goals, real spend) — answering against demo numbers
   // would be misleading. User can replay the tour from Settings.
   _exitTourMode();
@@ -14097,7 +14168,7 @@ function maybeStartTutorial() {
    Anthropic key never touches the browser. Falls back gracefully when
    the backend isn't configured. */
 
-const AI_ONBOARDING_SYSTEM = `You are Cylan, the warm onboarding coach for the Ascend app (a personal-development tool that tracks habits, goals, and money). Tagline: "Goals made easy". After onboarding, you'll keep helping the user as their financial counselor — same Cylan, different mode.
+const AI_ONBOARDING_SYSTEM = `You are Cornileus, the warm onboarding coach for the Ascend app (a personal-development tool that tracks habits, goals, and money). Tagline: "Goals made easy". After onboarding, you'll keep helping the user as their financial counselor — same Cornileus, different mode.
 
 Your job is a short 3-7 turn conversation to learn the user, then propose a tailored starter plan. Be warm, casual, brief (1-2 sentences per reply, no preamble, no "as an AI" disclaimers).
 
@@ -14165,8 +14236,8 @@ function aiOnboardingStart(opts = {}) {
 
   // Seed first message — no API call needed for the opener.
   const opener = _aiOnb.knownName
-    ? `Hey ${_aiOnb.knownName}! I'm Cylan, your financial counselor inside Ascend. I'll ask a few quick questions to set things up the way that fits you — about 3 minutes. Which area of life matters most to you right now?`
-    : `Hey! I'm Cylan, your financial counselor inside Ascend. I'll ask a few quick questions to set things up the way that fits you — about 3 minutes. What should I call you?`;
+    ? `Hey ${_aiOnb.knownName}! I'm Cornileus, your financial counselor inside Ascend. I'll ask a few quick questions to set things up the way that fits you — about 3 minutes. Which area of life matters most to you right now?`
+    : `Hey! I'm Cornileus, your financial counselor inside Ascend. I'll ask a few quick questions to set things up the way that fits you — about 3 minutes. What should I call you?`;
   const openerChips = _aiOnb.knownName
     ? ["💰 Money", "💪 Health", "🧠 Mind", "💼 Career", "❤️ Relationships", "🙏 Faith"]
     : [];
@@ -14187,7 +14258,7 @@ function aiOnboardingRender() {
       const text = m.parsed?.say || m.content || "";
       return `
         <div style="display:flex;gap:8px;margin-bottom:10px;align-items:flex-start">
-          <div style="width:28px;height:28px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:13px;flex-shrink:0">✨</div>
+          ${cornAvatarHtml(32, false)}
           <div style="background:var(--bg-elev);padding:10px 14px;border-radius:16px;border-top-left-radius:4px;max-width:80%;font-size:14px;line-height:1.45">${esc(text)}</div>
         </div>`;
     }
@@ -14230,9 +14301,9 @@ function aiOnboardingRender() {
 
   openSheet(`
     <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
-      <div style="width:32px;height:32px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:15px">✨</div>
+      ${cornAvatarHtml(40, true)}
       <div style="flex:1;min-width:0">
-        <div style="font-weight:700;font-size:15px">Cylan</div>
+        <div style="font-weight:700;font-size:15px">Cornileus</div>
         <div style="font-size:11px;color:var(--t3)">${o.plan ? "Plan ready" : o.asking ? "Thinking…" : "Setting things up · ~3 min"}</div>
       </div>
       <button class="del-x" style="background:none;border:none;font-size:22px;color:var(--t3);cursor:pointer" onclick="aiOnbClose()">×</button>
@@ -20408,7 +20479,7 @@ toggleGoal = function(id) {
 /* --- Quick-add Spend (the FAB sheet) ---------------------------- */
 // Tap-the-FAB menu. Replaces the previous single-action FAB which
 // always opened quickAddSpendSheet. Surfaces the 4 most common quick
-// captures: spend, win, jump to habits, ask Cylan. Tight 4-button
+// captures: spend, win, jump to habits, ask Cornileus. Tight 4-button
 // sheet, no dimming of unused space.
 function quickAddMenu() {
   const actions = [
@@ -20418,7 +20489,7 @@ function quickAddMenu() {
       onclick: "closeSheet();setTimeout(()=>addWinSheet(),100)" },
     { icon: "✓", label: "Check today's habits", sub: `${todayHabitProgress().done}/${todayHabitProgress().total} done so far`,
       onclick: "closeSheet();setTimeout(()=>{showTab('today');window.scrollTo({top:0,behavior:'smooth'});},100)" },
-    { icon: "✨", label: "Ask Cylan something", sub: "Money question, gut check, plan a move",
+    { icon: "✨", label: "Ask Cornileus something", sub: "Money question, gut check, plan a move",
       onclick: "closeSheet();setTimeout(()=>openCounselor(),100)" },
   ];
   openSheet(`
@@ -20549,7 +20620,7 @@ function scanHoldingsSheet() {
     <h2 style="margin-bottom:4px">📸 Scan your portfolio</h2>
     <p class="muted" style="font-size:13px;line-height:1.5;margin-bottom:14px">
       Snap a screenshot of any brokerage / 401(k) / crypto app showing positions and totals.
-      Cylan will read the tickers, names, and balances, then ask you to confirm each before adding.
+      Cornileus will read the tickers, names, and balances, then ask you to confirm each before adding.
     </p>
     <button class="btn" id="scan-port-pick" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;display:flex;gap:10px;align-items:center;justify-content:center">
       <span style="font-size:18px">📷</span> Pick a screenshot
@@ -21107,7 +21178,7 @@ function whatsNewSheet() {
     '<p class="muted" style="font-size:13px;margin-bottom:14px">A bunch of features that make Ascend feel more like a real app.</p>' +
     '<div class="list">' +
       '<div class="row"><div class="lead">\u{1F9ED}</div><div class="body"><div class="t1">Guided tour</div><div class="t2">12-step interactive walkthrough with live demo data. Settings → Take the tour to replay.</div></div></div>' +
-      '<div class="row"><div class="lead">✨</div><div class="body"><div class="t1">Cylan, your money counselor</div><div class="t2">Tap the ✨ button anywhere. CFP-level planning that knows your real numbers.</div></div></div>' +
+      '<div class="row"><div class="lead">✨</div><div class="body"><div class="t1">Cornileus, your money counselor</div><div class="t2">Tap the ✨ button anywhere. CFP-level planning that knows your real numbers.</div></div></div>' +
       '<div class="row"><div class="lead">✦</div><div class="body"><div class="t1">Plan tab</div><div class="t2">Roadmap with Plan Health, pace chips per plan, what-if simulator, Smart Plays.</div></div></div>' +
       '<div class="row"><div class="lead">\u{1F4C5}</div><div class="body"><div class="t1">Calendar tab</div><div class="t2">Habits, wins, mood, bills by day. Year view shows 12 months at a glance.</div></div></div>' +
       '<div class="row"><div class="lead">↗</div><div class="body"><div class="t1">Stocks tab</div><div class="t2">Live quotes, market scans, housing/mortgage analyzers.</div></div></div>' +
@@ -21294,9 +21365,10 @@ function init() {
     debtConsolidationSheet,
     fetchInsight, getMonthlyInsight, runAiInsight, maybeFireDailyInsight,
     openCounselor, toggleCounselorLauncher, counselorRender, counselorSend, counselorClear, buildCounselorSnapshot,
+    CORNILEUS_SVG, cornAvatarHtml,
     counselorToggleKeep, counselorNewChat,
-    saveCylanInsight, cylanInsightsSheet, _copyInsightText, _removeInsight,
-    _parseAndRunActions, _runCylanAction, _renderActionChips,
+    saveCornileusInsight, cylanInsightsSheet, _copyInsightText, _removeInsight,
+    _parseAndRunActions, _runCornileusAction, _renderActionChips,
     counselorVoiceToggle, negotiateBillWithAI, negotiateBillWithAISeed,
     _whatIfState, whatIfCardHtml, _whatIfUpdate, renderPlanningWhatIfOnly,
     _whatIfBlendedReturn, _whatIfApplyPreset, _whatIfSetCell,
