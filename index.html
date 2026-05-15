@@ -7366,6 +7366,18 @@ function wealthComposition() {
   for (const l of (DB.liabilities || [])) {
     debts += +l.balance || 0;
   }
+  // Stock portfolio (tracked in DB.stocks.holdings) lives under investments.
+  // Falls back to cost basis if no live quote has been fetched yet so the
+  // composition doesn't dip to 0 between refreshes.
+  const sh = (DB.stocks && DB.stocks.holdings) || {};
+  const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  for (const [tk, h] of Object.entries(sh)) {
+    const shares = +h.shares || 0;
+    if (shares <= 0) continue;
+    const q = cache[tk];
+    const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+    investments += price * shares;
+  }
   const total = cash + investments + realAssets - debts;
   return { cash, investments, realAssets, debts, total };
 }
