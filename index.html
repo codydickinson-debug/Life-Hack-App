@@ -2718,12 +2718,19 @@ try { BUILD_DATE = new Date(document.lastModified).toLocaleString(undefined, { d
 (async () => {
   try {
     const r = await fetch("./index.html", { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
     const buf = await r.arrayBuffer();
     const digest = await crypto.subtle.digest("SHA-256", buf);
     BUILD_ID = Array.from(new Uint8Array(digest).slice(0, 4))
       .map((b) => b.toString(16).padStart(2, "0")).join("");
-    if (activeTab === "settings") renderSettings();
-  } catch {}
+  } catch {
+    // Fetch can fail on file:// (no fetch on local file URLs), CORS-locked
+    // origins, or offline state. Fall back to a marker that's unambiguously
+    // "couldn't compute" rather than leaving the Settings row stuck on
+    // "computing…" forever — that wording suggests something's pending.
+    BUILD_ID = "—";
+  }
+  if (activeTab === "settings" && typeof renderSettings === "function") renderSettings();
 })();
 
 /* ================ TABS ================ */
