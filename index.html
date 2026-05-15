@@ -14177,7 +14177,7 @@ function cornileusKnowsSheet() {
       ${row("Net worth", "$" + (snap.net_worth != null ? snap.net_worth.toLocaleString() : "—"))}
       ${row("30-day change", snap.net_worth_change_30d != null ? ("$" + snap.net_worth_change_30d.toLocaleString()) : "—")}
       ${row("Wealth Score", (snap.wealth_score != null ? snap.wealth_score + " / 100" : "—") + (snap.wealth_label ? " · " + snap.wealth_label : ""))}
-      ${snap.wealth_top_gap ? row("Biggest gap", snap.wealth_top_gap, "What's holding the score back the most") : ""}
+      ${snap.wealth_top_gap ? row("Biggest gap", (snap.wealth_top_gap.name || snap.wealth_top_gap.suggest || "—"), snap.wealth_top_gap.suggest || "What's holding the score back the most") : ""}
     `)}
 
     ${section("Cash flow (this month)", `
@@ -30178,7 +30178,7 @@ function weeklyReviewSheet() {
 }
 
 /* --- "What's new" sheet (one-time on upgrade) ------------------- */
-const WHATS_NEW_KEY = "v3.4-stocks";
+const WHATS_NEW_KEY = "v3.5-cornileus";
 function maybeShowWhatsNew() {
   // Skip if a PWA shortcut is opening its own action sheet — the user
   // didn't launch the app to see What's New, they tapped Quick Add.
@@ -30189,24 +30189,17 @@ function maybeShowWhatsNew() {
 }
 function whatsNewSheet() {
   openSheet(
-    '<h2>What\'s new — Cornileus, your financial advisor</h2>' +
-    '<p class="muted" style="font-size:13px;margin-bottom:14px">Stocks tab is now a full broker-grade research platform with AI predictions, visual past→present→future projections, and Cornileus as your financial advisor.</p>' +
+    '<h2>What\'s new — Cornileus, more personal</h2>' +
+    '<p class="muted" style="font-size:13px;margin-bottom:14px">Cornileus is now more of a relationship and less of a one-shot bot. Pick how he talks to you, see what he knows about you, get a daily briefing.</p>' +
     '<div class="list">' +
-      '<div class="row"><div class="lead">\u{1F52E}</div><div class="body"><div class="t1">AI-powered price forecasts</div><div class="t2">Every ticker has a past · present · future chart with bear/base/bull bands from Monte Carlo on its own historical drift &amp; volatility.</div></div></div>' +
-      '<div class="row"><div class="lead">✨</div><div class="body"><div class="t1">Cornileus as your advisor</div><div class="t2">Reads your full picture — net worth, cashflow, holdings, goals — and gives you a graded plan for this month, quarter, and year.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4D0}</div><div class="body"><div class="t1">Build a plan visually</div><div class="t2">Pick a goal → compound math + projection chart with milestone markers. 6 starter presets: house, FIRE, retire-by-60, college fund, more.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4BC}</div><div class="body"><div class="t1">Portfolio tracker + insights</div><div class="t2">Holdings, allocation pie, 90-day chart, projected dividends, diversification score, performance attribution — all in one card.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F3AF}</div><div class="body"><div class="t1">Allocation targets + rebalance</div><div class="t2">Set target % per holding → automatic sell/buy plan to return to target. Drift alerts in Smart Plays.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4C9}</div><div class="body"><div class="t1">Tax-loss harvesting</div><div class="t2">Surfaces losses you could realize against gains, with wash-sale rule guidance. Auto-fires in Nov/Dec.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4CA}</div><div class="body"><div class="t1">Market sentiment + sector heatmap</div><div class="t2">Fear/Greed-style market gauge from SPY, VIX, 10Y treasury. 11-sector ETF heatmap with mood pill.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F50D}</div><div class="body"><div class="t1">Stock screener + comparator</div><div class="t2">Filter the S&amp;P 500 by value, growth, dividend, momentum, oversold, quality. Side-by-side ticker comparison with head-to-head scoring.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F514}</div><div class="body"><div class="t1">Price alerts + earnings calendar</div><div class="t2">Notify on threshold crossings. Earnings + ex-dividend dates feed the unified Calendar tab.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F393}</div><div class="body"><div class="t1">Teach me — 22-topic glossary</div><div class="t2">Tap "?" next to any metric: contextualized explanations of P/E, beta, RSI, compound interest, dollar-cost averaging, allocation by age, more.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4F0}</div><div class="body"><div class="t1">News-driven AI takes + weekly digest</div><div class="t2">Per-ticker AI summaries of recent headlines with structured verdicts. Weekly portfolio digest auto-suggested on Sundays.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4BE}</div><div class="body"><div class="t1">CSV import / export</div><div class="t2">Bulk-add holdings from a broker statement export, or send your portfolio + realized P&amp;L to a spreadsheet.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{2600}\u{FE0F}</div><div class="body"><div class="t1">Morning briefing</div><div class="t2">Once a day, Cornileus reads your snapshot and tells you what matters today, one small win, and one thing to watch out for. Auto-suggested on Today between 5am-noon.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F3AD}</div><div class="body"><div class="t1">Pick his tone</div><div class="t2">Direct (default) · Encouraging · Strict · Friendly. Settings → Cornileus → Tone.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F50D}</div><div class="body"><div class="t1">What Cornileus knows about you</div><div class="t2">Full transparency screen showing every data point he sees, grouped into 7 sections. Settings → Cornileus.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F9E0}</div><div class="body"><div class="t1">Explain any ticker</div><div class="t2">In the Stocks detail sheet, tap "Explain X in plain English" — Cornileus gives you a 2-paragraph plain-English summary of the company + investment case.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F31F}</div><div class="body"><div class="t1">Plus everything from v3.4</div><div class="t2">Full broker-grade Stocks tab: AI price forecasts, advisor mode, plan builder, portfolio tracker, allocation targets, tax-loss helper, market sentiment, screener, 29-topic glossary, more.</div></div></div>' +
     '</div>' +
     '<div class="actions"><button class="btn secondary" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet()">Got it</button>' +
-    '<button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet();setTimeout(()=>showTab(\'stocks\'),120)">Take me to Stocks →</button></div>'
+    '<button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet();setTimeout(()=>cornileusMorningBriefingSheet(),120)">☀️ Open today\'s briefing</button></div>'
   );
 }
 
