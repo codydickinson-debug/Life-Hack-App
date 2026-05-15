@@ -1241,18 +1241,24 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 
 /* Cornileus action confirmation chips — shown under assistant bubbles when
    Cornileus emits <ACTION> blocks that the frontend executed. */
-.cns-actions { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.cns-actions { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
 .cns-action-chip {
-  display: inline-flex; align-items: center;
-  gap: 6px; padding: 5px 10px;
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; padding: 8px 12px;
   background: rgba(52,199,89,0.12); color: var(--green, #34c759);
-  border: 1px solid rgba(52,199,89,0.28); border-radius: 999px;
-  font-size: 11.5px; font-weight: 700;
-  cursor: pointer; align-self: flex-start;
-  max-width: 100%; text-align: left; line-height: 1.3;
+  border: 1px solid rgba(52,199,89,0.32); border-radius: 12px;
+  font-size: 12.5px; font-weight: 600;
+  cursor: pointer; width: 100%;
+  text-align: left; line-height: 1.35;
+  transition: background .15s ease, transform .1s ease;
 }
 .cns-action-chip:hover { background: rgba(52,199,89,0.20); }
+.cns-action-chip:active { transform: scale(0.985); }
 .cns-action-chip:disabled { cursor: default; opacity: 0.7; }
+.cns-action-chip .cns-action-arrow {
+  font-size: 14px; opacity: 0.7; flex-shrink: 0;
+}
+.cns-action-chip:disabled .cns-action-arrow { display: none; }
 .cns-action-chip.err {
   background: rgba(239,68,68,0.10); color: var(--red, #ef4444);
   border-color: rgba(239,68,68,0.28);
@@ -6252,6 +6258,7 @@ async function toggleRoadmapMilestone(rmId, phaseId, msId) {
   if (!ph) return;
   const m = (ph.milestones || []).find(x => x.id === msId);
   if (!m) return;
+  const wasPhaseDone = !!ph.completed;
   m.done = !m.done;
   // Auto-complete phase if all milestones done
   if ((ph.milestones || []).length && ph.milestones.every(x => x.done)) {
@@ -6264,6 +6271,17 @@ async function toggleRoadmapMilestone(rmId, phaseId, msId) {
   }
   await save();
   render();
+  // Phase just went from open → complete. Toast + check if whole roadmap is done.
+  if (ph.completed && !wasPhaseDone) {
+    const allPhasesDone = (rm.phases || []).every(p => p.completed);
+    if (allPhasesDone) {
+      // Whole roadmap done — celebration
+      try { celebrate && celebrate(); } catch {}
+      toast(`🎉 Roadmap complete: ${rm.title}`);
+    } else {
+      toast(`✓ Phase done: ${ph.title}`);
+    }
+  }
 }
 
 async function togglePhaseComplete(rmId, phaseId) {
@@ -12475,7 +12493,11 @@ function _renderActionChips(actions) {
   return `<div class="cns-actions">${actions.map(a => `
     <button class="cns-action-chip ${a.ok ? "ok" : "err"}"
       ${a.link ? `onclick="closeSheet();showTab(${jsAttr(a.link)})"` : "disabled"}>
-      ${a.ok ? (a.icon || "✓") : "⚠️"} ${esc(a.label)}
+      <span style="display:flex;align-items:center;gap:8px;min-width:0">
+        <span style="flex-shrink:0">${a.ok ? (a.icon || "✓") : "⚠️"}</span>
+        <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(a.label)}</span>
+      </span>
+      ${a.ok && a.link ? `<span class="cns-action-arrow">Open →</span>` : ''}
     </button>
   `).join("")}</div>`;
 }
