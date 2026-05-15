@@ -6545,7 +6545,11 @@ function renderMoney() {
             </div>
           `).join("")}
         </div>
-      ` : `<div class="empty"><div class="e-emoji">🎯</div><div class="e-title">No savings goals yet</div><div class="e-sub">Add a goal on the Savings tab to see how long it'll take to hit at different contribution rates.</div></div>`}
+      ` : emptyStateHtml({
+        emoji: "🎯",
+        title: "Set a savings goal to project pace",
+        sub: "Add a goal on the Savings tab and see how long it'd take to hit at different contribution rates.",
+      })}
     `;
   }
   else if (moneySub === "budget") {
@@ -8512,11 +8516,12 @@ function allNotesSheet() {
   if (!notes.length) {
     openSheet(`
       <h2>All notes</h2>
-      <div class="empty" style="padding:30px 16px;text-align:center">
-        <div class="e-emoji">📓</div>
-        <div class="e-title">No notes yet</div>
-        <div class="e-sub">Tap any day on the Calendar to add a note, reminder, or journal entry.</div>
-      </div>
+      ${emptyStateHtml({
+        emoji: "📓",
+        title: "Start a journal on any day",
+        sub: "Tap a Calendar day to add a note, reminder, or quick reflection.",
+        pad: "30px 16px",
+      })}
       <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
     `);
     return;
@@ -13962,7 +13967,12 @@ function smartPlaysSheet() {
       </div>
     </div>
   `).join("") : `
-    <div class="empty" style="padding:24px 0"><div class="e-emoji">✨</div><div class="e-title">All caught up</div><div class="e-sub">No active plays right now. Keep doing what's working — check back next week.</div></div>
+    ${emptyStateHtml({
+      emoji: "✨",
+      title: "All caught up",
+      sub: "No active plays right now. Keep doing what's working — check back next week.",
+      pad: "24px 0",
+    })}
   `;
   const dismissedCount = Object.keys(DB.dismissedPlays || {}).length;
   openSheet(`
@@ -15165,7 +15175,11 @@ function spendingBreakdownSheet() {
     const r = computeSpendingByCategory(days);
     if (!r.categories.length || r.total === 0) {
       return `
-        <div class="empty"><div class="e-emoji">📊</div><div class="e-title">No spending data yet</div><div class="e-sub">Add recurring expenses or log some transactions to see breakdown.</div></div>
+        ${emptyStateHtml({
+          emoji: "📊",
+          title: "Log some spending first",
+          sub: "Add recurring bills or log a few transactions and the breakdown shows up here.",
+        })}
       `;
     }
     // Horizontal stacked bar
@@ -15629,7 +15643,11 @@ function subscriptionAuditSheet() {
 
   const body = recurring.length
     ? recurring.map(rowFor).join("")
-    : `<div class="empty"><div class="e-emoji">🔍</div><div class="e-title">Nothing to audit yet</div><div class="e-sub">Add recurring expenses in Settings → Recurring transactions first.</div></div>`;
+    : emptyStateHtml({
+      emoji: "🔍",
+      title: "Nothing to audit yet",
+      sub: "Add a few recurring expenses in Settings → Recurring transactions and we'll surface anything worth cutting.",
+    });
 
   // Detected suggestions banner: charges that look periodic but aren't tracked
   const dismissed = ((DB.settings || {}).dismissedRecurring || []);
@@ -17312,7 +17330,11 @@ function sinkingFundsSheet() {
 
   const body = funds.length
     ? funds.map(fundRow).join("")
-    : `<div class="empty"><div class="e-emoji">🪣</div><div class="e-title">No sinking funds yet</div><div class="e-sub">Smooth out irregular bills — car insurance, gifts, vacation — by saving monthly toward annual targets.</div></div>`;
+    : emptyStateHtml({
+      emoji: "🪣",
+      title: "Smooth out irregular bills",
+      sub: "Car insurance, gifts, vacation. Save monthly toward annual targets so the big bills don't sting.",
+    });
 
   openSheet(`
     <h2>🪣 Sinking funds</h2>
@@ -19208,7 +19230,11 @@ function financialCalendarSheet() {
 
   const body = events.length
     ? `<div class="list">${events.map(renderEvent).join("")}</div>`
-    : `<div class="empty"><div class="e-emoji">📅</div><div class="e-title">Nothing on the horizon</div><div class="e-sub">Tax dates and other built-ins were hidden — restore them below, or add a custom date.</div></div>`;
+    : emptyStateHtml({
+      emoji: "📅",
+      title: "Nothing on the horizon",
+      sub: "Tax dates and other built-ins were hidden — restore them below, or add a custom date.",
+    });
 
   openSheet(`
     <h2>📅 Financial calendar</h2>
