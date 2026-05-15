@@ -15968,6 +15968,46 @@ async function toggleNotifications(on) {
 }
 
 let reminderTimer;
+// Pick the single most urgent thing to mention in the daily reminder.
+// Mirrors the priority chain Daily Pulse uses on the Today tab so the
+// notification surfaces the same nudge the user would see if they opened
+// the app. Falls back to habit progress when nothing urgent is happening.
+function _dailyReminderBody() {
+  try {
+    // Bill due in the next 2 days
+    if (typeof upcomingBills === "function") {
+      const soon = (upcomingBills(2) || []).filter(b => b && b.next_predicted);
+      if (soon.length) {
+        const b = soon[0];
+        const days = Math.max(0, Math.round((new Date(b.next_predicted + "T00:00:00") - Date.now()) / 86400000));
+        const when = days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days}d`;
+        return `${b.name || "Bill"} due ${when} · ${typeof fmt$0 === "function" ? fmt$0(b.amount || 0) : ""}`.trim();
+      }
+    }
+    // Habit streak about to break (last logged was yesterday or earlier, streak ≥ 3)
+    const habits = (DB.habits || []);
+    for (const h of habits) {
+      const log = h.log || {};
+      const streak = (typeof currentStreak === "function") ? currentStreak(h) : 0;
+      if (streak < 3) continue;
+      const t = todayKey();
+      if (!log[t]) return `${h.emoji || "🔥"} Don't break your ${streak}-day ${h.name} streak`;
+    }
+    // Plan deadline within the next 7 days
+    const plans = (DB.plans || []).filter(p => !p.completed && p.target_date);
+    for (const p of plans) {
+      const days = Math.round((new Date(p.target_date + "T00:00:00") - Date.now()) / 86400000);
+      if (days >= 0 && days <= 7) {
+        const when = days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days}d`;
+        return `${p.emoji || "🎯"} Plan due ${when}: ${p.title}`;
+      }
+    }
+  } catch {}
+  // Default: habits-today summary
+  const p = (typeof todayHabitProgress === "function") ? todayHabitProgress() : { done: 0, total: 0 };
+  return p.total ? `${p.done} of ${p.total} habits today. Let's keep going.` : "Open Ascend to plan your day.";
+}
+
 function scheduleReminder() {
   if (reminderTimer) clearTimeout(reminderTimer);
   if (!DB.settings.notifications) return;
@@ -15977,8 +16017,7 @@ function scheduleReminder() {
   if (next <= now) next.setDate(next.getDate()+1);
   reminderTimer = setTimeout(() => {
     if (DB.settings.notifications && Notification.permission === "granted") {
-      const p = todayHabitProgress();
-      const body = p.total ? `${p.done} of ${p.total} habits today. Let's keep going.` : "Open Ascend to plan your day.";
+      const body = _dailyReminderBody();
       try { new Notification("Ascend", { body, icon: "icon-180.png" }); } catch {}
     }
     scheduleReminder();
@@ -17333,13 +17372,20 @@ function buildCounselorSnapshot() {
   }));
 
   // Big-picture plans (Plan tab) — life roadmap items. Distinct from Goals.
-  const openPlans = (DB.plans||[]).filter(p => !p.completed).slice(0,15).map(p => ({
-    title: p.title,
-    tier: p.tier,                                  // 'short' | 'mid' | 'long'
-    target_amount: +p.target_amount || 0,
-    current_amount: +p.current_amount || 0,
-    target_date: p.target_date || null,
-  }));
+  const openPlans = (DB.plans||[]).filter(p => !p.completed).slice(0,15).map(p => {
+    // Use _planLiveCurrent so linked savings buckets show up in Cornileus's
+    // view of plan progress — otherwise plans with linkedSavingsIds (and a
+    // manual current_amount of 0) would look like zero progress to the AI.
+    const live = (typeof _planLiveCurrent === "function") ? _planLiveCurrent(p) : (+p.current_amount || 0);
+    return {
+      title: p.title,
+      tier: p.tier,                                  // 'short' | 'mid' | 'long'
+      target_amount: +p.target_amount || 0,
+      current_amount: Math.round(live),
+      target_date: p.target_date || null,
+      linked_savings: (Array.isArray(p.linkedSavingsIds) && p.linkedSavingsIds.length) ? p.linkedSavingsIds.length : 0,
+    };
+  });
 
   const accounts = (DB.accounts||[]).slice(0,20).map(a => ({
     type: a.type, subtype: a.subtype,
@@ -17511,7 +17557,9 @@ function buildCounselorSnapshot() {
     extra_debt_payment_monthly: +DB.settings.debtExtraPayment || 0,
     money_personality: personality,
     cash_flow: {
+      income_monthly: Math.round(monthlyIncome()),
       income_recurring_monthly: Math.round(monthlyIncomeRecurring),
+      income_budget_field: Math.round(+(DB.budget && DB.budget.income) || 0),
       expense_recurring_monthly: Math.round(monthlyExpenseRecurring),
       income_this_month: Math.round(incomeThisMonth),
       spend_month_to_date: Math.round(sts.mtd),
@@ -19987,13 +20035,16 @@ function _buildDemoData(currentDB) {
     return d.toISOString().slice(0, 10);
   };
   fresh.plans = [
-    { id:"pl1", title:"6-month emergency fund",   emoji:"🛡️",  tier:"short", target_amount: 6000, current_amount: 4250, target_date: planTargetDate(150),
+    // Linked plans: current_amount stays 0 because _planLiveCurrent adds the
+    // linked savings bucket balance on top. This showcases the Plans ↔ Savings
+    // integration — logging a deposit auto-advances the plan, no double entry.
+    { id:"pl1", title:"6-month emergency fund",   emoji:"🛡️",  tier:"short", target_amount: 6000, current_amount: 0, linkedSavingsIds: ["sv1"], target_date: planTargetDate(150),
       note:"Three months of expenses fully covered.",      completed:false, completedAt:0, createdAt: Date.now() - 90*86400000 },
     { id:"pl2", title:"Pay off Capital One card", emoji:"💳",  tier:"short", target_amount: 485,  current_amount: 200,  target_date: planTargetDate(60),
       note:"Stop the 22.99% APR bleed.",                   completed:false, completedAt:0, createdAt: Date.now() - 45*86400000 },
-    { id:"pl3", title:"Max Roth IRA 2026",        emoji:"📈",  tier:"short", target_amount: 7000, current_amount: 1166, target_date: planTargetDate(330),
+    { id:"pl3", title:"Max Roth IRA 2026",        emoji:"📈",  tier:"short", target_amount: 7000, current_amount: 0, linkedSavingsIds: ["sv3"], target_date: planTargetDate(330),
       note:"$583/mo auto-contribution. Don't touch.",      completed:false, completedAt:0, createdAt: Date.now() - 60*86400000 },
-    { id:"pl4", title:"Truck down payment",       emoji:"🚛",  tier:"mid",   target_amount: 8000, current_amount: 1200, target_date: planTargetDate(720),
+    { id:"pl4", title:"Truck down payment",       emoji:"🚛",  tier:"mid",   target_amount: 8000, current_amount: 0, linkedSavingsIds: ["sv2"], target_date: planTargetDate(720),
       note:"20% down on a $40K used pickup.",              completed:false, completedAt:0, createdAt: Date.now() - 45*86400000 },
     { id:"pl5", title:"Get my real estate license", emoji:"🏠", tier:"mid",  target_amount: 0,    current_amount: 0,    target_date: planTargetDate(365),
       note:"Side income + future investing leverage.",     completed:false, completedAt:0, createdAt: Date.now() - 30*86400000 },
@@ -21169,20 +21220,33 @@ function estimatedAnnualDividends() {
   }
   return total;
 }
-// Implied monthly savings capacity = recurring income - recurring expenses,
+// Canonical monthly take-home income — the single source of truth.
+// `DB.budget.income` (a single user-typed number) and recurring income items
+// often describe the same paychecks ("Salary" typed once, plus "Acme Co
+// paycheck" set as a recurring deposit). Summing them double-counts. We
+// take the larger of the two as the conservative estimate. Plaid-detected
+// deposits (incomeThisMonth in the Cornileus snapshot) are reported
+// separately and intentionally not folded in here — they're noisy and
+// already represented by recurring items once the user confirms them.
+function monthlyIncome() {
+  const budget = +(DB.budget && DB.budget.income) || 0;
+  const recurring = recurringMonthlyTotal("income");
+  return Math.max(budget, recurring);
+}
+// Implied monthly savings capacity = monthly income - recurring expenses,
 // plus dividend income smoothed to a monthly figure. Use as a smarter
 // default for projections when the user hasn't set an explicit
 // `monthlySavingsTarget`. Returns 0 if data is too sparse to be trustworthy
-// (no recurring income on file).
+// (no income on file).
 function impliedMonthlySavings() {
-  const inc = recurringMonthlyTotal("income");
+  const inc = monthlyIncome();
   const exp = recurringMonthlyTotal("expense");
   if (inc <= 0) return 0;
   const divMonthly = estimatedAnnualDividends() / 12;
   return Math.max(0, Math.round(inc + divMonthly - exp));
 }
 function safeToSpend() {
-  const income = (+(DB.budget && DB.budget.income) || 0) + recurringMonthlyTotal("income");
+  const income = monthlyIncome();
   const fixedRecurring = recurringMonthlyTotal("expense");
   const fixedBudget = ((DB.budget && DB.budget.expenses) || []).reduce((a, e) => a + (+e.amount || 0), 0);
   const savingsTarget = +(DB.settings && DB.settings.monthlySavingsTarget) || 0;
@@ -21287,8 +21351,9 @@ function _iraLimit(year, age) {
 
 function _playsAge() { return +DB.profile?.age || 30; }
 function _playsMonthlyIncome() {
-  // Use budget income if set; otherwise fall back to detected recurring income.
-  return (+(DB.budget?.income) || 0) + recurringMonthlyTotal("income");
+  // Delegates to canonical monthlyIncome() — see comment at its definition for
+  // why we take the max of budget.income vs recurring rather than summing.
+  return monthlyIncome();
 }
 function _playsMonthlyFixed() {
   // Don't double-count recurring with budget.expenses — they often overlap.
@@ -27898,7 +27963,7 @@ function weeklyReviewSheet() {
 }
 
 /* --- "What's new" sheet (one-time on upgrade) ------------------- */
-const WHATS_NEW_KEY = "v3.2";
+const WHATS_NEW_KEY = "v3.3";
 function maybeShowWhatsNew() {
   // Skip if a PWA shortcut is opening its own action sheet — the user
   // didn't launch the app to see What's New, they tapped Quick Add.
@@ -27910,16 +27975,18 @@ function maybeShowWhatsNew() {
 function whatsNewSheet() {
   openSheet(
     '<h2>What\'s new</h2>' +
-    '<p class="muted" style="font-size:13px;margin-bottom:14px">A bunch of features that make Ascend feel more like a real app.</p>' +
+    '<p class="muted" style="font-size:13px;margin-bottom:14px">Tighter integration across the app — your systems now talk to each other.</p>' +
     '<div class="list">' +
-      '<div class="row"><div class="lead">\u{1F9ED}</div><div class="body"><div class="t1">Guided tour</div><div class="t2">12-step interactive walkthrough with live demo data. Settings → Take the tour to replay.</div></div></div>' +
-      '<div class="row"><div class="lead">✨</div><div class="body"><div class="t1">Cornileus, your money counselor</div><div class="t2">Tap the ✨ button anywhere. CFP-level planning that knows your real numbers.</div></div></div>' +
-      '<div class="row"><div class="lead">✦</div><div class="body"><div class="t1">Plan tab</div><div class="t2">Roadmap with Plan Health, pace chips per plan, what-if simulator, Smart Plays.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4C5}</div><div class="body"><div class="t1">Calendar tab</div><div class="t2">Habits, wins, mood, bills by day. Year view shows 12 months at a glance.</div></div></div>' +
-      '<div class="row"><div class="lead">↗</div><div class="body"><div class="t1">Stocks tab</div><div class="t2">Live quotes, market scans, housing/mortgage analyzers.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4A1}</div><div class="body"><div class="t1">Smart Plays</div><div class="t2">Personalized next moves based on YOUR numbers — debt payoff, account priority, retirement projection.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4C8}</div><div class="body"><div class="t1">Daily Pulse</div><div class="t2">One contextual nudge at the top of Today — net worth, plan deadlines, mood check-ins.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F516}</div><div class="body"><div class="t1">Build version in Settings</div><div class="t2">Confirm exactly which version you\'re on — useful when syncing across devices.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F517}</div><div class="body"><div class="t1">Plans + Savings linked</div><div class="t2">Edit any plan → pick savings buckets to link. Deposits to a bucket auto-advance the plan and flip it complete at target.</div></div></div>' +
+      '<div class="row"><div class="lead">✨</div><div class="body"><div class="t1">Cornileus knows more</div><div class="t2">Now sees habits, streaks, moods, reflections, wins, stocks watchlist, money personality, open roadmaps, dividends. Ask anything.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4C8}</div><div class="body"><div class="t1">Smarter Daily Pulse</div><div class="t2">Now surfaces streaks about to break, bills due in &lt;3d, goals one step from done, savings within $100 of target.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4C5}</div><div class="body"><div class="t1">Plan deadlines on Calendar</div><div class="t2">Plan target dates now show on the heatmap and the day sheet — tap any day to see what plans land there.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F310}</div><div class="body"><div class="t1">Mood, surfaced</div><div class="t2">Stats now shows a 30-day mood strip and surfaces mood-vs-spend patterns.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F525}</div><div class="body"><div class="t1">Wealth Score: Discipline bonus</div><div class="t2">A 6th dimension that credits habit streaks, plans done, and goals shipped. Bonus only — never penalizes.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4B0}</div><div class="body"><div class="t1">Smarter projections</div><div class="t2">FIRE + retirement now use recurring income − bills + dividends when you haven\'t set a target. Forecast shows the source.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4DC}</div><div class="body"><div class="t1">Richer Year Review</div><div class="t2">Now includes net-worth delta, plans completed, savings deposited, moods captured, books read, achievements unlocked.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4F2}</div><div class="body"><div class="t1">Smarter daily reminder</div><div class="t2">The notification now surfaces the most urgent thing — bill due, streak at risk, plan deadline this week.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F198}</div><div class="body"><div class="t1">Support page</div><div class="t2">Settings → Help → Support &amp; FAQ. Consolidated help, security disclosure, and feedback paths.</div></div></div>' +
     '</div>' +
     '<div class="actions"><button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet()">Got it</button></div>'
   );
