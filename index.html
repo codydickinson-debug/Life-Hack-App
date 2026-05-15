@@ -10748,8 +10748,12 @@ function _stocksRenderPortfolio() {
   const plColor = totalPl >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
   const dayColor = dayChange >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
 
-  // Sort rows by market value descending for the table
-  rows.sort((a, b) => b.m - a.m);
+  // Sort rows per user preference (default: market value desc)
+  const sortKey = (DB.stocks && DB.stocks.holdingsSort) || "value";
+  if (sortKey === "pl")        rows.sort((a, b) => b.pl - a.pl);
+  else if (sortKey === "plpct") rows.sort((a, b) => b.plPct - a.plPct);
+  else if (sortKey === "alpha") rows.sort((a, b) => a.tk.localeCompare(b.tk));
+  else                          rows.sort((a, b) => b.m - a.m);
 
   // Allocation: donut pie chart + legend
   const top5 = rows.slice(0, 5);
@@ -10857,7 +10861,16 @@ function _stocksRenderPortfolio() {
   `;
   // Render the rows
   wrap.innerHTML = `
-    <div class="section-h" style="margin-top:14px"><span class="lbl">Holdings (${rows.length})</span></div>
+    <div class="section-h" style="margin-top:14px"><span class="lbl">Holdings (${rows.length})</span>
+      <select onchange="DB.stocks.holdingsSort=this.value;save();_stocksRenderPortfolio()" style="background:transparent;border:0;color:var(--t3);font-size:11px;cursor:pointer;font-weight:600">
+        ${[
+          { id: "value", lbl: "by Value" },
+          { id: "pl",    lbl: "by P&L $" },
+          { id: "plpct", lbl: "by P&L %" },
+          { id: "alpha", lbl: "A-Z" },
+        ].map(o => `<option value="${esc(o.id)}" ${sortKey===o.id?"selected":""}>${esc(o.lbl)}</option>`).join("")}
+      </select>
+    </div>
     <div class="list">
       ${rows.map(r => {
         const pColor = r.pl >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
