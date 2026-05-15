@@ -36,6 +36,26 @@ import news
 app = Flask(__name__, static_url_path="/stockanalyzer-static")
 
 
+def _norm_yield(y):
+    """Normalize yfinance's dividend yield to a fraction.
+    Newer yfinance returns dividendYield as a percentage number (3.28 = 3.28%),
+    older versions returned it as a fraction (0.0328 = 3.28%). We standardize on
+    fraction form throughout so the frontend can multiply by 100 once.
+
+    Heuristic: if the value is > 1, it's percentage-form → divide by 100.
+    A real-world stock with > 100% yield doesn't exist (we'd cap at 0.5 = 50%).
+    """
+    if y is None:
+        return None
+    try:
+        v = float(y)
+    except (TypeError, ValueError):
+        return None
+    if v > 1.0:
+        v = v / 100.0
+    return v
+
+
 def to_jsonable(obj):
     if is_dataclass(obj):
         return {k: to_jsonable(v) for k, v in asdict(obj).items()}
@@ -243,7 +263,7 @@ def api_quote_full(ticker):
         market_cap = _f("marketCap")
         trailing_pe = _f("trailingPE")
         forward_pe = _f("forwardPE")
-        dividend_yield = _f("dividendYield")
+        dividend_yield = _norm_yield(_f("dividendYield"))
         avg_vol = _f("averageVolume")
         last_vol = _f("regularMarketVolume") or _f("volume")
         sector = info.get("sector") if isinstance(info.get("sector"), str) else None
@@ -403,7 +423,7 @@ def api_ticker_broker(ticker):
         market_cap     = _f("marketCap")
         trailing_pe    = _f("trailingPE")
         forward_pe     = _f("forwardPE")
-        dividend_yield = _f("dividendYield")
+        dividend_yield = _norm_yield(_f("dividendYield"))
         avg_vol_info   = _f("averageVolume")
         beta           = _f("beta")
         eps_trailing   = _f("trailingEps")
@@ -742,7 +762,7 @@ def api_screener():
             price = _f("regularMarketPrice") or _f("currentPrice")
             pe = _f("trailingPE")
             fpe = _f("forwardPE")
-            div = _f("dividendYield")
+            div = _norm_yield(_f("dividendYield"))
             rg  = _f("revenueGrowth")
             eg  = _f("earningsGrowth")
             pm  = _f("profitMargins")
