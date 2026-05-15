@@ -1225,66 +1225,42 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   filter: drop-shadow(0 2px 3px rgba(0,0,0,0.32));
 }
 
-/* Cornileus peeks around the right edge of the chat. He slides
-   smoothly in from off-screen-right, then gently rocks/leans in idle
-   so the peek reads as an active character looking at you. The
-   "behind the wall" effect uses a soft mask-image gradient — the
-   left ~40% of him fades to transparent instead of being hard-clipped,
-   so the edge of the peek looks like he's emerging from shadow rather
-   than being mechanically cropped. */
-@keyframes corn-peek-in {
-  0%   { transform: translateX(85%) rotate(6deg); opacity: 0; }
-  60%  { transform: translateX(-4%) rotate(-2deg); opacity: 1; }
-  100% { transform: translateX(0)   rotate(0deg); opacity: 1; }
-}
-@keyframes corn-peek-idle {
-  0%, 100% { transform: translateX(0)    rotate(0deg); }
-  50%      { transform: translateX(-5px) rotate(-3deg); }
+/* Simple scale+fade pop for Cornileus' avatar — no peek, no mask, no
+   idle. Just appears with a small bounce. */
+@keyframes corn-pop {
+  0%   { transform: scale(0.5); opacity: 0; }
+  100% { transform: scale(1);   opacity: 1; }
 }
 .corn-peek {
-  animation: corn-peek-in 0.95s cubic-bezier(0.22, 0.61, 0.36, 1) 0.55s both,
-             corn-peek-idle 4.5s ease-in-out 1.7s infinite;
-  /* Pivot from his lower-right so the lean reads as him leaning his
-     body out from behind the edge to look at you. */
-  transform-origin: 92% 78%;
-  /* Soft fade on the left edge — replaces the hard clip-path crop. */
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, transparent 28%, #000 56%, #000 100%);
-          mask-image: linear-gradient(90deg, transparent 0%, transparent 28%, #000 56%, #000 100%);
+  animation: corn-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.3s both;
+  transform-origin: center center;
 }
-/* Wrapper for the greeting block. Sits OUTSIDE the cns-scroll so its
-   right-edge slide-in isn't clipped by the scroll container's overflow.
-   The block itself has overflow:hidden on the right so the avatar's
-   slide truly emerges from the right border of the chat. */
-.corn-greeting-wrap {
-  position: relative;
-  margin: 6px 0 14px;
-  overflow: hidden;
-}
-/* Greeting speech bubble fades in just as Cornileus settles next to it. */
+.corn-greeting-wrap { margin: 6px 0 14px; }
 @keyframes corn-greet-in {
-  0%   { transform: translateY(6px) scale(0.92); opacity: 0; }
+  0%   { transform: translateY(6px) scale(0.96); opacity: 0; }
   100% { transform: translateY(0)   scale(1);    opacity: 1; }
 }
 .corn-greeting {
-  animation: corn-greet-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) 1.25s both;
+  animation: corn-greet-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.55s both;
 }
 .corn-greeting-bubble {
   position: relative;
   background: var(--bg-elev);
   padding: 12px 16px;
   border-radius: 16px;
-  border-top-right-radius: 4px;
+  border-top-left-radius: 4px;
   font-size: 14px;
   line-height: 1.5;
   color: var(--t1);
-  max-width: 78%;
+  flex: 1;
+  min-width: 0;
 }
 .corn-greeting-bubble::after {
-  content: ""; position: absolute; right: -6px; top: 14px;
+  content: ""; position: absolute; left: -6px; top: 14px;
   width: 0; height: 0;
   border: 6px solid transparent;
-  border-left-color: var(--bg-elev);
-  border-right: 0;
+  border-right-color: var(--bg-elev);
+  border-left: 0;
 }
 /* Animated dots shown next to the avatar while Cornileus is "thinking". */
 .corn-think-dots {
@@ -12147,14 +12123,17 @@ function counselorRender() {
   // container has overflow:auto which would clip the avatar's slide-in
   // from off-screen-right). The wrapper has overflow:hidden so the slide
   // truly emerges from the right border of the chat.
+  // Empty-thread greeting: avatar on the left, speech bubble next to it.
+  // Standard chat layout — no peeking, no clipping. Avatar pops in with
+  // a simple scale+fade.
   const greetingHtml = !thread.length ? `
     <div class="corn-greeting-wrap">
-      <div class="corn-greeting" style="display:flex;gap:10px;align-items:center;justify-content:flex-end">
+      <div class="corn-greeting" style="display:flex;gap:10px;align-items:flex-start">
+        ${cornAvatarHtml(56, true, "happy")}
         <div class="corn-greeting-bubble">
           ${esc(greetingText)}
           <div style="font-size:11px;color:var(--t4);margin-top:6px">Educational guidance — not licensed financial advice.</div>
         </div>
-        ${cornAvatarHtml(104, true, "happy")}
       </div>
     </div>
   ` : "";
