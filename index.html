@@ -3796,6 +3796,10 @@ function addSavingSheet(existing) {
     } else {
       DB.savings.push({ id: uid(), name, emoji, color, current, target, log: [] });
     }
+    // Run plan auto-complete since directly editing 'current' on a linked
+    // bucket can push a plan over its target. logSavingSheet already does
+    // this for the deposit path; cover the direct-edit path too.
+    try { (typeof _autoCompletePlans === "function") && _autoCompletePlans(); } catch {}
     await save(); closeSheet(); render();
   });
 }
@@ -7890,29 +7894,30 @@ function _nwLastSnapshotAge() {
 // cashflow + savings rate. Lives at the very top of the Money tab so the
 // user lands on "where am I right now?" before drilling into sub-tabs.
 function _moneyHealthSnapshot() {
-  const accountsCash = (DB.accounts || [])
-    .filter(a => ["depository", "investment", "brokerage"].includes(a.type))
-    .reduce((s, a) => s + (+a.balance_current || 0), 0);
-  const accountsDebt = (DB.accounts || [])
-    .filter(a => ["credit", "loan"].includes(a.type))
-    .reduce((s, a) => s + (+a.balance_current || 0), 0);
-  const manualAssets = (DB.assets || []).reduce((s, a) => s + (+a.value || 0), 0);
-  const manualLiab   = (DB.liabilities || []).reduce((s, l) => s + (+l.balance || 0), 0);
-  const savingsTotal = (DB.savings || []).reduce((s, sv) => s + (+sv.current || 0), 0);
-  // Stock portfolio: shares × cached price for each holding.
-  // Quote cache is refreshed on Stocks-tab open; falls back to cost basis
-  // if no live price has been fetched yet so net-worth doesn't jump to 0.
-  const stkHoldings = (DB.stocks && DB.stocks.holdings) || {};
-  const stkCache = (DB.stocks && DB.stocks.quoteCache) || {};
-  const stocksValue = Object.entries(stkHoldings).reduce((sum, [tk, h]) => {
-    const shares = +h.shares || 0;
-    const q = stkCache[tk];
-    const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
-    return sum + shares * price;
-  }, 0);
-  const totalAssets = accountsCash + manualAssets + savingsTotal + stocksValue;
-  const totalDebt   = accountsDebt + manualLiab;
-  const netWorth = totalAssets - totalDebt;
+  // Route net worth through the canonical wealthComposition() so this card
+  // shows the same number as every other surface. Previously this function
+  // recomputed its own version that:
+  //   • Added DB.savings to cash (double-counting the depository accounts
+  //     those buckets are actually sitting inside).
+  //   • Counted DB.stocks.holdings even when the same ticker was already
+  //     in DB.holdings via Plaid (overlap not guarded).
+  // Both bugs inflated the card's net worth by potentially thousands.
+  const comp = (typeof wealthComposition === "function") ? wealthComposition() : null;
+  let netWorth;
+  if (comp) {
+    netWorth = comp.total;
+  } else {
+    // Fallback path — extremely early init only.
+    const accountsCash = (DB.accounts || [])
+      .filter(a => ["depository", "investment", "brokerage"].includes(a.type))
+      .reduce((s, a) => s + (+a.balance_current || 0), 0);
+    const accountsDebt = (DB.accounts || [])
+      .filter(a => ["credit", "loan"].includes(a.type))
+      .reduce((s, a) => s + (+a.balance_current || 0), 0);
+    const manualAssets = (DB.assets || []).reduce((s, a) => s + (+a.value || 0), 0);
+    const manualLiab   = (DB.liabilities || []).reduce((s, l) => s + (+l.balance || 0), 0);
+    netWorth = accountsCash + manualAssets - accountsDebt - manualLiab;
+  }
   // 30-day net-worth change from history snapshots (if any).
   const history = DB.netWorthHistory || [];
   let change30 = null;
@@ -17729,6 +17734,12 @@ function reviewIncomeSheet(deposit) {
         sav.log = sav.log || [];
         sav.log.push({ date: deposit.date, amount: s.amount, note: `Auto-allocated from ${deposit.note||"paycheck"}` });
       }
+      // Run the plan auto-complete cascade so any plan linked to one of the
+      // just-credited buckets flips done (and finishes its linked goals) if
+      // the deposit crossed its target. Without this, a $7k Roth deposit
+      // into a $1k bucket linked to a "Max Roth $7k" plan would silently
+      // leave the plan open after a paycheck split.
+      try { (typeof _autoCompletePlans === "function") && _autoCompletePlans(); } catch {}
       dismissPendingDeposit(deposit.plaid_id);
       closeSheet();
       toast(`Allocated ${fmt$0(totalSuggested)}`);
@@ -21667,6 +21678,14 @@ function loadDemoData() {
   if (!confirm("Fill the app with realistic demo data? This will overwrite your current data. (You can reset later.)")) return;
   DB = _buildDemoData(DB);
   if (window.applyRulesToAll) applyRulesToAll();
+  // Take a starting net-worth snapshot so the chart has a point for "today"
+  // (otherwise the user sees an empty chart until tomorrow's tick).
+  try { (typeof snapshotNetWorth === "function") && snapshotNetWorth(); } catch {}
+  // Run plan auto-complete since demo plans are linked to savings buckets
+  // whose current values may exceed plan targets (e.g. the 6-month emergency
+  // fund is already funded in demo). Without this, the user sees "active"
+  // plans that should clearly be complete.
+  try { (typeof _autoCompletePlans === "function") && _autoCompletePlans(); } catch {}
   save();
   showTab("today");
   toast("Demo data loaded");
