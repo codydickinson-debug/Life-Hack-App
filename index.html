@@ -3412,6 +3412,88 @@ function spendCategories() {
   return Array.from(cats);
 }
 
+// 12-month net-worth growth chart for Stats. Plots the latest snapshot
+// in each month over the last 12. Returns "" when fewer than 2 monthly
+// data points exist.
+function netWorthGrowthChartHtml() {
+  const hist = DB.netWorthHistory || [];
+  if (hist.length < 2) return "";
+  const now = new Date();
+  const months = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const start = d.getTime();
+    const end = new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime() - 1;
+    months.push({ d, label: d.toLocaleDateString("en-US", { month: "short" }), start, end, value: null });
+  }
+  for (const snap of hist) {
+    if (!snap.date) continue;
+    const ts = new Date(snap.date + "T00:00:00").getTime();
+    for (const m of months) {
+      if (ts >= m.start && ts <= m.end) {
+        // keep latest snapshot per month
+        if (m.value === null || ts > m._latestTs) {
+          m.value = +snap.total || 0;
+          m._latestTs = ts;
+        }
+      }
+    }
+  }
+  // Forward-fill: any month without a snapshot inherits the previous month
+  let lastVal = null;
+  for (const m of months) {
+    if (m.value === null) m.value = lastVal;
+    else lastVal = m.value;
+  }
+  // Back-fill from first known value
+  let firstKnown = months.find(m => m.value !== null);
+  if (!firstKnown) return "";
+  for (const m of months) { if (m.value === null) m.value = firstKnown.value; }
+  const nonNull = months.filter(m => m.value !== null);
+  if (nonNull.length < 2) return "";
+  const vals = months.map(m => m.value);
+  const min = Math.min(...vals), max = Math.max(...vals);
+  const range = max - min || 1;
+  const W = 320, H = 110;
+  const padL = 14, padR = 10, padT = 14, padB = 22;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const xAt = (i) => padL + (months.length > 1 ? (i * innerW) / (months.length - 1) : innerW / 2);
+  const yAt = (v) => padT + innerH - ((v - min) / range) * innerH;
+  const linePts = months.map((m, i) => xAt(i).toFixed(1) + "," + yAt(m.value).toFixed(1)).join(" ");
+  const areaPath = "M " + xAt(0).toFixed(1) + "," + (padT + innerH).toFixed(1)
+    + " L " + months.map((m, i) => xAt(i).toFixed(1) + "," + yAt(m.value).toFixed(1)).join(" L ")
+    + " L " + xAt(months.length - 1).toFixed(1) + "," + (padT + innerH).toFixed(1) + " Z";
+  const monthLabels = months.map((m, i) => {
+    const showLabel = i === 0 || i === months.length - 1 || i === Math.floor(months.length / 2);
+    if (!showLabel) return "";
+    return `<text x="${xAt(i).toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--t3)" font-family="-apple-system,system-ui,sans-serif">${esc(m.label)}</text>`;
+  }).join("");
+  const start = months[0].value;
+  const end = months[months.length - 1].value;
+  const delta = end - start;
+  const pct = start !== 0 ? Math.round((delta / Math.abs(start)) * 100) : 0;
+  const isUp = delta >= 0;
+  const color = isUp ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+  return `
+    <div class="section-h" style="margin-top:14px"><span class="lbl">Net worth · 12 months</span><span class="muted" style="font-size:12px;color:${color}" data-priv="amount">${isUp ? '+' : ''}${fmt$0(delta)} (${isUp ? '+' : ''}${pct}%)</span></div>
+    <div style="background:var(--card);border-radius:var(--r);padding:8px 6px 4px;border:0.5px solid var(--sep);margin-bottom:14px">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:auto;display:block">
+        <defs>
+          <linearGradient id="nw-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#34C759" stop-opacity="0.4"/>
+            <stop offset="100%" stop-color="#34C759" stop-opacity="0.02"/>
+          </linearGradient>
+        </defs>
+        <path d="${areaPath}" fill="url(#nw-grad)"/>
+        <polyline points="${linePts}" fill="none" stroke="${color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <circle cx="${xAt(months.length - 1).toFixed(1)}" cy="${yAt(end).toFixed(1)}" r="4" fill="${color}" stroke="#fff" stroke-width="2"/>
+        ${monthLabels}
+      </svg>
+    </div>
+  `;
+}
+
 // Cumulative goal-completion sparkline — shows the user's goal-completion
 // velocity over the last 6 months as an area chart. Plots the count of
 // goals completed by each month-end. Returns "" when fewer than 2 goals
@@ -8506,6 +8588,7 @@ function renderStats() {
 
     ${winsByMonthChartHtml()}
     ${goalVelocityChartHtml()}
+    ${netWorthGrowthChartHtml()}
 
     <div class="section-h"><span class="lbl">This month</span></div>
     <div class="list">
