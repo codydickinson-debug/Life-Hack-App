@@ -4880,8 +4880,10 @@ function renderToday() {
   })();
 
   $("#page-today").innerHTML = `
-    <div class="lg-title">Today</div>
-    <div class="muted" style="margin:-12px 0 6px;font-size:14px">${dateLabel()}</div>
+    <div style="display:flex;align-items:baseline;gap:12px;margin:8px 0 14px;flex-wrap:wrap">
+      <div style="font-size:34px;font-weight:700;letter-spacing:-0.028em;line-height:1;color:var(--t1)">Today</div>
+      <div style="font-size:13.5px;color:var(--t3);font-weight:500">${dateLabel()}</div>
+    </div>
     ${(dailyPulse && !isTodaySectionHidden('dailyPulse')) ? `
       <button onclick="${dailyPulse.onclick}" style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--orange);border-radius:var(--r);padding:10px 14px;margin:8px 0 12px;display:flex;align-items:center;gap:10px;width:100%;text-align:left;cursor:pointer;font:inherit;transition:transform .1s ease">
         <span style="font-size:18px;flex-shrink:0;line-height:1">${dailyPulse.emoji}</span>
