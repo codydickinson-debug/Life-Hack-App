@@ -16275,6 +16275,14 @@ let reminderTimer;
 // the app. Falls back to habit progress when nothing urgent is happening.
 function _dailyReminderBody() {
   try {
+    // Runway under 1 month — financial-safety signal trumps everything
+    const totalLiquid = (DB.savings || []).reduce((s, x) => s + (+x.current || 0), 0)
+                      + (DB.accounts || []).filter(a => a.type === "depository").reduce((s, a) => s + (+a.balance_current || 0), 0);
+    const fixed = (typeof _playsMonthlyFixed === "function") ? _playsMonthlyFixed() : 0;
+    if (fixed >= 500 && totalLiquid >= 0) {
+      const months = totalLiquid / fixed;
+      if (months < 1) return `⚠️ Runway under 1 month — ${months.toFixed(1)} months of fixed expenses`;
+    }
     // Bill due in the next 2 days
     if (typeof upcomingBills === "function") {
       const soon = (upcomingBills(2) || []).filter(b => b && b.next_predicted);
