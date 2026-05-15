@@ -1584,6 +1584,53 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   border-radius: var(--r); padding: 24px 16px; text-align: center;
   margin-bottom: 14px;
 }
+.rm-endstate {
+  display: flex; align-items: baseline; gap: 8px;
+  background: linear-gradient(135deg, rgba(124,58,237,0.10), rgba(236,72,153,0.06));
+  border: 0.5px solid rgba(124,58,237,0.35);
+  border-radius: 8px; padding: 8px 12px;
+  margin: 10px 0 6px; flex-wrap: wrap;
+}
+.rm-endstate-lbl {
+  font-size: 10.5px; font-weight: 700; color: var(--purple, #8957d9);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.rm-endstate-amt {
+  font-size: 18px; font-weight: 800; color: var(--t1);
+  letter-spacing: -0.01em; font-variant-numeric: tabular-nums;
+}
+.rm-endstate-date {
+  font-size: 12px; color: var(--t3); font-weight: 500;
+}
+.rm-chart {
+  background: var(--bg-elev); border-radius: 10px;
+  padding: 10px 12px 4px; margin: 6px 0 10px;
+}
+.rm-chart-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  margin-bottom: 4px;
+}
+.rm-chart-lbl {
+  font-size: 10.5px; font-weight: 700; color: var(--t3);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.rm-chart-end {
+  font-size: 13.5px; font-weight: 700; color: var(--t1);
+  font-variant-numeric: tabular-nums;
+}
+.rm-chart-legend {
+  display: flex; gap: 14px; justify-content: space-between;
+  font-size: 10.5px; color: var(--t3); padding: 2px 4px 4px;
+  flex-wrap: wrap;
+}
+.rm-chart-legend .dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  margin-right: 4px; vertical-align: middle;
+}
+.rm-chart-legend .dot.here { background: #34C759; }
+.rm-chart-legend .dot.future {
+  background: var(--card); border: 1.5px solid #7c3aed;
+}
 
 .plan-card {
   background: var(--card); border-radius: var(--r);
@@ -5071,6 +5118,105 @@ function roadmapProgress(rm) {
   return Math.round(sum / rm.phases.length);
 }
 
+// SVG projection chart for a roadmap card. Plots the running cumulative
+// target dollars across phases over time so the user can SEE where the
+// roadmap takes them. Includes a "you are here" marker based on which
+// phases are already complete + progress through the active phase.
+// Returns "" when there aren't enough money-anchored phases to draw a
+// meaningful chart (need >=2 phases with targetAmount).
+function _roadmapProjectionSvg(rm) {
+  const phases = Array.isArray(rm.phases) ? rm.phases : [];
+  const moneyPhases = phases.filter(p => +p.targetAmount > 0);
+  if (moneyPhases.length < 2) return "";
+  // Cumulative running totals across phases
+  const cum = [];
+  let running = 0;
+  for (let i = 0; i < phases.length; i++) {
+    running += (+phases[i].targetAmount || 0);
+    cum.push({ i, total: running, phase: phases[i] });
+  }
+  const endTotal = running;
+  if (endTotal <= 0) return "";
+  // Fractional "you are here" index — partial credit through the active phase
+  let hereIdx = phases.length;
+  for (let i = 0; i < phases.length; i++) {
+    const pp = phaseProgress(phases[i]);
+    if (pp < 100) { hereIdx = i + (pp / 100); break; }
+  }
+  const hereTotal = (() => {
+    if (hereIdx >= phases.length) return endTotal;
+    const intPart = Math.floor(hereIdx);
+    const frac = hereIdx - intPart;
+    const before = intPart > 0 ? cum[intPart - 1].total : 0;
+    const next = cum[intPart] ? cum[intPart].total : before;
+    return before + (next - before) * frac;
+  })();
+  const W = 320, H = 120;
+  const padL = 12, padR = 12, padT = 14, padB = 24;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const xAt = (i) => padL + (cum.length > 1 ? (i * innerW) / (cum.length - 1) : innerW / 2);
+  const yAt = (v) => padT + innerH - (v / endTotal) * innerH;
+  const linePts = cum.map(p => xAt(p.i).toFixed(1) + "," + yAt(p.total).toFixed(1)).join(" ");
+  const areaPath = "M " + xAt(0).toFixed(1) + "," + (padT + innerH).toFixed(1)
+    + " L " + cum.map(p => xAt(p.i).toFixed(1) + "," + yAt(p.total).toFixed(1)).join(" L ")
+    + " L " + xAt(cum.length - 1).toFixed(1) + "," + (padT + innerH).toFixed(1) + " Z";
+  // "You are here" position (between dots if mid-phase)
+  const hereX = (() => {
+    if (hereIdx >= cum.length - 1) return xAt(cum.length - 1);
+    if (hereIdx <= 0) return xAt(0);
+    const intPart = Math.floor(hereIdx);
+    const frac = hereIdx - intPart;
+    return xAt(intPart) + frac * (xAt(intPart + 1) - xAt(intPart));
+  })();
+  const hereY = yAt(hereTotal);
+  const phaseDots = cum.map((p, i) => {
+    const isPast = i < hereIdx;
+    const fill = isPast ? "#7c3aed" : "var(--card,#1b1b21)";
+    return `<circle cx="${xAt(p.i).toFixed(1)}" cy="${yAt(p.total).toFixed(1)}" r="4" fill="${fill}" stroke="${isPast ? '#fff' : '#7c3aed'}" stroke-width="1.5"/>`;
+  }).join("");
+  const gridLines = [0, 0.5, 1].map(frac => {
+    const y = padT + innerH - innerH * frac;
+    return `<line x1="${padL}" x2="${padL + innerW}" y1="${y}" y2="${y}" stroke="var(--sep)" stroke-width="0.5" stroke-dasharray="2 3" opacity="0.4"/>`;
+  }).join("");
+  return `
+    <div class="rm-chart">
+      <div class="rm-chart-head">
+        <div class="rm-chart-lbl">Where this roadmap takes you</div>
+        <div class="rm-chart-end" data-priv="amount">${fmt$0(endTotal)} <span style="color:var(--t3);font-weight:400">at end</span></div>
+      </div>
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:auto;display:block">
+        <defs>
+          <linearGradient id="rm-grad-${esc(rm.id)}" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#7c3aed" stop-opacity="0.45"/>
+            <stop offset="100%" stop-color="#ec4899" stop-opacity="0.05"/>
+          </linearGradient>
+          <linearGradient id="rm-line-${esc(rm.id)}" x1="0" y1="0" x2="1" y2="0">
+            <stop offset="0%" stop-color="#7c3aed"/>
+            <stop offset="100%" stop-color="#ec4899"/>
+          </linearGradient>
+        </defs>
+        ${gridLines}
+        <path d="${areaPath}" fill="url(#rm-grad-${esc(rm.id)})"/>
+        <polyline points="${linePts}" fill="none" stroke="url(#rm-line-${esc(rm.id)})" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+        ${phaseDots}
+        ${hereIdx < cum.length ? `
+          <line x1="${hereX.toFixed(1)}" y1="${padT}" x2="${hereX.toFixed(1)}" y2="${padT + innerH}" stroke="#34C759" stroke-width="1.2" stroke-dasharray="3 3" opacity="0.85"/>
+          <circle cx="${hereX.toFixed(1)}" cy="${hereY.toFixed(1)}" r="5" fill="#34C759" stroke="#fff" stroke-width="2"/>
+        ` : ''}
+        ${cum.map((p, i) => {
+          const period = p.phase.period || ('P' + (i + 1));
+          return `<text x="${xAt(p.i).toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--t3)" font-family="-apple-system,system-ui,sans-serif">${esc(period.slice(0, 10))}</text>`;
+        }).join("")}
+      </svg>
+      <div class="rm-chart-legend">
+        <span><span class="dot here"></span>You are here · <span data-priv="amount">${fmt$0(Math.round(hereTotal))}</span></span>
+        <span><span class="dot future"></span>Phase target</span>
+      </div>
+    </div>
+  `;
+}
+
 // HTML for a single roadmap card on the Plan tab. Vertical timeline of
 // phases with progress per phase and the active phase auto-expanded.
 function _roadmapCardHtml(rm) {
@@ -5082,6 +5228,18 @@ function _roadmapCardHtml(rm) {
     if (phaseProgress(phases[i]) < 100) { activeIdx = i; break; }
   }
   if (activeIdx === -1 && phases.length) activeIdx = phases.length - 1;
+  // Compute end-state summary: total dollars + end date (if any phase has one)
+  const totalTarget = phases.reduce((s, p) => s + (+p.targetAmount || 0), 0);
+  const lastDated = [...phases].reverse().find(p => /^\d{4}-\d{2}-\d{2}$/.test(p.targetDate || ""));
+  const endDate = lastDated ? new Date(lastDated.targetDate + "T00:00:00") : null;
+  const endDateLabel = endDate ? endDate.toLocaleDateString("en-US", { month: "short", year: "numeric" }) : "";
+  const endStateChip = (totalTarget > 0 || endDateLabel) ? `
+    <div class="rm-endstate">
+      <span class="rm-endstate-lbl">If you finish:</span>
+      ${totalTarget > 0 ? `<span class="rm-endstate-amt" data-priv="amount">${fmt$0(totalTarget)}</span>` : ''}
+      ${endDateLabel ? `<span class="rm-endstate-date">by ${esc(endDateLabel)}</span>` : ''}
+    </div>
+  ` : '';
   return `
     <div class="rm-card">
       <div class="rm-head" onclick="roadmapSheet(${jsAttr(rm.id)})">
@@ -5095,7 +5253,9 @@ function _roadmapCardHtml(rm) {
           <div class="rm-overall-lbl">overall</div>
         </div>
       </div>
+      ${endStateChip}
       <div class="rm-overall-bar"><div class="rm-overall-fill" style="width:${pct}%"></div></div>
+      ${_roadmapProjectionSvg(rm)}
       <div class="rm-phases">
         ${phases.map((ph, i) => {
           const pp = phaseProgress(ph);
@@ -5193,6 +5353,7 @@ function roadmapSheet(id) {
       <div class="rm-overall-bar"><div class="rm-overall-fill" style="width:${overallPct}%"></div></div>
       <div style="font-size:11.5px;color:var(--t3);margin-top:8px">${phases.filter(p => phaseProgress(p) === 100).length} of ${phases.length} phase${phases.length === 1 ? '' : 's'} done</div>
     </div>
+    ${_roadmapProjectionSvg(rm)}
     <div class="rm-phases" style="margin-bottom:14px">
       ${phases.map((ph, i) => {
         const pp = phaseProgress(ph);
@@ -10211,8 +10372,14 @@ AVAILABLE ACTIONS — only emit these types:
         phase targetAmounts. NEVER use generic placeholder numbers.
       - 4-6 phases is the sweet spot; 8 is the hard cap.
       - Phases chain logically: each unlocks the next.
+      - Every phase MUST include both targetAmount AND targetDate.
+        The frontend draws a visual projection chart from these. A
+        phase without targetAmount + targetDate is invisible on the
+        chart, which kills the whole "where will I be" payoff.
+        Use today's date as anchor and add appropriate months/years
+        for each phase's targetDate (ISO YYYY-MM-DD format).
       - Every phase: short distinctive title, period label, 3-5
-        milestones, 2-4 actions. Optionally targetAmount + targetDate.
+        milestones, 2-4 actions, targetAmount, targetDate.
 
     OUTPUT SHAPE (prose preamble → action block → one-line tail):
       "Here's how I sequenced your 5-year debt-free + investing roadmap:
