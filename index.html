@@ -6583,18 +6583,41 @@ function addPlanSheet(opts = {}) {
 function logPlanProgressSheet(id) {
   const p = planById(id);
   if (!p) return;
+  const linkedSum = (typeof _planLinkedSavingsSum === "function") ? _planLinkedSavingsSum(p) : 0;
+  const isLinked = Array.isArray(p.linkedSavingsIds) && p.linkedSavingsIds.length > 0;
+  // When a plan is linked to savings buckets, the "current" field on this
+  // sheet only edits the MANUAL portion — the bucket balance is added on top
+  // by _planLiveCurrent. Without telling the user, the displayed total
+  // jumps unexpectedly. Make the math visible.
+  const linkedNote = isLinked ? `
+    <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:10px;padding:10px 12px;margin:8px 0 14px;font-size:12px;line-height:1.5;color:var(--t2)">
+      <b style="color:#7c3aed">🔗 Linked bucket adds <span data-priv="amount">${fmt$0(linkedSum)}</span></b> on top of whatever you enter here. Live progress = your manual amount + bucket balance.
+    </div>
+  ` : "";
   openSheet(`
     <h2 style="margin-bottom:4px">${esc(p.emoji)} ${esc(p.title)}</h2>
-    <p class="muted" style="font-size:13px;margin-bottom:14px">Update your progress toward this plan.</p>
-    <label>Current amount saved</label>
+    <p class="muted" style="font-size:13px;margin-bottom:14px">${isLinked ? "Update the manual portion of progress (separate from linked buckets)." : "Update your progress toward this plan."}</p>
+    ${linkedNote}
+    <label>${isLinked ? "Manual amount (in addition to linked buckets)" : "Current amount saved"}</label>
     <input id="plan-current" type="number" inputmode="decimal" step="50" min="0"
       value="${p.current_amount || 0}" autofocus />
-    ${p.target_amount ? `<p style="font-size:12px;color:var(--t3);margin-top:6px">Target: ${fmt$0(p.target_amount)}</p>` : ""}
+    ${p.target_amount ? `<p style="font-size:12px;color:var(--t3);margin-top:6px">Target: <span data-priv="amount">${fmt$0(p.target_amount)}</span>${isLinked ? ` · Live total after save: <span id="plan-live-preview" data-priv="amount">${fmt$0((+p.current_amount || 0) + linkedSum)}</span>` : ""}</p>` : ""}
     <div class="actions">
       <button class="btn secondary" onclick="closeSheet()">Cancel</button>
       <button class="btn" onclick="updatePlanProgress(${jsAttr(id)}, document.getElementById('plan-current').value);closeSheet()">Save</button>
     </div>
   `);
+  if (isLinked) {
+    // Live preview of the total as the user types
+    const input = document.getElementById("plan-current");
+    const preview = document.getElementById("plan-live-preview");
+    if (input && preview) {
+      input.addEventListener("input", () => {
+        const v = (+input.value || 0) + linkedSum;
+        preview.textContent = fmt$0(v);
+      });
+    }
+  }
 }
 
 function _planProgressPct(p) {
@@ -19073,6 +19096,12 @@ function buildCounselorSnapshot() {
     // entries. Net worth uses Plaid as canonical; the AI should warn the
     // user about overlap and recommend keeping one source per ticker.
     overlapping_tickers: (typeof _overlappingTickers === "function") ? _overlappingTickers() : [],
+    // Same heuristic for assets/liabilities — manual entries that probably
+    // duplicate a Plaid-synced account by name + balance. Not auto-deduped
+    // because fuzzy matching isn't reliable enough; Cornileus should
+    // recommend the user clean these up manually.
+    overlapping_liabilities: (typeof _overlappingLiabilities === "function") ? _overlappingLiabilities().map(o => ({ manual: o.manual.name, account: o.account.name })) : [],
+    overlapping_assets: (typeof _overlappingAssets === "function") ? _overlappingAssets().map(o => ({ manual: o.manual.name, account: o.account.name })) : [],
     active_subscriptions: activeSubs,
     habits_top: habits,
     longest_current_habit_streak: longestCurrentStreak,
