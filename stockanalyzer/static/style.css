@@ -1,7 +1,9 @@
-:root {
-  /* Dark-first palette tuned to match the parent Ascend app so the iframe
-     feels like another tab, not a separate site. Same purple accent,
-     same warm dark backgrounds, same neutral text. */
+.stk-app {
+  /* Dark-first palette tuned to match the parent Ascend app. Scoped to
+     .stk-app (instead of :root) so the standalone /stockanalyzer page —
+     which now has class="stk-app" on <body> — picks these up, AND when
+     this stylesheet is loaded by the parent app the variables don't leak
+     out to the parent's :root and overwrite Ascend's colors. */
   --bg: #0a0a0c;
   --bg-2: #131318;
   --panel: #18181c;
@@ -35,17 +37,19 @@
 
 * { box-sizing: border-box; }
 
+/* Standalone page: html, body get margin reset. When embedded in Ascend
+   the parent's body styles apply outside .stk-app — those are fine. */
 html, body {
   margin: 0;
+}
+
+.stk-app {
   background: var(--bg);
   color: var(--text);
   font-family: "Inter", -apple-system, BlinkMacSystemFont, sans-serif;
   font-size: 14px;
   line-height: 1.55;
   font-feature-settings: "cv02", "cv03", "cv04", "cv11";
-}
-
-body {
   display: grid;
   grid-template-columns: 240px 1fr;
   min-height: 100vh;
@@ -1173,9 +1177,11 @@ input:focus, select:focus {
   html, body {
     overflow-x: hidden;
     max-width: 100vw;
-    font-size: 13.5px;
   }
-  body { grid-template-columns: 1fr; }
+  .stk-app {
+    font-size: 13.5px;
+    grid-template-columns: 1fr;
+  }
 
   /* ===== Main content fills the viewport ===== */
   .main {

@@ -8959,21 +8959,26 @@ function renderStats() {
   `;
 }
 
-/* ===== STOCKS — iframe-embedded StockAnalyzer =====
-   The full StockAnalyzer UI (sidebar, market pills, all views, charts,
-   mortgage calculator, news) lives inside an iframe. The inline-fetch
-   experiment had layout bugs that weren't worth chasing — the iframe is
-   the simple, reliable option. Reskinned dark in stockanalyzer/static/
-   style.css so it visually fits Ascend, and we keep the iframe mounted
-   across tab switches so its SPA state survives. */
+/* ===== STOCKS — fully inlined, no iframe =====
+   The StockAnalyzer's body markup is fetched from /stockanalyzer (which
+   the Flask backend renders with Jinja for the dynamic markets list),
+   then injected into a <div class="stk-app"> inside #page-stocks. The
+   stockanalyzer's stylesheet is scoped to .stk-app at the source — so
+   loading it via <link> here doesn't pollute Ascend's :root. The
+   stockanalyzer's app.js is loaded as a <script src> after the markup
+   exists so its querySelector bindings find their targets.
+   Net effect: same look as the standalone /stockanalyzer page, lives
+   inside the Ascend tab, no iframe element. */
 
 function renderStocks() {
   const page = document.getElementById("page-stocks");
   if (!page) return;
-  // Preserve iframe state across tab switches.
-  if (page.querySelector("#stk-iframe") || page.querySelector("#stk-local-msg")) return;
+  // Preserve state across tab switches (markup + JS already wired).
+  if (page.dataset.stkLoaded === "1") return;
+  if (page.dataset.stkLoaded === "loading") return;
+  page.dataset.stkLoaded = "loading";
 
-  // file:// fallback (PWA opened locally with no Python backend)
+  // file:// fallback
   if (location.protocol === "file:") {
     page.innerHTML = `
       <div id="stk-local-msg" class="lg-title">Stocks</div>
@@ -8984,12 +8989,15 @@ function renderStocks() {
         <a href="https://life-hack-app.vercel.app" target="_blank" rel="noopener" class="btn" style="display:inline-block;text-decoration:none;padding:10px 18px">Open the live site ↗</a>
       </div>
     `;
+    page.dataset.stkLoaded = "1";
     return;
   }
 
+  // Shell: Cylan CTA banner + .stk-app wrapper where the StockAnalyzer
+  // markup lands. Full-bleed (negative margin) to use the whole tab width.
   page.innerHTML = `
-    <div style="margin:-16px -14px 0;display:flex;flex-direction:column;height:calc(100dvh - 130px);background:#0a0a0c">
-      <div style="padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--sep);flex-shrink:0">
+    <div style="margin:-16px -14px 0">
+      <div style="padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--sep);position:sticky;top:0;z-index:30">
         <div class="row tappable" onclick="openCounselor(null, 'stocks')" role="button" tabindex="0"
           style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:10px 12px;align-items:center;cursor:pointer;margin:0">
           <div style="width:30px;height:30px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;color:var(--purple);margin-right:10px">✨</div>
@@ -9000,11 +9008,52 @@ function renderStocks() {
           <div class="trail chev"></div>
         </div>
       </div>
-      <iframe id="stk-iframe" src="/stockanalyzer?v=5" loading="eager"
-        style="border:0;flex:1;width:100%;-webkit-overflow-scrolling:touch;background:#0a0a0c"
-        title="Stock research"></iframe>
+      <div id="stk-host" class="stk-app">
+        <div style="padding:40px 20px;text-align:center;color:#9aa0b3;font-size:13px;grid-column:1/-1">Loading research…</div>
+      </div>
     </div>
   `;
+
+  _loadStockAnalyzer(page);
+}
+
+async function _loadStockAnalyzer(page) {
+  // 1. Load StockAnalyzer stylesheet once. CSS is scoped to .stk-app at
+  // the source, so :root pollution isn't an issue.
+  if (!document.querySelector('link[data-stk-css]')) {
+    const css = document.createElement("link");
+    css.rel = "stylesheet";
+    css.href = "/stockanalyzer-static/style.css?v=6";
+    css.setAttribute("data-stk-css", "1");
+    document.head.appendChild(css);
+  }
+
+  try {
+    // 2. Fetch the server-rendered StockAnalyzer page (Jinja fills in the
+    // markets list, etc.) and extract its body content.
+    const res = await fetch("/stockanalyzer?v=6", { cache: "no-store" });
+    const html = await res.text();
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    const host = document.getElementById("stk-host");
+    if (!host) return;
+    host.innerHTML = doc.body.innerHTML;
+
+    // 3. Re-create + execute the <script> tags. innerHTML doesn't execute
+    // them; we append fresh <script> elements so the StockAnalyzer's
+    // app.js bootstraps against the now-existing DOM.
+    doc.querySelectorAll("script").forEach(orig => {
+      const s = document.createElement("script");
+      if (orig.src) s.src = orig.getAttribute("src");
+      else s.textContent = orig.textContent;
+      document.body.appendChild(s);
+    });
+
+    if (page) page.dataset.stkLoaded = "1";
+  } catch (e) {
+    const host = document.getElementById("stk-host");
+    if (host) host.innerHTML = `<div style="padding:30px 20px;text-align:center;color:#ef4444;font-size:13px;grid-column:1/-1">Couldn't load research: ${esc(e.message || "")}</div>`;
+    if (page) page.dataset.stkLoaded = "";
+  }
 }
 
 // Removed: native sub-tab helpers (_stocksTickersBody, _stocksHousingBody,
