@@ -14133,6 +14133,196 @@ function _stocksSetWatchlistSort(s) {
   _stocksRenderWatchlist();
 }
 
+/* ---------- "What Cornileus knows about you" ----------
+   Full transparency: shows the snapshot data Cornileus sees about
+   the user, grouped by category, with counts. Builds trust by
+   making the AI's view explicit and inspectable. */
+function cornileusKnowsSheet() {
+  const snap = (typeof buildCounselorSnapshot === "function") ? buildCounselorSnapshot() : {};
+  const row = (label, value, expl) => `
+    <div style="background:var(--bg-elev);border-radius:8px;padding:9px 11px;margin-bottom:4px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px">
+        <div style="font-size:12.5px;color:var(--t1);font-weight:600">${esc(label)}</div>
+        <div style="font-size:13px;color:var(--t2);font-weight:700;font-variant-numeric:tabular-nums">${esc(value)}</div>
+      </div>
+      ${expl ? `<div style="font-size:10.5px;color:var(--t3);margin-top:2px;line-height:1.4">${esc(expl)}</div>` : ""}
+    </div>
+  `;
+  const section = (title, body) => `
+    <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:14px 0 6px">${esc(title)}</div>
+    ${body}
+  `;
+  const cf = snap.cash_flow || {};
+  const sp = snap.stocks_portfolio || null;
+  const profile = snap.profile || {};
+  const goals = snap.open_goals || [];
+  const plans = snap.open_plans || [];
+  const habits = snap.habits_top || [];
+  const subs = snap.active_subscriptions || [];
+  const wins = snap.recent_wins || [];
+  const moods = snap.moods_last_14_days || [];
+
+  openSheet(`
+    <h2 style="margin-bottom:4px">🔍 What Cornileus knows about you</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Every conversation, Cornileus sees this snapshot of your data. It never leaves your device unencrypted, and you can hide categories below. Tap any row for context.</p>
+
+    ${section("Identity", `
+      ${row("Name", esc(snap.user || "—"))}
+      ${row("Age", profile.age || "Not set")}
+      ${row("Money personality", (snap.money_personality && snap.money_personality.primary) || "Not taken")}
+      ${row("Risk tolerance", profile.riskTolerance || "Not set")}
+    `)}
+
+    ${section("Net worth & wealth", `
+      ${row("Net worth", "$" + (snap.net_worth != null ? snap.net_worth.toLocaleString() : "—"))}
+      ${row("30-day change", snap.net_worth_change_30d != null ? ("$" + snap.net_worth_change_30d.toLocaleString()) : "—")}
+      ${row("Wealth Score", (snap.wealth_score != null ? snap.wealth_score + " / 100" : "—") + (snap.wealth_label ? " · " + snap.wealth_label : ""))}
+      ${snap.wealth_top_gap ? row("Biggest gap", snap.wealth_top_gap, "What's holding the score back the most") : ""}
+    `)}
+
+    ${section("Cash flow (this month)", `
+      ${row("Income (recurring est.)", "$" + (cf.income_recurring_monthly || 0).toLocaleString())}
+      ${row("Recurring expenses", "$" + (cf.expense_recurring_monthly || 0).toLocaleString())}
+      ${row("Spend month-to-date", "$" + (cf.spend_month_to_date || 0).toLocaleString())}
+      ${row("Safe to spend remaining", "$" + (cf.safe_to_spend_remaining || 0).toLocaleString())}
+      ${row("Est. annual dividends", "$" + (cf.estimated_annual_dividends || 0).toLocaleString())}
+    `)}
+
+    ${sp ? section("Stock portfolio", `
+      ${row("Market value", "$" + sp.market_value.toLocaleString())}
+      ${row("Cost basis", "$" + sp.cost_basis.toLocaleString())}
+      ${row("Unrealized P&L", "$" + sp.unrealized_pl.toLocaleString() + " (" + (sp.unrealized_pl_pct || 0) + "%)")}
+      ${row("Positions", sp.n_positions + " holdings")}
+      ${row("Diversification", "Effective " + sp.effective_n_holdings + " holdings (HHI " + sp.diversification_hhi + ")")}
+      ${row("Realized P&L YTD", "$" + sp.realized_pl_ytd.toLocaleString())}
+    `) : ""}
+
+    ${section("Goals & plans", `
+      ${row("Open goals", goals.length + " tracked", goals.slice(0, 3).map(g => g.title).join(" · ") || "Add some in the Goals tab")}
+      ${row("Open plans", plans.length + " tracked", plans.slice(0, 3).map(p => p.title).join(" · ") || "Add some in the Plan tab")}
+      ${row("Active roadmaps", (snap.open_roadmaps || []).length)}
+    `)}
+
+    ${section("Habits & life", `
+      ${row("Top habits", habits.length + " tracked", habits.slice(0, 3).map(h => h.name).join(" · ") || "No habits yet")}
+      ${row("Longest current streak", (snap.longest_current_habit_streak || 0) + " days")}
+      ${row("Mood logs (14 days)", moods.length)}
+      ${row("Recent wins", wins.length)}
+    `)}
+
+    ${section("Money infrastructure", `
+      ${row("Linked accounts", (snap.accounts || []).length)}
+      ${row("Manual assets tracked", (snap.manual_assets || []).length)}
+      ${row("Manual debts tracked", (snap.manual_liabilities || []).length)}
+      ${row("Active subscriptions detected", subs.length, subs.slice(0, 3).map(s => s.merchant).join(" · ") || "None detected")}
+      ${row("Savings buckets", (snap.savings_buckets || []).length)}
+    `)}
+
+    ${section("Stocks intel", `
+      ${row("Watchlist", (snap.stocks_watchlist || []).length + " tickers", (snap.stocks_watchlist || []).slice(0, 6).join(", ") || "Empty")}
+      ${row("Active price alerts", (snap.stocks_alerts_active || []).length)}
+    `)}
+
+    <div style="background:rgba(0,122,255,0.08);border:0.5px solid rgba(0,122,255,0.30);border-radius:10px;padding:11px 13px;margin-top:14px;font-size:11.5px;color:var(--t2);line-height:1.5">
+      🔒 This data lives only on your device (in encrypted localStorage if you've set a passphrase). It's serialized into the Cornileus system prompt at conversation time and sent to Anthropic — Anthropic doesn't store it past the API call. You can wipe everything via Settings → Privacy.
+    </div>
+
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+/* ---------- Cornileus morning briefing ----------
+   Once-a-day proactive summary. Cached by date on
+   DB.counselor.lastMorningBriefing so re-opening doesn't re-bill. */
+async function cornileusMorningBriefingSheet() {
+  if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0 };
+  const today = new Date().toISOString().slice(0, 10);
+  const last = DB.counselor.lastMorningBriefing;
+  const fresh = last && last.date === today && last.text;
+  openSheet(`
+    <h2 style="margin-bottom:4px">☀️ Morning briefing</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">${esc(today)} — Cornileus' read on what matters today.</p>
+    <div id="brief-result">${fresh ? _cornileusRenderBriefing(last.text, last.date) : `<div style="text-align:center;padding:30px 14px;color:var(--t3);font-size:13px">🌅 Cornileus is preparing your briefing…</div>`}</div>
+    <div class="actions">
+      <button class="btn secondary" onclick="DB.counselor.lastMorningBriefing=null;cornileusMorningBriefingSheet()">↻ Regenerate</button>
+      <button class="btn" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+  if (fresh) return;
+  try {
+    const snap = (typeof buildCounselorSnapshot === "function") ? buildCounselorSnapshot() : {};
+    const userMsg = `Give me a short morning briefing for today (${today}). Read the snapshot below. Reply with this exact structure, no preamble, no headers:
+
+GOOD-MORNING: <1 sentence opener using my name if available>
+TODAY-MATTERS: <1-2 sentences on the single most important financial thing for me today — bill due, position to review, savings deadline, habit reset>
+ONE-WIN: <1 sentence: smallest action I can take in the next hour that compounds>
+WATCH-OUT: <1 sentence on one thing I'm avoiding or under-tracking>
+
+Snapshot:
+\`\`\`json
+${JSON.stringify(snap).slice(0, 12000)}
+\`\`\``;
+    const ai = await aiApi({
+      model: DB.settings.anthropicModel || "claude-haiku-4-5-20251001",
+      max_tokens: 400,
+      temperature: 0.5,
+      system: "You are Cornileus, a candid AI financial counselor. Brief the user in plain English, no jargon. Each section is one tight sentence. Reference real numbers from the snapshot when possible.",
+      messages: [{ role: "user", content: userMsg }],
+    });
+    const text = (ai.content && ai.content[0] && ai.content[0].text) || "";
+    if (!text) throw new Error("Empty response");
+    DB.counselor.lastMorningBriefing = { date: today, text };
+    save();
+    const out = document.getElementById("brief-result");
+    if (out) out.innerHTML = _cornileusRenderBriefing(text, today);
+  } catch (e) {
+    const out = document.getElementById("brief-result");
+    if (out) out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  }
+}
+
+function _cornileusRenderBriefing(text, date) {
+  const parse = (key) => {
+    const m = text.match(new RegExp("^" + key + ":\\s*(.*?)$", "im"));
+    return m ? m[1].trim() : "";
+  };
+  const parts = {
+    open: parse("GOOD-MORNING"),
+    today: parse("TODAY-MATTERS"),
+    win: parse("ONE-WIN"),
+    watch: parse("WATCH-OUT"),
+  };
+  return `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid #FF9500;border-radius:var(--r);padding:16px;margin-bottom:10px">
+      ${parts.open ? `
+        <div style="display:flex;align-items:flex-start;gap:10px;margin-bottom:14px">
+          <div style="font-size:24px;flex-shrink:0">☀️</div>
+          <div style="flex:1;font-size:15px;color:var(--t1);font-weight:600;line-height:1.4">${esc(parts.open)}</div>
+        </div>
+      ` : ""}
+      ${parts.today ? `
+        <div style="background:var(--bg-elev);border-radius:10px;padding:11px 13px;margin-bottom:6px">
+          <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">📌 Today, this matters</div>
+          <div style="font-size:13px;color:var(--t1);line-height:1.5">${esc(parts.today)}</div>
+        </div>
+      ` : ""}
+      ${parts.win ? `
+        <div style="background:rgba(52,199,89,0.08);border:0.5px solid rgba(52,199,89,0.30);border-radius:10px;padding:11px 13px;margin-bottom:6px">
+          <div style="font-size:10.5px;color:var(--green,#34C759);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">🏆 One small win</div>
+          <div style="font-size:13px;color:var(--t1);line-height:1.5">${esc(parts.win)}</div>
+        </div>
+      ` : ""}
+      ${parts.watch ? `
+        <div style="background:rgba(255,149,0,0.08);border:0.5px solid rgba(255,149,0,0.30);border-radius:10px;padding:11px 13px">
+          <div style="font-size:10.5px;color:var(--orange,#FF9500);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">👀 Watch out</div>
+          <div style="font-size:13px;color:var(--t1);line-height:1.5">${esc(parts.watch)}</div>
+        </div>
+      ` : ""}
+      <div style="font-size:10px;color:var(--t3);margin-top:12px;font-style:italic">Briefing for ${esc(date)}. Tomorrow's auto-refreshes when you reopen.</div>
+    </div>
+  `;
+}
+
 /* ---------- "Explain this ticker" inline AI ----------
    Tap → plain English summary of what the company does, who buys it,
    why someone would hold or pass. 2-paragraph answer. Cached per
@@ -17254,6 +17444,35 @@ function renderSettings() {
           <option value="claude-opus-4-7"    ${DB.settings.anthropicModel==='claude-opus-4-7'?'selected':''}>Opus 4.7</option>
         </select>
       </div>
+      <div class="row">
+        <div class="lead">🎭</div>
+        <div class="body"><div class="t1">Cornileus's tone</div><div class="t2">${(() => {
+          const t = (DB.settings && DB.settings.cornileusTone) || "direct";
+          return ({
+            direct:      "Direct — candid, no fluff (default)",
+            encouraging: "Encouraging — lead with wins, then feedback",
+            strict:      "Strict — call out avoidance, set deadlines",
+            friendly:    "Friendly — casual, like a coffee-shop friend",
+          })[t];
+        })()}</div></div>
+        <select style="background:var(--bg-elev);padding:8px;border-radius:8px;font-size:11px;max-width:170px"
+          onchange="DB.settings.cornileusTone=this.value;save();render()">
+          <option value="direct"      ${(DB.settings.cornileusTone||'direct')==='direct'?'selected':''}>Direct (default)</option>
+          <option value="encouraging" ${DB.settings.cornileusTone==='encouraging'?'selected':''}>Encouraging</option>
+          <option value="strict"      ${DB.settings.cornileusTone==='strict'?'selected':''}>Strict</option>
+          <option value="friendly"    ${DB.settings.cornileusTone==='friendly'?'selected':''}>Friendly</option>
+        </select>
+      </div>
+      <div class="row tappable" onclick="cornileusKnowsSheet()" role="button" tabindex="0">
+        <div class="lead">🔍</div>
+        <div class="body"><div class="t1">What Cornileus knows about you</div><div class="t2">Inspect every data point Cornileus sees — full transparency</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="cornileusMorningBriefingSheet()" role="button" tabindex="0">
+        <div class="lead">☀️</div>
+        <div class="body"><div class="t1">Morning briefing</div><div class="t2">Today's portfolio, top concern, one focus — generated daily</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="closeSheet&&closeSheet();openCounselor()">
         <div class="lead">✨</div>
         <div class="body"><div class="t1">Talk to Cornileus</div><div class="t2">Your financial counselor — budget, debt, investing, life decisions</div></div>
@@ -20098,7 +20317,15 @@ async function counselorSend(text) {
       stocks:   "\n\nCONTEXT: The user opened you from the Stocks tab. They likely want concrete suggestions — specific tickers/ETFs to consider, where to move their next dollar, how to allocate. Give those — be specific and confident — but ALWAYS justify with the WHY (their horizon, risk tolerance, current mix from the snapshot) and frame as ideas to research, not orders to execute.",
       default: "",
     })[ctx] || "";
-    const system = COUNSELOR_SYSTEM + ctxHint + "\n\nUSER SNAPSHOT (current right now):\n```json\n" + snapshotJson + "\n```";
+    // Tone preset — adjusts the personality without changing scope/guardrails.
+    const tone = (DB.settings && DB.settings.cornileusTone) || "direct";
+    const toneHint = ({
+      direct:      "",  // default voice already direct
+      encouraging: "\n\nTONE OVERRIDE: Lean WARM and ENCOURAGING. Open with what's working, acknowledge effort, then deliver candid feedback. Use phrases like 'you're already doing X right' before suggesting changes. Still honest — just leading with the wins.",
+      strict:      "\n\nTONE OVERRIDE: Lean STRICT and ACCOUNTABLE. Skip the warm-up. Open with the biggest problem in their finances or plan. Call out avoidance and rationalization. Set hard expectations. End with a specific deadline-bound action.",
+      friendly:    "\n\nTONE OVERRIDE: Lean CASUAL and CONVERSATIONAL. Plain speech, no jargon, light analogies. Sound like a financially literate friend at a coffee shop, not an advisor in a suit. Keep it under 150 words.",
+    })[tone] || "";
+    const system = COUNSELOR_SYSTEM + ctxHint + toneHint + "\n\nUSER SNAPSHOT (current right now):\n```json\n" + snapshotJson + "\n```";
 
     // Send the last 24 turns — enough for continuity, bounded for cost.
     const recent = DB.counselor.thread.slice(-24);
@@ -23450,6 +23677,25 @@ function computeSmartPlays() {
 
   // Cornileus advisor nudge when the user has a portfolio and hasn't
   // run a review recently. Skips when there's a fresher review cached.
+  // Morning briefing — once a day, mornings only (5am-noon local)
+  const hour = new Date().getHours();
+  if (hour >= 5 && hour < 12) {
+    const lastBrief = DB.counselor && DB.counselor.lastMorningBriefing;
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (!lastBrief || lastBrief.date !== todayStr) {
+      out.push({
+        id: "morning-briefing",
+        priority: 90,
+        emoji: "☀️",
+        title: "Get this morning's briefing",
+        body: "Cornileus reads your snapshot and tells you what matters today, one small win, and one thing to watch out for.",
+        why: "Front-load your day with the single most important financial thing. Two minutes to set direction.",
+        actionLabel: "Open briefing",
+        actionFn: "cornileusMorningBriefingSheet()",
+      });
+    }
+  }
+
   const holdings = (DB.stocks && DB.stocks.holdings) || {};
   const hasPortfolio = Object.values(holdings).some(h => +h.shares > 0);
   if (hasPortfolio) {
