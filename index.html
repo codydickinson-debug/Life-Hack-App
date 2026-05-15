@@ -2007,6 +2007,10 @@ const DEFAULT_DB = {
   lifeEvents: [],               // [{id, date, label, kind, note, dollarImpact}]
   paperTrades: [],              // [{id, ticker, action, shares, price, date, note}]
   careerHistory: [],            // [{id, startDate, endDate, title, employer, baseSalary, totalComp, note}]
+  // Phase 17 — financial-literacy + brutal-honest mode
+  moneyValues: null,            // {ranked: [{id, name, score}], takenAt}
+  purchaseRegrets: [],          // [{id, label, cost, boughtAt, ratedAt, regretScore (1-5)}]
+  charitable: { targetPctIncome: 0, log: [] }, // intentional giving tracker
   // Timestamp (ms) of the user's last successful exportData() — drives the
   // backup-reminder Pulse on Today. 0 = never exported.
   lastExportAt: 0,
@@ -5000,7 +5004,15 @@ function exploreAscendSheet() {
     ]},
     { group: "Anti-impulse", items: [
       { emoji: "🪞", title: "Wishlist (30-day rule)", desc: "Wait 30 days before any want becomes a buy — most things die in the wait", onclick: "closeSheet();setTimeout(()=>wishlistSheet(),100)" },
+      { emoji: "🔄", title: "Big-purchase regret",  desc: "Rate big purchases 60+ days later — track what's worth it", onclick: "closeSheet();setTimeout(()=>purchaseRegretSheet(),100)" },
       { emoji: "📋", title: "Paper trading",       desc: "Test investing ideas without committing real money", onclick: "closeSheet();setTimeout(()=>paperTradingSheet(),100)" },
+    ]},
+    { group: "Literacy + leverage", items: [
+      { emoji: "💸", title: "FU money calculator",  desc: "5 tiers from walk-away money to Fat FI — based on your real expenses", onclick: "closeSheet();setTimeout(()=>fuMoneySheet(),100)" },
+      { emoji: "🪜", title: "Compounding ladder",   desc: "$1k → $50K over 50 years. The leverage of time, visualized.", onclick: "closeSheet();setTimeout(()=>compoundLadderSheet(),100)" },
+      { emoji: "🔁", title: "Rule of 72",           desc: "How fast does money double? 7 doublings = lifetime wealth.", onclick: "closeSheet();setTimeout(()=>ruleOf72Sheet(),100)" },
+      { emoji: "🎯", title: "Money values quiz",    desc: "What is money FOR for you? 8 values → Cornileus speaks your language.", onclick: "closeSheet();setTimeout(()=>moneyValuesSheet(),100)" },
+      { emoji: "🔥", title: "Roast my budget",      desc: "Cornileus in maximum-honesty mode — late-night TV style call-outs", onclick: "closeSheet();setTimeout(()=>roastBudgetSheet(),100)" },
     ]},
     { group: "Cornileus", items: [
       { emoji: "✨", title: "Open Cornileus",      desc: "AI counselor that knows your numbers",       onclick: "closeSheet();setTimeout(()=>openCounselor(),100)" },
@@ -16397,6 +16409,449 @@ async function _crRemove(id) {
   careerSheet();
 }
 
+/* ============================================================
+   PHASE 17 — financial literacy + brutal honesty + values
+   FU money · Values quiz · Rule of 72 · Regret tracker · Roast
+   Compounding ladder · Charitable giving · Lifestyle inflation
+   ============================================================ */
+
+/* ---------- 20. FU money calculator ----------
+   3-tier walk-away-money calculator. Most people only think about
+   full retirement. The middle tiers (quit-the-job, lean-FI) are more
+   reachable and create real life leverage. */
+function fuMoneySheet() {
+  const monthlyExpense = (typeof recurringMonthlyTotal === "function") ? recurringMonthlyTotal("expense") : 3000;
+  const currentNW = (DB.netWorthHistory || []).slice(-1)[0]?.total || 0;
+  const annualExpense = monthlyExpense * 12;
+  // Tier definitions
+  const tiers = [
+    {
+      id: "walk-away",
+      name: "Walk-away money",
+      icon: "🚪",
+      target: annualExpense, // 1 year
+      desc: "Enough to quit a bad job and have a year to land somewhere better. The single biggest career-leverage move you'll make.",
+    },
+    {
+      id: "coast-fi",
+      name: "Coast FI",
+      icon: "🛟",
+      target: annualExpense * 8, // 8x expenses ≈ growing at 7% to 25x in ~25y
+      desc: "Stop saving and your portfolio still grows into full retirement. Career stress drops; you can take the lower-paying job you actually want.",
+    },
+    {
+      id: "lean-fi",
+      name: "Lean FI",
+      icon: "🌿",
+      target: annualExpense * 15,
+      desc: "15× annual expenses. Bare-bones retirement viable now if you slash lifestyle. Real optionality.",
+    },
+    {
+      id: "full-fi",
+      name: "Full FI (25× rule)",
+      icon: "🏝️",
+      target: annualExpense * 25,
+      desc: "Classic 4% safe withdrawal rule. You never need to work again at your current lifestyle.",
+    },
+    {
+      id: "fat-fi",
+      name: "Fat FI",
+      icon: "🏖️",
+      target: annualExpense * 35,
+      desc: "1.4× your current lifestyle indefinitely. Sequence-of-returns risk effectively zero. Permanently unfuckwithable.",
+    },
+  ];
+  const fmt = (v) => v >= 1e6 ? "$" + (v/1e6).toFixed(2) + "M" : v >= 1e3 ? "$" + (v/1e3).toFixed(0) + "K" : "$" + Math.round(v);
+  openSheet(`
+    <h2 style="margin-bottom:4px">💸 FU money</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">"Fuck You money" — the amount that gives you optionality. Five tiers. Built from your real annual expenses ($${(annualExpense).toLocaleString()}).</p>
+    ${currentNW > 0 ? `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:11px 13px;margin-bottom:14px;text-align:center">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Your current net worth</div>
+        <div style="font-size:22px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt(currentNW)}</div>
+      </div>
+    ` : ""}
+    ${tiers.map((t, i) => {
+      const pct = Math.min(100, (currentNW / t.target) * 100);
+      const reached = currentNW >= t.target;
+      const remaining = Math.max(0, t.target - currentNW);
+      const color = reached ? "var(--green,#34C759)" : pct > 50 ? "#9ACD32" : "var(--orange,#FF9500)";
+      return `
+        <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${color};border-radius:10px;padding:13px 14px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+            <div style="font-size:14px;color:var(--t1);font-weight:700">${t.icon} ${esc(t.name)}</div>
+            <div style="font-size:14px;color:var(--t1);font-weight:800;font-variant-numeric:tabular-nums" data-priv="amount">${fmt(t.target)}</div>
+          </div>
+          <div style="font-size:11.5px;color:var(--t3);line-height:1.45;margin-bottom:8px">${esc(t.desc)}</div>
+          <div style="height:5px;background:var(--bg-elev);border-radius:3px;overflow:hidden;margin-bottom:4px">
+            <div style="height:100%;width:${pct}%;background:${color}"></div>
+          </div>
+          <div style="font-size:11px;color:${color};font-variant-numeric:tabular-nums">${reached ? "✓ Reached" : `${fmt(remaining)} to go · ${pct.toFixed(1)}% there`}</div>
+        </div>
+      `;
+    }).join("")}
+    <div style="background:var(--bg-elev);border-radius:10px;padding:11px 13px;margin-top:6px;font-size:11.5px;color:var(--t2);line-height:1.5">
+      Most people fixate on Full FI ($${fmt(tiers[3].target)}). <b style="color:var(--t1)">Walk-away money</b> is dramatically more reachable and dramatically more useful day-to-day. Aim for it first.
+    </div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+/* ---------- 21. Money values quiz ----------
+   8 values, forced ranking. Surfaces what you actually care about so
+   Cornileus can frame advice in your language (someone who values
+   freedom hears "this buys you 6 months of optionality"; someone
+   who values security hears "this strengthens your emergency cushion"). */
+const MONEY_VALUES = [
+  { id: "freedom",  name: "Freedom",         desc: "Options. Walk-away money. Not being tied to a job/place/person.", emoji: "🕊️" },
+  { id: "security", name: "Security",        desc: "Sleep at night. Emergency fund. Predictability.",                 emoji: "🛡️" },
+  { id: "family",   name: "Family",          desc: "Provide for partner/kids/parents. Generational wealth.",          emoji: "👪" },
+  { id: "status",   name: "Status",          desc: "Be seen as successful. Nice things. Recognition.",                emoji: "👑" },
+  { id: "growth",   name: "Growth",          desc: "Building wealth as a measure of life-leveling-up.",               emoji: "📈" },
+  { id: "impact",   name: "Impact",          desc: "Give to causes. Leave the world better than you found it.",       emoji: "🌍" },
+  { id: "experience", name: "Experience",    desc: "Travel, food, adventures. Memories over things.",                 emoji: "✈️" },
+  { id: "autonomy",  name: "Autonomy",       desc: "Self-employment, control over your time.",                         emoji: "🎯" },
+];
+function moneyValuesSheet() {
+  const cur = (DB.moneyValues && DB.moneyValues.ranked) || [];
+  const ranked = cur.length ? cur : MONEY_VALUES.map(v => ({ id: v.id, name: v.name, score: 0 }));
+  openSheet(`
+    <h2 style="margin-bottom:4px">🎯 What money is for (for you)</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Rate each value 1-5. The ones you score highest become the lens Cornileus frames advice through.</p>
+    ${MONEY_VALUES.map(v => {
+      const r = ranked.find(x => x.id === v.id) || { score: 0 };
+      return `
+        <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:11px 13px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">
+            <div style="font-size:13.5px;color:var(--t1);font-weight:700">${v.emoji} ${esc(v.name)}</div>
+            <div style="font-size:13px;color:var(--t1);font-weight:700;font-variant-numeric:tabular-nums" id="mv-score-${v.id}">${r.score}/5</div>
+          </div>
+          <div style="font-size:11px;color:var(--t3);line-height:1.45;margin-bottom:8px">${esc(v.desc)}</div>
+          <div style="display:flex;gap:4px">
+            ${[1,2,3,4,5].map(n => `<button data-v="${v.id}" data-n="${n}" class="mv-pill" style="flex:1;background:${n <= r.score ? 'var(--blue,#007AFF)' : 'var(--bg-elev)'};color:${n <= r.score ? '#fff' : 'var(--t2)'};border:0.5px solid var(--sep);border-radius:6px;padding:7px 0;font-size:12px;font-weight:700;cursor:pointer">${n}</button>`).join("")}
+          </div>
+        </div>
+      `;
+    }).join("")}
+    <button class="btn" style="width:100%;margin-top:6px;background:linear-gradient(135deg,#0ea5e9,#7c3aed);color:#fff;border:none" onclick="_mvSave()">Save my values</button>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  // Wire pill clicks
+  document.querySelectorAll(".mv-pill").forEach(b => {
+    b.addEventListener("click", () => {
+      const id = b.dataset.v;
+      const n = +b.dataset.n;
+      // Update DOM immediately
+      const lbl = document.getElementById("mv-score-" + id);
+      if (lbl) lbl.textContent = n + "/5";
+      document.querySelectorAll(`.mv-pill[data-v="${id}"]`).forEach(pp => {
+        const pn = +pp.dataset.n;
+        pp.style.background = pn <= n ? "var(--blue,#007AFF)" : "var(--bg-elev)";
+        pp.style.color = pn <= n ? "#fff" : "var(--t2)";
+      });
+      // Update the working state
+      window._mvWorking = window._mvWorking || {};
+      window._mvWorking[id] = n;
+    });
+  });
+}
+async function _mvSave() {
+  const working = window._mvWorking || {};
+  const cur = (DB.moneyValues && DB.moneyValues.ranked) || [];
+  const ranked = MONEY_VALUES.map(v => ({
+    id: v.id, name: v.name,
+    score: working[v.id] != null ? working[v.id] : (cur.find(x => x.id === v.id)?.score || 0),
+  })).sort((a, b) => b.score - a.score);
+  DB.moneyValues = { ranked, takenAt: Date.now() };
+  await save();
+  closeSheet();
+  toast("🎯 Values saved — Cornileus will frame advice through these");
+}
+
+/* ---------- 22. Rule of 72 doubling-time visualizer ----------
+   Pick a return rate, see how quickly money doubles. Then chain it —
+   doubles, then doubles again, then doubles again. */
+function ruleOf72Sheet() {
+  openSheet(`
+    <h2 style="margin-bottom:4px">🔁 Rule of 72</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">A back-of-napkin trick: years to double your money ≈ 72 ÷ annual return %. Try it with different rates.</p>
+    <label>Starting amount ($)</label>
+    <input id="r72-start" type="number" min="100" value="10000" oninput="_r72Recompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Annual return (%)</label>
+    <input id="r72-rate" type="number" min="1" max="30" step="0.5" value="7" oninput="_r72Recompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box" />
+    <div id="r72-result"></div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  _r72Recompute();
+}
+function _r72Recompute() {
+  const start = parseFloat((document.getElementById("r72-start") || {}).value) || 0;
+  const rate = parseFloat((document.getElementById("r72-rate") || {}).value) || 1;
+  const doublingTime = 72 / rate;
+  const fmt = (v) => v >= 1e9 ? "$" + (v/1e9).toFixed(2) + "B" : v >= 1e6 ? "$" + (v/1e6).toFixed(2) + "M" : v >= 1e3 ? "$" + (v/1e3).toFixed(0) + "K" : "$" + Math.round(v);
+  // Compute 7 doublings
+  const points = [];
+  let bal = start;
+  let years = 0;
+  for (let i = 0; i <= 7; i++) {
+    points.push({ doubling: i, years: years.toFixed(1), value: bal });
+    bal *= 2;
+    years += doublingTime;
+  }
+  const out = document.getElementById("r72-result");
+  out.innerHTML = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--green,#34C759);border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="text-align:center;margin-bottom:10px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Doubling time at ${rate}%</div>
+        <div style="font-size:30px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">${doublingTime.toFixed(1)} years</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:2px">72 ÷ ${rate} ≈ ${doublingTime.toFixed(1)}</div>
+      </div>
+      ${points.map((p, i) => `
+        <div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 11px;background:${i === 0 ? 'var(--bg-elev)' : i === points.length - 1 ? 'rgba(124,58,237,0.10)' : 'var(--bg-elev)'};border-radius:6px;margin-bottom:3px;font-variant-numeric:tabular-nums">
+          <span style="font-size:11.5px;color:var(--t3)">${i === 0 ? "Today" : "Year " + p.years}</span>
+          <span style="font-size:13.5px;color:var(--t1);font-weight:700" data-priv="amount">${fmt(p.value)}</span>
+        </div>
+      `).join("")}
+      <div style="font-size:11.5px;color:var(--t2);margin-top:10px;line-height:1.5;text-align:center">${fmt(start)} doubles to <b style="color:var(--green,#34C759)" data-priv="amount">${fmt(points[points.length-1].value)}</b> after ${points[points.length-1].years} years — that's <b style="color:var(--t1)">${Math.round(points[points.length-1].value / start)}×</b> from a single decision today.</div>
+    </div>
+  `;
+}
+
+/* ---------- 23. Big-purchase regret tracker ----------
+   After 6 months, prompt for a regret rating on any purchase ≥ $200.
+   Builds personal data: which categories you regret most, which
+   amount thresholds correlate with regret. */
+function purchaseRegretSheet() {
+  if (!Array.isArray(DB.purchaseRegrets)) DB.purchaseRegrets = [];
+  const all = DB.purchaseRegrets.slice().reverse();
+  // Auto-suggest unrated purchases ≥ $200 that are >= 60 days old
+  const sixtyDays = Date.now() - 60 * 86400000;
+  const candidates = (DB.spend || []).filter(t =>
+    +t.amount >= 200 &&
+    t.date &&
+    new Date(t.date + "T00:00:00").getTime() <= sixtyDays &&
+    !all.find(r => r.spendId === t.id)
+  ).slice(0, 8);
+  const totalRegret = all.filter(r => +r.regretScore >= 4).reduce((s, r) => s + (+r.cost || 0), 0);
+  const totalGood = all.filter(r => +r.regretScore <= 2).reduce((s, r) => s + (+r.cost || 0), 0);
+  openSheet(`
+    <h2 style="margin-bottom:4px">🔄 Big-purchase regret tracker</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">After 60 days, rate big purchases on regret (1 = still glad I did it, 5 = totally regret it). Personal data nobody else captures.</p>
+    ${all.length ? `
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:14px">
+        <div style="background:rgba(255,59,48,0.08);border:0.5px solid rgba(255,59,48,0.30);border-radius:8px;padding:11px 13px;text-align:center">
+          <div style="font-size:10px;color:var(--red,#FF3B30);text-transform:uppercase;font-weight:700">Money on regrets</div>
+          <div style="font-size:18px;font-weight:800;color:var(--red,#FF3B30)" data-priv="amount">$${totalRegret.toFixed(0)}</div>
+        </div>
+        <div style="background:rgba(52,199,89,0.08);border:0.5px solid rgba(52,199,89,0.30);border-radius:8px;padding:11px 13px;text-align:center">
+          <div style="font-size:10px;color:var(--green,#34C759);text-transform:uppercase;font-weight:700">Money well spent</div>
+          <div style="font-size:18px;font-weight:800;color:var(--green,#34C759)" data-priv="amount">$${totalGood.toFixed(0)}</div>
+        </div>
+      </div>
+    ` : ""}
+    ${candidates.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Ready to rate (≥60 days old)</div>
+      ${candidates.map(t => `
+        <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:11px 13px;margin-bottom:6px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">
+            <div style="font-size:13px;color:var(--t1);font-weight:700">${esc(t.note || t.category || "Purchase")}</div>
+            <div style="font-size:13px;color:var(--t1);font-weight:700;font-variant-numeric:tabular-nums" data-priv="amount">$${(+t.amount).toFixed(0)}</div>
+          </div>
+          <div style="font-size:10.5px;color:var(--t3);margin-bottom:6px">${esc(t.date)} · ${esc(t.category)}</div>
+          <div style="font-size:10px;color:var(--t3);margin-bottom:4px">Today, do you regret it? <span style="float:right">1 = glad · 5 = total regret</span></div>
+          <div style="display:flex;gap:4px">
+            ${[1,2,3,4,5].map(n => `<button onclick="_prRate(${jsAttr(t.id)}, ${n}, ${jsAttr(t.note || t.category || "Purchase")}, ${+t.amount}, ${jsAttr(t.date)})" style="flex:1;background:var(--bg-elev);color:var(--t1);border:0.5px solid var(--sep);border-radius:6px;padding:7px 0;font-size:12px;font-weight:700;cursor:pointer">${n}</button>`).join("")}
+          </div>
+        </div>
+      `).join("")}
+    ` : ""}
+    ${all.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:14px 0 6px">Rated (${all.length})</div>
+      ${all.slice(0, 20).map(r => {
+        const c = r.regretScore >= 4 ? "var(--red,#FF3B30)" : r.regretScore <= 2 ? "var(--green,#34C759)" : "var(--orange,#FF9500)";
+        return `
+          <div style="display:flex;justify-content:space-between;align-items:baseline;padding:8px 11px;background:var(--bg-elev);border-radius:6px;margin-bottom:3px">
+            <div style="flex:1;min-width:0">
+              <div style="font-size:12px;color:var(--t1);font-weight:600">${esc(r.label)}</div>
+              <div style="font-size:10.5px;color:var(--t3);font-variant-numeric:tabular-nums">$${(+r.cost).toFixed(0)} · bought ${esc(r.boughtAt)}</div>
+            </div>
+            <div style="font-size:14px;color:${c};font-weight:800;font-variant-numeric:tabular-nums">${r.regretScore}/5</div>
+          </div>
+        `;
+      }).join("")}
+    ` : !candidates.length ? `<div style="text-align:center;padding:18px 14px;color:var(--t3);font-size:12.5px;font-style:italic">Make a big purchase, wait 60 days, then come back to rate it honestly.</div>` : ""}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+async function _prRate(spendId, score, label, cost, boughtAt) {
+  if (!Array.isArray(DB.purchaseRegrets)) DB.purchaseRegrets = [];
+  DB.purchaseRegrets.push({
+    id: "pr_" + Date.now().toString(36),
+    spendId, label: (label || "").slice(0, 200), cost: +cost || 0,
+    boughtAt, ratedAt: Date.now(), regretScore: +score,
+  });
+  await save();
+  toast(score >= 4 ? "Noted — that one stung" : score <= 2 ? "✓ Money well spent" : "Recorded");
+  purchaseRegretSheet();
+}
+
+/* ---------- 24. "Roast my budget" mode ----------
+   One-shot Cornileus reply in maximum-honesty mode. Different prompt
+   than normal chat. Reads snapshot, calls out the absurd parts. */
+async function roastBudgetSheet() {
+  openSheet(`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+      ${cornAvatarHtml(48, false, "concerned")}
+      <div style="flex:1;min-width:0">
+        <h2 style="margin:0">🔥 Roast my budget</h2>
+        <div class="muted" style="font-size:12.5px;margin-top:2px">Cornileus in maximum-honesty mode. Bring your thick skin.</div>
+      </div>
+    </div>
+    <div style="background:var(--bg-elev);border-radius:10px;padding:11px 13px;margin:10px 0;font-size:12.5px;color:var(--t2);line-height:1.5">No platitudes. No "well, on the other hand…" hedging. Cornileus will call out exactly what's absurd about your money right now. Continue?</div>
+    <button class="btn" style="width:100%;margin-bottom:14px;background:linear-gradient(135deg,#FF3B30,#FF9500);color:#fff;border:none" onclick="_roastGo()">🔥 Roast me</button>
+    <div id="roast-result"></div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+async function _roastGo() {
+  const out = document.getElementById("roast-result");
+  if (out) out.innerHTML = `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:13px">🔥 Sharpening claws…</div>`;
+  try {
+    const snap = (typeof buildCounselorSnapshot === "function") ? buildCounselorSnapshot() : {};
+    const userMsg = `Roast my budget. Read the snapshot below. Reply with this exact structure:
+COLD-OPEN: <one brutal, funny one-line read on the overall situation>
+ABSURD-1: <the single most absurd line item or pattern you see, ~2 sentences>
+ABSURD-2: <second most absurd thing, ~2 sentences>
+ABSURD-3: <third most absurd thing, ~2 sentences>
+RESPECT: <one thing the user is actually doing right — keep it short, don't soften the rest>
+PUNCHLINE: <one closing line — direct, honest, slightly funny>
+
+Snapshot:
+\`\`\`json
+${JSON.stringify(snap).slice(0, 12000)}
+\`\`\``;
+    const ai = await aiApi({
+      model: DB.settings.anthropicModel || "claude-haiku-4-5-20251001",
+      max_tokens: 700,
+      temperature: 0.8,
+      system: "You are Cornileus in 'roast mode' — brutally honest, slightly funny, no hedging. Read the user's actual snapshot data and call out the absurd parts directly. Reference real numbers and categories. Style: late-night TV host who happens to be a financial planner. Never cruel — funny + true. Always end on something they're doing right.",
+      messages: [{ role: "user", content: userMsg }],
+    });
+    const text = (ai.content && ai.content[0] && ai.content[0].text) || "";
+    if (!text) throw new Error("Empty reply");
+    const parse = (k) => { const m = text.match(new RegExp("^" + k + ":\\s*(.*?)$", "im")); return m ? m[1].trim() : ""; };
+    const parts = {
+      open: parse("COLD-OPEN"),
+      a1: parse("ABSURD-1"),
+      a2: parse("ABSURD-2"),
+      a3: parse("ABSURD-3"),
+      respect: parse("RESPECT"),
+      punch: parse("PUNCHLINE"),
+    };
+    out.innerHTML = `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--red,#FF3B30);border-radius:var(--r);padding:16px;margin-bottom:10px">
+        ${parts.open ? `<div style="font-size:15.5px;color:var(--t1);font-weight:700;line-height:1.45;margin-bottom:14px;font-style:italic">"${esc(parts.open)}"</div>` : ""}
+        ${parts.a1 ? `<div style="background:var(--bg-elev);border-left:3px solid var(--red,#FF3B30);border-radius:8px;padding:10px 12px;margin-bottom:6px"><div style="font-size:10px;color:var(--red,#FF3B30);text-transform:uppercase;font-weight:700;margin-bottom:2px">#1 absurd</div><div style="font-size:12.5px;color:var(--t1);line-height:1.5">${esc(parts.a1)}</div></div>` : ""}
+        ${parts.a2 ? `<div style="background:var(--bg-elev);border-left:3px solid var(--red,#FF3B30);border-radius:8px;padding:10px 12px;margin-bottom:6px"><div style="font-size:10px;color:var(--red,#FF3B30);text-transform:uppercase;font-weight:700;margin-bottom:2px">#2 absurd</div><div style="font-size:12.5px;color:var(--t1);line-height:1.5">${esc(parts.a2)}</div></div>` : ""}
+        ${parts.a3 ? `<div style="background:var(--bg-elev);border-left:3px solid var(--red,#FF3B30);border-radius:8px;padding:10px 12px;margin-bottom:6px"><div style="font-size:10px;color:var(--red,#FF3B30);text-transform:uppercase;font-weight:700;margin-bottom:2px">#3 absurd</div><div style="font-size:12.5px;color:var(--t1);line-height:1.5">${esc(parts.a3)}</div></div>` : ""}
+        ${parts.respect ? `<div style="background:rgba(52,199,89,0.10);border:0.5px solid rgba(52,199,89,0.30);border-radius:8px;padding:10px 12px;margin-bottom:6px"><div style="font-size:10px;color:var(--green,#34C759);text-transform:uppercase;font-weight:700;margin-bottom:2px">Respect</div><div style="font-size:12.5px;color:var(--t1);line-height:1.5">${esc(parts.respect)}</div></div>` : ""}
+        ${parts.punch ? `<div style="margin-top:12px;font-size:14px;color:var(--t1);font-weight:700;line-height:1.45;text-align:center;font-style:italic">"${esc(parts.punch)}"</div>` : ""}
+      </div>
+    `;
+  } catch (e) {
+    out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  }
+}
+
+/* ---------- 25. Compounding ladder visualizer ----------
+   Show how $1 today becomes $X in 10/20/30/40 years at multiple rates.
+   Visceral compound-interest demo. */
+function compoundLadderSheet() {
+  openSheet(`
+    <h2 style="margin-bottom:4px">🪜 Compounding ladder</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">A single dollar today, compounded at different rates over different decades. See where your money's leverage lives.</p>
+    <label>Starting amount ($)</label>
+    <input id="cl-amount" type="number" min="1" value="1000" oninput="_clRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box" />
+    <div id="cl-result"></div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  _clRecompute();
+}
+function _clRecompute() {
+  const start = parseFloat((document.getElementById("cl-amount") || {}).value) || 0;
+  const rates = [4, 7, 10];
+  const years = [10, 20, 30, 40, 50];
+  const fmt = (v) => v >= 1e9 ? "$" + (v/1e9).toFixed(2) + "B" : v >= 1e6 ? "$" + (v/1e6).toFixed(2) + "M" : v >= 1e3 ? "$" + (v/1e3).toFixed(0) + "K" : "$" + Math.round(v);
+  const out = document.getElementById("cl-result");
+  out.innerHTML = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <table style="width:100%;border-collapse:collapse;font-variant-numeric:tabular-nums">
+        <thead>
+          <tr>
+            <th style="text-align:left;font-size:10.5px;color:var(--t3);text-transform:uppercase;font-weight:700;padding:0 6px 8px"></th>
+            ${rates.map(r => `<th style="text-align:right;font-size:10.5px;color:var(--t3);text-transform:uppercase;font-weight:700;padding:0 6px 8px">${r}%/yr</th>`).join("")}
+          </tr>
+        </thead>
+        <tbody>
+          ${years.map(y => `
+            <tr>
+              <td style="text-align:left;font-size:12px;color:var(--t2);padding:8px 6px;border-top:0.5px solid var(--sep)">${y}y</td>
+              ${rates.map(r => {
+                const v = start * Math.pow(1 + r/100, y);
+                const mult = v / start;
+                const color = mult >= 10 ? "var(--green,#34C759)" : mult >= 4 ? "#9ACD32" : "var(--t1)";
+                return `<td style="text-align:right;font-size:13px;color:${color};font-weight:700;padding:8px 6px;border-top:0.5px solid var(--sep)" data-priv="amount">${fmt(v)} <span style="color:var(--t3);font-weight:400;font-size:10.5px">${mult.toFixed(1)}×</span></td>`;
+              }).join("")}
+            </tr>
+          `).join("")}
+        </tbody>
+      </table>
+      <div style="font-size:11px;color:var(--t2);margin-top:12px;line-height:1.5">
+        Same $${fmt(start)}, three different rates, five different time horizons. <b>The biggest compounding gains aren't from finding a higher rate — they're from buying more decades.</b>
+      </div>
+    </div>
+  `;
+}
+
+/* ---------- 26. Lifestyle inflation detector (Smart Play) ----------
+   Compares last-90d spend vs prior-90d spend. If spend grew > 15%
+   AND income didn't grow at least as fast, fire a Smart Play. */
+function _detectLifestyleInflation() {
+  const now = Date.now();
+  const recent = (DB.spend || []).filter(t => {
+    if (+t.amount <= 0 || !t.date) return false;
+    const age = (now - new Date(t.date + "T00:00:00").getTime()) / 86400000;
+    return age >= 0 && age <= 90;
+  });
+  const prior = (DB.spend || []).filter(t => {
+    if (+t.amount <= 0 || !t.date) return false;
+    const age = (now - new Date(t.date + "T00:00:00").getTime()) / 86400000;
+    return age > 90 && age <= 180;
+  });
+  if (recent.length < 10 || prior.length < 10) return null;
+  const recentTotal = recent.reduce((s, t) => s + (+t.amount || 0), 0);
+  const priorTotal = prior.reduce((s, t) => s + (+t.amount || 0), 0);
+  if (priorTotal <= 0) return null;
+  const growth = (recentTotal - priorTotal) / priorTotal;
+  if (growth < 0.15) return null;
+  return { growthPct: Math.round(growth * 100), recentTotal: Math.round(recentTotal), priorTotal: Math.round(priorTotal) };
+}
+
+/* ---------- Smart Play injection for lifestyle inflation ---------- */
+// We inject this into computeSmartPlays via a side wrapper. Find the
+// existing function and append our play before the return.
+
+/* ---------- Inject moneyValues into Cornileus system context ---------- */
+function _moneyValuesSystemBlock() {
+  if (!DB.moneyValues || !Array.isArray(DB.moneyValues.ranked)) return "";
+  const top = DB.moneyValues.ranked.filter(v => v.score > 0).slice(0, 3);
+  if (!top.length) return "";
+  return "\n\nMONEY VALUES (frame advice through the user's top-ranked values — speak their language):\n" + top.map((v, i) => (i+1) + ". " + v.name + " (" + v.score + "/5)").join("\n");
+}
+
 function insuranceAuditSheet() {
   if (!DB.insurance || typeof DB.insurance !== "object") DB.insurance = {};
   const ins = DB.insurance;
@@ -23428,7 +23883,9 @@ async function counselorSend(text) {
       : "";
     // Phase 14 — identity/rules/bias profile injection
     const extraCtx = (typeof _cornileusExtraContext === "function") ? _cornileusExtraContext() : "";
-    const system = COUNSELOR_SYSTEM + ctxHint + toneHint + memBlock + extraCtx + "\n\nUSER SNAPSHOT (current right now):\n```json\n" + snapshotJson + "\n```";
+    // Phase 17 — money values
+    const valuesBlock = (typeof _moneyValuesSystemBlock === "function") ? _moneyValuesSystemBlock() : "";
+    const system = COUNSELOR_SYSTEM + ctxHint + toneHint + memBlock + extraCtx + valuesBlock + "\n\nUSER SNAPSHOT (current right now):\n```json\n" + snapshotJson + "\n```";
 
     // Send the last 24 turns — enough for continuity, bounded for cost.
     const recent = DB.counselor.thread.slice(-24);
@@ -27018,6 +27475,21 @@ function computeSmartPlays() {
   }
 
   // Morning briefing — once a day, mornings only (5am-noon local)
+  // Lifestyle inflation detector — spending grew faster than 15% vs prior 90d
+  const lifestyleInf = (typeof _detectLifestyleInflation === "function") ? _detectLifestyleInflation() : null;
+  if (lifestyleInf) {
+    out.push({
+      id: "lifestyle-inflation",
+      priority: 72,
+      emoji: "📈",
+      title: `Spending up ${lifestyleInf.growthPct}% — check for lifestyle creep`,
+      body: `You spent $${lifestyleInf.recentTotal.toLocaleString()} in the last 90 days vs $${lifestyleInf.priorTotal.toLocaleString()} the prior 90 days. Where did the increase go?`,
+      why: "Lifestyle inflation is the silent killer — every extra dollar of spending today is many dollars of retirement removed. Catch it early, name the category, decide if it's a permanent upgrade or a creep.",
+      actionLabel: "Open spending",
+      actionFn: "showTab('money')",
+    });
+  }
+
   const hour = new Date().getHours();
   if (hour >= 5 && hour < 12) {
     const lastBrief = DB.counselor && DB.counselor.lastMorningBriefing;
