@@ -1220,19 +1220,23 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   background: linear-gradient(135deg,#7c3aed,#ec4899);
   border-radius: 50%; overflow: hidden;
 }
-.corn-avatar svg { width: 100%; height: 100%; display: block; }
+.corn-avatar svg {
+  width: 100%; height: 100%; display: block;
+  filter: drop-shadow(0 2px 3px rgba(0,0,0,0.32));
+}
 
-/* "Pops up" animation — bouncy scale-in with a tiny tilt, used when the
-   counselor sheet opens so Cornileus literally appears with character. */
+/* Slide-in animation — Cornileus strides into frame from the left
+   with a slight overshoot + tilt, like a Victorian gentleman entering
+   the stage. Used when the counselor sheet opens. */
 @keyframes corn-pop-in {
-  0%   { transform: scale(0.2) rotate(-22deg); opacity: 0; }
-  55%  { transform: scale(1.12) rotate(6deg);  opacity: 1; }
-  78%  { transform: scale(0.96) rotate(-2deg); }
-  100% { transform: scale(1) rotate(0deg);     opacity: 1; }
+  0%   { transform: translateX(-180%) rotate(-12deg); opacity: 0; }
+  55%  { transform: translateX(14%)   rotate(5deg);   opacity: 1; }
+  78%  { transform: translateX(-4%)   rotate(-1.5deg); }
+  100% { transform: translateX(0)     rotate(0deg);   opacity: 1; }
 }
 .corn-pop {
   animation: corn-pop-in 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
-  transform-origin: center bottom;
+  transform-origin: center center;
 }
 
 /* Cornileus action confirmation chips — shown under assistant bubbles when
@@ -11183,42 +11187,88 @@ async function getMonthlyInsight() {
    always answering against current numbers. Uses feature="counselor" so the
    worker rate-limits it independently from the monthly insight feature. */
 
-/* Cornileus — the distinguished gentleman avatar. Top hat, monocle, twirled
-   mustache, purple bowtie. Returns the inline SVG so it can be embedded
-   anywhere we'd previously have used the ✨ emoji. */
+/* Cornileus — the distinguished gentleman avatar. Refined version with
+   skin gradient shading, eye whites + iris + pupil + highlight, bushy
+   gray-streaked eyebrows + mustache, gold-rimmed monocle with chain,
+   subtle nose shading, suit lapels, proper bowtie with knot, hat with
+   gradient sheen. Designed to read clearly at 32-44px. */
 const CORNILEUS_SVG = `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-label="Cornileus" role="img">
-  <!-- Hat brim -->
-  <ellipse cx="32" cy="20" rx="20" ry="2.5" fill="#0e0e12"/>
-  <!-- Hat top -->
-  <rect x="22" y="4" width="20" height="16" rx="1.5" fill="#0e0e12"/>
-  <!-- Hat band -->
-  <rect x="22" y="14" width="20" height="3" fill="#8957D9"/>
-  <!-- Hat sheen -->
-  <rect x="23" y="6" width="2" height="9" fill="rgba(255,255,255,0.15)"/>
-  <!-- Head -->
-  <ellipse cx="32" cy="34" rx="13" ry="14" fill="#f3d8a8"/>
-  <!-- Forehead shadow from hat -->
-  <ellipse cx="32" cy="22" rx="12" ry="2" fill="rgba(0,0,0,0.18)"/>
-  <!-- Eyebrows -->
-  <path d="M23 27 Q27 24.5 30 26.5" stroke="#3d2817" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-  <path d="M34 26.5 Q37 24.5 41 27" stroke="#3d2817" stroke-width="1.6" fill="none" stroke-linecap="round"/>
-  <!-- Left eye -->
-  <circle cx="27" cy="30" r="1.1" fill="#1a1a20"/>
-  <!-- Monocle (right eye): glass ring, lens tint, chain -->
-  <circle cx="37" cy="30" r="4.6" fill="rgba(137,87,217,0.08)" stroke="#8957D9" stroke-width="1.2"/>
-  <circle cx="37" cy="30" r="1.1" fill="#1a1a20"/>
-  <path d="M41.4 32 Q44 36 43 41" stroke="#7a7a82" stroke-width="0.55" fill="none"/>
-  <!-- Mustache (twirled) -->
-  <path d="M23 39 Q26 41 30 40 L32 41 L34 40 Q38 41 41 39 Q42.5 41 40 42.2 Q35.5 43.2 32 42.2 Q28.5 43.2 24 42.2 Q21.5 41 23 39 Z" fill="#3d2817"/>
-  <!-- Mouth -->
-  <path d="M30 43.5 Q32 44.5 34 43.5" stroke="#1a1a20" stroke-width="0.7" fill="none" stroke-linecap="round"/>
-  <!-- Suit shoulders/collar -->
-  <polygon points="18,52 32,46 46,52 46,64 18,64" fill="#0e0e12"/>
-  <!-- White shirt collar peek -->
-  <polygon points="29,52 32,48 35,52 32,55" fill="#f5f5f7"/>
+  <defs>
+    <radialGradient id="cn-skin" cx="50%" cy="38%" r="60%">
+      <stop offset="0%" stop-color="#f7e2b8"/>
+      <stop offset="60%" stop-color="#e6c993"/>
+      <stop offset="100%" stop-color="#c9a878"/>
+    </radialGradient>
+    <linearGradient id="cn-hat" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#2a2a30"/>
+      <stop offset="55%" stop-color="#15151a"/>
+      <stop offset="100%" stop-color="#0a0a0e"/>
+    </linearGradient>
+    <radialGradient id="cn-mono" cx="35%" cy="30%" r="80%">
+      <stop offset="0%" stop-color="rgba(255,255,255,0.30)"/>
+      <stop offset="55%" stop-color="rgba(200,160,80,0.08)"/>
+      <stop offset="100%" stop-color="rgba(200,160,80,0.02)"/>
+    </radialGradient>
+    <linearGradient id="cn-suit" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1a1a22"/>
+      <stop offset="100%" stop-color="#0a0a10"/>
+    </linearGradient>
+  </defs>
+  <!-- Suit shoulders + lapels + shirt + bowtie (drawn first, behind everything) -->
+  <polygon points="13,52 32,46 51,52 51,64 13,64" fill="url(#cn-suit)"/>
+  <polygon points="26,48.2 32,46 32,57 28,55" fill="#1f1f28"/>
+  <polygon points="38,48.2 32,46 32,57 36,55" fill="#1f1f28"/>
+  <polygon points="30,49 34,49 33.2,57 30.8,57" fill="#f5f5f7"/>
+  <!-- Neck -->
+  <rect x="29" y="43.5" width="6" height="5" fill="#c9a878"/>
   <!-- Bowtie -->
-  <path d="M28 49.5 L32 51.5 L36 49.5 L36 53.5 L32 51.5 L28 53.5 Z" fill="#8957D9"/>
-  <circle cx="32" cy="51.5" r="0.9" fill="#0e0e12"/>
+  <path d="M27 50.2 L32 52.2 L37 50.2 L37 54.6 L32 52.6 L27 54.6 Z" fill="#8957D9"/>
+  <rect x="31" y="51.2" width="2" height="2.6" rx="0.6" fill="#6f3fbf"/>
+  <!-- Head -->
+  <ellipse cx="32" cy="34" rx="13.5" ry="14.6" fill="url(#cn-skin)"/>
+  <!-- Forehead shadow from hat -->
+  <ellipse cx="32" cy="22.5" rx="13" ry="2.6" fill="rgba(0,0,0,0.22)"/>
+  <!-- Subtle wrinkle / age line -->
+  <path d="M23 25.2 Q28 24.5 32 25.2" stroke="rgba(80,55,30,0.18)" stroke-width="0.4" fill="none"/>
+  <!-- Bushy eyebrows, gray-streaked -->
+  <path d="M22 27.6 Q25 25.3 30 27.2" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/>
+  <path d="M34 27.2 Q39 25.3 42 27.6" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/>
+  <path d="M23.5 27 L26.5 26.3" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>
+  <path d="M35.5 26.3 L38.5 27" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>
+  <!-- Eyes: whites, iris, pupil, highlight -->
+  <ellipse cx="27" cy="30.5" rx="2.1" ry="1.6" fill="#fafafa"/>
+  <ellipse cx="37" cy="30.5" rx="2.1" ry="1.6" fill="#fafafa"/>
+  <circle cx="27" cy="30.5" r="1.15" fill="#4a3a25"/>
+  <circle cx="37" cy="30.5" r="1.15" fill="#4a3a25"/>
+  <circle cx="27" cy="30.5" r="0.55" fill="#0a0a10"/>
+  <circle cx="37" cy="30.5" r="0.55" fill="#0a0a10"/>
+  <circle cx="27.4" cy="30.0" r="0.28" fill="#fff"/>
+  <circle cx="37.4" cy="30.0" r="0.28" fill="#fff"/>
+  <!-- Gold-rimmed monocle around right eye -->
+  <circle cx="37" cy="30.5" r="5" fill="url(#cn-mono)" stroke="#c9a14a" stroke-width="0.95"/>
+  <path d="M33.4 28 A4.6 4.6 0 0 1 36 26.6" stroke="rgba(255,255,255,0.45)" stroke-width="0.55" fill="none"/>
+  <!-- Monocle chain trailing to suit -->
+  <path d="M41.8 32.6 Q44 36 43.2 41" stroke="#9a8866" stroke-width="0.55" fill="none"/>
+  <!-- Nose -->
+  <path d="M31.8 31 Q31 35.2 31.6 37 Q32 37.4 32.4 37 Q33 35.2 32.2 31" fill="rgba(80,55,30,0.10)"/>
+  <ellipse cx="31.4" cy="37" rx="0.45" ry="0.4" fill="rgba(60,40,20,0.30)"/>
+  <ellipse cx="32.6" cy="37" rx="0.45" ry="0.4" fill="rgba(60,40,20,0.30)"/>
+  <!-- Mustache: thick, twirled tips, gray highlights -->
+  <path d="M22 40.8 Q24.5 39.2 27.5 40.2 Q30 41.5 32 41.5 Q34 41.5 36.5 40.2 Q39.5 39.2 42 40.8 Q43 42.2 41 43.1 Q38 44 35 43.6 Q33 43.9 32 43.6 Q31 43.9 29 43.6 Q26 44 23 43.1 Q21 42.2 22 40.8 Z" fill="#5a4a35"/>
+  <path d="M24 41.2 Q26 40.8 28 41.3" stroke="#7a6a55" stroke-width="0.5" fill="none" stroke-linecap="round"/>
+  <path d="M36 41.3 Q38 40.8 40 41.2" stroke="#7a6a55" stroke-width="0.5" fill="none" stroke-linecap="round"/>
+  <path d="M22 40.8 Q20.4 40.2 20.4 41.8" stroke="#5a4a35" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+  <path d="M42 40.8 Q43.6 40.2 43.6 41.8" stroke="#5a4a35" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+  <!-- Mouth peeking from under mustache -->
+  <path d="M30.5 44.4 Q32 44.9 33.5 44.4" stroke="#5a3a25" stroke-width="0.55" fill="none" stroke-linecap="round"/>
+  <!-- Top hat (drawn last so it sits on top of head) -->
+  <ellipse cx="32" cy="20.2" rx="20" ry="2.9" fill="url(#cn-hat)"/>
+  <ellipse cx="32" cy="19.7" rx="20" ry="2.4" fill="#181820"/>
+  <rect x="22" y="3" width="20" height="17" rx="0.9" fill="url(#cn-hat)"/>
+  <rect x="22" y="13.4" width="20" height="3.2" fill="#7144C0"/>
+  <rect x="22" y="13.4" width="20" height="0.7" fill="#a87bea"/>
+  <rect x="23" y="5" width="1.9" height="8" fill="rgba(255,255,255,0.14)" rx="0.4"/>
+  <rect x="24.7" y="5" width="0.5" height="6" fill="rgba(255,255,255,0.09)"/>
 </svg>`;
 
 // Helper: returns an avatar element of the given pixel size. `popIn=true`
