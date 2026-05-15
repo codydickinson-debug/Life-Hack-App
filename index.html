@@ -10334,6 +10334,7 @@ function renderStocks() {
     </div>
 
     <!-- Section nav pills -->
+    ${_stkSectionHidden("navpills") ? "" : `
     <div style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:14px;padding-bottom:4px">
       ${[
         { id: "stk-breadth-wrap",   label: "📊 Market" },
@@ -10342,16 +10343,16 @@ function renderStocks() {
         { id: "stk-watchlist",      label: "👀 Watchlist" },
         { id: "stk-holdings-wrap",  label: "📈 Holdings" },
       ].map(p => `<button onclick="_stkScrollTo(${jsAttr(p.id)})" style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t1);border-radius:999px;padding:5px 12px;font-size:11.5px;font-weight:600;cursor:pointer;flex-shrink:0;white-space:nowrap">${esc(p.label)}</button>`).join("")}
-    </div>
+    </div>`}
 
     <!-- Market sentiment / breadth gauge -->
-    <div id="stk-breadth-wrap"></div>
+    ${_stkSectionHidden("breadth") ? "" : `<div id="stk-breadth-wrap"></div>`}
 
     <!-- Sector heatmap -->
-    <div id="stk-heatmap-wrap"></div>
+    ${_stkSectionHidden("heatmap") ? "" : `<div id="stk-heatmap-wrap"></div>`}
 
     <!-- Top movers card (watchlist gainer/loser of the day) -->
-    <div id="stk-movers-wrap"></div>
+    ${_stkSectionHidden("movers") ? "" : `<div id="stk-movers-wrap"></div>`}
 
     <!-- Portfolio summary hero (shows only if user has holdings) -->
     <div id="stk-portfolio-hero"></div>
@@ -10496,10 +10497,10 @@ function renderStocks() {
 
   _stocksRenderWatchlist();
   _stocksRenderPortfolio();
-  _stocksRenderTopMovers();
+  if (!_stkSectionHidden("movers")) _stocksRenderTopMovers();
   _stocksRefreshAll();
-  _stocksLoadHeatmap();
-  _stocksLoadBreadth();
+  if (!_stkSectionHidden("heatmap")) _stocksLoadHeatmap();
+  if (!_stkSectionHidden("breadth")) _stocksLoadBreadth();
   _stocksPrefetchCalendarEvents();
 }
 
@@ -14764,6 +14765,20 @@ function _stkScrollTo(id) {
   catch { el.scrollIntoView(); }
 }
 
+// Toggle visibility of a Stocks-tab section. Hidden flags live in
+// DB.settings.hiddenStocksSections so they persist across sessions.
+async function _stkToggleSection(id, hide) {
+  if (!DB.settings.hiddenStocksSections) DB.settings.hiddenStocksSections = {};
+  DB.settings.hiddenStocksSections[id] = !!hide;
+  await save();
+  // Re-render both Settings (to update checkboxes) and Stocks (to apply)
+  if (typeof render === "function") render();
+}
+function _stkSectionHidden(id) {
+  const h = (DB.settings && DB.settings.hiddenStocksSections) || {};
+  return !!h[id];
+}
+
 // Deterministic colored avatar for any ticker — first letter on a
 // hash-derived background color.
 const _STK_AVATAR_COLORS = [
@@ -17058,6 +17073,22 @@ function renderSettings() {
 
     <div class="section-h"><span class="lbl">Stocks</span></div>
     <div class="list">
+      ${(() => {
+        const hidden = (DB.settings && DB.settings.hiddenStocksSections) || {};
+        const sections = [
+          { id: "breadth", label: "Market sentiment gauge" },
+          { id: "heatmap", label: "Sector heatmap" },
+          { id: "movers", label: "Today's movers card" },
+          { id: "navpills", label: "Section nav pills" },
+        ];
+        return sections.map(s => `
+          <div class="row">
+            <div class="lead">👁️</div>
+            <div class="body"><div class="t1">Show ${esc(s.label)}</div><div class="t2">Toggle visibility on the Stocks tab</div></div>
+            <input type="checkbox" ${hidden[s.id] ? "" : "checked"} onchange="_stkToggleSection(${jsAttr(s.id)}, !this.checked)" style="width:50px;height:30px" />
+          </div>
+        `).join("");
+      })()}
       <div class="row tappable" onclick="exportStocksCsv()" role="button" tabindex="0">
         <div class="lead">📤</div>
         <div class="body"><div class="t1">Export portfolio CSV</div><div class="t2">Holdings + realized P&amp;L for spreadsheets/taxes</div></div>
@@ -17068,9 +17099,9 @@ function renderSettings() {
         <div class="body"><div class="t1">Import holdings CSV</div><div class="t2">Bulk add from a broker statement export</div></div>
         <div class="trail chev"></div>
       </div>
-      <div class="row tappable" onclick="if(confirm('Clear all cached AI Stocks responses?')){DB.stocks.lastPortfolioReview=null;DB.stocks.lastAdvisorReview=null;DB.stocks.lastWeeklyDigest=null;DB.stocks.dividendCache={};save();toast('Cached AI responses cleared')}" role="button" tabindex="0">
+      <div class="row tappable" onclick="if(confirm('Clear all cached AI Stocks responses?')){DB.stocks.lastPortfolioReview=null;DB.stocks.lastAdvisorReview=null;DB.stocks.lastWeeklyDigest=null;DB.stocks.dividendCache={};DB.stocks.explainCache={};save();toast('Cached AI responses cleared')}" role="button" tabindex="0">
         <div class="lead">🧹</div>
-        <div class="body"><div class="t1">Clear Stocks AI cache</div><div class="t2">Force regeneration of advisor review, weekly digest, dividend lookup</div></div>
+        <div class="body"><div class="t1">Clear Stocks AI cache</div><div class="t2">Force regeneration of advisor review, weekly digest, ticker explainers</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="if(confirm('Clear ${Object.keys((DB.stocks&&DB.stocks.quoteCache)||{}).length} cached quotes?')){DB.stocks.quoteCache={};DB.stocks.heatmapCache=null;DB.stocks.breadthCache=null;save();toast('Quote cache cleared')}" role="button" tabindex="0">
