@@ -6770,6 +6770,15 @@ function scrollToWealthSection(id) {
   catch { el.scrollIntoView(); }
 }
 
+// Same pattern for Settings page jump-strip — kept separate so the two
+// scroll helpers can evolve independently if needed.
+function scrollToSettingsSection(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  try { el.scrollIntoView({ behavior: "smooth", block: "start" }); }
+  catch { el.scrollIntoView(); }
+}
+
 function filteredNwHistory() {
   const days = wealthRange === "30" ? 30 : wealthRange === "90" ? 90 : wealthRange === "365" ? 365 : Infinity;
   const hist = DB.netWorthHistory || [];
@@ -9590,10 +9599,29 @@ function renderSettings() {
     </div>
   ` : "";
 
+  // Quick-jump strip: groups Settings into thematic chips so the user
+  // can jump to a section without scrolling through 24 of them.
+  const settingsJumpStrip = `
+    <div style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:8px 0;margin:-4px -2px 14px;scrollbar-width:none" id="settings-nav">
+      ${[
+        { id: "sec-you",       label: "You" },
+        { id: "sec-customize", label: "Customize" },
+        { id: "sec-cylan",     label: "Cylan" },
+        { id: "sec-money",     label: "Money" },
+        { id: "sec-privacy",   label: "Privacy" },
+        { id: "sec-advanced",  label: "Advanced" },
+        { id: "sec-data",      label: "Data" },
+      ].map(p => `<button class="btn sm secondary" style="flex-shrink:0;font-size:11.5px;padding:6px 12px;white-space:nowrap" onclick="scrollToSettingsSection(${jsAttr(p.id)})">${esc(p.label)}</button>`).join("")}
+    </div>
+    <style>#settings-nav::-webkit-scrollbar{display:none}</style>
+  `;
+
   $("#page-settings").innerHTML = `
     <div class="lg-title">Settings</div>
     ${encryptionWarning}
+    ${settingsJumpStrip}
 
+    <div id="sec-you"></div>
     <div class="section-h"><span class="lbl">You</span></div>
     <div class="list">
       <div class="row">
@@ -9635,6 +9663,7 @@ function renderSettings() {
       </div>
     </div>
 
+    <div id="sec-customize"></div>
     <div class="section-h"><span class="lbl">Appearance</span></div>
     <div class="list">
       ${["auto","light","dark"].map(t => `
@@ -9785,6 +9814,7 @@ function renderSettings() {
       }).join("") : `<div class="row"><div class="body"><div class="t2 muted">No rules yet — paychecks will just appear in transactions.</div></div></div>`}
     </div>
 
+    <div id="sec-cylan"></div>
     <div class="section-h"><span class="lbl">Cylan (powered by Claude)</span></div>
     <div class="list">
       <div class="row">
@@ -9818,6 +9848,7 @@ function renderSettings() {
       </div>
     </div>
 
+    <div id="sec-money"></div>
     <div class="section-h"><span class="lbl">Bills calendar</span></div>
     <div class="list">
       <div class="row tappable" onclick="exportBillsIcs()">
@@ -9890,6 +9921,7 @@ function renderSettings() {
       `).join("") : `<div class="row"><div class="body"><div class="t2 muted">Add rent, subscriptions, paycheck, etc. — used to compute Safe-to-spend.</div></div></div>`}
     </div>
 
+    <div id="sec-privacy"></div>
     <div class="section-h"><span class="lbl">Privacy & encryption</span></div>
     <div class="list">
       <div class="row">
@@ -9966,6 +9998,7 @@ function renderSettings() {
       </div>
     </div>
 
+    <div id="sec-advanced"></div>
     <div class="section-h"><span class="lbl">Advanced</span></div>
     <div class="list">
       <div class="row">
@@ -9999,6 +10032,7 @@ function renderSettings() {
       </div>
     </div>
 
+    <div id="sec-data"></div>
     <div class="section-h"><span class="lbl">Data</span></div>
     <div class="list">
       <div class="row tappable" onclick="startTutorial()">
