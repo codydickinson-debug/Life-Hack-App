@@ -152,6 +152,65 @@
   --sh-pop:    0 4px 12px rgba(0,0,0,0.40), 0 16px 40px rgba(0,0,0,0.45);
 }
 
+/* ================ STYLE PRESETS ================
+   Three design moods, toggle-able from Settings → Appearance.
+     - default: current dense iOS-grouped look
+     - calm:    more whitespace, no shadows, muted accents, lighter type
+     - bold:    bigger hero numbers, compressed rows, single accent
+
+   Implemented as CSS overrides keyed to a class on <html> — works on
+   top of theme-dark / theme-auto identically. Only CSS — no markup
+   changes — so the existing renderers stay untouched.                  */
+:root.style-calm {
+  /* Soften accent saturation system-wide */
+  --blue:      #4A82E8;
+  --green:     #4FB88A;
+  --red:       #DB6363;
+  --orange:    #E89E4F;
+  --purple:    #9F77D9;
+  /* Kill shadows for the flat-paper feel */
+  --sh-1:      none;
+  --sh-2:      none;
+  --sh-pop:    0 8px 32px rgba(0,0,0,0.06);
+  /* Slightly lighter secondary text */
+  --t3:        #9A9AA0;
+}
+:root.style-calm.theme-dark {
+  --t3:        #888892;
+  --sh-pop:    0 8px 32px rgba(0,0,0,0.35);
+}
+/* Calm — layout overrides */
+:root.style-calm .lg-title { font-size: 30px; font-weight: 600; margin: 12px 0 28px; letter-spacing: -0.02em; }
+:root.style-calm .section-h { margin: 44px 2px 16px; }
+:root.style-calm .section-h .lbl { font-weight: 500; color: var(--t3); }
+:root.style-calm .list { border: none; box-shadow: none; margin-bottom: 18px; border-radius: 14px; }
+:root.style-calm .list .row { padding: 18px 18px; min-height: 64px; }
+:root.style-calm .list .row + .row::before { left: 0; right: 0; opacity: 0.7; }
+:root.style-calm .row .body .t1 { font-weight: 400; }
+:root.style-calm .row .body .t2 { color: var(--t3); }
+:root.style-calm .empty { padding: 36px 18px; }
+:root.style-calm .card { box-shadow: none; border: 0.5px solid var(--sep); }
+:root.style-calm .btn { border-radius: 12px; }
+:root.style-calm .page { padding-top: 8px; }
+
+:root.style-bold {
+  /* Single accent — purple replaces the rainbow palette for chrome */
+  --accent:    #7c3aed;
+}
+:root.style-bold .lg-title { font-size: 42px; font-weight: 800; letter-spacing: -0.035em; margin: 4px 0 16px; }
+:root.style-bold .section-h { margin: 28px 2px 10px; }
+:root.style-bold .section-h .lbl { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em; color: var(--t3); }
+:root.style-bold .section-h .act { font-size: 12px; }
+:root.style-bold .list { border-radius: 12px; box-shadow: none; border: 0.5px solid var(--sep); margin-bottom: 10px; }
+:root.style-bold .list .row { padding: 11px 14px; min-height: 48px; }
+:root.style-bold .list .row + .row::before { left: 48px; }
+:root.style-bold .row .lead { font-size: 18px; min-width: 24px; }
+:root.style-bold .row .body .t1 { font-size: 14.5px; font-weight: 600; }
+:root.style-bold .row .body .t2 { font-size: 11px; margin-top: 2px; }
+:root.style-bold .row .trail { font-size: 13px; font-weight: 600; color: var(--t1); }
+:root.style-bold .empty .e-title { font-size: 20px; font-weight: 800; }
+:root.style-bold .btn { border-radius: 10px; font-weight: 700; }
+
 /* ================ BASE ================ */
 * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
 html, body { height: 100%; overscroll-behavior-y: none; }
@@ -2022,6 +2081,10 @@ const DEFAULT_DB = {
   accounts: [],  // [{item_id, institution_name, account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code}]
   settings: {
     theme: "auto",
+    // Style preset — visual mood: "default" | "calm" | "bold". Default = current
+    // dense iOS-grouped look. Calm = whitespace + flat. Bold = compressed rows
+    // + bigger hero numbers. See applyTheme() + the .style-* CSS overrides.
+    stylePreset: "default",
     reminderTime: "08:00",       // legacy single time — kept for back-compat, mirrored into reminders[0]
     notifications: false,
     // Multiple reminder times (instead of just one). Each entry is a string
@@ -3146,6 +3209,11 @@ function applyTheme() {
   const root = document.documentElement;
   root.classList.remove("theme-auto","theme-light","theme-dark");
   root.classList.add("theme-" + t);
+  // Style preset — one of: default, calm, bold. Defined as CSS overrides
+  // keyed to a class on <html>. "default" intentionally adds no class.
+  const sp = DB.settings.stylePreset || "default";
+  root.classList.remove("style-default","style-calm","style-bold");
+  if (sp === "calm" || sp === "bold") root.classList.add("style-" + sp);
 }
 applyTheme();
 
@@ -21308,6 +21376,20 @@ function renderSettings() {
           <div class="lead">${t==='auto'?'🌗':t==='light'?'☀️':'🌙'}</div>
           <div class="body"><div class="t1">${t[0].toUpperCase()+t.slice(1)}</div></div>
           <div class="trail">${DB.settings.theme===t?'<span style="color:var(--blue);font-size:18px">✓</span>':''}</div>
+        </div>
+      `).join("")}
+    </div>
+    <div class="section-h"><span class="lbl">Style</span><span class="act" style="color:var(--t3);cursor:default">try them on</span></div>
+    <div class="list">
+      ${[
+        { id: "default", emoji: "🎨", name: "Default",  desc: "Current look — dense iOS-grouped cards"           },
+        { id: "calm",    emoji: "🍃", name: "Calm",     desc: "More whitespace, flat (no shadows), muted accents" },
+        { id: "bold",    emoji: "⚡", name: "Bold",     desc: "Compressed rows, bigger headlines, sharper edges"  },
+      ].map(s => `
+        <div class="row tappable" onclick="DB.settings.stylePreset='${s.id}';save();applyTheme();render();toast('${s.name} style applied')">
+          <div class="lead">${s.emoji}</div>
+          <div class="body"><div class="t1">${s.name}</div><div class="t2">${s.desc}</div></div>
+          <div class="trail">${(DB.settings.stylePreset||'default')===s.id?'<span style="color:var(--blue);font-size:18px">✓</span>':''}</div>
         </div>
       `).join("")}
       <div class="row" style="padding:14px;flex-direction:column;align-items:stretch;gap:10px">
