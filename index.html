@@ -9241,9 +9241,30 @@ function calendarDaySheet(dateKey) {
       `).join("")}
     </div>
   `;
+  // Quick at-a-glance stat strip for this day. Only shows cells with data
+  // so a quiet day doesn't get crowded with zeros.
+  const dayHabitsDone = eligibleHabits.filter(h => h.type === "count" ? (+h.log[dateKey] || 0) >= (+h.target || 1) : !!h.log[dateKey]).length;
+  const dayStatCells = [];
+  if (eligibleHabits.length) dayStatCells.push({ icon: "✓", value: `${dayHabitsDone}/${eligibleHabits.length}`, label: "habits", color: dayHabitsDone === eligibleHabits.length ? "var(--green,#34C759)" : "var(--t1)" });
+  if (wins.length) dayStatCells.push({ icon: "⭐", value: `${wins.length}`, label: `win${wins.length === 1 ? '' : 's'}`, color: "var(--orange,#FF9500)" });
+  if (spendDay.length) dayStatCells.push({ icon: "💸", value: fmt$0(Math.round(spendTotal)), label: `${spendDay.length} tx`, color: "var(--t1)", priv: true });
+  if (savingsLogs.length) dayStatCells.push({ icon: "💰", value: `${savingsLogs.length}`, label: "savings", color: "var(--green,#34C759)" });
+  const dayStripHtml = dayStatCells.length ? `
+    <div style="display:grid;grid-template-columns:repeat(${dayStatCells.length},1fr);gap:6px;margin-bottom:14px">
+      ${dayStatCells.map(c => `
+        <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r2,12px);padding:8px 6px;text-align:center">
+          <div style="font-size:12px;margin-bottom:1px">${c.icon}</div>
+          <div style="font-size:14px;font-weight:700;color:${c.color};font-variant-numeric:tabular-nums;line-height:1"${c.priv ? ' data-priv="amount"' : ''}>${c.value}</div>
+          <div style="font-size:9.5px;color:var(--t3);margin-top:2px;text-transform:uppercase;letter-spacing:0.04em">${c.label}</div>
+        </div>
+      `).join("")}
+    </div>
+  ` : "";
+
   openSheet(`
     <h2 style="margin-bottom:4px">${titleLbl}${currentMood ? ` <span style="margin-left:6px">${currentMood}</span>` : ''}</h2>
     <p class="muted" style="font-size:12.5px;margin-bottom:14px">Everything tracked on this day</p>
+    ${dayStripHtml}
     ${quickActions}
     ${moodPicker}
     <div class="section-h" style="margin-top:0"><span class="lbl">Note / reminder</span>${(window.SpeechRecognition || window.webkitSpeechRecognition) ? `<button id="note-voice-btn" class="act" onclick="startNoteVoice()" title="Voice input" style="background:var(--bg-elev);border:0.5px solid var(--sep);border-radius:var(--r-pill,999px);padding:4px 10px;font-size:14px;color:var(--t1)">🎤</button>` : ''}</div>
