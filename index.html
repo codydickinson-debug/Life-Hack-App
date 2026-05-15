@@ -5372,12 +5372,45 @@ function exploreAscendSheet() {
       </div>
     `;
   }).join("");
+  const totalCount = sections.reduce((s, g) => s + g.items.filter(it => !it.show || it.show()).length, 0);
   openSheet(`
     <h2 style="margin-bottom:4px">Explore Ascend</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Every major feature in one place. Tap any to jump straight in.</p>
-    ${grpHtml}
+    <p class="muted" style="font-size:12.5px;margin-bottom:10px">${totalCount} features. Tap any to jump straight in.</p>
+    <input id="explore-filter" type="search" placeholder="🔍 Search features…" autocomplete="off"
+      oninput="_exploreFilter(this.value)"
+      style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:13.5px;margin-bottom:6px;box-sizing:border-box" />
+    <div id="explore-list">${grpHtml}</div>
+    <div id="explore-empty" style="display:none;text-align:center;padding:24px 14px;color:var(--t3);font-size:12.5px;font-style:italic">No matches. Try a different word.</div>
     <div class="actions"><button class="btn" onclick="closeSheet()">Done</button></div>
   `);
+  setTimeout(() => { const el = document.getElementById("explore-filter"); if (el) el.focus(); }, 80);
+}
+
+// Live filter over the Explore Ascend feature list. Filters by title + desc,
+// case-insensitively. Hides empty group headers automatically. Shows a
+// "no matches" placeholder when everything is filtered out.
+function _exploreFilter(q) {
+  const needle = (q || "").trim().toLowerCase();
+  const list = document.getElementById("explore-list");
+  const empty = document.getElementById("explore-empty");
+  if (!list) return;
+  const groups = list.querySelectorAll(":scope > div");
+  let anyVisible = false;
+  groups.forEach(g => {
+    const buttons = g.querySelectorAll("button.row");
+    let groupHits = 0;
+    buttons.forEach(b => {
+      const t1 = (b.querySelector(".t1") || {}).textContent || "";
+      const t2 = (b.querySelector(".t2") || {}).textContent || "";
+      const hay = (t1 + " " + t2).toLowerCase();
+      const hit = !needle || hay.includes(needle);
+      b.style.display = hit ? "" : "none";
+      if (hit) groupHits++;
+    });
+    g.style.display = groupHits ? "" : "none";
+    if (groupHits) anyVisible = true;
+  });
+  if (empty) empty.style.display = anyVisible ? "none" : "block";
 }
 
 // Setup Health Check — single screen that shows every major feature with
