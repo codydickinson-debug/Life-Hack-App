@@ -38,12 +38,16 @@ app = Flask(__name__, static_url_path="/stockanalyzer-static")
 
 def _norm_yield(y):
     """Normalize yfinance's dividend yield to a fraction.
-    Newer yfinance returns dividendYield as a percentage number (3.28 = 3.28%),
-    older versions returned it as a fraction (0.0328 = 3.28%). We standardize on
-    fraction form throughout so the frontend can multiply by 100 once.
 
-    Heuristic: if the value is > 1, it's percentage-form → divide by 100.
-    A real-world stock with > 100% yield doesn't exist (we'd cap at 0.5 = 50%).
+    Current yfinance (≥0.2.40) returns dividendYield as a percentage number
+    where 3.28 means 3.28% — we standardize on fraction form (0.0328) so the
+    frontend can multiply by 100 once.
+
+    Always divides by 100. A magnitude-based heuristic was wrong: low-yield
+    stocks (AAPL ~0.36) stayed at 0.36 instead of becoming 0.0036.
+
+    If yfinance ever reverts to fractional output we'll need a version check —
+    but as of this writing every tested ticker returns percentage form.
     """
     if y is None:
         return None
@@ -51,9 +55,7 @@ def _norm_yield(y):
         v = float(y)
     except (TypeError, ValueError):
         return None
-    if v > 1.0:
-        v = v / 100.0
-    return v
+    return v / 100.0
 
 
 def to_jsonable(obj):
