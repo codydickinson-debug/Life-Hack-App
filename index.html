@@ -9708,6 +9708,41 @@ function renderStocks() {
         <div class="body"><div class="t1">Learn the basics</div><div class="t2">P/E, beta, RSI, dividends — explained plainly</div></div>
         <div class="trail chev"></div>
       </div>
+      <div class="row tappable" onclick="_stocksAllocationTargetsSheet()" role="button" tabindex="0">
+        <div class="lead">🎯</div>
+        <div class="body"><div class="t1">Allocation targets</div><div class="t2">Set target % per holding · rebalance plan</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="performanceAttributionSheet()" role="button" tabindex="0">
+        <div class="lead">📊</div>
+        <div class="body"><div class="t1">Performance attribution</div><div class="t2">Who's driving your P&amp;L — contributors and detractors</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="taxLossHarvestSheet()" role="button" tabindex="0">
+        <div class="lead">📉</div>
+        <div class="body"><div class="t1">Tax-loss harvesting</div><div class="t2">Surface losses that can offset gains · wash-sale guidance</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="portfolioBenchmarkSheet()" role="button" tabindex="0">
+        <div class="lead">📈</div>
+        <div class="body"><div class="t1">Portfolio vs S&amp;P 500</div><div class="t2">Are you beating or trailing the market?</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="planPresetsSheet()" role="button" tabindex="0">
+        <div class="lead">📋</div>
+        <div class="body"><div class="t1">Plan presets</div><div class="t2">Down payment, emergency fund, FIRE, retire by 60…</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="importStocksCsvSheet()" role="button" tabindex="0">
+        <div class="lead">📥</div>
+        <div class="body"><div class="t1">Import holdings (CSV)</div><div class="t2">Paste ticker,shares,cost — bulk add positions</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="exportStocksCsv()" role="button" tabindex="0">
+        <div class="lead">📤</div>
+        <div class="body"><div class="t1">Export portfolio (CSV)</div><div class="t2">Holdings + realized P&amp;L for spreadsheets/taxes</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="window.open('/stockanalyzer','_blank')" role="button" tabindex="0">
         <div class="lead">🏠</div>
         <div class="body"><div class="t1">Housing &amp; mortgages</div><div class="t2">Live mortgage rates, ZIP-level housing data, affordability calc</div></div>
@@ -10093,6 +10128,470 @@ async function _stocksRemoveHolding(tk) {
   closeSheet();
   toast(`Removed ${tk} from portfolio`);
   if (typeof renderStocks === "function" && document.getElementById("page-stocks")) renderStocks();
+}
+
+/* ============================================================
+   PHASE 6 — Polish + advisor-grade refinements
+   ============================================================ */
+
+// Allocation target + rebalance plan
+function _stocksAllocationTargetsSheet() {
+  if (!DB.stocks) DB.stocks = {};
+  if (!DB.stocks.allocationTargets) DB.stocks.allocationTargets = {};
+  const holdings = DB.stocks.holdings || {};
+  const cache = DB.stocks.quoteCache || {};
+  const targets = DB.stocks.allocationTargets;
+  const entries = Object.entries(holdings).filter(([_, h]) => +h.shares > 0);
+  if (!entries.length) {
+    openSheet(`<h2 style="margin-bottom:4px">Allocation targets</h2><p class="muted" style="font-size:12.5px;margin-bottom:14px">Add holdings first to set a target allocation.</p><div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>`);
+    return;
+  }
+  let total = 0;
+  const rows = entries.map(([tk, h]) => {
+    const q = cache[tk];
+    const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+    const value = price * (+h.shares || 0);
+    total += value;
+    return { tk, shares: +h.shares, price, value };
+  });
+  rows.forEach(r => { r.currentPct = total > 0 ? r.value / total : 0; r.targetPct = targets[r.tk] != null ? +targets[r.tk] : 0; });
+  rows.sort((a, b) => b.value - a.value);
+  const totalTarget = rows.reduce((s, r) => s + r.targetPct, 0);
+  const targetValid = Math.abs(totalTarget - 100) < 0.1;
+  openSheet(`
+    <h2 style="margin-bottom:4px">🎯 Allocation targets</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:12px">Set a target % per holding. We'll show drift and a rebalance plan.</p>
+    <div style="background:${targetValid?'var(--bg-elev)':'rgba(255,149,0,0.10)'};border:0.5px solid ${targetValid?'var(--sep)':'var(--orange,#FF9500)'};border-radius:10px;padding:8px 11px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center">
+      <div style="font-size:11px;color:var(--t3)">Targets total</div>
+      <div style="font-size:14px;font-weight:700;color:${targetValid?'var(--green,#34C759)':'var(--orange,#FF9500)'};font-variant-numeric:tabular-nums">${totalTarget.toFixed(0)}% ${targetValid?"✓":"of 100"}</div>
+    </div>
+    ${rows.map(r => `
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 10px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px">
+        <div style="width:50px;font-weight:700;font-size:13px;flex-shrink:0">${esc(r.tk)}</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums">cur ${(r.currentPct*100).toFixed(1)}% · $${r.value.toFixed(0)}</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:4px;flex-shrink:0">
+          <input type="number" value="${esc(r.targetPct.toFixed(1))}" min="0" max="100" step="0.5"
+            data-tk="${esc(r.tk)}" onchange="_stocksUpdateTarget(this.dataset.tk, this.value)"
+            style="background:var(--card);padding:6px 8px;border-radius:6px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;width:64px;text-align:right;box-sizing:border-box" />
+          <span style="font-size:11px;color:var(--t3)">%</span>
+        </div>
+      </div>
+    `).join("")}
+    <button class="btn secondary" style="width:100%;margin-top:8px;font-size:12.5px" onclick="_stocksAutoEqualWeight()">Equal-weight all</button>
+    <button class="btn" style="width:100%;margin-top:6px;font-size:13px;background:linear-gradient(135deg,#0ea5e9,#7c3aed);color:#fff;border:none" onclick="_stocksShowRebalancePlan()">Show rebalance plan →</button>
+    <div id="rebalance-plan"></div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+async function _stocksUpdateTarget(tk, val) {
+  if (!DB.stocks.allocationTargets) DB.stocks.allocationTargets = {};
+  const v = parseFloat(val);
+  if (isFinite(v) && v >= 0 && v <= 100) {
+    DB.stocks.allocationTargets[tk] = v;
+    await save();
+    _stocksAllocationTargetsSheet();
+  }
+}
+
+async function _stocksAutoEqualWeight() {
+  const holdings = (DB.stocks && DB.stocks.holdings) || {};
+  const tickers = Object.keys(holdings).filter(tk => +holdings[tk].shares > 0);
+  if (!tickers.length) return;
+  const each = Math.round(100 / tickers.length * 10) / 10;
+  const remainder = +(100 - each * tickers.length).toFixed(1);
+  if (!DB.stocks.allocationTargets) DB.stocks.allocationTargets = {};
+  tickers.forEach((tk, i) => { DB.stocks.allocationTargets[tk] = each + (i === 0 ? remainder : 0); });
+  await save();
+  _stocksAllocationTargetsSheet();
+}
+
+function _stocksShowRebalancePlan() {
+  const holdings = (DB.stocks && DB.stocks.holdings) || {};
+  const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  const targets = (DB.stocks && DB.stocks.allocationTargets) || {};
+  const out = document.getElementById("rebalance-plan");
+  if (!out) return;
+  let total = 0;
+  const rows = Object.entries(holdings).filter(([_, h]) => +h.shares > 0).map(([tk, h]) => {
+    const q = cache[tk];
+    const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+    const value = price * (+h.shares || 0);
+    total += value;
+    return { tk, shares: +h.shares, price, value, target: (+targets[tk] || 0) / 100 };
+  });
+  if (total <= 0) { out.innerHTML = ""; return; }
+  const tgtSum = rows.reduce((s, r) => s + r.target, 0);
+  if (tgtSum < 0.99) {
+    out.innerHTML = `<div style="background:rgba(255,149,0,0.10);border:0.5px solid var(--orange,#FF9500);border-radius:10px;padding:10px 12px;margin-top:10px;font-size:12px;color:var(--t1);line-height:1.45">Targets total ${(tgtSum*100).toFixed(0)}%. Set them to add up to 100% before computing a rebalance plan.</div>`;
+    return;
+  }
+  rows.forEach(r => { r.targetVal = r.target * total; r.drift = r.value - r.targetVal; r.driftShares = r.price > 0 ? r.drift / r.price : 0; });
+  rows.sort((a, b) => Math.abs(b.drift) - Math.abs(a.drift));
+  const sells = rows.filter(r => r.drift > 0.5);
+  const buys = rows.filter(r => r.drift < -0.5);
+  const maxDriftPct = Math.max(...rows.map(r => Math.abs(r.drift / total * 100)));
+  const renderRow = (r, isBuy) => {
+    const amt = Math.abs(r.drift);
+    const shares = Math.abs(r.driftShares);
+    return `
+      <div style="display:flex;justify-content:space-between;padding:8px 11px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px">
+        <div>
+          <div style="font-weight:700;font-size:13px;color:var(--t1)">${isBuy ? "Buy" : "Sell"} ${esc(r.tk)}</div>
+          <div style="font-size:10.5px;color:var(--t3)">${shares.toFixed(2)} sh @ $${r.price.toFixed(2)} · ${((r.value/total)*100).toFixed(1)}% → ${(r.target*100).toFixed(1)}%</div>
+        </div>
+        <div style="font-size:14px;font-weight:700;color:${isBuy?'var(--green,#34C759)':'var(--red,#FF3B30)'};font-variant-numeric:tabular-nums" data-priv="amount">${isBuy?"+":"-"}$${amt.toFixed(0)}</div>
+      </div>
+    `;
+  };
+  out.innerHTML = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-top:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Rebalance plan</div>
+        <div style="background:var(--bg-elev);color:${maxDriftPct>5?'var(--orange,#FF9500)':'var(--green,#34C759)'};border-radius:999px;padding:2px 9px;font-size:10.5px;font-weight:700">${maxDriftPct.toFixed(1)}% max drift</div>
+      </div>
+      ${sells.length ? `<div style="font-size:10.5px;color:var(--red,#FF3B30);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Sell to get back to target</div>${sells.map(r => renderRow(r, false)).join("")}` : ""}
+      ${buys.length ? `<div style="font-size:10.5px;color:var(--green,#34C759);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:8px 0 4px">Buy to reach target</div>${buys.map(r => renderRow(r, true)).join("")}` : ""}
+      ${!sells.length && !buys.length ? `<div style="font-size:12.5px;color:var(--t2);line-height:1.5;text-align:center;padding:6px">✓ Already on target. No rebalancing needed.</div>` : ""}
+      <div style="font-size:10.5px;color:var(--t3);margin-top:10px;line-height:1.4;font-style:italic">Sell/buy amounts use today's live prices. Mind tax consequences before realizing gains.</div>
+    </div>
+  `;
+}
+
+// Performance attribution sheet
+function performanceAttributionSheet() {
+  const holdings = (DB.stocks && DB.stocks.holdings) || {};
+  const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  const rows = Object.entries(holdings).filter(([_, h]) => +h.shares > 0).map(([tk, h]) => {
+    const q = cache[tk];
+    const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+    const shares = +h.shares; const c = +h.cost || 0;
+    const pl = (price - c) * shares;
+    const plPct = c > 0 ? (price - c) / c : 0;
+    return { tk, shares, price, cost: c, pl, plPct };
+  });
+  if (!rows.length) { openSheet(`<h2>Performance attribution</h2><p class="muted">Add holdings first.</p><div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>`); return; }
+  rows.sort((a, b) => b.pl - a.pl);
+  const totalPl = rows.reduce((s, r) => s + r.pl, 0);
+  const max = Math.max(...rows.map(r => Math.abs(r.pl)), 1);
+  const totalColor = totalPl >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+  openSheet(`
+    <h2 style="margin-bottom:4px">📊 Performance attribution</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:12px">Who's driving your unrealized gains and losses.</p>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${totalColor};border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Total unrealized P&amp;L</div>
+      <div style="font-size:24px;font-weight:800;color:${totalColor};font-variant-numeric:tabular-nums" data-priv="amount">${totalPl >= 0 ? "+" : "-"}$${Math.abs(totalPl).toFixed(2)}</div>
+    </div>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">By position</div>
+      ${rows.map(r => {
+        const widthPct = (Math.abs(r.pl) / max) * 100;
+        const c = r.pl >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+        return `
+          <div onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(r.tk)}),120)" role="button" tabindex="0" style="margin-bottom:8px;cursor:pointer">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:3px">
+              <span style="font-weight:700;color:var(--t1)">${esc(r.tk)} <span style="color:var(--t3);font-weight:500;font-size:10.5px">${r.shares} sh @ $${r.cost.toFixed(2)} → $${r.price.toFixed(2)}</span></span>
+              <span style="color:${c};font-weight:700;font-variant-numeric:tabular-nums">${r.pl >= 0 ? "+" : "-"}$${Math.abs(r.pl).toFixed(0)} <span style="font-size:10.5px;font-weight:500">(${r.plPct >= 0 ? "+" : ""}${(r.plPct*100).toFixed(1)}%)</span></span>
+            </div>
+            <div style="position:relative;height:6px;background:var(--bg-elev);border-radius:3px;overflow:hidden">
+              <div style="position:absolute;${r.pl >= 0 ? 'left:50%' : 'right:50%'};width:${widthPct/2}%;height:100%;background:${c};opacity:0.8"></div>
+              <div style="position:absolute;left:50%;top:0;width:1px;height:100%;background:var(--t3);opacity:0.5"></div>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+// Tax-loss harvesting helper
+function taxLossHarvestSheet() {
+  const holdings = (DB.stocks && DB.stocks.holdings) || {};
+  const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  const losses = Object.entries(holdings).filter(([_, h]) => +h.shares > 0).map(([tk, h]) => {
+    const q = cache[tk];
+    const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+    const shares = +h.shares; const c = +h.cost || 0;
+    const pl = (price - c) * shares;
+    return { tk, shares, price, cost: c, pl, plPct: c > 0 ? (price - c) / c : 0 };
+  }).filter(r => r.pl < -1).sort((a, b) => a.pl - b.pl);
+  const realized = (DB.stocks && DB.stocks.realizedPL) || [];
+  const yearKey = new Date().getFullYear().toString();
+  const realizedThisYear = realized.filter(r => (r.date || "").startsWith(yearKey)).reduce((s, r) => s + (+r.pl || 0), 0);
+  const totalLoss = losses.reduce((s, r) => s + r.pl, 0);
+  const offsetCap = realizedThisYear + 3000;
+  const harvestable = Math.min(Math.abs(totalLoss), Math.max(0, offsetCap));
+  openSheet(`
+    <h2 style="margin-bottom:4px">📉 Tax-loss harvesting</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:12px">Realize losses to offset realized gains and (up to $3K) ordinary income.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px">
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:10px 12px">
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600">Gains realized ${yearKey}</div>
+        <div style="font-size:15px;font-weight:700;color:${realizedThisYear>=0?'var(--green,#34C759)':'var(--red,#FF3B30)'}" data-priv="amount">${realizedThisYear>=0?'+':'-'}$${Math.abs(realizedThisYear).toFixed(0)}</div>
+      </div>
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:10px 12px">
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600">Unrealized losses</div>
+        <div style="font-size:15px;font-weight:700;color:var(--red,#FF3B30)" data-priv="amount">-$${Math.abs(totalLoss).toFixed(0)}</div>
+      </div>
+    </div>
+    ${harvestable > 0 ? `
+      <div style="background:rgba(0,122,255,0.08);border:0.5px solid rgba(0,122,255,0.30);border-radius:10px;padding:11px 13px;margin-bottom:12px">
+        <div style="font-size:10.5px;color:var(--blue,#007AFF);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">Harvestable this year</div>
+        <div style="font-size:18px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${harvestable.toFixed(0)}</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:3px;line-height:1.4">Up to $3,000 of net loss can offset ordinary income each year in the US; the rest carries forward.</div>
+      </div>
+    ` : ""}
+    ${losses.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Loss candidates (largest first)</div>
+      ${losses.map(r => `
+        <div style="display:flex;align-items:center;gap:8px;padding:9px 11px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px">
+          <div style="flex:1">
+            <div style="font-weight:700;font-size:13px;color:var(--t1)">${esc(r.tk)} <span style="color:var(--t3);font-weight:500;font-size:11px">${r.shares} sh</span></div>
+            <div style="font-size:10.5px;color:var(--t3)">cost $${r.cost.toFixed(2)} → now $${r.price.toFixed(2)} (${(r.plPct*100).toFixed(1)}%)</div>
+          </div>
+          <div style="text-align:right">
+            <div style="font-size:14px;font-weight:700;color:var(--red,#FF3B30);font-variant-numeric:tabular-nums" data-priv="amount">-$${Math.abs(r.pl).toFixed(0)}</div>
+            <button onclick="closeSheet();setTimeout(()=>_stocksClosePositionSheet(${jsAttr(r.tk)}),120)" style="background:transparent;border:0.5px solid var(--sep);color:var(--t2);font-size:10.5px;padding:3px 8px;border-radius:6px;margin-top:3px;cursor:pointer">Harvest</button>
+          </div>
+        </div>
+      `).join("")}
+    ` : `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:13px;font-style:italic">No unrealized losses — every position is in the green.</div>`}
+    <div style="background:var(--bg-elev);border-radius:10px;padding:10px 12px;margin-top:12px;font-size:11.5px;color:var(--t2);line-height:1.5">
+      ⚠️ <b style="color:var(--t1)">Wash-sale rule</b> — if you sell at a loss and buy the same (or "substantially identical") security within 30 days before or after, the IRS disallows the loss. Wait at least 31 days, or buy a similar-but-not-identical replacement.
+    </div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+/* ---------- Benchmark vs S&P 500 ----------
+   Compares the user's portfolio history against SPY's price track
+   over the same window. Both are normalized to 100 at the start so
+   the lines are directly comparable. */
+async function portfolioBenchmarkSheet() {
+  const hist = (DB.stocks && DB.stocks.portfolioHistory) || [];
+  if (hist.length < 5) {
+    openSheet(`
+      <h2 style="margin-bottom:4px">vs S&P 500</h2>
+      <p class="muted" style="font-size:12.5px;margin-bottom:14px">Need at least 5 days of portfolio history to benchmark. Keep using Stocks daily and it'll build up.</p>
+      <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+    `);
+    return;
+  }
+  openSheet(`
+    <h2 style="margin-bottom:4px">📈 Portfolio vs S&P 500</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Pulling SPY history to compare against your portfolio…</p>
+    <div id="bench-result" style="text-align:center;padding:30px 14px;color:var(--t3);font-size:13px">Loading…</div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  try {
+    const start = hist[0].date;
+    const end = hist[hist.length - 1].date;
+    // Use the broker bundle endpoint for SPY — gives us monthly + daily close arrays
+    const r = await fetch("/api/ticker/SPY");
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || "HTTP " + r.status);
+    const spy5y = (data.timeframes && data.timeframes["5Y"] && data.timeframes["5Y"].closes) || [];
+    const spyDates = (data.timeframes && data.timeframes["5Y"] && data.timeframes["5Y"].dates) || [];
+    if (!spy5y.length) throw new Error("no SPY data");
+    // Index SPY by date so we can align with portfolio history dates
+    const spyByDate = {};
+    spyDates.forEach((d, i) => { spyByDate[d] = spy5y[i]; });
+    // For each portfolio history point, find the closest SPY close (same day or earlier)
+    const portfolioStart = +hist[0].value;
+    let spyStart = null;
+    for (const d of spyDates) { if (d >= start) { spyStart = spyByDate[d]; break; } }
+    if (spyStart == null) spyStart = spy5y[spy5y.length - 1];
+    const portfolioNorm = hist.map(h => 100 * (h.value / portfolioStart));
+    const spyNorm = hist.map(h => {
+      // Walk forward through spyDates to find ≤ h.date
+      let last = spyStart;
+      for (const d of spyDates) {
+        if (d > h.date) break;
+        if (spyByDate[d]) last = spyByDate[d];
+      }
+      return 100 * (last / spyStart);
+    });
+    _stocksRenderBenchmark(hist, portfolioNorm, spyNorm, portfolioStart, spyStart);
+  } catch (e) {
+    const out = document.getElementById("bench-result");
+    if (out) out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  }
+}
+
+function _stocksRenderBenchmark(hist, portfolioNorm, spyNorm, portStart, spyStart) {
+  const out = document.getElementById("bench-result");
+  if (!out) return;
+  const W = 320, H = 130;
+  const all = [...portfolioNorm, ...spyNorm];
+  const min = Math.min(...all), max = Math.max(...all);
+  const range = (max - min) || 1;
+  const xAt = (i) => (i / (hist.length - 1)) * W;
+  const yAt = (v) => H - ((v - min) / range) * H;
+  const pPts = portfolioNorm.map((v, i) => xAt(i).toFixed(1) + "," + yAt(v).toFixed(1)).join(" ");
+  const sPts = spyNorm.map((v, i) => xAt(i).toFixed(1) + "," + yAt(v).toFixed(1)).join(" ");
+  const pEnd = portfolioNorm[portfolioNorm.length - 1];
+  const sEnd = spyNorm[spyNorm.length - 1];
+  const alpha = pEnd - sEnd;
+  const alphaColor = alpha >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+  out.innerHTML = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${alphaColor};border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="display:flex;align-items:baseline;gap:12px;margin-bottom:4px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Alpha vs SPY</div>
+        <div style="flex:1"></div>
+      </div>
+      <div style="font-size:24px;font-weight:800;color:${alphaColor};font-variant-numeric:tabular-nums">${alpha >= 0 ? "+" : ""}${alpha.toFixed(1)}%</div>
+      <div style="font-size:11.5px;color:var(--t3);margin-top:2px">${alpha >= 0 ? "You're beating" : "You're trailing"} the S&P 500 over ${hist.length} days</div>
+      <svg viewBox="0 0 ${W} ${H+18}" style="width:100%;height:auto;display:block;margin-top:12px">
+        <polyline points="${sPts}" fill="none" stroke="var(--t3)" stroke-width="1.6" stroke-dasharray="3 3" opacity="0.7"/>
+        <polyline points="${pPts}" fill="none" stroke="${alphaColor}" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+        <text x="0" y="${H+14}" font-size="9" fill="var(--t3)">${esc(hist[0].date)}</text>
+        <text x="${W}" y="${H+14}" font-size="9" fill="var(--t3)" text-anchor="end">${esc(hist[hist.length-1].date)}</text>
+      </svg>
+      <div style="display:flex;gap:16px;justify-content:center;font-size:11px;margin-top:6px">
+        <span style="color:var(--t2)"><span style="display:inline-block;width:14px;height:2px;background:${alphaColor};vertical-align:middle;margin-right:4px"></span>Your portfolio · ${pEnd.toFixed(1)}</span>
+        <span style="color:var(--t3)"><span style="display:inline-block;width:14px;height:1px;background:var(--t3);border-top:1px dashed;vertical-align:middle;margin-right:4px"></span>S&P 500 · ${sEnd.toFixed(1)}</span>
+      </div>
+      <div style="font-size:10.5px;color:var(--t3);margin-top:8px;line-height:1.4;font-style:italic">Both lines normalized to 100 at the start. Pure-price comparison (doesn't include dividends).</div>
+    </div>
+  `;
+}
+
+/* ---------- Plan builder presets ---------- */
+const PLAN_PRESETS = [
+  { id: "house",       label: "🏠 Down payment",   goal: 60000, years: 5,  monthly: 800,  notes: "Typical 20% down on a $300K home" },
+  { id: "emergency",   label: "🛡️ Emergency fund", goal: 20000, years: 1,  monthly: 1600, notes: "6 months of $3,300 expenses" },
+  { id: "retire60",    label: "🏖️ Retire by 60",  goal: 1500000, years: 30, monthly: 1500, notes: "$1.5M @ age 60 (current age 30)" },
+  { id: "millionaire", label: "💎 First million",  goal: 1000000, years: 20, monthly: 1200, notes: "Compounding the long way" },
+  { id: "kid",         label: "🎓 College fund",   goal: 100000, years: 18, monthly: 250,  notes: "Public 4-year tuition" },
+  { id: "fire",        label: "🔥 FIRE @ 45",     goal: 1250000, years: 15, monthly: 3500, notes: "$50K/yr withdrawal at 4% SWR" },
+];
+
+function planPresetsSheet() {
+  openSheet(`
+    <h2 style="margin-bottom:4px">📐 Plan presets</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Common goals with realistic defaults — tap one to load it.</p>
+    ${PLAN_PRESETS.map(p => `
+      <div onclick="_stocksLoadPreset(${jsAttr(p.id)})" role="button" tabindex="0" style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:12px 14px;margin-bottom:6px;cursor:pointer">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">
+          <div style="font-size:14px;font-weight:700;color:var(--t1)">${esc(p.label)}</div>
+          <div style="font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums">$${(p.goal/1000).toFixed(0)}K · ${p.years}y</div>
+        </div>
+        <div style="font-size:11.5px;color:var(--t3);line-height:1.4">${esc(p.notes)} · $${p.monthly}/mo</div>
+      </div>
+    `).join("")}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+function _stocksLoadPreset(id) {
+  const p = PLAN_PRESETS.find(x => x.id === id);
+  if (!p) return;
+  const currentAge = (DB.profile && +DB.profile.age) || 30;
+  closeSheet();
+  setTimeout(() => {
+    planBuilderSheet();
+    // Wait for inputs to be in DOM, then populate
+    setTimeout(() => {
+      const goal = document.getElementById("plan-goal");
+      const age = document.getElementById("plan-age");
+      const monthly = document.getElementById("plan-monthly");
+      if (goal) goal.value = p.goal;
+      if (age) age.value = currentAge + p.years;
+      if (monthly) monthly.value = p.monthly;
+      _stocksPlanRecompute();
+    }, 200);
+  }, 200);
+}
+
+/* ---------- CSV import / export ----------
+   Export: a single CSV with all holdings (ticker, shares, cost, current
+   price, market value, P&L) plus a separate "REALIZED" block at the
+   bottom. Import: paste/upload CSV with ticker,shares,cost rows. */
+function exportStocksCsv() {
+  const holdings = (DB.stocks && DB.stocks.holdings) || {};
+  const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  const realized = (DB.stocks && DB.stocks.realizedPL) || [];
+  const today = new Date().toISOString().slice(0, 10);
+  const rows = Object.entries(holdings).filter(([_, h]) => +h.shares > 0).map(([tk, h]) => {
+    const q = cache[tk];
+    const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+    const shares = +h.shares;
+    const c = +h.cost || 0;
+    const mv = price * shares;
+    const cost = c * shares;
+    const pl = mv - cost;
+    return [tk, shares, c.toFixed(2), price.toFixed(2), mv.toFixed(2), pl.toFixed(2), ((pl/cost)*100).toFixed(2)];
+  });
+  let csv = "ticker,shares,cost_per_share,current_price,market_value,unrealized_pl,unrealized_pl_pct\n";
+  csv += rows.map(r => r.join(",")).join("\n");
+  if (realized.length) {
+    csv += "\n\nREALIZED P&L\n";
+    csv += "date,ticker,shares,cost_per_share,exit_price,realized_pl,realized_pl_pct\n";
+    csv += realized.map(r => [r.date, r.ticker, r.shares, (+r.cost).toFixed(2), (+r.exit).toFixed(2), (+r.pl).toFixed(2), ((+r.plPct)*100).toFixed(2)].join(",")).join("\n");
+  }
+  _downloadBlob(csv, `ascend-portfolio-${today}.csv`, "text/csv");
+  toast("Portfolio CSV downloaded");
+}
+
+function importStocksCsvSheet() {
+  openSheet(`
+    <h2 style="margin-bottom:4px">📥 Import holdings from CSV</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:12px">Paste rows in format <b>ticker,shares,cost_per_share</b> (one per line).</p>
+    <textarea id="csv-input" rows="10" placeholder="AAPL,10,165.50&#10;MSFT,5,350&#10;VOO,8,420"
+      style="width:100%;background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-family:monospace;font-size:13px;box-sizing:border-box;resize:vertical"></textarea>
+    <div style="font-size:11px;color:var(--t3);margin:8px 0 12px;line-height:1.4">Headers are optional (first row is auto-skipped if non-numeric). Existing tickers will be overwritten.</div>
+    <div class="actions">
+      <button class="btn secondary" onclick="closeSheet()">Cancel</button>
+      <button class="btn" onclick="_stocksImportCsv()">Import</button>
+    </div>
+  `);
+}
+
+async function _stocksImportCsv() {
+  const raw = (document.getElementById("csv-input").value || "").trim();
+  if (!raw) { toast("Nothing to import"); return; }
+  const lines = raw.split(/\r?\n/).map(l => l.trim()).filter(l => l);
+  if (!DB.stocks) DB.stocks = {};
+  if (!DB.stocks.holdings) DB.stocks.holdings = {};
+  if (!Array.isArray(DB.stocks.watchlist)) DB.stocks.watchlist = [];
+  let imported = 0; let skipped = 0;
+  for (const line of lines) {
+    const parts = line.split(",").map(p => p.trim());
+    if (parts.length < 3) { skipped++; continue; }
+    const tk = parts[0].toUpperCase().replace(/[^A-Z0-9.-]/g, "");
+    const shares = parseFloat(parts[1]);
+    const cost = parseFloat(parts[2]);
+    if (!tk || !isFinite(shares) || !isFinite(cost) || shares <= 0 || cost <= 0) { skipped++; continue; }
+    DB.stocks.holdings[tk] = { shares, cost };
+    if (!DB.stocks.watchlist.includes(tk)) DB.stocks.watchlist.push(tk);
+    imported++;
+  }
+  await save();
+  closeSheet();
+  toast(`Imported ${imported} holding${imported === 1 ? "" : "s"}${skipped > 0 ? ", skipped " + skipped : ""}`);
+  if (typeof renderStocks === "function" && document.getElementById("page-stocks")) renderStocks();
+  // Kick off a quote refresh
+  if (typeof _stocksRefreshAll === "function") _stocksRefreshAll();
+}
+
+// Sharpe ratio per holding
+function _stkSharpeRatio(q, riskFreeRate) {
+  if (!q || q.return_5y == null) return null;
+  const r5y = +q.return_5y;
+  const annualReturn = Math.pow(1 + r5y, 1/5) - 1;
+  const closes = (q.timeframes && q.timeframes["1Y"] && q.timeframes["1Y"].closes) || [];
+  if (closes.length < 30) return null;
+  const rets = [];
+  for (let i = 1; i < closes.length; i++) if (closes[i-1] > 0) rets.push(Math.log(closes[i] / closes[i-1]));
+  const mean = rets.reduce((s, r) => s + r, 0) / rets.length;
+  const variance = rets.reduce((s, r) => s + (r - mean) ** 2, 0) / rets.length;
+  const annualVol = Math.sqrt(variance) * Math.sqrt(252);
+  const rf = riskFreeRate != null ? riskFreeRate : 0.04;
+  const sharpe = annualVol > 0 ? (annualReturn - rf) / annualVol : null;
+  return { sharpe, annualReturn, annualVol, rf };
 }
 
 /* ============================================================
@@ -10726,7 +11225,8 @@ function planBuilderSheet() {
   const investments = (typeof wealthComposition === "function") ? wealthComposition().investments : 0;
   openSheet(`
     <h2 style="margin-bottom:4px">📐 Build a plan</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Pick a goal. Cornileus computes the path, shows the chart, explains why.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:10px">Pick a goal. Cornileus computes the path, shows the chart, explains why.</p>
+    <button class="btn secondary" style="width:100%;margin-bottom:14px;font-size:12px;padding:7px" onclick="planPresetsSheet()">📋 Load a preset (house, FIRE, college, retire…)</button>
     <label>Goal amount ($)</label>
     <input id="plan-goal" type="number" inputmode="decimal" value="1000000" min="1000" oninput="_stocksPlanRecompute()"
       style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
@@ -12667,6 +13167,7 @@ function _stocksRenderNewsBriefing({ tk, verdict, conf, oneLine, bullish, bearis
 // Risk score card — a 0-100 dial + colored band + contributing factors
 function _stocksRenderRiskCard(q) {
   const r = _stkRiskScore(q);
+  const sharpe = _stkSharpeRatio(q);
   const color = r.band === "low" ? "var(--green,#34C759)"
               : r.band === "moderate" ? "#9ACD32"
               : r.band === "elevated" ? "var(--orange,#FF9500)"
@@ -12702,6 +13203,23 @@ function _stocksRenderRiskCard(q) {
           ` : `<div style="font-size:12px;color:var(--t2);line-height:1.45">No major risk drivers detected. The fundamentals and momentum signals are in a typical range.</div>`}
         </div>
       </div>
+      ${sharpe && sharpe.sharpe != null ? (() => {
+        const s = sharpe.sharpe;
+        const sColor = s > 1 ? "var(--green,#34C759)" : s > 0.5 ? "#9ACD32" : s > 0 ? "var(--orange,#FF9500)" : "var(--red,#FF3B30)";
+        const sLabel = s > 2 ? "Excellent" : s > 1 ? "Strong" : s > 0.5 ? "Decent" : s > 0 ? "Weak" : "Poor";
+        return `
+          <div style="margin-top:10px;padding:9px 11px;background:var(--bg-elev);border-radius:8px;display:flex;justify-content:space-between;align-items:center">
+            <div>
+              <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Sharpe ratio</div>
+              <div style="font-size:11px;color:var(--t3);margin-top:1px">CAGR ${(sharpe.annualReturn*100).toFixed(1)}% · vol ${(sharpe.annualVol*100).toFixed(1)}% · rf ${(sharpe.rf*100).toFixed(0)}%</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:16px;font-weight:800;color:${sColor};font-variant-numeric:tabular-nums">${s.toFixed(2)}</div>
+              <div style="font-size:10.5px;color:${sColor};font-weight:700">${esc(sLabel)}</div>
+            </div>
+          </div>
+        `;
+      })() : ""}
     </div>
   `;
 }
