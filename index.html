@@ -16509,7 +16509,7 @@ function detectedRecurringSheet() {
           <div style="font-size:11px;color:var(--t3);margin-top:2px">${esc(s.categoryGuess)} · seen ${s.count}× · ${esc(s.cadence)}</div>
         </div>
         <div style="text-align:right;flex-shrink:0">
-          <div style="font-weight:600" data-priv="amount">${fmt$0(s.amount)}/${({weekly:"wk",biweekly:"2wk",monthly:"mo"})[s.cadence]}</div>
+          <div style="font-weight:600" data-priv="amount">${fmt$0(s.amount)}/${({weekly:"wk",biweekly:"2 wks",monthly:"mo"})[s.cadence]}</div>
           <div style="font-size:11px;color:var(--t3)" data-priv="amount">~${fmt$0(s.monthlyEstimate)}/mo</div>
         </div>
       </div>
