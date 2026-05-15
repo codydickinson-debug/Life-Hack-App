@@ -20606,7 +20606,7 @@ function weeklyReviewSheet() {
 }
 
 /* --- "What's new" sheet (one-time on upgrade) ------------------- */
-const WHATS_NEW_KEY = "v3.1";
+const WHATS_NEW_KEY = "v3.2";
 function maybeShowWhatsNew() {
   if ((DB.user || {}).onboardedAt && DB.lastSeenWhatsNew !== WHATS_NEW_KEY) {
     setTimeout(() => whatsNewSheet(), 600);
@@ -20614,19 +20614,17 @@ function maybeShowWhatsNew() {
 }
 function whatsNewSheet() {
   openSheet(
-    '<h2>What\'s new in v3</h2>' +
-    '<p class="muted" style="font-size:13px;margin-bottom:14px">A focused round of features that make Ascend more useful day-to-day.</p>' +
+    '<h2>What\'s new</h2>' +
+    '<p class="muted" style="font-size:13px;margin-bottom:14px">A bunch of features that make Ascend feel more like a real app.</p>' +
     '<div class="list">' +
-      '<div class="row"><div class="lead">\u{1F3AF}</div><div class="body"><div class="t1">Safe-to-spend</div><div class="t2">Big number on Today — what you can spend without breaking budget</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F501}</div><div class="body"><div class="t1">Recurring transactions</div><div class="t2">Set rent, subs, paychecks. Feeds Safe-to-spend</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F441}</div><div class="body"><div class="t1">Privacy mode</div><div class="t2">Eye icon up top — blurs every dollar amount</div></div></div>' +
-      '<div class="row"><div class="lead">⏱</div><div class="body"><div class="t1">Auto-lock</div><div class="t2">Re-prompt for passphrase after N min hidden</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F517}</div><div class="body"><div class="t1">Goal hierarchy</div><div class="t2">Link daily → monthly → life goals so every action ladders up</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4DD}</div><div class="body"><div class="t1">Reflection journal</div><div class="t2">A short note each day. Encrypted.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F389}</div><div class="body"><div class="t1">Celebrations</div><div class="t2">Confetti on streak milestones and goal completion</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4C8}</div><div class="body"><div class="t1">Cashflow forecast</div><div class="t2">90-day projection on the Money tab</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F525}</div><div class="body"><div class="t1">Year heatmap</div><div class="t2">A year of habits at a glance on Stats</div></div></div>' +
-      '<div class="row"><div class="lead">+</div><div class="body"><div class="t1">Quick add (the “+” button)</div><div class="t2">Always one tap away from logging spend</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F9ED}</div><div class="body"><div class="t1">Guided tour</div><div class="t2">12-step interactive walkthrough with live demo data. Settings → Take the tour to replay.</div></div></div>' +
+      '<div class="row"><div class="lead">✨</div><div class="body"><div class="t1">Cylan, your money counselor</div><div class="t2">Tap the ✨ button anywhere. CFP-level planning that knows your real numbers.</div></div></div>' +
+      '<div class="row"><div class="lead">✦</div><div class="body"><div class="t1">Plan tab</div><div class="t2">Roadmap with Plan Health, pace chips per plan, what-if simulator, Smart Plays.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4C5}</div><div class="body"><div class="t1">Calendar tab</div><div class="t2">Habits, wins, mood, bills by day. Year view shows 12 months at a glance.</div></div></div>' +
+      '<div class="row"><div class="lead">↗</div><div class="body"><div class="t1">Stocks tab</div><div class="t2">Live quotes, market scans, housing/mortgage analyzers.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4A1}</div><div class="body"><div class="t1">Smart Plays</div><div class="t2">Personalized next moves based on YOUR numbers — debt payoff, account priority, retirement projection.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4C8}</div><div class="body"><div class="t1">Daily Pulse</div><div class="t2">One contextual nudge at the top of Today — net worth, plan deadlines, mood check-ins.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F516}</div><div class="body"><div class="t1">Build version in Settings</div><div class="t2">Confirm exactly which version you\'re on — useful when syncing across devices.</div></div></div>' +
     '</div>' +
     '<div class="actions"><button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet()">Got it</button></div>'
   );
