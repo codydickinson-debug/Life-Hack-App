@@ -2069,12 +2069,30 @@ function _rotateBackup() {
     if (cur !== prevBak) localStorage.setItem(SK_BAK, cur);
   } catch { /* quota or DOMException — primary save still proceeds */ }
 }
+// Once-per-session flag — quota errors fire on every save attempt once
+// the user is full, so we'd spam toasts without this guard.
+let _quotaWarned = false;
+function _isQuotaError(e) {
+  return !!(e && (e.name === "QuotaExceededError" || e.code === 22 || e.code === 1014 ||
+                  /quota/i.test(String(e.message || ""))));
+}
+function _maybeWarnQuota(e) {
+  if (!_isQuotaError(e) || _quotaWarned) return;
+  _quotaWarned = true;
+  // Defer toast() — save() runs before the UI is mounted on first load.
+  setTimeout(() => {
+    if (typeof toast === "function") {
+      toast("Storage full — export + delete old data to keep saving");
+    }
+  }, 0);
+}
+
 function save() {
   try {
     sanitizeDb();
     _rotateBackup();
     localStorage.setItem(SK, JSON.stringify(DB));
-  } catch {}
+  } catch (e) { _maybeWarnQuota(e); }
 }
 
 DB = load();
@@ -2193,6 +2211,21 @@ function sanitizeText(s, maxLen) {
   const cap = (typeof maxLen === "number" && maxLen > 0) ? maxLen : TEXT_MAX;
   if (out.length > cap) out = out.slice(0, cap);
   return out;
+}
+
+// Defensive cleaner for the user-pasted backendUrl Settings field.
+// Accepts http:// and https:// only; everything else (file:, javascript:,
+// even trailing whitespace or stray quotes from a clipboard paste) is
+// dropped. Returns "" if the value is unusable so callers don't accidentally
+// fetch() a dangerous URL. Empty input passes through (lets the user clear
+// the field). Strips trailing slash so callers can append /path consistently.
+function sanitizeBackendUrl(s) {
+  const cleaned = sanitizeText(s, URL_MAX);
+  if (!cleaned) return "";
+  // Only http/https. Reject anything else (including no scheme).
+  if (!/^https?:\/\//i.test(cleaned)) return "";
+  // Drop trailing slash for consistency with how callers concatenate paths.
+  return cleaned.replace(/\/+$/, "");
 }
 
 /* sanitizeDb — defense-in-depth pass run from save(). Walks the known
@@ -2421,8 +2454,13 @@ save = async function() {
       _origSave(); // _origSave rotates the backup itself; sanitization
                    // already ran here so _origSave's redundant call is a no-op.
     }
-  } catch { /* swallow — surfacing save errors via console would leak DB
-                serialization details to anything reading the console. */ }
+  } catch (e) {
+    // Surface quota errors (data loss risk) via a one-shot toast so the
+    // user knows their writes aren't landing. Other failures stay silent
+    // — surfacing them would leak DB serialization details to anything
+    // reading the console.
+    _maybeWarnQuota(e);
+  }
 };
 
 // Sync wrapper for inline handlers; fire-and-forget.
@@ -9767,7 +9805,7 @@ function renderSettings() {
         <div class="body"><div class="t1">Backend URL</div><div class="t2">Your Cloudflare Worker URL</div></div>
         <input style="background:var(--bg-elev);padding:8px 10px;border-radius:8px;width:170px;text-align:right;font-size:11px"
           value="${esc(DB.settings.backendUrl||"")}" placeholder="https://...workers.dev"
-          oninput="DB.settings.backendUrl=sanitizeText(this.value, URL_MAX);saveDebounced()" onblur="flushPendingSave()" maxlength="${URL_MAX}" />
+          oninput="DB.settings.backendUrl=sanitizeBackendUrl(this.value);saveDebounced()" onblur="flushPendingSave()" maxlength="${URL_MAX}" />
       </div>
       <div class="row">
         <div class="lead">🔑</div>
@@ -21035,6 +21073,7 @@ function init() {
 
   Object.assign(window, {
     DB, save, load, clone, todayKey, fmt$, fmt$0, esc, uid,
+    sanitizeText, sanitizeBackendUrl, safeUrl, URL_MAX, TEXT_MAX, NOTE_MAX,
     showTab, render, renderToday, renderGoals, renderPlanning, renderMoney, renderStocks, renderStats, renderSettings, renderHeader,
     renderCalendar, calendarPrevMonth, calendarNextMonth, calendarToday, calendarDaySheet, saveCalendarNote, calendarSetView, calendarJumpToMonth, addWinForDate, toggleHabitForDate, habitDetailSheet, setDayMood, allNotesSheet,
     PLAN_TIERS, PLAN_TEMPLATES, planById, plansByTier, addPlan, togglePlan, deletePlan,
