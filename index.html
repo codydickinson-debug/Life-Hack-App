@@ -1769,7 +1769,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   </nav>
 
   <button id="counselor-fab" aria-label="Talk to financial counselor" title="Financial counselor" onclick="openCounselor()">✨</button>
-  <button id="fab" aria-label="Quick add spend" onclick="quickAddSpendSheet()">+</button>
+  <button id="fab" aria-label="Quick add" onclick="quickAddMenu()">+</button>
 </div>
 
 <div class="scrim" id="scrim" onclick="closeSheet()"></div>
@@ -20282,6 +20282,40 @@ toggleGoal = function(id) {
 ================================================================ */
 
 /* --- Quick-add Spend (the FAB sheet) ---------------------------- */
+// Tap-the-FAB menu. Replaces the previous single-action FAB which
+// always opened quickAddSpendSheet. Surfaces the 4 most common quick
+// captures: spend, win, jump to habits, ask Cylan. Tight 4-button
+// sheet, no dimming of unused space.
+function quickAddMenu() {
+  const actions = [
+    { icon: "💸", label: "Log spending", sub: "Quick amount + category or scan a receipt",
+      onclick: "closeSheet();setTimeout(()=>quickAddSpendSheet(),100)" },
+    { icon: "⭐", label: "Capture a win", sub: "One-liner — they add up over time",
+      onclick: "closeSheet();setTimeout(()=>addWinSheet(),100)" },
+    { icon: "✓", label: "Check today's habits", sub: `${todayHabitProgress().done}/${todayHabitProgress().total} done so far`,
+      onclick: "closeSheet();setTimeout(()=>{showTab('today');window.scrollTo({top:0,behavior:'smooth'});},100)" },
+    { icon: "✨", label: "Ask Cylan something", sub: "Money question, gut check, plan a move",
+      onclick: "closeSheet();setTimeout(()=>openCounselor(),100)" },
+  ];
+  openSheet(`
+    <h2 style="margin-bottom:4px">Quick add</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Capture something fast.</p>
+    <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:14px">
+      ${actions.map(a => `
+        <button onclick="${a.onclick}" style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px 16px;display:flex;align-items:center;gap:14px;text-align:left;cursor:pointer;color:inherit;font:inherit;transition:transform .15s ease,border-color .15s ease">
+          <div style="font-size:22px;width:32px;text-align:center;flex-shrink:0">${a.icon}</div>
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:14px;color:var(--t1);margin-bottom:2px">${esc(a.label)}</div>
+            <div style="font-size:11.5px;color:var(--t3);line-height:1.35">${esc(a.sub)}</div>
+          </div>
+          <div style="color:var(--t3);font-size:18px;flex-shrink:0">→</div>
+        </button>
+      `).join("")}
+    </div>
+    <div class="actions"><button class="btn secondary" onclick="closeSheet()">Cancel</button></div>
+  `);
+}
+
 function quickAddSpendSheet(prefilled) {
   const cats = spendCategories();
   const pre = prefilled || {};
