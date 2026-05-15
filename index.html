@@ -9592,6 +9592,9 @@ function renderStocks() {
     <!-- Sector heatmap -->
     <div id="stk-heatmap-wrap"></div>
 
+    <!-- Top movers card (watchlist gainer/loser of the day) -->
+    <div id="stk-movers-wrap"></div>
+
     <!-- Portfolio summary hero (shows only if user has holdings) -->
     <div id="stk-portfolio-hero"></div>
 
@@ -9640,8 +9643,44 @@ function renderStocks() {
 
   _stocksRenderWatchlist();
   _stocksRenderPortfolio();
+  _stocksRenderTopMovers();
   _stocksRefreshAll();
   _stocksLoadHeatmap();
+}
+
+/* ---------- Top movers card ----------
+   Surfaces the watchlist's biggest gainer + biggest loser today. Tiny,
+   automatic, very high signal-to-noise. Hidden until we have at least
+   3 cached quotes. */
+function _stocksRenderTopMovers() {
+  const wrap = document.getElementById("stk-movers-wrap");
+  if (!wrap) return;
+  const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  const rows = Object.entries(cache)
+    .filter(([_, q]) => q && !q.error && q.change_pct != null)
+    .map(([tk, q]) => ({ tk, chg: +q.change_pct, price: +q.price, abs: +q.change }));
+  if (rows.length < 3) { wrap.innerHTML = ""; return; }
+  rows.sort((a, b) => b.chg - a.chg);
+  const gainer = rows[0];
+  const loser = rows[rows.length - 1];
+  // Skip if both have very small moves
+  if (Math.abs(gainer.chg) < 0.001 && Math.abs(loser.chg) < 0.001) {
+    wrap.innerHTML = ""; return;
+  }
+  const cell = (r, color, label) => `
+    <div onclick="_stocksOpenDetail(${jsAttr(r.tk)})" role="button" tabindex="0" style="flex:1;background:var(--bg-elev);border-left:3px solid ${color};border-radius:10px;padding:9px 11px;cursor:pointer">
+      <div style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:2px">${esc(label)}</div>
+      <div style="display:flex;align-items:baseline;justify-content:space-between;gap:6px">
+        <div style="font-size:14.5px;font-weight:800;color:var(--t1)">${esc(r.tk)}</div>
+        <div style="font-size:13px;font-weight:700;color:${color};font-variant-numeric:tabular-nums">${r.chg >= 0 ? "+" : ""}${(r.chg * 100).toFixed(2)}%</div>
+      </div>
+      <div style="font-size:10.5px;color:var(--t3);margin-top:1px;font-variant-numeric:tabular-nums">$${(r.price || 0).toFixed(2)} · ${r.abs >= 0 ? "+" : "-"}$${Math.abs(r.abs || 0).toFixed(2)}</div>
+    </div>
+  `;
+  wrap.innerHTML = `
+    <div class="section-h" style="margin-top:14px"><span class="lbl">Today's movers</span></div>
+    <div style="display:flex;gap:6px">${cell(gainer, "var(--green,#34C759)", "Top gainer")}${cell(loser, "var(--red,#FF3B30)", "Top loser")}</div>
+  `;
 }
 
 /* ---------- Sector heatmap ----------
@@ -9765,8 +9804,10 @@ function _stocksRenderPortfolio() {
       </div>`;
     return;
   }
+  const divCache = (DB.stocks && DB.stocks.dividendCache) || {};
   // Compute totals
   let mkt = 0, cost = 0, dayChange = 0, missingPrice = 0;
+  let annualDiv = 0, divKnownCount = 0;
   const rows = entries.map(([tk, h]) => {
     const shares = +h.shares || 0;
     const c = +h.cost || 0;
@@ -9780,6 +9821,12 @@ function _stocksRenderPortfolio() {
     const plPct = costTotal > 0 ? pl / costTotal : 0;
     const dayPl = price != null ? prevChg * shares : 0;
     mkt += m; cost += costTotal; dayChange += dayPl;
+    // Annual dividend income — only counts holdings where we have a cached yield.
+    const yld = divCache[tk] && divCache[tk].yield != null ? +divCache[tk].yield : null;
+    if (yld != null && price != null) {
+      annualDiv += yld * m;
+      divKnownCount++;
+    }
     return { tk, shares, c, price, m, costTotal, pl, plPct, dayPl, q };
   });
   const totalPl = mkt - cost;
@@ -9820,6 +9867,15 @@ function _stocksRenderPortfolio() {
       ${mkt > 0 ? `
         <div style="display:flex;width:100%;height:8px;border-radius:4px;overflow:hidden;margin-top:12px;background:var(--bg-elev)">${allocBar}</div>
         <div style="margin-top:6px;line-height:1.6">${allocLegend}</div>
+      ` : ""}
+      ${annualDiv > 0 ? `
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;padding:8px 10px;background:var(--bg-elev);border-radius:8px">
+          <div>
+            <div style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Projected annual dividends${divKnownCount < rows.length ? ` · ${divKnownCount} of ${rows.length} known` : ""}</div>
+            <div style="font-size:11.5px;color:var(--t3);margin-top:1px">≈ $${(annualDiv / 12).toFixed(0)}/mo</div>
+          </div>
+          <div style="font-size:17px;font-weight:800;color:var(--green,#34C759);font-variant-numeric:tabular-nums" data-priv="amount">$${annualDiv.toFixed(0)}</div>
+        </div>
       ` : ""}
       <button onclick="_stocksAddHoldingSheet()" class="btn secondary" style="width:100%;margin-top:12px;font-size:12.5px;padding:7px">+ Add holding</button>
     </div>
@@ -10019,6 +10075,7 @@ async function _stocksRefreshAll() {
       await save();
       _stocksRenderWatchlist();
       _stocksRenderPortfolio();
+      _stocksRenderTopMovers();
     }
   } catch (e) {
     toast("Couldn't fetch quotes: " + (e.message || "network"));
@@ -10087,6 +10144,14 @@ async function _stocksOpenDetail(tk) {
       return;
     }
     window._stkDetail.q = q;
+    // Cache dividend yield so the portfolio hero can show projected
+    // annual income for this holding without a separate fetch.
+    if (q.dividend_yield != null) {
+      if (!DB.stocks.dividendCache) DB.stocks.dividendCache = {};
+      DB.stocks.dividendCache[q.ticker] = { yield: +q.dividend_yield, fetchedAt: Date.now() };
+      // Fire-and-forget save; not critical if it loses.
+      save();
+    }
     _stocksRenderDetail(q);
   } catch (e) {
     openSheet(`
