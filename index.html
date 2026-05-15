@@ -12047,6 +12047,72 @@ const STK_GLOSSARY = {
     ],
     evaluate: () => null,
   },
+  stock: {
+    title: "Stock — what it actually is",
+    short: "A tiny ownership slice of a company. When the company grows, your slice grows.",
+    explain: [
+      "Owning 1 share of Apple makes you a part-owner of Apple. Out of ~15 billion shares outstanding, you own one of them.",
+      "Two ways to make money: price goes up (capital gains) or the company sends you a piece of its profits (dividends).",
+      "Two ways to lose money: price goes down, or the company goes bankrupt and your share is worth $0.",
+      "Stocks are riskier than savings accounts (your money can drop 30% in a bad year) but have historically returned 7-10%/yr long-term vs ~4% for bonds and ~0-5% for cash.",
+    ],
+    evaluate: () => null,
+  },
+  etf: {
+    title: "ETF — Exchange-Traded Fund",
+    short: "A basket of stocks (or bonds) wrapped into a single ticker you can buy.",
+    explain: [
+      "VOO is an ETF that holds all 500 S&P 500 companies. Buy one share of VOO → you own a tiny piece of all 500.",
+      "ETFs trade on the stock exchange like a stock — you can buy or sell during market hours.",
+      "Most ETFs are 'index funds' that just match an index. They don't try to beat the market — they ARE the market.",
+      "Expense ratios are usually near-zero (0.03% for VOO). Compared to picking individual stocks: less work, less risk from any single company, slightly less upside.",
+    ],
+    evaluate: () => null,
+  },
+  indexfund: {
+    title: "Index fund — the lazy genius",
+    short: "A fund that owns every stock in an index (like the S&P 500) — no manager picking winners.",
+    explain: [
+      "An S&P 500 index fund owns all 500 S&P 500 companies, weighted by size. As Apple grows, it grows in the fund. As a company falls out, it's removed.",
+      "Since there's no human picking stocks, expense ratios are tiny (0.03% vs 0.75-1.5% for actively managed mutual funds).",
+      "Over 15+ years, index funds beat ~85% of actively managed funds. The market is hard to beat — most of the time, just owning all of it IS the winning move.",
+      "Most-recommended: VOO (S&P 500), VTI (total US market), VXUS (international), BND (US bonds). Pick 1-3 and you're set for life.",
+    ],
+    evaluate: () => null,
+  },
+  brokerage: {
+    title: "Brokerage account — where you actually buy stocks",
+    short: "The account that holds your stocks, bonds, and ETFs. Like a bank account, but for investments.",
+    explain: [
+      "Free brokerages: Fidelity, Schwab, Vanguard, Robinhood. Open in 10 minutes online. Most have $0 minimums and $0 commissions on stocks/ETFs.",
+      "Two flavors: taxable (regular) and tax-advantaged (Roth IRA, Traditional IRA, 401k). Tax-advantaged beats taxable for retirement savings.",
+      "Move money in via bank transfer, then place orders. Modern brokerages auto-invest your direct deposits if you set it up.",
+      "Order types: 'market' buys/sells at the current price (use this 99% of the time for ETFs); 'limit' lets you set a specific price target.",
+    ],
+    evaluate: () => null,
+  },
+  ira: {
+    title: "Roth IRA vs Traditional IRA",
+    short: "Tax-advantaged retirement accounts. Roth = pay tax now, grow tax-free. Traditional = deduct now, pay tax later.",
+    explain: [
+      "Both let your investments grow without paying capital-gains tax each year.",
+      "Roth IRA: contribute after-tax money. You pay NO tax on withdrawals in retirement, including all the growth. Best when you're early-career (low tax rate now, higher later).",
+      "Traditional IRA: contributions reduce your current taxable income; you pay income tax on withdrawals later. Best when you're high-income today (top tax bracket).",
+      "2026 limit: $7,000/yr ($8,000 if 50+). Income limits apply — high earners can't directly fund a Roth (look up 'backdoor Roth').",
+    ],
+    evaluate: () => null,
+  },
+  fourohonek: {
+    title: "401k — the employer retirement account",
+    short: "Tax-advantaged retirement account through your employer. The match is free money.",
+    explain: [
+      "Your employer takes pre-tax money out of your paycheck and invests it. You pay income tax only when you withdraw in retirement.",
+      "The MATCH is the killer feature: if your employer matches 50% up to 6% of salary, contributing 6% gets you another 3% added free.",
+      "2026 limit: $23,500 of your own money ($31,000 if 50+). Match doesn't count toward your limit.",
+      "Always contribute at least enough to get the full match — that's a guaranteed 50-100% return that no other investment can match.",
+    ],
+    evaluate: () => null,
+  },
 };
 
 function teachMeSheet(key, contextValue) {
@@ -12089,6 +12155,8 @@ function teachMeSheet(key, contextValue) {
 // Browse the full glossary — useful entry point from Research Tools
 function learnLibrarySheet() {
   const groups = [
+    { title: "Start here — what investing IS", keys: ["stock", "etf", "indexfund", "brokerage"] },
+    { title: "Tax-advantaged accounts", keys: ["ira", "fourohonek"] },
     { title: "Core money concepts", keys: ["compound", "diversification", "rebalancing", "taxloss", "dca", "allocation"] },
     { title: "Fundamentals", keys: ["pe", "peg", "margin", "de", "yield", "mcap", "expenseratio"] },
     { title: "Technical signals", keys: ["rsi", "beta", "sma", "volatility"] },
@@ -18620,6 +18688,8 @@ const COUNSELOR_SUGGESTIONS = {
     { icon: "📉", text: "Am I saving enough each month?" },
   ],
   stocks: [
+    { icon: "🌱", text: "I'm completely new to investing — where do I start?" },
+    { icon: "💡", text: "Explain how the stock market works in 3 sentences" },
     { icon: "🎯", text: "Suggest 3 specific ETFs that fit my situation" },
     { icon: "💵", text: "Where should I move my next $1,000?" },
     { icon: "📈", text: "Pick 5 stocks worth researching given my risk tolerance" },
