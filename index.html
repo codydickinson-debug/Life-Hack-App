@@ -9185,16 +9185,34 @@ function renderMoney() {
       return `
         <div class="section-h"><span class="lbl">Debts</span><span class="muted" style="font-size:12px" data-priv="amount">${fmt$0(totalDebt)} total</span></div>
         <div class="list">
-          ${debts.map(d => `
+          ${debts.map(d => {
+            const meta = (DB.debtMeta || {})[d.account_id] || {};
+            const due = meta.nextPaymentDueDate;
+            const overdue = !!meta.isOverdue;
+            const stmtBal = +meta.lastStatementBalance || 0;
+            // Render a small "due Xd" chip when we know the next payment date
+            let dueChip = "";
+            if (due) {
+              const days = Math.round((new Date(due + "T00:00:00") - Date.now()) / 86400000);
+              const color = overdue || days < 0 ? "var(--red,#FF3B30)"
+                          : days <= 3 ? "var(--orange,#FF9500)"
+                          : "var(--t3)";
+              const label = overdue || days < 0 ? `overdue` : days === 0 ? "due today" : days === 1 ? "due tomorrow" : `due in ${days}d`;
+              dueChip = ` · <span style="color:${color}">${label}</span>`;
+            }
+            const stmtChip = stmtBal > 0 ? ` · stmt <span data-priv="amount">${fmt$0(stmtBal)}</span>` : "";
+            const sourceChip = meta.source === "plaid" ? ` <span style="background:rgba(124,58,237,0.12);color:#7c3aed;border-radius:999px;padding:1px 6px;font-size:9.5px;font-weight:700;margin-left:4px">SYNCED</span>` : "";
+            return `
             <div class="row">
               <div class="lead">${d.type === "credit" ? "💳" : "🧾"}</div>
               <div class="body">
-                <div class="t1">${esc(d.name)} <span class="muted" style="font-weight:400">${d.apr?` · ${d.apr}% APR`:" · APR not set"}</span></div>
-                <div class="t2">Min <span data-priv="amount">${fmt$0(d.minPayment)}</span>/mo${d.mask?` · ···${esc(d.mask)}`:""}</div>
+                <div class="t1">${esc(d.name)}${sourceChip} <span class="muted" style="font-weight:400">${d.apr?` · ${d.apr}% APR`:" · APR not set"}</span></div>
+                <div class="t2">Min <span data-priv="amount">${fmt$0(d.minPayment)}</span>/mo${d.mask?` · ···${esc(d.mask)}`:""}${stmtChip}${dueChip}</div>
               </div>
               <div class="trail" style="font-weight:600;color:var(--red)" data-priv="amount">${fmt$0(d.balance_current)}</div>
             </div>
-          `).join("")}
+          `;
+          }).join("")}
           ${plan ? `
             <div class="row">
               <div class="lead">📅</div>
@@ -17380,6 +17398,16 @@ function renderSettings() {
         <div class="body"><div class="t1">Sync transactions now</div><div class="t2">Pull latest from connected accounts</div></div>
         <div class="trail chev"></div>
       </div>
+      ${((DB.plaidRecurringSuggestions || {}).inflows || []).length + ((DB.plaidRecurringSuggestions || {}).outflows || []).length > 0 ? `
+        <div class="row tappable" onclick="plaidRecurringSheet()">
+          <div class="lead">🪄</div>
+          <div class="body">
+            <div class="t1">Plaid detected recurring <span style="background:var(--purple,#8957d9);color:#fff;border-radius:999px;padding:2px 8px;font-size:10px;margin-left:6px;font-weight:700">${((DB.plaidRecurringSuggestions || {}).inflows || []).length + ((DB.plaidRecurringSuggestions || {}).outflows || []).length}</span></div>
+            <div class="t2">Paychecks + subscriptions Plaid found — tap to add them as recurring</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      ` : ""}
     </div>
 
     ${(DB.items||[]).length ? `
@@ -17994,11 +18022,34 @@ async function syncNow() {
   try {
     const r = await backendSync();
     try { const lst = await backendListItems(); DB.items = lst.items || []; await save(); } catch {}
-    // also pull investment holdings if any investment-type account exists
+    // Fan out the secondary pulls in parallel. Each is wrapped in its own
+    // try/catch so a single failing endpoint (e.g. an institution that
+    // doesn't expose liabilities) doesn't block the others.
+    const tasks = [];
     if ((DB.accounts||[]).some(a => a.type === "investment")) {
-      try { const h = await backendHoldings(); DB.holdings = h.holdings || []; await save(); } catch {}
+      tasks.push(
+        backendHoldings().then(h => { DB.holdings = h.holdings || []; }).catch(() => {}),
+        syncInvestmentTransactions().catch(() => null)
+      );
     }
-    toast(`+${r.added} tx · ${r.accounts} acc${(DB.holdings||[]).length ? ` · ${DB.holdings.length} holdings` : ""}`);
+    if ((DB.accounts||[]).some(a => a.type === "credit" || a.type === "loan")) {
+      tasks.push(syncLiabilities().catch(() => null));
+    }
+    // Recurring detection is useful for any account with transactions; the
+    // backend handler skips items that don't support it.
+    tasks.push(syncRecurring().catch(() => null));
+    await Promise.all(tasks);
+    await save();
+    // Plaid-detected recurring may have changed; cascade plan completion in
+    // case any new linked-bucket logic ticks over.
+    try { _autoCompletePlans && _autoCompletePlans(); } catch {}
+    const suggested = ((DB.plaidRecurringSuggestions || {}).inflows || []).length +
+                      ((DB.plaidRecurringSuggestions || {}).outflows || []).length;
+    toast(
+      `+${r.added} tx · ${r.accounts} acc` +
+      ((DB.holdings||[]).length ? ` · ${DB.holdings.length} holdings` : "") +
+      (suggested ? ` · ${suggested} recurring detected` : "")
+    );
     render();
   } catch (e) { toast("Sync failed: " + e.message); }
 }
@@ -19458,6 +19509,19 @@ function buildCounselorSnapshot() {
     // recommend the user clean these up manually.
     overlapping_liabilities: (typeof _overlappingLiabilities === "function") ? _overlappingLiabilities().map(o => ({ manual: o.manual.name, account: o.account.name })) : [],
     overlapping_assets: (typeof _overlappingAssets === "function") ? _overlappingAssets().map(o => ({ manual: o.manual.name, account: o.account.name })) : [],
+    // Plaid-pulled liabilities detail: APR, statement balance, due date,
+    // mortgage and student loan terms. Cornileus can answer "when's my next
+    // payment due?" or "what's my mortgage maturity?" without the user
+    // typing any of it.
+    plaid_liabilities: DB.plaidLiabilities || null,
+    // Investment transactions over the last 90 days (buys, sells, dividends,
+    // fees) so Cornileus can comment on trade activity, dividend income flow,
+    // and realized vs unrealized gains without re-deriving from raw data.
+    investment_transactions_count: (DB.investmentTransactions || []).length,
+    investment_transactions_recent: (DB.investmentTransactions || []).slice(0, 20).map(t => ({
+      date: t.date, ticker: t.ticker, type: t.type, subtype: t.subtype,
+      qty: t.quantity, price: t.price, amount: t.amount, fees: t.fees,
+    })),
     active_subscriptions: activeSubs,
     habits_top: habits,
     longest_current_habit_streak: longestCurrentStreak,
@@ -21058,6 +21122,18 @@ async function shareStreakCard() {
 async function backendHoldings() {
   return api("/holdings", { method: "POST", body: JSON.stringify({ userId: ensureUserId() }) });
 }
+async function backendLiabilities() {
+  return api("/liabilities", { method: "POST", body: JSON.stringify({ userId: ensureUserId() }) });
+}
+async function backendRecurring() {
+  return api("/recurring", { method: "POST", body: JSON.stringify({ userId: ensureUserId() }) });
+}
+async function backendInvestmentTransactions(startDate, endDate) {
+  return api("/investment-transactions", {
+    method: "POST",
+    body: JSON.stringify({ userId: ensureUserId(), start_date: startDate, end_date: endDate }),
+  });
+}
 async function syncHoldings() {
   if (!_backendReady()) { toast("Backend not configured"); return; }
   try {
@@ -21066,6 +21142,182 @@ async function syncHoldings() {
     await save(); render();
     toast(`+${DB.holdings.length} holdings`);
   } catch (e) { toast("Holdings: " + e.message); }
+}
+// Pulls Plaid liabilities and auto-populates DB.debtMeta with APR + min
+// payment for each credit/loan account, plus stashes the raw mortgage and
+// student loan details in DB.plaidLiabilities for the UI to surface.
+async function syncLiabilities() {
+  if (!_backendReady()) return { credit: 0, mortgage: 0, student: 0 };
+  try {
+    const r = await backendLiabilities();
+    if (!DB.debtMeta) DB.debtMeta = {};
+    let touched = 0;
+    for (const c of (r.credit || [])) {
+      if (!c.account_id) continue;
+      // Prefer the purchase APR — that's what the user is paying on a
+      // revolving balance. Fall back to the max APR if no purchase row.
+      const apr = c.apr_purchase != null ? c.apr_purchase : c.apr_max;
+      const minPayment = +c.minimum_payment_amount || 0;
+      const cur = DB.debtMeta[c.account_id] || {};
+      // Only overwrite values that came from Plaid (don't clobber user-set
+      // values with null) and tag the source so we know it's synced.
+      const next = {
+        apr: apr != null ? apr : (cur.apr || 0),
+        minPayment: minPayment || cur.minPayment || 0,
+        lastStatementBalance: +c.last_statement_balance || 0,
+        lastStatementDate: c.last_statement_issue_date || null,
+        nextPaymentDueDate: c.next_payment_due_date || null,
+        isOverdue: !!c.is_overdue,
+        source: "plaid",
+      };
+      DB.debtMeta[c.account_id] = next;
+      touched++;
+    }
+    // Stash full mortgage + student loan details for the UI. Keyed by
+    // account_id so existing render paths can look them up cheaply.
+    DB.plaidLiabilities = {
+      mortgage: (r.mortgage || []).reduce((acc, m) => { acc[m.account_id] = m; return acc; }, {}),
+      student:  (r.student  || []).reduce((acc, s) => { acc[s.account_id] = s; return acc; }, {}),
+      lastSyncAt: new Date().toISOString(),
+    };
+    await save();
+    return { credit: (r.credit || []).length, mortgage: (r.mortgage || []).length, student: (r.student || []).length };
+  } catch (e) {
+    console.warn("liabilities sync failed:", e.message);
+    return { credit: 0, mortgage: 0, student: 0, error: e.message };
+  }
+}
+// Pulls Plaid recurring-transaction detection results and stashes them in
+// DB.plaidRecurringSuggestions for the user to review/accept on demand.
+// Doesn't auto-add to DB.recurring — that would be too surprise-y; we want
+// the user to confirm each one (one-tap accept in the recurring-detected
+// sheet). Plaid stream_ids are stable across syncs so dedup is easy.
+async function syncRecurring() {
+  if (!_backendReady()) return { inflows: 0, outflows: 0 };
+  try {
+    const r = await backendRecurring();
+    // De-duplicate against streams the user has already dismissed AND streams
+    // they've already accepted (we tag with `plaid_stream_id` when accepting).
+    const acceptedStreamIds = new Set(
+      (DB.recurring || []).map(x => x.plaid_stream_id).filter(Boolean)
+    );
+    const dismissedStreamIds = new Set(
+      ((DB.settings || {}).dismissedRecurringStreams || [])
+    );
+    const filterOut = (s) =>
+      !acceptedStreamIds.has(s.stream_id) &&
+      !dismissedStreamIds.has(s.stream_id);
+    DB.plaidRecurringSuggestions = {
+      inflows: (r.inflows || []).filter(filterOut),
+      outflows: (r.outflows || []).filter(filterOut),
+      lastSyncAt: new Date().toISOString(),
+    };
+    await save();
+    return {
+      inflows: DB.plaidRecurringSuggestions.inflows.length,
+      outflows: DB.plaidRecurringSuggestions.outflows.length,
+    };
+  } catch (e) {
+    console.warn("recurring sync failed:", e.message);
+    return { inflows: 0, outflows: 0, error: e.message };
+  }
+}
+// Pulls investment transactions for the last 90 days and stashes them so
+// the Stocks tab can compute realized P&L and cost basis from real broker
+// activity instead of the user typing every trade.
+async function syncInvestmentTransactions() {
+  if (!_backendReady()) return { count: 0 };
+  try {
+    const today = new Date();
+    const ninetyAgo = new Date(today); ninetyAgo.setDate(today.getDate() - 90);
+    const r = await backendInvestmentTransactions(
+      ninetyAgo.toISOString().slice(0, 10),
+      today.toISOString().slice(0, 10),
+    );
+    // Merge with existing list, dedup by investment_transaction_id.
+    if (!DB.investmentTransactions) DB.investmentTransactions = [];
+    const existing = new Set(DB.investmentTransactions.map(t => t.investment_transaction_id));
+    let added = 0;
+    for (const t of (r.transactions || [])) {
+      if (!t.investment_transaction_id || existing.has(t.investment_transaction_id)) continue;
+      DB.investmentTransactions.unshift(t);
+      added++;
+    }
+    // Cap to most-recent 2000 entries
+    if (DB.investmentTransactions.length > 2000) {
+      DB.investmentTransactions = DB.investmentTransactions.slice(0, 2000);
+    }
+    await save();
+    return { count: added, total: DB.investmentTransactions.length };
+  } catch (e) {
+    console.warn("investment-transactions sync failed:", e.message);
+    return { count: 0, error: e.message };
+  }
+}
+// Accept a Plaid-detected recurring stream into DB.recurring with a single
+// tap. Maps Plaid frequency → app cadence vocabulary. Tagged with the
+// stream_id so future syncs don't re-suggest it.
+function acceptDetectedRecurring(streamId, kind) {
+  const list = kind === "income"
+    ? (DB.plaidRecurringSuggestions && DB.plaidRecurringSuggestions.inflows) || []
+    : (DB.plaidRecurringSuggestions && DB.plaidRecurringSuggestions.outflows) || [];
+  const s = list.find(x => x.stream_id === streamId);
+  if (!s) { toast("Stream not found — re-sync"); return; }
+  // Plaid frequencies → app vocabulary. Default to monthly for unknown so
+  // unrecognized cadences (every-2-months, irregular) at least don't crash.
+  const cadence = ({
+    WEEKLY: "weekly",
+    BIWEEKLY: "biweekly",
+    SEMI_MONTHLY: "biweekly",
+    MONTHLY: "monthly",
+    ANNUALLY: "yearly",
+  })[String(s.frequency || "").toUpperCase()] || "monthly";
+  const amount = Math.abs(+s.average_amount || +s.last_amount || 0);
+  const name = (s.merchant_name || s.description || "Unknown").slice(0, 80);
+  // Approximate dayOfMonth from last_date so the cashflow forecast aligns.
+  let dayOfMonth = 1;
+  try {
+    if (s.last_date) dayOfMonth = +s.last_date.slice(8, 10) || 1;
+  } catch {}
+  DB.recurring = DB.recurring || [];
+  DB.recurring.push({
+    id: uid(),
+    name,
+    amount,
+    cadence,
+    dayOfMonth,
+    category: s.category || (kind === "income" ? "Income" : "Bills"),
+    kind,
+    nextDate: null,
+    createdAt: Date.now(),
+    plaid_stream_id: s.stream_id,
+    plaid_account_id: s.account_id,
+    source: "plaid",
+  });
+  // Drop from the suggestions list so it doesn't double-show
+  if (DB.plaidRecurringSuggestions) {
+    const target = kind === "income" ? "inflows" : "outflows";
+    DB.plaidRecurringSuggestions[target] = (DB.plaidRecurringSuggestions[target] || []).filter(x => x.stream_id !== streamId);
+  }
+  save(); render();
+  toast(`Added ${name} · ${cadence} · ${fmt$0(amount)}`);
+}
+// Dismiss a detected recurring stream so it stops being suggested.
+function dismissDetectedRecurring(streamId) {
+  if (!DB.settings.dismissedRecurringStreams) DB.settings.dismissedRecurringStreams = [];
+  if (!DB.settings.dismissedRecurringStreams.includes(streamId)) {
+    DB.settings.dismissedRecurringStreams.push(streamId);
+  }
+  // Cap so a chatty Plaid account can't bloat the dismissed list forever.
+  if (DB.settings.dismissedRecurringStreams.length > 500) {
+    DB.settings.dismissedRecurringStreams = DB.settings.dismissedRecurringStreams.slice(-500);
+  }
+  // Remove from active suggestions
+  if (DB.plaidRecurringSuggestions) {
+    DB.plaidRecurringSuggestions.inflows = (DB.plaidRecurringSuggestions.inflows || []).filter(x => x.stream_id !== streamId);
+    DB.plaidRecurringSuggestions.outflows = (DB.plaidRecurringSuggestions.outflows || []).filter(x => x.stream_id !== streamId);
+  }
+  save(); render();
 }
 
 
@@ -25482,6 +25734,65 @@ function detectedRecurringSheet() {
     <p class="muted" style="font-size:12.5px;margin-bottom:14px">Charges that look periodic but aren't tracked yet. Tap to add or dismiss.</p>
     ${body}
     <div class="actions"><button class="btn" onclick="closeSheet()">Done</button></div></div>
+  `);
+}
+
+// Plaid-detected recurring streams (paychecks + subscriptions/bills).
+// Pulled from Plaid's /transactions/recurring/get endpoint via syncRecurring.
+// Each stream gets a one-tap "Add" button that turns it into a DB.recurring
+// entry with the right cadence, amount, and source tag — no manual typing.
+function plaidRecurringSheet() {
+  const sug = DB.plaidRecurringSuggestions || { inflows: [], outflows: [] };
+  const inflows  = (sug.inflows  || []).filter(s => s.is_active !== false);
+  const outflows = (sug.outflows || []).filter(s => s.is_active !== false);
+  const cadenceLabel = (f) => ({
+    WEEKLY: "weekly", BIWEEKLY: "every 2 weeks", SEMI_MONTHLY: "twice a month",
+    MONTHLY: "monthly", ANNUALLY: "yearly",
+  })[String(f || "").toUpperCase()] || (f || "irregular").toLowerCase();
+  const renderRow = (s, kind) => {
+    const amt = Math.abs(+s.average_amount || +s.last_amount || 0);
+    const name = s.merchant_name || s.description || "Unknown";
+    const last = s.last_date ? `last seen ${s.last_date}` : "";
+    return `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px;gap:10px">
+          <div style="flex:1;min-width:0">
+            <div style="font-weight:600;font-size:14px">${esc(name)}</div>
+            <div style="font-size:11px;color:var(--t3);margin-top:2px">${esc(cadenceLabel(s.frequency))}${s.category ? ` · ${esc(s.category)}` : ""}${last ? ` · ${esc(last)}` : ""}</div>
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-weight:600${kind==="income" ? ";color:var(--green,#34C759)" : ""}" data-priv="amount">${kind==="income"?"+":""}${fmt$0(amt)}</div>
+            <div style="font-size:10.5px;color:var(--t3)">${esc(s.status === "EARLY_DETECTION" ? "Newly detected" : "Confirmed pattern")}</div>
+          </div>
+        </div>
+        <div style="display:flex;gap:6px">
+          <button class="btn sm" style="flex:1;font-size:11.5px;padding:8px" onclick="acceptDetectedRecurring(${jsAttr(s.stream_id)},${jsAttr(kind)});setTimeout(()=>plaidRecurringSheet(),60)">+ Add as recurring</button>
+          <button class="btn secondary sm" style="flex:0 0 auto;font-size:11.5px;padding:8px 12px;color:var(--t3)" onclick="dismissDetectedRecurring(${jsAttr(s.stream_id)});setTimeout(()=>plaidRecurringSheet(),60)">Dismiss</button>
+        </div>
+      </div>
+    `;
+  };
+  const inflowsHtml = inflows.length
+    ? `<div class="section-h"><span class="lbl">Income</span><span class="muted" style="font-size:11.5px">${inflows.length} detected</span></div>${inflows.map(s => renderRow(s, "income")).join("")}`
+    : "";
+  const outflowsHtml = outflows.length
+    ? `<div class="section-h"${inflows.length ? ' style="margin-top:18px"' : ''}><span class="lbl">Bills &amp; subscriptions</span><span class="muted" style="font-size:11.5px">${outflows.length} detected</span></div>${outflows.map(s => renderRow(s, "expense")).join("")}`
+    : "";
+  const empty = (!inflows.length && !outflows.length) ? `
+    <div class="empty" style="padding:30px 14px">
+      <div class="e-emoji">🪄</div>
+      <div class="e-title">${sug.lastSyncAt ? "All caught up" : "Sync first"}</div>
+      <div class="e-sub">${sug.lastSyncAt ? "Nothing new detected from your bank — Plaid auto-finds paychecks + subscriptions across all your linked accounts." : "Connect a bank in Settings → Bank sync, then tap Sync. Plaid finds your paychecks and subscriptions automatically."}</div>
+      ${_backendReady() ? `<button class="btn" style="margin-top:14px" onclick="closeSheet();syncRecurring().then(()=>setTimeout(()=>plaidRecurringSheet(),200))">↻ Pull from bank now</button>` : ""}
+    </div>
+  ` : "";
+  openSheet(`
+    <h2 style="margin-bottom:4px">Plaid detected</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Recurring patterns your bank found across your transactions. Tap + to add as a tracked recurring item.${sug.lastSyncAt ? ` <span style="color:var(--t3)">Synced ${new Date(sug.lastSyncAt).toLocaleString()}.</span>` : ""}</p>
+    ${empty}
+    ${inflowsHtml}
+    ${outflowsHtml}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Done</button></div>
   `);
 }
 
@@ -30331,6 +30642,9 @@ function init() {
     globalSearchSheet, globalSearchOnInput, _computeSearchResults, _recordSearch, clearRecentSearches, setSearchFilter, _renderSearchChips,
     openSettings, applyTheme, toggleNotifications, scheduleReminder, exportData, importData, resetEverythingSheet, openSheet, closeSheet, toast,
     connectBank, syncNow, disconnectItem, backendLinkToken, backendExchange, backendSync, backendListItems, backendRemoveItem,
+    backendHoldings, backendLiabilities, backendRecurring, backendInvestmentTransactions,
+    syncHoldings, syncLiabilities, syncRecurring, syncInvestmentTransactions,
+    acceptDetectedRecurring, dismissDetectedRecurring, plaidRecurringSheet,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
     setPassphrase, unlockWithPassphrase, disablePassphrase, encryptObject, decryptObject, deriveKey,
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,

@@ -101,6 +101,18 @@ export default {
         return await audited(env, userId, "holdings",
           () => handleHoldings(env, userId, allowed));
       }
+      if (url.pathname === "/liabilities" && request.method === "POST") {
+        return await audited(env, userId, "liabilities",
+          () => handleLiabilities(env, userId, allowed));
+      }
+      if (url.pathname === "/recurring" && request.method === "POST") {
+        return await audited(env, userId, "recurring",
+          () => handleRecurring(env, userId, allowed));
+      }
+      if (url.pathname === "/investment-transactions" && request.method === "POST") {
+        return await audited(env, userId, "investment_transactions",
+          () => handleInvestmentTransactions(request, env, userId, allowed));
+      }
       if (url.pathname === "/items" && request.method === "GET") {
         return await handleItems(env, userId, allowed);
       }
@@ -193,7 +205,15 @@ async function handleLinkToken(env, userId, origin) {
   const params = {
     user: { client_user_id: userId },
     client_name: "Ascend",
+    // `products` is required at link time and restricts institutions to those
+    // that support every product. Keep this universal — transactions covers
+    // every bank.
     products: ["transactions"],
+    // `optional_products` get pulled when the institution supports them, but
+    // don't restrict the link. Liabilities = credit card APRs, mortgage
+    // terms, student loan details. Investments = brokerage holdings + trades.
+    // Banks that don't support these will still link successfully.
+    optional_products: ["liabilities", "investments"],
     country_codes: ["US"],
     language: "en",
   };
@@ -393,6 +413,232 @@ async function handleHoldings(env, userId, origin) {
   }
 
   return json({ ok: true, holdings: allHoldings }, 200, origin);
+}
+
+// Liabilities — pulls credit card APRs/min payments/statement balances, plus
+// mortgage and student loan terms. Banks that don't support /liabilities/get
+// (or for accounts that aren't a credit/loan type) just return nothing for
+// that item, no error. Frontend pre-populates DB.debtMeta so the user
+// doesn't have to type APRs.
+async function handleLiabilities(env, userId, origin) {
+  const itemIds = await getItemIndex(env, userId);
+  const credit = [], mortgage = [], student = [];
+
+  for (const itemId of itemIds) {
+    const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
+    if (!recRaw) continue;
+    const rec = JSON.parse(recRaw);
+    let accessToken;
+    try { accessToken = await decryptString(rec.accessTokenCipher, env.ENCRYPTION_KEY); }
+    catch { continue; }
+
+    try {
+      const r = await plaidCall(env, "/liabilities/get", { access_token: accessToken });
+      const liab = r.liabilities || {};
+      for (const c of (liab.credit || [])) {
+        // APRs from Plaid come as an array of { apr_percentage, apr_type, balance_subject_to_apr }
+        // Reduce to the "purchase" APR (most representative) plus the highest APR for safety.
+        const aprs = Array.isArray(c.aprs) ? c.aprs : [];
+        const purchaseApr = aprs.find(a => /purchase/i.test(a.apr_type || ""));
+        const maxApr = aprs.reduce((m, a) => Math.max(m, +a.apr_percentage || 0), 0);
+        credit.push({
+          item_id: itemId,
+          institution_name: rec.institutionName,
+          account_id: c.account_id,
+          apr_purchase: purchaseApr ? +purchaseApr.apr_percentage || null : null,
+          apr_max: maxApr || null,
+          aprs: aprs.map(a => ({
+            type: a.apr_type,
+            pct: a.apr_percentage,
+            balance: a.balance_subject_to_apr,
+          })),
+          last_payment_amount: c.last_payment_amount,
+          last_payment_date: c.last_payment_date,
+          last_statement_balance: c.last_statement_balance,
+          last_statement_issue_date: c.last_statement_issue_date,
+          minimum_payment_amount: c.minimum_payment_amount,
+          next_payment_due_date: c.next_payment_due_date,
+          is_overdue: c.is_overdue,
+        });
+      }
+      for (const m of (liab.mortgage || [])) {
+        mortgage.push({
+          item_id: itemId,
+          institution_name: rec.institutionName,
+          account_id: m.account_id,
+          interest_rate_pct: m.interest_rate && m.interest_rate.percentage,
+          interest_rate_type: m.interest_rate && m.interest_rate.type,
+          loan_term: m.loan_term,
+          loan_type_description: m.loan_type_description,
+          maturity_date: m.maturity_date,
+          origination_date: m.origination_date,
+          origination_principal_amount: m.origination_principal_amount,
+          next_monthly_payment: m.next_monthly_payment,
+          next_payment_due_date: m.next_payment_due_date,
+          current_late_fee: m.current_late_fee,
+          escrow_balance: m.escrow_balance,
+          ytd_interest_paid: m.ytd_interest_paid,
+          ytd_principal_paid: m.ytd_principal_paid,
+          past_due_amount: m.past_due_amount,
+          has_pmi: m.has_pmi,
+          property_address: m.property_address ? {
+            city: m.property_address.city,
+            region: m.property_address.region,
+            postal_code: m.property_address.postal_code,
+          } : null,
+        });
+      }
+      for (const s of (liab.student || [])) {
+        student.push({
+          item_id: itemId,
+          institution_name: rec.institutionName,
+          account_id: s.account_id,
+          interest_rate_pct: s.interest_rate_percentage,
+          loan_name: s.loan_name,
+          loan_status: s.loan_status && s.loan_status.type,
+          end_date: s.loan_status && s.loan_status.end_date,
+          minimum_payment_amount: s.minimum_payment_amount,
+          next_payment_due_date: s.next_payment_due_date,
+          last_payment_amount: s.last_payment_amount,
+          last_payment_date: s.last_payment_date,
+          last_statement_balance: s.last_statement_balance,
+          last_statement_issue_date: s.last_statement_issue_date,
+          outstanding_interest_amount: s.outstanding_interest_amount,
+          payment_reference_number: null, // sensitive — never forward
+          repayment_plan_type: s.repayment_plan && s.repayment_plan.type,
+          repayment_plan_description: s.repayment_plan && s.repayment_plan.description,
+          servicer_address: s.servicer_address ? {
+            city: s.servicer_address.city,
+            region: s.servicer_address.region,
+          } : null,
+          ytd_interest_paid: s.ytd_interest_paid,
+          ytd_principal_paid: s.ytd_principal_paid,
+        });
+      }
+    } catch (e) {
+      // Plaid returns 400 if the item doesn't support liabilities — fine, skip.
+      continue;
+    }
+  }
+
+  return json({ ok: true, credit, mortgage, student }, 200, origin);
+}
+
+// Recurring transactions — Plaid's pattern-detection across the user's
+// transaction history. Returns detected paychecks (inflows) and subscriptions
+// (outflows) with merchant, average amount, and frequency. The frontend
+// surfaces these as "Plaid spotted these — accept to add as recurring?" so
+// the user doesn't have to type Netflix, Spotify, rent, paycheck, etc.
+async function handleRecurring(env, userId, origin) {
+  const itemIds = await getItemIndex(env, userId);
+  const inflows = [], outflows = [];
+
+  for (const itemId of itemIds) {
+    const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
+    if (!recRaw) continue;
+    const rec = JSON.parse(recRaw);
+    let accessToken;
+    try { accessToken = await decryptString(rec.accessTokenCipher, env.ENCRYPTION_KEY); }
+    catch { continue; }
+
+    // Need account_ids for /transactions/recurring/get. Pull them inline.
+    let acctIds = [];
+    try {
+      const a = await plaidCall(env, "/accounts/get", { access_token: accessToken });
+      acctIds = (a.accounts || []).map(x => x.account_id);
+    } catch { continue; }
+    if (!acctIds.length) continue;
+
+    try {
+      const r = await plaidCall(env, "/transactions/recurring/get", {
+        access_token: accessToken,
+        account_ids: acctIds,
+      });
+      const mapStream = (s, isInflow) => ({
+        item_id: itemId,
+        institution_name: rec.institutionName,
+        account_id: s.account_id,
+        stream_id: s.stream_id,
+        description: s.description,
+        merchant_name: s.merchant_name,
+        category: s.personal_finance_category?.primary || (s.category ? s.category[0] : null),
+        category_detailed: s.personal_finance_category?.detailed,
+        first_date: s.first_date,
+        last_date: s.last_date,
+        frequency: s.frequency,        // 'WEEKLY' | 'BIWEEKLY' | 'SEMI_MONTHLY' | 'MONTHLY' | 'ANNUALLY' | 'UNKNOWN'
+        average_amount: s.average_amount?.amount,
+        last_amount: s.last_amount?.amount,
+        is_active: s.is_active,
+        status: s.status,              // 'MATURE' | 'EARLY_DETECTION' | 'TOMBSTONED' | 'UNKNOWN'
+        is_user_modified: s.is_user_modified,
+      });
+      (r.inflow_streams || []).forEach(s => inflows.push(mapStream(s, true)));
+      (r.outflow_streams || []).forEach(s => outflows.push(mapStream(s, false)));
+    } catch (e) { continue; }
+  }
+
+  return json({ ok: true, inflows, outflows }, 200, origin);
+}
+
+// Investment transactions — buys, sells, dividends, fees. Useful for cost
+// basis tracking and realized P&L. Requires start_date and end_date; we
+// accept them from the request or default to the last 90 days.
+async function handleInvestmentTransactions(request, env, userId, origin) {
+  const body = await request.json().catch(() => ({}));
+  const today = new Date();
+  const ninetyAgo = new Date(today); ninetyAgo.setDate(today.getDate() - 90);
+  const startDate = String(body.start_date || ninetyAgo.toISOString().slice(0, 10));
+  const endDate = String(body.end_date || today.toISOString().slice(0, 10));
+  // Validate ISO YYYY-MM-DD
+  const dateRe = /^\d{4}-\d{2}-\d{2}$/;
+  if (!dateRe.test(startDate) || !dateRe.test(endDate)) {
+    return json({ error: "start_date and end_date must be YYYY-MM-DD" }, 400, origin);
+  }
+
+  const itemIds = await getItemIndex(env, userId);
+  const transactions = [];
+
+  for (const itemId of itemIds) {
+    const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
+    if (!recRaw) continue;
+    const rec = JSON.parse(recRaw);
+    let accessToken;
+    try { accessToken = await decryptString(rec.accessTokenCipher, env.ENCRYPTION_KEY); }
+    catch { continue; }
+
+    try {
+      const r = await plaidCall(env, "/investments/transactions/get", {
+        access_token: accessToken,
+        start_date: startDate,
+        end_date: endDate,
+      });
+      const securitiesById = {};
+      for (const s of (r.securities || [])) securitiesById[s.security_id] = s;
+      for (const t of (r.investment_transactions || [])) {
+        const sec = securitiesById[t.security_id] || {};
+        transactions.push({
+          item_id: itemId,
+          institution_name: rec.institutionName,
+          investment_transaction_id: t.investment_transaction_id,
+          account_id: t.account_id,
+          security_id: t.security_id,
+          ticker: sec.ticker_symbol || null,
+          security_name: sec.name || null,
+          date: t.date,
+          name: t.name,
+          quantity: t.quantity,
+          amount: t.amount,
+          price: t.price,
+          fees: t.fees,
+          type: t.type,                   // 'buy' | 'sell' | 'cash' | 'transfer' | 'fee' | 'cancel'
+          subtype: t.subtype,             // 'buy', 'sell', 'dividend', 'merger', 'split', etc.
+          iso_currency_code: t.iso_currency_code,
+        });
+      }
+    } catch (e) { continue; }
+  }
+
+  return json({ ok: true, start_date: startDate, end_date: endDate, transactions }, 200, origin);
 }
 
 async function handleAnthropic(request, env, userId, origin) {
