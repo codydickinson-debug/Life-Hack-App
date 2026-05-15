@@ -1225,36 +1225,40 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   filter: drop-shadow(0 2px 3px rgba(0,0,0,0.32));
 }
 
-/* Cornileus peeks around the right corner of the screen ~0.7s after
-   the sheet opens — only his right half is visible (clipped by
-   clip-path), as if he's leaning out from behind the edge. He keeps
-   peeking with a gentle idle rock so it reads as an active, curious
-   character rather than a static cutout. */
+/* Cornileus peeks around the right edge of the chat. He slides
+   smoothly in from off-screen-right, then gently rocks/leans in idle
+   so the peek reads as an active character looking at you. The
+   "behind the wall" effect uses a soft mask-image gradient — the
+   left ~40% of him fades to transparent instead of being hard-clipped,
+   so the edge of the peek looks like he's emerging from shadow rather
+   than being mechanically cropped. */
 @keyframes corn-peek-in {
-  0%   { transform: translateX(100%) rotate(22deg); opacity: 0; }
-  55%  { transform: translateX(-10%) rotate(-7deg); opacity: 1; }
-  78%  { transform: translateX(3%)   rotate(2deg); }
-  100% { transform: translateX(0)    rotate(0deg);  opacity: 1; }
+  0%   { transform: translateX(85%) rotate(6deg); opacity: 0; }
+  60%  { transform: translateX(-4%) rotate(-2deg); opacity: 1; }
+  100% { transform: translateX(0)   rotate(0deg); opacity: 1; }
 }
 @keyframes corn-peek-idle {
   0%, 100% { transform: translateX(0)    rotate(0deg); }
-  18%      { transform: translateX(-6px) rotate(-5deg); }
-  36%      { transform: translateX(-2px) rotate(-2deg); }
-  55%      { transform: translateX(3px)  rotate(2deg); }
-  78%      { transform: translateX(-1px) rotate(-1deg); }
+  50%      { transform: translateX(-5px) rotate(-3deg); }
 }
 .corn-peek {
-  /* Entrance, then continuous peeking idle. */
-  animation: corn-peek-in 0.8s cubic-bezier(0.34, 1.56, 0.64, 1) 0.7s both,
-             corn-peek-idle 4.2s ease-in-out 1.6s infinite;
-  /* Pivots from his lower-right "shoulder" so the lean reads as
-     leaning his body out from behind the edge. */
-  transform-origin: 92% 80%;
-  /* Show only his right half — the side with the monocle, his
-     signature look. Left 48% is cropped, like he's hidden behind a
-     wall. */
-  clip-path: inset(0 0 0 48%);
-  -webkit-clip-path: inset(0 0 0 48%);
+  animation: corn-peek-in 0.95s cubic-bezier(0.22, 0.61, 0.36, 1) 0.55s both,
+             corn-peek-idle 4.5s ease-in-out 1.7s infinite;
+  /* Pivot from his lower-right so the lean reads as him leaning his
+     body out from behind the edge to look at you. */
+  transform-origin: 92% 78%;
+  /* Soft fade on the left edge — replaces the hard clip-path crop. */
+  -webkit-mask-image: linear-gradient(90deg, transparent 0%, transparent 28%, #000 56%, #000 100%);
+          mask-image: linear-gradient(90deg, transparent 0%, transparent 28%, #000 56%, #000 100%);
+}
+/* Wrapper for the greeting block. Sits OUTSIDE the cns-scroll so its
+   right-edge slide-in isn't clipped by the scroll container's overflow.
+   The block itself has overflow:hidden on the right so the avatar's
+   slide truly emerges from the right border of the chat. */
+.corn-greeting-wrap {
+  position: relative;
+  margin: 6px 0 14px;
+  overflow: hidden;
 }
 /* Greeting speech bubble fades in just as Cornileus settles next to it. */
 @keyframes corn-greet-in {
@@ -11333,121 +11337,145 @@ async function getMonthlyInsight() {
    always answering against current numbers. Uses feature="counselor" so the
    worker rate-limits it independently from the monthly insight feature. */
 
-/* Cornileus — the distinguished gentleman avatar. Refined version with
-   skin gradient shading, eye whites + iris + pupil + highlight, bushy
-   gray-streaked eyebrows + mustache, gold-rimmed monocle with chain,
-   subtle nose shading, suit lapels, proper bowtie with knot, hat with
-   gradient sheen. Designed to read clearly at 32-44px. */
-// Mood-specific face parts. Cornileus reacts to what the user says — happy
-// for wins, concerned for stress/debt, curious for questions, surprised for
-// big numbers, thinking while the AI is generating. Each mood swaps brows,
-// eyes, and mouth; everything else (skin, monocle, mustache, hat, suit)
-// stays constant so transitions feel like the same character emoting.
+// Cornileus — redesigned in a cleaner, warmer Claude-style aesthetic:
+// soft peach skin, charcoal hat with a warm coral band (in place of the
+// busy purple), simplified eyes/brows/mustache that read clearly at small
+// sizes, single gold monocle ring on the right side (preserved as his
+// signature feature so the half-peek view still identifies him). Mood-
+// driven parts are limited to brows + eyes + mouth.
 const _CORN_FACES = {
   neutral: {
-    browL: `<path d="M22 27.6 Q25 25.3 30 27.2" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M23.5 27 L26.5 26.3" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
-    browR: `<path d="M34 27.2 Q39 25.3 42 27.6" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M35.5 26.3 L38.5 27" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
-    eyeL: `<ellipse cx="27" cy="30.5" rx="2.1" ry="1.6" fill="#fafafa"/><circle cx="27" cy="30.5" r="1.15" fill="#4a3a25"/><circle cx="27" cy="30.5" r="0.55" fill="#0a0a10"/><circle cx="27.4" cy="30.0" r="0.28" fill="#fff"/>`,
-    eyeR: `<ellipse cx="37" cy="30.5" rx="2.1" ry="1.6" fill="#fafafa"/><circle cx="37" cy="30.5" r="1.15" fill="#4a3a25"/><circle cx="37" cy="30.5" r="0.55" fill="#0a0a10"/><circle cx="37.4" cy="30.0" r="0.28" fill="#fff"/>`,
-    mouth: `<path d="M30.5 44.4 Q32 44.9 33.5 44.4" stroke="#5a3a25" stroke-width="0.55" fill="none" stroke-linecap="round"/>`,
+    brows: `
+      <path d="M19 27.5 Q24 25.4 29 27.5" stroke="#4a3320" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <path d="M35 27.5 Q40 25.4 45 27.5" stroke="#4a3320" stroke-width="2" fill="none" stroke-linecap="round"/>`,
+    eyes: `
+      <circle cx="24" cy="32" r="2.4" fill="#fff"/>
+      <circle cx="40" cy="32" r="2.4" fill="#fff"/>
+      <circle cx="24" cy="32" r="1.3" fill="#3a2615"/>
+      <circle cx="40" cy="32" r="1.3" fill="#3a2615"/>
+      <circle cx="24.5" cy="31.4" r="0.55" fill="#fff"/>
+      <circle cx="40.5" cy="31.4" r="0.55" fill="#fff"/>`,
+    mouth: `<path d="M29 45.2 Q32 46 35 45.2" stroke="#3a2615" stroke-width="0.8" fill="none" stroke-linecap="round"/>`,
   },
   happy: {
-    browL: `<path d="M22 26.0 Q25 24.0 30 26.4" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M23.5 26.4 L26.5 25.6" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
-    browR: `<path d="M34 26.4 Q39 24.0 42 26.0" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M35.5 25.6 L38.5 26.4" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
-    eyeL: `<ellipse cx="27" cy="30.5" rx="2.1" ry="1.0" fill="#fafafa"/><path d="M25 30.6 Q27 29.0 29 30.6" stroke="#4a3a25" stroke-width="0.9" fill="none" stroke-linecap="round"/>`,
-    eyeR: `<ellipse cx="37" cy="30.5" rx="2.1" ry="1.0" fill="#fafafa"/><path d="M35 30.6 Q37 29.0 39 30.6" stroke="#4a3a25" stroke-width="0.9" fill="none" stroke-linecap="round"/>`,
-    mouth: `<path d="M29.5 44.0 Q32 46.2 34.5 44.0" stroke="#5a3a25" stroke-width="0.75" fill="none" stroke-linecap="round"/>`,
+    brows: `
+      <path d="M19 26.0 Q24 24.0 29 26.4" stroke="#4a3320" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <path d="M35 26.4 Q40 24.0 45 26.0" stroke="#4a3320" stroke-width="2" fill="none" stroke-linecap="round"/>`,
+    eyes: `
+      <path d="M22 32.5 Q24 30.5 26 32.5" stroke="#3a2615" stroke-width="1.4" fill="none" stroke-linecap="round"/>
+      <path d="M38 32.5 Q40 30.5 42 32.5" stroke="#3a2615" stroke-width="1.4" fill="none" stroke-linecap="round"/>`,
+    mouth: `<path d="M28.5 44.5 Q32 47 35.5 44.5" stroke="#3a2615" stroke-width="1.0" fill="none" stroke-linecap="round"/>`,
   },
   concerned: {
-    browL: `<path d="M22 28.8 Q26 26.6 30 28.6" stroke="#6a5a45" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M23.5 28.0 L26.5 27.5" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
-    browR: `<path d="M34 28.6 Q38 26.6 42 28.8" stroke="#6a5a45" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M35.5 27.5 L38.5 28.0" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
-    eyeL: `<ellipse cx="27" cy="30.8" rx="2.1" ry="1.5" fill="#fafafa"/><circle cx="27" cy="30.9" r="1.15" fill="#4a3a25"/><circle cx="27" cy="30.9" r="0.55" fill="#0a0a10"/><circle cx="27.4" cy="30.5" r="0.26" fill="#fff"/>`,
-    eyeR: `<ellipse cx="37" cy="30.8" rx="2.1" ry="1.5" fill="#fafafa"/><circle cx="37" cy="30.9" r="1.15" fill="#4a3a25"/><circle cx="37" cy="30.9" r="0.55" fill="#0a0a10"/><circle cx="37.4" cy="30.5" r="0.26" fill="#fff"/>`,
-    mouth: `<path d="M30 45.2 Q32 44.5 34 45.2" stroke="#5a3a25" stroke-width="0.6" fill="none" stroke-linecap="round"/>`,
+    brows: `
+      <path d="M19 29.0 Q24 26.8 29 28.6" stroke="#4a3320" stroke-width="2.1" fill="none" stroke-linecap="round"/>
+      <path d="M35 28.6 Q40 26.8 45 29.0" stroke="#4a3320" stroke-width="2.1" fill="none" stroke-linecap="round"/>`,
+    eyes: `
+      <circle cx="24" cy="32.6" r="2.4" fill="#fff"/>
+      <circle cx="40" cy="32.6" r="2.4" fill="#fff"/>
+      <circle cx="24" cy="32.6" r="1.3" fill="#3a2615"/>
+      <circle cx="40" cy="32.6" r="1.3" fill="#3a2615"/>`,
+    mouth: `<path d="M29 46 Q32 45 35 46" stroke="#3a2615" stroke-width="0.8" fill="none" stroke-linecap="round"/>`,
   },
   surprised: {
-    browL: `<path d="M22 25.0 Q25 22.8 30 25.2" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M23.5 25.0 L26.5 24.2" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
-    browR: `<path d="M34 25.2 Q39 22.8 42 25.0" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M35.5 24.2 L38.5 25.0" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
-    eyeL: `<ellipse cx="27" cy="30.5" rx="2.4" ry="2.0" fill="#fafafa"/><circle cx="27" cy="30.5" r="1.0" fill="#4a3a25"/><circle cx="27" cy="30.5" r="0.5" fill="#0a0a10"/><circle cx="27.5" cy="30.0" r="0.32" fill="#fff"/>`,
-    eyeR: `<ellipse cx="37" cy="30.5" rx="2.4" ry="2.0" fill="#fafafa"/><circle cx="37" cy="30.5" r="1.0" fill="#4a3a25"/><circle cx="37" cy="30.5" r="0.5" fill="#0a0a10"/><circle cx="37.5" cy="30.0" r="0.32" fill="#fff"/>`,
-    mouth: `<ellipse cx="32" cy="44.8" rx="0.9" ry="1.1" fill="#3a2515"/>`,
+    brows: `
+      <path d="M19 24.5 Q24 22.4 29 24.8" stroke="#4a3320" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <path d="M35 24.8 Q40 22.4 45 24.5" stroke="#4a3320" stroke-width="2" fill="none" stroke-linecap="round"/>`,
+    eyes: `
+      <circle cx="24" cy="32" r="3" fill="#fff"/>
+      <circle cx="40" cy="32" r="3" fill="#fff"/>
+      <circle cx="24" cy="32" r="1.4" fill="#3a2615"/>
+      <circle cx="40" cy="32" r="1.4" fill="#3a2615"/>
+      <circle cx="24.6" cy="31.3" r="0.55" fill="#fff"/>
+      <circle cx="40.6" cy="31.3" r="0.55" fill="#fff"/>`,
+    mouth: `<ellipse cx="32" cy="45.4" rx="1.0" ry="1.2" fill="#3a2615"/>`,
   },
   curious: {
-    browL: `<path d="M22 27.4 Q25 25.7 30 27.0" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M23.5 27.0 L26.5 26.3" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
-    browR: `<path d="M34 25.8 Q39 23.4 42 25.4" stroke="#6a5a45" stroke-width="2.2" fill="none" stroke-linecap="round"/><path d="M35.5 24.6 L38.5 25.0" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
-    eyeL: `<ellipse cx="27" cy="30.5" rx="2.1" ry="1.6" fill="#fafafa"/><circle cx="27" cy="30.5" r="1.15" fill="#4a3a25"/><circle cx="27" cy="30.5" r="0.55" fill="#0a0a10"/><circle cx="27.4" cy="30.0" r="0.28" fill="#fff"/>`,
-    eyeR: `<ellipse cx="37" cy="30.4" rx="2.1" ry="1.7" fill="#fafafa"/><circle cx="37" cy="30.4" r="1.2" fill="#4a3a25"/><circle cx="37" cy="30.4" r="0.58" fill="#0a0a10"/><circle cx="37.4" cy="29.9" r="0.3" fill="#fff"/>`,
-    mouth: `<path d="M30.6 44.4 Q32 45.2 33.4 44.4" stroke="#5a3a25" stroke-width="0.6" fill="none" stroke-linecap="round"/>`,
+    brows: `
+      <path d="M19 27.4 Q24 26.0 29 27.0" stroke="#4a3320" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <path d="M35 25.4 Q40 23.0 45 24.8" stroke="#4a3320" stroke-width="2.2" fill="none" stroke-linecap="round"/>`,
+    eyes: `
+      <circle cx="24" cy="32" r="2.4" fill="#fff"/>
+      <circle cx="40" cy="31.7" r="2.5" fill="#fff"/>
+      <circle cx="24" cy="32" r="1.3" fill="#3a2615"/>
+      <circle cx="40" cy="31.7" r="1.4" fill="#3a2615"/>
+      <circle cx="24.5" cy="31.4" r="0.55" fill="#fff"/>
+      <circle cx="40.6" cy="31.1" r="0.6" fill="#fff"/>`,
+    mouth: `<path d="M29 45 Q32 46 35 45" stroke="#3a2615" stroke-width="0.8" fill="none" stroke-linecap="round"/>`,
   },
-  // Classic "thinking" — one brow up, eyes glancing up-and-right, mouth pursed.
-  // The eye movement is bigger than usual to read clearly at small sizes.
+  // Thinking — one brow raised, eyes glancing up-right, flat mouth.
   thinking: {
-    browL: `<path d="M22 27.6 Q25 26.0 30 27.4" stroke="#6a5a45" stroke-width="2.1" fill="none" stroke-linecap="round"/><path d="M23.5 27.0 L26.5 26.4" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
-    browR: `<path d="M34 25.2 Q39 22.8 42 24.6" stroke="#6a5a45" stroke-width="2.3" fill="none" stroke-linecap="round"/><path d="M35.5 24.0 L38.5 24.5" stroke="#9a8a6f" stroke-width="0.5" stroke-linecap="round"/>`,
-    eyeL: `<ellipse cx="27" cy="30.5" rx="2.1" ry="1.4" fill="#fafafa"/><circle cx="27.6" cy="30.0" r="1.05" fill="#4a3a25"/><circle cx="27.6" cy="30.0" r="0.5" fill="#0a0a10"/>`,
-    eyeR: `<ellipse cx="37" cy="30.5" rx="2.1" ry="1.4" fill="#fafafa"/><circle cx="37.6" cy="30.0" r="1.05" fill="#4a3a25"/><circle cx="37.6" cy="30.0" r="0.5" fill="#0a0a10"/>`,
-    mouth: `<path d="M30.4 44.6 L33.6 44.6" stroke="#5a3a25" stroke-width="0.6" fill="none" stroke-linecap="round"/>`,
+    brows: `
+      <path d="M19 27.5 Q24 26.2 29 27.4" stroke="#4a3320" stroke-width="2" fill="none" stroke-linecap="round"/>
+      <path d="M35 25.0 Q40 22.4 45 24.4" stroke="#4a3320" stroke-width="2.2" fill="none" stroke-linecap="round"/>`,
+    eyes: `
+      <circle cx="24" cy="32" r="2.4" fill="#fff"/>
+      <circle cx="40" cy="32" r="2.4" fill="#fff"/>
+      <circle cx="24.7" cy="31.4" r="1.2" fill="#3a2615"/>
+      <circle cx="40.7" cy="31.4" r="1.2" fill="#3a2615"/>`,
+    mouth: `<path d="M29.5 45.5 L34.5 45.5" stroke="#3a2615" stroke-width="0.8" fill="none" stroke-linecap="round"/>`,
   },
 };
 
-// Build Cornileus' SVG with a given mood. The static parts (gradients, hat,
-// monocle, suit, mustache, nose) never change so the character stays
-// recognizable; the face parts (brows, eyes, mouth) swap based on mood.
+// Build the avatar SVG for a given mood. Static parts (skin/suit/hat/
+// monocle/mustache) never change; brows, eyes, and mouth come from the
+// mood definitions above so the character stays recognizable.
 function cornileusSvg(mood) {
   const f = _CORN_FACES[mood] || _CORN_FACES.neutral;
   return `<svg viewBox="0 0 64 64" xmlns="http://www.w3.org/2000/svg" aria-label="Cornileus" role="img">
   <defs>
-    <radialGradient id="cn-skin" cx="50%" cy="38%" r="60%">
-      <stop offset="0%" stop-color="#f7e2b8"/>
-      <stop offset="60%" stop-color="#e6c993"/>
-      <stop offset="100%" stop-color="#c9a878"/>
+    <radialGradient id="cn-skin" cx="50%" cy="38%" r="58%">
+      <stop offset="0%" stop-color="#fce0bd"/>
+      <stop offset="100%" stop-color="#cf9b6a"/>
     </radialGradient>
     <linearGradient id="cn-hat" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#2a2a30"/>
-      <stop offset="55%" stop-color="#15151a"/>
-      <stop offset="100%" stop-color="#0a0a0e"/>
+      <stop offset="0%" stop-color="#2c2c34"/>
+      <stop offset="100%" stop-color="#0e0e16"/>
     </linearGradient>
-    <radialGradient id="cn-mono" cx="35%" cy="30%" r="80%">
-      <stop offset="0%" stop-color="rgba(255,255,255,0.30)"/>
-      <stop offset="55%" stop-color="rgba(200,160,80,0.08)"/>
-      <stop offset="100%" stop-color="rgba(200,160,80,0.02)"/>
-    </radialGradient>
     <linearGradient id="cn-suit" x1="0%" y1="0%" x2="0%" y2="100%">
-      <stop offset="0%" stop-color="#1a1a22"/>
+      <stop offset="0%" stop-color="#1e1e26"/>
       <stop offset="100%" stop-color="#0a0a10"/>
     </linearGradient>
+    <linearGradient id="cn-mono-rim" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#e8c98e"/>
+      <stop offset="100%" stop-color="#a8804a"/>
+    </linearGradient>
   </defs>
-  <polygon points="13,52 32,46 51,52 51,64 13,64" fill="url(#cn-suit)"/>
-  <polygon points="26,48.2 32,46 32,57 28,55" fill="#1f1f28"/>
-  <polygon points="38,48.2 32,46 32,57 36,55" fill="#1f1f28"/>
-  <polygon points="30,49 34,49 33.2,57 30.8,57" fill="#f5f5f7"/>
-  <rect x="29" y="43.5" width="6" height="5" fill="#c9a878"/>
-  <path d="M27 50.2 L32 52.2 L37 50.2 L37 54.6 L32 52.6 L27 54.6 Z" fill="#8957D9"/>
-  <rect x="31" y="51.2" width="2" height="2.6" rx="0.6" fill="#6f3fbf"/>
-  <ellipse cx="32" cy="34" rx="13.5" ry="14.6" fill="url(#cn-skin)"/>
-  <ellipse cx="32" cy="22.5" rx="13" ry="2.6" fill="rgba(0,0,0,0.22)"/>
-  <path d="M23 25.2 Q28 24.5 32 25.2" stroke="rgba(80,55,30,0.18)" stroke-width="0.4" fill="none"/>
-  ${f.browL}${f.browR}
-  ${f.eyeL}${f.eyeR}
-  <circle cx="37" cy="30.5" r="5" fill="url(#cn-mono)" stroke="#c9a14a" stroke-width="0.95"/>
-  <path d="M33.4 28 A4.6 4.6 0 0 1 36 26.6" stroke="rgba(255,255,255,0.45)" stroke-width="0.55" fill="none"/>
-  <path d="M41.8 32.6 Q44 36 43.2 41" stroke="#9a8866" stroke-width="0.55" fill="none"/>
-  <path d="M31.8 31 Q31 35.2 31.6 37 Q32 37.4 32.4 37 Q33 35.2 32.2 31" fill="rgba(80,55,30,0.10)"/>
-  <ellipse cx="31.4" cy="37" rx="0.45" ry="0.4" fill="rgba(60,40,20,0.30)"/>
-  <ellipse cx="32.6" cy="37" rx="0.45" ry="0.4" fill="rgba(60,40,20,0.30)"/>
-  <path d="M22 40.8 Q24.5 39.2 27.5 40.2 Q30 41.5 32 41.5 Q34 41.5 36.5 40.2 Q39.5 39.2 42 40.8 Q43 42.2 41 43.1 Q38 44 35 43.6 Q33 43.9 32 43.6 Q31 43.9 29 43.6 Q26 44 23 43.1 Q21 42.2 22 40.8 Z" fill="#5a4a35"/>
-  <path d="M24 41.2 Q26 40.8 28 41.3" stroke="#7a6a55" stroke-width="0.5" fill="none" stroke-linecap="round"/>
-  <path d="M36 41.3 Q38 40.8 40 41.2" stroke="#7a6a55" stroke-width="0.5" fill="none" stroke-linecap="round"/>
-  <path d="M22 40.8 Q20.4 40.2 20.4 41.8" stroke="#5a4a35" stroke-width="1.3" fill="none" stroke-linecap="round"/>
-  <path d="M42 40.8 Q43.6 40.2 43.6 41.8" stroke="#5a4a35" stroke-width="1.3" fill="none" stroke-linecap="round"/>
+  <!-- Suit shoulders, slightly rounded for warmth -->
+  <path d="M10 60 Q22 51 32 51 Q42 51 54 60 L54 64 L10 64 Z" fill="url(#cn-suit)"/>
+  <!-- Lapels -->
+  <path d="M23 54 L32 51 L32 60 L27 57 Z" fill="#14141c"/>
+  <path d="M41 54 L32 51 L32 60 L37 57 Z" fill="#14141c"/>
+  <!-- Shirt collar strip -->
+  <path d="M30.4 51.5 L33.6 51.5 L33 58 L31 58 Z" fill="#f4f4f6"/>
+  <!-- Neck -->
+  <rect x="29.5" y="46" width="5" height="5" fill="#cf9b6a"/>
+  <!-- Bowtie (warm coral, Claude-style accent) -->
+  <path d="M27 52.5 L32 54.2 L37 52.5 L37 56.5 L32 54.6 L27 56.5 Z" fill="#cc785c"/>
+  <!-- Head -->
+  <circle cx="32" cy="34" r="14.5" fill="url(#cn-skin)"/>
+  <!-- Forehead shadow under hat -->
+  <ellipse cx="32" cy="22.5" rx="13" ry="2.2" fill="rgba(0,0,0,0.18)"/>
+  <!-- Eyebrows (mood-driven) -->
+  ${f.brows}
+  <!-- Eyes (mood-driven) -->
+  ${f.eyes}
+  <!-- Single gold monocle ring on his right eye — his signature -->
+  <circle cx="40" cy="32" r="4.4" fill="rgba(232,201,142,0.06)" stroke="url(#cn-mono-rim)" stroke-width="1.1"/>
+  <!-- Monocle chain trailing down -->
+  <path d="M43.8 33.6 Q46.2 38 45 43.5" stroke="#a8804a" stroke-width="0.6" fill="none" stroke-linecap="round"/>
+  <!-- Mustache: one clean curved shape, no extra strands -->
+  <path d="M22 41.2 Q26 38.8 32 41.4 Q38 38.8 42 41.2 Q40.4 43.6 36 43.4 Q34 44.2 32 43.4 Q30 44.2 28 43.4 Q23.6 43.6 22 41.2 Z" fill="#3a2615"/>
+  <!-- Mouth (mood-driven, peeks below the mustache) -->
   ${f.mouth}
-  <ellipse cx="32" cy="20.2" rx="20" ry="2.9" fill="url(#cn-hat)"/>
-  <ellipse cx="32" cy="19.7" rx="20" ry="2.4" fill="#181820"/>
-  <rect x="22" y="3" width="20" height="17" rx="0.9" fill="url(#cn-hat)"/>
-  <rect x="22" y="13.4" width="20" height="3.2" fill="#7144C0"/>
-  <rect x="22" y="13.4" width="20" height="0.7" fill="#a87bea"/>
-  <rect x="23" y="5" width="1.9" height="8" fill="rgba(255,255,255,0.14)" rx="0.4"/>
-  <rect x="24.7" y="5" width="0.5" height="6" fill="rgba(255,255,255,0.09)"/>
+  <!-- Hat brim -->
+  <ellipse cx="32" cy="20" rx="20" ry="2.6" fill="url(#cn-hat)"/>
+  <!-- Hat crown -->
+  <rect x="22" y="3" width="20" height="17" rx="1" fill="url(#cn-hat)"/>
+  <!-- Hat band — warm coral matching the bowtie -->
+  <rect x="22" y="13.5" width="20" height="3" fill="#cc785c"/>
+  <!-- Subtle hat highlight -->
+  <rect x="23.4" y="5" width="1.4" height="7" rx="0.4" fill="rgba(255,255,255,0.10)"/>
 </svg>`;
 }
 
@@ -12115,21 +12143,23 @@ function counselorRender() {
     stocks:   "How are you today? Ask me about tickers, ETFs, or where to put your next dollar.",
     default:  "How are you today? Ask me anything — money, goals, big decisions. I'll be candid.",
   })[ctx] || "How are you today?";
-  // Empty-thread greeting: speech bubble on the left, BIG Cornileus on the
-  // right sliding in from off-screen-right (his real entrance). The bubble
-  // tail points right toward him so it reads as him speaking.
+  // Empty-thread greeting block. Rendered OUTSIDE cns-scroll (the scroll
+  // container has overflow:auto which would clip the avatar's slide-in
+  // from off-screen-right). The wrapper has overflow:hidden so the slide
+  // truly emerges from the right border of the chat.
   const greetingHtml = !thread.length ? `
-    <div class="corn-greeting" style="display:flex;gap:10px;margin:8px 0 18px;align-items:flex-start;justify-content:flex-end">
-      <div class="corn-greeting-bubble">
-        ${esc(greetingText)}
-        <div style="font-size:11px;color:var(--t4);margin-top:6px">Educational guidance — not licensed financial advice.</div>
+    <div class="corn-greeting-wrap">
+      <div class="corn-greeting" style="display:flex;gap:10px;align-items:center;justify-content:flex-end">
+        <div class="corn-greeting-bubble">
+          ${esc(greetingText)}
+          <div style="font-size:11px;color:var(--t4);margin-top:6px">Educational guidance — not licensed financial advice.</div>
+        </div>
+        ${cornAvatarHtml(104, true, "happy")}
       </div>
-      ${cornAvatarHtml(96, true, "happy")}
     </div>
   ` : "";
   const suggested = !thread.length ? `
     <div style="padding:6px 2px 4px">
-      ${greetingHtml}
       ${(() => {
         // Data-driven personalized starters — drawn from current snapshot.
         // Only shown when we have at least one meaningful nudge. Pre-pended
@@ -12209,7 +12239,10 @@ function counselorRender() {
   ` : "";
 
   // Header avatar removed — Cornileus' real entrance is the big peeking
-  // character next to the greeting bubble, not a static header icon.
+  // character next to the greeting bubble. The greeting block is rendered
+  // OUTSIDE cns-scroll (which has overflow:auto and would clip the
+  // slide-in animation) so his entrance from off-screen-right works
+  // smoothly.
   openSheet(`
     <div data-counselor-sheet style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
       <div style="flex:1;min-width:0">
@@ -12219,7 +12252,8 @@ function counselorRender() {
       ${headerControls}
       <button style="background:none;border:none;font-size:22px;color:var(--t3);cursor:pointer;padding:4px 8px;flex-shrink:0" onclick="closeSheet()" aria-label="Close">×</button>
     </div>
-    <div id="cns-scroll" style="max-height:55vh;overflow-y:auto;padding-right:4px;margin-bottom:6px">
+    ${greetingHtml}
+    <div id="cns-scroll" style="max-height:48vh;overflow-y:auto;padding-right:4px;margin-bottom:6px">
       ${bubbles}
       ${thinkingBubble}
       ${suggested}
