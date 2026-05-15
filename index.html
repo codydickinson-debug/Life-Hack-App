@@ -1999,8 +1999,37 @@ const DEFAULT_DB = {
   accounts: [],  // [{item_id, institution_name, account_id, name, type, subtype, mask, balance_current, balance_available, iso_currency_code}]
   settings: {
     theme: "auto",
-    reminderTime: "08:00",
+    reminderTime: "08:00",       // legacy single time — kept for back-compat, mirrored into reminders[0]
     notifications: false,
+    // Multiple reminder times (instead of just one). Each entry is a string
+    // "HH:MM" 24h. Empty array falls back to settings.reminderTime so old
+    // users see no regression.
+    reminderTimes: [],
+    // Per-category opt-in switches. When notifications is off, all are off.
+    // When on, each category contributes to the daily reminder + smart
+    // triggers if true.
+    notifyCategories: {
+      habits: true,         // streak risk + daily habit nudge
+      bills: true,          // upcoming bills (≤3d)
+      plans: true,          // plan deadlines (≤7d)
+      goals: true,          // goals near completion
+      savings: true,        // savings buckets near target
+      streaks: true,        // habit streak milestones
+      networth: true,       // big net-worth milestones crossed
+      stocks: true,         // price alerts that triggered
+      runway: true,         // runway-under-1-month warning
+      paychecks: true,      // detected paycheck arrived → allocate
+      mood: false,          // gentle "log your mood" check-in
+      weekly: true,         // Sunday weekly review nudge
+    },
+    // When the app opens, fire one consolidated push for the highest-priority
+    // signal if any have triggered since the last open (and not already
+    // notified today). Tracks last-fired key per category to avoid spam.
+    lastNotifiedKey: {},    // { categoryKey: "YYYY-MM-DD" }
+    // PWA push subscription endpoint (Service Worker / Web Push). When set,
+    // the backend can deliver pushes when the app is closed. Empty until
+    // user opts in via notification setup sheet.
+    pushSubscription: null,
     backendUrl: "",
     apiKey: "",
     autoSyncOnOpen: true,
@@ -3514,6 +3543,12 @@ function addHabitSheet(existing) {
         <input id="h-unit"   placeholder="oz, $, min" value="${esc(h.unit||"")}" />
       </div>
     </div>
+    <label>Reminder (optional)</label>
+    <p class="muted" style="font-size:12px;margin:-4px 0 6px">Fires only on days you haven't done this habit yet. Needs notifications enabled in Settings.</p>
+    <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center">
+      <input id="h-reminder" type="time" value="${esc(h.reminderTime || "")}" />
+      <button type="button" class="btn secondary" style="font-size:12px;padding:8px 12px" onclick="document.getElementById('h-reminder').value=''">Clear</button>
+    </div>
     <div class="actions">
       ${isEdit ? `<button class="btn danger" onclick="if(confirm('Delete habit?')){deleteHabit('${h.id}');closeSheet();}">Delete</button>` : ""}
       <button class="btn secondary" onclick="closeSheet()">Cancel</button>
@@ -3534,12 +3569,17 @@ function addHabitSheet(existing) {
     const target = Number($("#h-target")?.value || 1);
     const unit = $("#h-unit")?.value.trim() || "";
     const group = $("#h-group")?.value || "other";
+    const reminderTime = $("#h-reminder")?.value || "";
     if (isEdit) {
-      Object.assign(h, { name, emoji, type, target, unit, group });
+      Object.assign(h, { name, emoji, type, target, unit, group, reminderTime });
     } else {
-      DB.habits.push({ id: uid(), name, emoji, type, target, unit, group, color: COLORS[DB.habits.length % COLORS.length], createdAt: Date.now(), log: {} });
+      DB.habits.push({ id: uid(), name, emoji, type, target, unit, group, reminderTime, color: COLORS[DB.habits.length % COLORS.length], createdAt: Date.now(), log: {} });
     }
-    await save(); closeSheet(); render();
+    await save(); closeSheet();
+    // Refresh per-habit reminder timers — the new/edited habit may now have
+    // (or no longer have) a reminder time set.
+    if (typeof scheduleHabitReminders === "function") scheduleHabitReminders();
+    render();
   });
 }
 
@@ -17460,20 +17500,17 @@ function renderSettings() {
       </div>
     </div>
 
-    <div class="section-h"><span class="lbl">Reminders</span></div>
+    <div class="section-h"><span class="lbl">Reminders &amp; notifications</span></div>
     <div class="list">
-      <div class="row">
+      <div class="row tappable" onclick="notificationSettingsSheet()">
         <div class="lead">🔔</div>
-        <div class="body"><div class="t1">Daily reminder</div><div class="t2">Notification when app is open. iOS push needs server.</div></div>
-        <input type="checkbox" ${DB.settings.notifications?'checked':''}
-          onchange="toggleNotifications(this.checked)" style="width:50px;height:30px" />
-      </div>
-      <div class="row">
-        <div class="lead">⏰</div>
-        <div class="body"><div class="t1">Reminder time</div><div class="t2">Used when app is open or installed</div></div>
-        <input type="time" value="${DB.settings.reminderTime}"
-          onchange="DB.settings.reminderTime=this.value;save();scheduleReminder()"
-          style="background:var(--bg-elev);padding:8px;border-radius:8px" />
+        <div class="body">
+          <div class="t1">Notifications${DB.settings.notifications ? ' <span style="background:var(--green,#34C759);color:#fff;border-radius:999px;padding:2px 8px;font-size:10px;margin-left:6px;font-weight:700">ON</span>' : ''}</div>
+          <div class="t2">${DB.settings.notifications
+            ? `${_reminderTimesActive().length} time${_reminderTimesActive().length===1?'':'s'} per day · ${Object.values(DB.settings.notifyCategories || {}).filter(v => v).length} categories`
+            : "Daily reminders, bills due, streak risk, plan deadlines, stock alerts"}</div>
+        </div>
+        <div class="trail chev"></div>
       </div>
     </div>
 
@@ -17879,11 +17916,159 @@ async function toggleNotifications(on) {
     if (!("Notification" in window)) { toast("Notifications not supported"); render(); return; }
     const perm = await Notification.requestPermission();
     if (perm !== "granted") { toast("Permission denied"); DB.settings.notifications = false; save(); render(); return; }
-    DB.settings.notifications = true; save(); scheduleReminder(); toast("Reminders on");
+    DB.settings.notifications = true; save(); scheduleReminder(); scheduleHabitReminders(); toast("Reminders on");
   } else {
     DB.settings.notifications = false; save();
+    for (const t of _reminderTimers) clearTimeout(t);
+    for (const t of _habitReminderTimers) clearTimeout(t);
+    _reminderTimers = []; _habitReminderTimers = [];
   }
   render();
+}
+
+// Add or remove a reminder time. Used by the notification settings sheet.
+function addReminderTime() {
+  if (!Array.isArray(DB.settings.reminderTimes)) DB.settings.reminderTimes = [];
+  // Default new times to evening if the user already has a morning, otherwise morning.
+  const existing = _reminderTimesActive();
+  const next = existing.includes("20:00") ? "12:00" : (existing.includes("08:00") ? "20:00" : "08:00");
+  DB.settings.reminderTimes = [...new Set([...existing, next])].sort();
+  save(); scheduleReminder(); notificationSettingsSheet();
+}
+function removeReminderTime(t) {
+  const times = _reminderTimesActive().filter(x => x !== t);
+  // Mirror back into reminderTimes; clear legacy single if it matched
+  DB.settings.reminderTimes = times;
+  if (DB.settings.reminderTime === t) DB.settings.reminderTime = times[0] || "";
+  save(); scheduleReminder(); notificationSettingsSheet();
+}
+function setReminderTime(oldT, newT) {
+  if (!/^\d{2}:\d{2}$/.test(newT)) return;
+  const times = _reminderTimesActive().map(x => x === oldT ? newT : x);
+  DB.settings.reminderTimes = [...new Set(times)].sort();
+  save(); scheduleReminder(); notificationSettingsSheet();
+}
+function toggleNotifyCategory(cat) {
+  DB.settings.notifyCategories = DB.settings.notifyCategories || {};
+  DB.settings.notifyCategories[cat] = !DB.settings.notifyCategories[cat];
+  save(); notificationSettingsSheet();
+}
+
+// Send a test notification so the user can verify permission + delivery
+// before relying on them. Works in any context (app open or not).
+function sendTestNotification() {
+  if (typeof Notification === "undefined") { toast("Not supported on this browser"); return; }
+  if (Notification.permission !== "granted") {
+    toast("Permission not granted yet — toggle reminders on first");
+    return;
+  }
+  try {
+    new Notification("Ascend test", {
+      body: "If you see this, notifications are working 🎉",
+      icon: "icon-180.png",
+      tag: "ascend-test",
+    });
+  } catch (e) {
+    toast("Failed: " + e.message);
+  }
+}
+
+function notificationSettingsSheet() {
+  const supported = ("Notification" in window);
+  const perm = supported ? Notification.permission : "denied";
+  const on = !!DB.settings.notifications;
+  const cats = DB.settings.notifyCategories || {};
+  const times = _reminderTimesActive();
+  const CAT_DEFS = [
+    { id: "habits",    emoji: "🔥", label: "Habit streaks", desc: "When a long streak is at risk of breaking today" },
+    { id: "bills",     emoji: "📆", label: "Bills due",     desc: "Recurring bills in the next 1-2 days" },
+    { id: "plans",     emoji: "🎯", label: "Plan deadlines",desc: "Plans with target dates within 7 days" },
+    { id: "goals",     emoji: "◎",  label: "Goal progress", desc: "Goals with the last step left" },
+    { id: "savings",   emoji: "💰", label: "Savings near target", desc: "Buckets within $100 or 95% of target" },
+    { id: "runway",    emoji: "⚠️", label: "Low runway",    desc: "Cash covers less than 1 month of fixed expenses" },
+    { id: "stocks",    emoji: "🔔", label: "Stock alerts",  desc: "Price alerts that fired in the last 24h" },
+    { id: "networth",  emoji: "📈", label: "Net-worth milestones", desc: "Crossed $10k, $50k, $100k, etc." },
+    { id: "paychecks", emoji: "💵", label: "Paychecks to allocate", desc: "Plaid-detected income waiting to split into buckets" },
+    { id: "weekly",    emoji: "📝", label: "Weekly review", desc: "Sunday afternoon — look back on your week" },
+    { id: "mood",      emoji: "💭", label: "Mood check-in", desc: "Gentle nudge if you haven't logged a mood today" },
+  ];
+  const permBanner = !supported
+    ? `<div style="background:rgba(255,149,0,0.10);border:1px solid rgba(255,149,0,0.30);border-radius:10px;padding:10px 12px;font-size:12.5px;margin-bottom:14px;color:var(--orange,#FF9500)">⚠ This browser doesn't support web notifications. Use Safari on iOS (16.4+, installed to Home Screen) or Chrome/Edge.</div>`
+    : perm === "denied"
+    ? `<div style="background:rgba(239,68,68,0.10);border:1px solid rgba(239,68,68,0.30);border-radius:10px;padding:10px 12px;font-size:12.5px;margin-bottom:14px;color:var(--red,#FF3B30)">⚠ Notifications blocked. Re-enable in your browser settings (Safari → Notifications → Ascend → Allow).</div>`
+    : "";
+  const masterRow = `
+    <div class="row" style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:14px">
+      <div class="lead">🔔</div>
+      <div class="body">
+        <div class="t1">Notifications</div>
+        <div class="t2">${on ? `Active — ${times.length} time${times.length===1?'':'s'} per day + smart triggers` : "Off — toggle on to enable"}</div>
+      </div>
+      <input type="checkbox" ${on?'checked':''} ${supported && perm !== "denied" ? "" : "disabled"} onchange="toggleNotifications(this.checked);setTimeout(()=>notificationSettingsSheet(),120)" style="width:50px;height:30px" />
+    </div>
+  `;
+  const timesSection = on ? `
+    <div class="section-h"><span class="lbl">Daily reminder times</span><button class="act" onclick="addReminderTime()">+ Add</button></div>
+    <div class="list">
+      ${times.map(t => `
+        <div class="row">
+          <div class="lead">⏰</div>
+          <div class="body">
+            <div class="t1">
+              <input type="time" value="${esc(t)}" onchange="setReminderTime(${jsAttr(t)}, this.value)"
+                style="background:var(--bg-elev);padding:6px 10px;border-radius:8px;font-size:14px;border:0.5px solid var(--sep);color:var(--t1)" />
+            </div>
+          </div>
+          ${times.length > 1 ? `<button class="del-x" onclick="removeReminderTime(${jsAttr(t)})">×</button>` : ''}
+        </div>
+      `).join("")}
+    </div>
+  ` : "";
+  const catSection = on ? `
+    <div class="section-h" style="margin-top:18px"><span class="lbl">What to notify about</span></div>
+    <div class="list">
+      ${CAT_DEFS.map(c => `
+        <div class="row">
+          <div class="lead">${c.emoji}</div>
+          <div class="body">
+            <div class="t1">${esc(c.label)}</div>
+            <div class="t2">${esc(c.desc)}</div>
+          </div>
+          <input type="checkbox" ${cats[c.id] !== false && (c.id !== "mood" || cats.mood === true) ? "checked" : ""}
+            onchange="toggleNotifyCategory(${jsAttr(c.id)})" style="width:50px;height:30px" />
+        </div>
+      `).join("")}
+    </div>
+  ` : "";
+  const habitsLink = on ? `
+    <div class="section-h" style="margin-top:18px"><span class="lbl">Per-habit reminders</span></div>
+    <div class="list">
+      <div class="row tappable" onclick="closeSheet();setTimeout(()=>showTab('today'),100)">
+        <div class="lead">✓</div>
+        <div class="body">
+          <div class="t1">Set times on individual habits</div>
+          <div class="t2">Tap a habit on Today → ⋯ → set reminder time. Fires only on days the habit isn't done yet.</div>
+        </div>
+        <div class="trail chev"></div>
+      </div>
+    </div>
+  ` : "";
+  const testRow = on ? `
+    <div style="margin-top:18px">
+      <button class="btn secondary" style="width:100%" onclick="sendTestNotification()">Send a test notification</button>
+    </div>
+  ` : "";
+  openSheet(`
+    <h2 style="margin-bottom:4px">Notifications</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">${supported ? "Pick what matters. Reminders fire while the app is open; install to your Home Screen for background pushes (iOS 16.4+, Android)." : "Web notifications aren't available here."}</p>
+    ${permBanner}
+    ${masterRow}
+    ${timesSection}
+    ${catSection}
+    ${habitsLink}
+    ${testRow}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Done</button></div>
+  `);
 }
 
 let reminderTimer;
@@ -17935,20 +18120,195 @@ function _dailyReminderBody() {
   return p.total ? `${p.done} of ${p.total} habits today. Let's keep going.` : "Open Ascend to plan your day.";
 }
 
+// Multiple reminder timers — one per configured time. Each fires once per
+// day at its configured HH:MM and self-reschedules for the next day.
+let _reminderTimers = [];
+
+function _reminderTimesActive() {
+  // Return the active list of HH:MM strings. New users get the legacy
+  // single time; users who've set reminderTimes[] use those instead.
+  const times = Array.isArray(DB.settings.reminderTimes) ? DB.settings.reminderTimes.filter(Boolean) : [];
+  if (times.length) return times;
+  if (DB.settings.reminderTime) return [DB.settings.reminderTime];
+  return ["08:00"];
+}
+
 function scheduleReminder() {
-  if (reminderTimer) clearTimeout(reminderTimer);
+  // Tear down any prior timers — we may be re-scheduling because settings
+  // changed mid-day.
+  for (const t of _reminderTimers) clearTimeout(t);
+  _reminderTimers = [];
   if (!DB.settings.notifications) return;
-  const [h,m] = DB.settings.reminderTime.split(":").map(Number);
+  const times = _reminderTimesActive();
   const now = new Date();
-  const next = new Date(); next.setHours(h, m, 0, 0);
-  if (next <= now) next.setDate(next.getDate()+1);
-  reminderTimer = setTimeout(() => {
-    if (DB.settings.notifications && Notification.permission === "granted") {
-      const body = _dailyReminderBody();
-      try { new Notification("Ascend", { body, icon: "icon-180.png" }); } catch {}
+  for (const hhmm of times) {
+    const [h, m] = String(hhmm).split(":").map(Number);
+    if (!Number.isFinite(h) || !Number.isFinite(m)) continue;
+    const next = new Date(); next.setHours(h, m, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    const ms = next - now;
+    const tid = setTimeout(() => {
+      if (DB.settings.notifications && typeof Notification !== "undefined" && Notification.permission === "granted") {
+        const body = _dailyReminderBody();
+        try { new Notification("Ascend", { body, icon: "icon-180.png" }); } catch {}
+      }
+      // Reschedule everything so day-rollover stays correct and any newly-
+      // added time gets picked up.
+      scheduleReminder();
+    }, ms);
+    _reminderTimers.push(tid);
+  }
+}
+
+// Per-habit reminder timers — fire at h.reminderTime (if set) if the habit
+// isn't done yet today. Independent of the main daily reminder chain.
+let _habitReminderTimers = [];
+function scheduleHabitReminders() {
+  for (const t of _habitReminderTimers) clearTimeout(t);
+  _habitReminderTimers = [];
+  if (!DB.settings.notifications) return;
+  const cats = DB.settings.notifyCategories || {};
+  if (cats.habits === false) return;
+  const now = new Date();
+  for (const h of (DB.habits || [])) {
+    if (!h.reminderTime) continue;
+    if (typeof isHabitPaused === "function" && isHabitPaused(h)) continue;
+    const [hh, mm] = String(h.reminderTime).split(":").map(Number);
+    if (!Number.isFinite(hh) || !Number.isFinite(mm)) continue;
+    const next = new Date(); next.setHours(hh, mm, 0, 0);
+    if (next <= now) next.setDate(next.getDate() + 1);
+    const tid = setTimeout(() => {
+      // Skip if already done today
+      const tk = todayKey();
+      const v = (h.log || {})[tk];
+      const done = h.type === "count" ? (+v || 0) >= (+h.target || 1) : !!v;
+      if (!done && DB.settings.notifications && typeof Notification !== "undefined" && Notification.permission === "granted") {
+        try {
+          new Notification(`${h.emoji || "✓"} ${h.name}`, {
+            body: h.type === "count" ? `${v || 0} / ${h.target || 1}${h.unit ? " " + h.unit : ""} — tap to log` : "Tap to mark done",
+            icon: "icon-180.png",
+            tag: "habit-" + h.id,
+          });
+        } catch {}
+      }
+      scheduleHabitReminders();
+    }, next - now);
+    _habitReminderTimers.push(tid);
+  }
+}
+
+// Smart on-open trigger: when the user opens the app (or focuses the tab
+// after being away ≥ 30 minutes), check for any high-priority signal that
+// hasn't been notified today and fire ONE consolidated notification. Mirrors
+// Daily Pulse priorities but only fires once per category per day so we
+// don't spam.
+function fireOnOpenTriggers() {
+  if (!DB.settings.notifications) return;
+  if (typeof Notification === "undefined" || Notification.permission !== "granted") return;
+  const cats = DB.settings.notifyCategories || {};
+  const lastNotified = DB.settings.lastNotifiedKey || {};
+  const tk = todayKey();
+  // Helper: only fire if this category hasn't already fired today.
+  const fired = (cat) => lastNotified[cat] === tk;
+  const mark = (cat) => {
+    DB.settings.lastNotifiedKey = DB.settings.lastNotifiedKey || {};
+    DB.settings.lastNotifiedKey[cat] = tk;
+    saveDebounced && saveDebounced();
+  };
+  const fire = (title, body, cat, tag) => {
+    try {
+      new Notification(title, { body, icon: "icon-180.png", tag: tag || cat });
+      mark(cat);
+    } catch {}
+  };
+  try {
+    // 1. Runway under 1 month — top priority financial signal
+    if (cats.runway !== false && !fired("runway")) {
+      const totalLiquid = (DB.savings || []).reduce((s, x) => s + (+x.current || 0), 0)
+                        + (DB.accounts || []).filter(a => a.type === "depository").reduce((s, a) => s + (+a.balance_current || 0), 0);
+      const fixed = (typeof _playsMonthlyFixed === "function") ? _playsMonthlyFixed() : 0;
+      if (fixed >= 500 && totalLiquid >= 0 && totalLiquid / fixed < 1) {
+        fire("⚠️ Runway under 1 month", `${(totalLiquid/fixed).toFixed(1)} months of fixed expenses covered`, "runway");
+        return; // ship one push per open, end here
+      }
     }
-    scheduleReminder();
-  }, next - now);
+    // 2. Bills due in the next 24-48 hours
+    if (cats.bills !== false && !fired("bills") && typeof upcomingBills === "function") {
+      const soon = (upcomingBills(2) || []).filter(b => b && b.next_predicted);
+      if (soon.length) {
+        const b = soon[0];
+        const days = Math.max(0, Math.round((new Date(b.next_predicted + "T00:00:00") - Date.now()) / 86400000));
+        const when = days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days}d`;
+        fire(`📆 Bill ${when}`, `${b.name || "Bill"} · ${typeof fmt$0 === "function" ? fmt$0(b.amount || 0) : "$" + (b.amount || 0)}`, "bills");
+        return;
+      }
+    }
+    // 3. Habit streak risk — long streak not done by mid-afternoon
+    if (cats.habits !== false && !fired("streakRisk")) {
+      const hour = new Date().getHours();
+      if (hour >= 14) { // 2pm or later
+        for (const h of (DB.habits || [])) {
+          const v = (h.log || {})[tk];
+          const done = h.type === "count" ? (+v || 0) >= (+h.target || 1) : !!v;
+          if (done) continue;
+          if (typeof isHabitPaused === "function" && isHabitPaused(h)) continue;
+          const streak = typeof currentStreak === "function" ? (currentStreak(h) || 0) : 0;
+          if (streak >= 7) {
+            fire(`🔥 Don't break it`, `${h.emoji || ""} ${h.name}: ${streak}-day streak`, "streakRisk");
+            return;
+          }
+        }
+      }
+    }
+    // 4. Plan deadline this week
+    if (cats.plans !== false && !fired("plans")) {
+      const plans = (DB.plans || []).filter(p => !p.completed && p.target_date);
+      for (const p of plans.sort((a,b) => new Date(a.target_date) - new Date(b.target_date))) {
+        const days = Math.round((new Date(p.target_date + "T00:00:00") - Date.now()) / 86400000);
+        if (days >= 0 && days <= 7) {
+          fire(`🎯 Plan due ${days === 0 ? "today" : days === 1 ? "tomorrow" : "in " + days + "d"}`, p.title, "plans");
+          return;
+        }
+      }
+    }
+    // 5. Stock alert triggered in last 24h
+    if (cats.stocks !== false && !fired("stocks")) {
+      const alerts = (DB.stocks && Array.isArray(DB.stocks.alerts)) ? DB.stocks.alerts : [];
+      const cutoff = Date.now() - 24 * 3600 * 1000;
+      const fresh = alerts.filter(a => a.triggeredAt && a.triggeredAt >= cutoff)
+                          .sort((a,b) => b.triggeredAt - a.triggeredAt)[0];
+      if (fresh) {
+        const dir = fresh.direction === "above" ? "↑" : "↓";
+        fire(`🔔 ${fresh.ticker} ${dir} $${(+fresh.threshold).toFixed(2)}`, "Price alert triggered", "stocks");
+        return;
+      }
+    }
+    // 6. Plaid-detected paycheck pending allocation
+    if (cats.paychecks !== false && !fired("paychecks")) {
+      const pending = (DB.pendingDeposits || []).length;
+      if (pending > 0) {
+        fire("💵 Paycheck arrived", `${pending} deposit${pending===1?"":"s"} waiting to allocate to savings`, "paychecks");
+        return;
+      }
+    }
+    // 7. Net-worth milestone newly crossed (read from last milestone check)
+    if (cats.networth !== false && !fired("networth") && DB._pendingMilestone) {
+      const m = DB._pendingMilestone;
+      fire(`${m.emoji || "📈"} Milestone hit`, `${m.title} — ${m.value ? fmt$0(m.value) : ""}`, "networth");
+      delete DB._pendingMilestone;
+      saveDebounced && saveDebounced();
+      return;
+    }
+    // 8. Sunday weekly review nudge
+    if (cats.weekly !== false && !fired("weekly")) {
+      const day = new Date().getDay(); // 0 = Sunday
+      const hour = new Date().getHours();
+      if (day === 0 && hour >= 10 && hour <= 20) {
+        fire("📝 Weekly review", "Look back on your week — what stood out?", "weekly");
+        return;
+      }
+    }
+  } catch (e) { /* never let a notification bug break app open */ }
 }
 
 /* Export: defaults to encrypted. The Downloads folder is typically synced
@@ -28366,10 +28726,12 @@ function checkNetWorthMilestones() {
   for (const m of r.uncelebrated) {
     DB.celebratedMilestones[String(m.value)] = Date.now();
   }
-  save();
-  // Use the highest newly-celebrated milestone for the toast (in case the user
-  // crossed multiple between snapshots — rare but possible with big swings).
+  // Stash the latest milestone for the on-open notification trigger so the
+  // user gets a real notification (not just an in-app toast) when they
+  // return to the app after crossing a milestone.
   const m = r.uncelebrated[r.uncelebrated.length - 1];
+  DB._pendingMilestone = { title: m.title, emoji: m.emoji, value: m.value };
+  save();
   toast(`🎉 ${m.title} — ${m.quote.split(".")[0]}!`);
   try { celebrate(1.2); } catch {}
 }
@@ -30701,7 +31063,25 @@ function init() {
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("sw.js").catch(()=>{});
   }
-  if (DB.settings.notifications) scheduleReminder();
+  if (DB.settings.notifications) {
+    scheduleReminder();
+    scheduleHabitReminders();
+    // Fire on-open triggers ~1.5s after init so the renderer has settled
+    // and the user has time to see the app before a notification flashes.
+    setTimeout(() => fireOnOpenTriggers(), 1500);
+  }
+  // Re-evaluate triggers when the user returns to the app after being away
+  // for ≥ 30 minutes (e.g. left the app open in another tab/window). The
+  // lastNotifiedKey gate prevents duplicate fires within the same day.
+  let _lastFocusAt = Date.now();
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible") return;
+    const awayMin = (Date.now() - _lastFocusAt) / 60000;
+    _lastFocusAt = Date.now();
+    if (awayMin >= 30 && DB.settings.notifications) {
+      fireOnOpenTriggers();
+    }
+  });
 
   // Honor PWA shortcut URL params from manifest.json. The manifest has
   // entries like ?tab=money&action=add-spend (iPhone home-screen long-press
@@ -30771,6 +31151,8 @@ function init() {
     backendHoldings, backendLiabilities, backendRecurring, backendInvestmentTransactions,
     syncHoldings, syncLiabilities, syncRecurring, syncInvestmentTransactions,
     acceptDetectedRecurring, dismissDetectedRecurring, plaidRecurringSheet,
+    notificationSettingsSheet, addReminderTime, removeReminderTime, setReminderTime,
+    toggleNotifyCategory, sendTestNotification, scheduleHabitReminders, fireOnOpenTriggers,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
     setPassphrase, unlockWithPassphrase, disablePassphrase, encryptObject, decryptObject, deriveKey,
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,

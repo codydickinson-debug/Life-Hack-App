@@ -109,3 +109,44 @@ async function networkFirst(req) {
     return Response.error();
   }
 }
+
+// ============ Push notifications ============
+// Receives Web Push events from the backend (when subscribed). The backend
+// signs each push with VAPID; this handler decodes the payload (JSON
+// {title, body, tag, url}) and shows a system notification — works while
+// the app is closed (iOS 16.4+ Home Screen PWA, Android, desktop).
+self.addEventListener("push", (event) => {
+  let data = {};
+  try { data = event.data ? event.data.json() : {}; } catch {
+    try { data = { body: event.data ? event.data.text() : "" }; } catch {}
+  }
+  const title = data.title || "Ascend";
+  const opts = {
+    body: data.body || "",
+    icon: data.icon || "./icon-192.png",
+    badge: data.badge || "./icon-192.png",
+    tag: data.tag || "ascend",
+    data: { url: data.url || "/" },
+    requireInteraction: !!data.requireInteraction,
+  };
+  event.waitUntil(self.registration.showNotification(title, opts));
+});
+
+// Clicking a notification opens (or focuses) the app to the URL the push
+// included. Falls back to the root if the push didn't specify.
+self.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  const target = (event.notification.data && event.notification.data.url) || "/";
+  event.waitUntil((async () => {
+    const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    for (const c of all) {
+      // If a window is already open, focus it instead of opening a new one.
+      if (c.url.includes(self.location.origin)) {
+        await c.focus();
+        if ("navigate" in c) { try { await c.navigate(target); } catch {} }
+        return;
+      }
+    }
+    await self.clients.openWindow(target);
+  })());
+});
