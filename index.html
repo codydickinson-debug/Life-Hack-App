@@ -15282,6 +15282,27 @@ function calendarDaySheet(dateKey) {
     ${billsThatDay.length ? section("Bills due", billRows) : ""}
     ${plansThatDay.length ? section("Plan deadlines", planRows) : ""}
     ${userDatesThatDay.length ? section("Important dates", userDateRows) : ""}
+    ${(() => {
+      // Stocks: earnings + ex-dividend events for this specific day
+      const ec = (DB.stocks && DB.stocks.earningsCache) || {};
+      const dc = (DB.stocks && DB.stocks.exDivCache) || {};
+      const holdings = (DB.stocks && DB.stocks.holdings) || {};
+      const earningsOnDay = Object.entries(ec).filter(([_, info]) => info && info.next_earnings === dateKey);
+      const exDivOnDay = Object.entries(dc).filter(([_, info]) => info && info.ex_dividend_date === dateKey);
+      if (!earningsOnDay.length && !exDivOnDay.length) return "";
+      const rows = [];
+      for (const [tk] of earningsOnDay) {
+        rows.push(`<div class="row tappable" onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(tk)}),120)"><div class="lead">📊</div><div class="body"><div class="t1">${esc(tk)} earnings</div><div class="t2">Tap to open research — implied vol typically rises into the print</div></div><div class="trail chev"></div></div>`);
+      }
+      for (const [tk, info] of exDivOnDay) {
+        const h = holdings[tk];
+        const shares = h ? +h.shares || 0 : 0;
+        const rate = +info.dividend_rate || 0;
+        const expected = shares > 0 && rate > 0 ? (rate / 4) * shares : null;
+        rows.push(`<div class="row tappable" onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(tk)}),120)"><div class="lead">💵</div><div class="body"><div class="t1">${esc(tk)} ex-dividend</div><div class="t2">${expected != null ? `Estimated payment: +$${expected.toFixed(2)} (${shares} sh)` : `Annual rate $${rate.toFixed(2)}/sh`}</div></div><div class="trail chev"></div></div>`);
+      }
+      return section("Stocks events", rows.join(""));
+    })()}
     ${(eligibleHabits.length || wins.length || spendDay.length || savingsLogs.length) ? `
       <div style="margin-top:14px">
         <button class="btn secondary" style="width:100%;color:var(--purple);border-color:var(--purple);font-size:13px" onclick="openCounselor(${jsAttr(`On ${titleLbl}: ${eligibleHabits.length ? `${eligibleHabits.filter(h => h.type==='count' ? (h.log[dateKey]||0)>=(h.target||1) : !!h.log[dateKey]).length}/${eligibleHabits.length} habits done, ` : ""}${wins.length} wins (${wins.map(w => `"${w.text.slice(0,50)}"`).join("; ")}), $${Math.round(spendTotal)} spent across ${spendDay.length} transactions${currentMood ? `, felt ${currentMood}` : ""}${existingNote ? `. Note: "${existingNote.slice(0,80)}"` : ""}. Help me reflect on this day.`)})">✨ Ask Cornileus to reflect on this day</button>
@@ -15547,6 +15568,8 @@ function renderCalendar() {
         <div style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:var(--purple)"></span>goal</div>
         <div style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:var(--orange)"></span>bill</div>
         <div style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:var(--blue)"></span>note</div>
+        <div style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:#0ea5e9"></span>earnings</div>
+        <div style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:#22d3ee"></span>ex-div</div>
       </div>
     `}
   `;
