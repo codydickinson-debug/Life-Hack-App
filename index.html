@@ -3316,6 +3316,56 @@ function spendCategories() {
   return Array.from(cats);
 }
 
+// Cumulative goal-completion sparkline — shows the user's goal-completion
+// velocity over the last 6 months as an area chart. Plots the count of
+// goals completed by each month-end. Returns "" when fewer than 2 goals
+// have been completed.
+function goalVelocityChartHtml() {
+  const completed = (DB.goals || []).filter(g => g.done && g.completedAt);
+  if (completed.length < 2) return "";
+  const now = new Date();
+  const months = [];
+  for (let i = 5; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    months.push({ d, label: d.toLocaleDateString("en-US", { month: "short" }), endTs: new Date(d.getFullYear(), d.getMonth() + 1, 1).getTime() - 1 });
+  }
+  const cumByMonth = months.map(m => completed.filter(g => g.completedAt <= m.endTs).length);
+  const maxC = Math.max(...cumByMonth, 1);
+  const W = 320, H = 90;
+  const padL = 14, padR = 10, padT = 12, padB = 22;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const xAt = (i) => padL + (cumByMonth.length > 1 ? (i * innerW) / (cumByMonth.length - 1) : innerW / 2);
+  const yAt = (v) => padT + innerH - (v / maxC) * innerH;
+  const linePts = cumByMonth.map((v, i) => xAt(i).toFixed(1) + "," + yAt(v).toFixed(1)).join(" ");
+  const areaPath = "M " + xAt(0).toFixed(1) + "," + (padT + innerH).toFixed(1)
+    + " L " + cumByMonth.map((v, i) => xAt(i).toFixed(1) + "," + yAt(v).toFixed(1)).join(" L ")
+    + " L " + xAt(cumByMonth.length - 1).toFixed(1) + "," + (padT + innerH).toFixed(1) + " Z";
+  const dots = cumByMonth.map((v, i) => `<circle cx="${xAt(i).toFixed(1)}" cy="${yAt(v).toFixed(1)}" r="3" fill="#34C759" stroke="#fff" stroke-width="1.5"/>`).join("");
+  const monthLabels = months.map((m, i) => `<text x="${xAt(i).toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--t3)" font-family="-apple-system,system-ui,sans-serif">${esc(m.label)}</text>`).join("");
+  const last = cumByMonth[cumByMonth.length - 1];
+  const first = cumByMonth[0];
+  const delta = last - first;
+  const total = (DB.goals || []).length;
+  return `
+    <div class="section-h" style="margin-top:14px"><span class="lbl">Goal velocity</span><span class="muted" style="font-size:12px">${last}/${total} done · +${delta} in 6mo</span></div>
+    <div style="background:var(--card);border-radius:var(--r);padding:8px 6px 4px;border:0.5px solid var(--sep);margin-bottom:14px">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:auto;display:block">
+        <defs>
+          <linearGradient id="gv-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#34C759" stop-opacity="0.4"/>
+            <stop offset="100%" stop-color="#34C759" stop-opacity="0.02"/>
+          </linearGradient>
+        </defs>
+        <path d="${areaPath}" fill="url(#gv-grad)"/>
+        <polyline points="${linePts}" fill="none" stroke="#34C759" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        ${dots}
+        ${monthLabels}
+      </svg>
+    </div>
+  `;
+}
+
 // 12-month wins-per-month bar chart. Shows the user's year of wins at a
 // glance so they can spot momentum vs droughts. Returns "" when the user
 // has logged fewer than 2 distinct months of wins.
@@ -8357,6 +8407,7 @@ function renderStats() {
     })()}
 
     ${winsByMonthChartHtml()}
+    ${goalVelocityChartHtml()}
 
     <div class="section-h"><span class="lbl">This month</span></div>
     <div class="list">
