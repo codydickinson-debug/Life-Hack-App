@@ -20679,6 +20679,37 @@ function computeSmartPlays() {
     });
   }
 
+  // Cornileus advisor nudge when the user has a portfolio and hasn't
+  // run a review recently. Skips when there's a fresher review cached.
+  const holdings = (DB.stocks && DB.stocks.holdings) || {};
+  const hasPortfolio = Object.values(holdings).some(h => +h.shares > 0);
+  if (hasPortfolio) {
+    const last = DB.stocks && DB.stocks.lastAdvisorReview;
+    const stale = !last || (last.date !== new Date().toISOString().slice(0, 10));
+    if (stale) {
+      out.push({
+        id: "cornileus-advisor",
+        priority: 70,
+        emoji: "✨",
+        title: "Ask Cornileus to review your finances",
+        body: "Reads your net worth, cashflow, holdings, and goals — gives you a graded plan for this month, quarter, and year.",
+        why: "A full financial picture review surfaces blind spots that day-to-day numbers don't. Cornileus identifies the one biggest lever you could pull right now.",
+        actionLabel: "Open advisor",
+        actionFn: "cornileusAdvisorSheet()",
+      });
+    }
+    out.push({
+      id: "rebalance-check",
+      priority: 55,
+      emoji: "🎯",
+      title: "Check your allocation drift",
+      body: "Targets vs reality across your holdings. Winners grow to dominate without you choosing more risk.",
+      why: "Rebalancing once or twice a year is the disciplined version of 'buy low, sell high' — selling the appreciated and adding to the underweight.",
+      actionLabel: "Set targets",
+      actionFn: "_stocksAllocationTargetsSheet()",
+    });
+  }
+
   return out
     .filter(p => !dismissed[p.id])
     .sort((a,b) => b.priority - a.priority);
