@@ -1225,45 +1225,47 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   filter: drop-shadow(0 2px 3px rgba(0,0,0,0.32));
 }
 
-/* Slide-in animation — Cornileus strides into frame from the left
-   ~0.8s after the sheet opens, like a Victorian gentleman taking
-   the stage. The delay gives the sheet itself time to settle so the
-   character entrance is its own beat. */
-@keyframes corn-pop-in {
-  0%   { transform: translateX(-180%) rotate(-12deg); opacity: 0; }
-  55%  { transform: translateX(14%)   rotate(5deg);   opacity: 1; }
-  78%  { transform: translateX(-4%)   rotate(-1.5deg); }
+/* Big Cornileus strides in from the right edge of the screen ~0.7s
+   after the sheet opens — like a Victorian gentleman entering from
+   stage-right. The delay lets the sheet finish settling so his
+   entrance is its own beat. Used for the large greeting avatar next
+   to the "How are you today?" bubble; the small header avatar is
+   intentionally static so the dramatic motion lives in one place. */
+@keyframes corn-pop-in-right {
+  0%   { transform: translateX(260%)  rotate(10deg);  opacity: 0; }
+  55%  { transform: translateX(-10%)  rotate(-5deg);  opacity: 1; }
+  78%  { transform: translateX(4%)    rotate(1.5deg); }
   100% { transform: translateX(0)     rotate(0deg);   opacity: 1; }
 }
-.corn-pop {
-  animation: corn-pop-in 0.65s cubic-bezier(0.34, 1.56, 0.64, 1) 0.8s both;
+.corn-pop-right {
+  animation: corn-pop-in-right 0.75s cubic-bezier(0.34, 1.56, 0.64, 1) 0.7s both;
   transform-origin: center center;
 }
-/* Greeting speech bubble that fades in just after Cornileus lands. */
+/* Greeting speech bubble fades in just as Cornileus settles next to it. */
 @keyframes corn-greet-in {
   0%   { transform: translateY(6px) scale(0.92); opacity: 0; }
   100% { transform: translateY(0)   scale(1);    opacity: 1; }
 }
 .corn-greeting {
-  animation: corn-greet-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) 1.45s both;
+  animation: corn-greet-in 0.45s cubic-bezier(0.34, 1.56, 0.64, 1) 1.25s both;
 }
 .corn-greeting-bubble {
   position: relative;
   background: var(--bg-elev);
-  padding: 10px 14px;
+  padding: 12px 16px;
   border-radius: 16px;
-  border-top-left-radius: 4px;
+  border-top-right-radius: 4px;
   font-size: 14px;
   line-height: 1.5;
   color: var(--t1);
-  max-width: 84%;
+  max-width: 78%;
 }
 .corn-greeting-bubble::after {
-  content: ""; position: absolute; left: -6px; top: 12px;
+  content: ""; position: absolute; right: -6px; top: 14px;
   width: 0; height: 0;
   border: 6px solid transparent;
-  border-right-color: var(--bg-elev);
-  border-left: 0;
+  border-left-color: var(--bg-elev);
+  border-right: 0;
 }
 /* Animated dots shown next to the avatar while Cornileus is "thinking". */
 .corn-think-dots {
@@ -11383,12 +11385,14 @@ function detectCornMood(text) {
   return "neutral";
 }
 
-// Helper: returns an avatar element of the given pixel size. `popIn=true`
-// triggers the entrance animation. `mood` controls the facial expression;
-// `id` lets callers update the avatar live (used for header avatar in the
-// counselor sheet so we can swap moods without re-rendering the whole UI).
+// Helper: returns an avatar element of the given pixel size. `popIn` can be
+// false (no animation), true (legacy alias for "right"-side entrance), or
+// the string "right" — both trigger the dramatic slide-in-from-the-right-
+// edge entrance used by the greeting bubble. `mood` controls the facial
+// expression; `id` lets callers update the avatar live (used for the
+// header avatar so we can swap moods without re-rendering the whole UI).
 function cornAvatarHtml(size, popIn, mood, id) {
-  const cls = "corn-avatar" + (popIn ? " corn-pop" : "");
+  const cls = "corn-avatar" + (popIn ? " corn-pop-right" : "");
   const idAttr = id ? ` id="${id}"` : "";
   const m = mood || "neutral";
   return `<span class="${cls}" data-corn-mood="${m}"${idAttr} style="width:${size}px;height:${size}px">${cornileusSvg(m)}</span>`;
@@ -12029,13 +12033,16 @@ function counselorRender() {
     stocks:   "How are you today? Ask me about tickers, ETFs, or where to put your next dollar.",
     default:  "How are you today? Ask me anything — money, goals, big decisions. I'll be candid.",
   })[ctx] || "How are you today?";
+  // Empty-thread greeting: speech bubble on the left, BIG Cornileus on the
+  // right sliding in from off-screen-right (his real entrance). The bubble
+  // tail points right toward him so it reads as him speaking.
   const greetingHtml = !thread.length ? `
-    <div class="corn-greeting" style="display:flex;gap:8px;margin-bottom:14px;align-items:flex-start">
-      ${cornAvatarHtml(32, false, "happy")}
+    <div class="corn-greeting" style="display:flex;gap:10px;margin:8px 0 18px;align-items:flex-start;justify-content:flex-end">
       <div class="corn-greeting-bubble">
         ${esc(greetingText)}
         <div style="font-size:11px;color:var(--t4);margin-top:6px">Educational guidance — not licensed financial advice.</div>
       </div>
+      ${cornAvatarHtml(64, true, "happy")}
     </div>
   ` : "";
   const suggested = !thread.length ? `
@@ -12125,7 +12132,7 @@ function counselorRender() {
   const headerMood = (_counselorState && _counselorState.mood) || (busy ? "thinking" : "neutral");
   openSheet(`
     <div data-counselor-sheet style="display:flex;align-items:center;gap:10px;margin-bottom:10px">
-      ${cornAvatarHtml(44, true, headerMood, "corn-header-avatar")}
+      ${cornAvatarHtml(44, false, headerMood, "corn-header-avatar")}
       <div style="flex:1;min-width:0">
         <div style="font-weight:700;font-size:15px">Cornileus</div>
         <div style="font-size:11px;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${subtitleText}</div>
