@@ -14180,9 +14180,37 @@ function cornileusKnowsSheet() {
   const wins = snap.recent_wins || [];
   const moods = snap.moods_last_14_days || [];
 
+  // Relationship stats — make Cornileus feel like a relationship, not a transactional bot
+  const cnsl = DB.counselor || {};
+  const thread = Array.isArray(cnsl.thread) ? cnsl.thread : [];
+  const userTurns = thread.filter(m => m && m.role === "user").length;
+  const firstSeen = cnsl.firstOpenedAt || cnsl.lastOpenedAt || 0;
+  const daysKnown = firstSeen > 0 ? Math.floor((Date.now() - firstSeen) / 86400000) : 0;
+  const pinnedCount = Array.isArray(cnsl.insights) ? cnsl.insights.length : 0;
+
   openSheet(`
-    <h2 style="margin-bottom:4px">🔍 What Cornileus knows about you</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Every conversation, Cornileus sees this snapshot of your data. It never leaves your device unencrypted, and you can hide categories below. Tap any row for context.</p>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+      ${cornAvatarHtml(48, false, "curious")}
+      <div style="flex:1;min-width:0">
+        <h2 style="margin:0">🔍 What Cornileus knows about you</h2>
+        <div class="muted" style="font-size:12.5px;margin-top:2px">Every conversation, Cornileus sees this snapshot of your data.</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:12px;margin-bottom:14px">
+      <div style="background:var(--bg-elev);border-radius:8px;padding:9px 10px;text-align:center">
+        <div style="font-size:18px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">${daysKnown}</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:2px">day${daysKnown===1?'':'s'} together</div>
+      </div>
+      <div style="background:var(--bg-elev);border-radius:8px;padding:9px 10px;text-align:center">
+        <div style="font-size:18px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">${userTurns}</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:2px">message${userTurns===1?'':'s'} sent</div>
+      </div>
+      <div style="background:var(--bg-elev);border-radius:8px;padding:9px 10px;text-align:center">
+        <div style="font-size:18px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">${pinnedCount}</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:2px">insight${pinnedCount===1?'':'s'} pinned</div>
+      </div>
+    </div>
+    <p class="muted" style="font-size:12px;margin-bottom:10px;line-height:1.5">It never leaves your device unencrypted, and you can hide categories below.</p>
 
     ${section("Identity", `
       ${row("Name", esc(snap.user || "—"))}
@@ -14258,9 +14286,14 @@ async function cornileusMorningBriefingSheet() {
   const last = DB.counselor.lastMorningBriefing;
   const fresh = last && last.date === today && last.text;
   openSheet(`
-    <h2 style="margin-bottom:4px">☀️ Morning briefing</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px">${esc(today)} — Cornileus' read on what matters today.</p>
-    <div id="brief-result">${fresh ? _cornileusRenderBriefing(last.text, last.date) : `<div style="text-align:center;padding:30px 14px;color:var(--t3);font-size:13px">🌅 Cornileus is preparing your briefing…</div>`}</div>
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:6px">
+      ${cornAvatarHtml(48, false, "happy")}
+      <div style="flex:1;min-width:0">
+        <h2 style="margin:0">☀️ Morning briefing</h2>
+        <div class="muted" style="font-size:12.5px;margin-top:2px">${esc(today)} — Cornileus' read on what matters today.</div>
+      </div>
+    </div>
+    <div id="brief-result" style="margin-top:10px">${fresh ? _cornileusRenderBriefing(last.text, last.date) : `<div style="text-align:center;padding:30px 14px;color:var(--t3);font-size:13px">🌅 Cornileus is preparing your briefing…</div>`}</div>
     <div class="actions">
       <button class="btn secondary" onclick="DB.counselor.lastMorningBriefing=null;cornileusMorningBriefingSheet()">↻ Regenerate</button>
       <button class="btn" onclick="closeSheet()">Close</button>
@@ -19730,6 +19763,7 @@ function openCounselor(seedPrompt, context) {
   // Same-origin /api/ai/messages handles auth; if not configured, falls back
   // to the user's Cloudflare Worker if one is set. No pre-flight gate here.
   if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false };
+  if (!DB.counselor.firstOpenedAt) DB.counselor.firstOpenedAt = Date.now();
   DB.counselor.lastOpenedAt = Date.now();
   if (!context) {
     const activeTab = document.querySelector(".tab.active");
