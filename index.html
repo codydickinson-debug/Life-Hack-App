@@ -2101,6 +2101,29 @@ const greet = () => {
 const clamp = (n,a,b)=>Math.max(a,Math.min(b,n));
 const esc = (s) => String(s||"").replace(/[&<>"']/g, c=>({ "&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;" })[c]);
 
+// safeUrl — gate any URL that's about to land in an href= attribute or
+// window.open() target. esc() handles HTML-escape, but doesn't reject the
+// `javascript:` scheme — a malicious string like `javascript:alert(1)`
+// has no characters esc() touches, so it'd render as a clickable link
+// and execute on click. We allow only http(s), mailto, and tel; anything
+// else (including data:, file:, blob:, javascript:, vbscript:) collapses
+// to "#" so a click is a harmless no-op.
+function safeUrl(s) {
+  const v = (s == null ? "" : String(s)).trim();
+  if (!v) return "#";
+  // Relative URLs (no scheme) and # fragments are fine.
+  if (v.startsWith("#") || v.startsWith("/") || v.startsWith("./") || v.startsWith("../")) return v;
+  // If there's a colon before the first /, treat the prefix as a scheme.
+  const colonIdx = v.indexOf(":");
+  const slashIdx = v.indexOf("/");
+  if (colonIdx > 0 && (slashIdx < 0 || colonIdx < slashIdx)) {
+    const scheme = v.slice(0, colonIdx).toLowerCase();
+    const allowed = new Set(["http", "https", "mailto", "tel"]);
+    if (!allowed.has(scheme)) return "#";
+  }
+  return v;
+}
+
 // Shared empty-state markup. Same shape appears 16+ times across the app
 // (Today, Calendar, Goals, Money sub-tabs, Stats, Plan sheets, audit
 // flows, etc). Pre-helper: each site hand-rolled the divs and drifted
@@ -9038,7 +9061,7 @@ async function stocksFetchNews() {
       const link = n.link || n.url || "#";
       const src = n.source || n.publisher || "";
       const date = n.published || n.pubDate || n.date || "";
-      return `<a href="${esc(link)}" target="_blank" rel="noopener" style="display:block;padding:10px 0;border-bottom:1px solid var(--line);text-decoration:none;color:var(--t1)">
+      return `<a href="${esc(safeUrl(link))}" target="_blank" rel="noopener noreferrer" style="display:block;padding:10px 0;border-bottom:1px solid var(--line);text-decoration:none;color:var(--t1)">
         <div style="font-size:13px;font-weight:500">${esc(title)}</div>
         <div style="font-size:11px;color:var(--t3);margin-top:2px">${esc(src)}${date ? " · " + esc(String(date).slice(0, 10)) : ""}</div>
       </a>`;
