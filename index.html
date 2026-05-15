@@ -4426,7 +4426,10 @@ function _recordSearch(q) {
   _searchRecordT = setTimeout(async () => {
     if (!DB.settings) DB.settings = {};
     if (!Array.isArray(DB.settings.recentSearches)) DB.settings.recentSearches = [];
-    const cleaned = q.trim();
+    // Run through sanitizeText so any pasted control chars / bidi /
+    // zero-width junk doesn't get persisted to localStorage. Cap to a
+    // reasonable length too — search queries shouldn't be huge.
+    const cleaned = sanitizeText(q, 120);
     if (!cleaned) return;
     const list = DB.settings.recentSearches;
     // Move to top if already present
