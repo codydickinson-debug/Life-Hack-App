@@ -9506,44 +9506,509 @@ function renderStats() {
    the whole Stocks experience native to Ascend. Reskinned dark in
    stockanalyzer/static/style.css so it visually fits. */
 
+// ===== NATIVE STOCKS TAB =====
+// Watchlist of tickers + rich data cards + Cornileus-driven analysis.
+// Persists tickers to DB.stocks.watchlist; quotes are fetched on render
+// from /api/quote/batch and individual /api/quote/<ticker>/full for the
+// detail sheet.
+
 function renderStocks() {
   const page = document.getElementById("page-stocks");
   if (!page) return;
-  // Preserve iframe state across tab switches.
-  if (page.querySelector("#stk-iframe") || page.querySelector("#stk-local-msg")) return;
 
   // file:// fallback (PWA opened locally with no Python backend)
   if (location.protocol === "file:") {
     page.innerHTML = `
-      <div id="stk-local-msg" class="lg-title">Stocks</div>
+      <div class="lg-title">Stocks</div>
       <div class="card" style="background:var(--card);border-radius:var(--r);padding:20px;margin-top:14px;text-align:center">
         <div style="font-size:34px;margin-bottom:6px">📊</div>
         <div style="font-size:15px;font-weight:600;margin-bottom:4px">Backend required</div>
-        <div style="font-size:13px;color:var(--t3);line-height:1.5;margin-bottom:14px">Open the deployed version to use Stocks, Housing, Mortgages, and News.</div>
+        <div style="font-size:13px;color:var(--t3);line-height:1.5;margin-bottom:14px">Open the deployed version to use Stocks, live quotes, and predictions.</div>
         <a href="https://life-hack-app.vercel.app" target="_blank" rel="noopener" class="btn" style="display:inline-block;text-decoration:none;padding:10px 18px">Open life-hack-app.vercel.app ↗</a>
       </div>
     `;
     return;
   }
 
+  // Make sure the watchlist exists
+  if (!DB.stocks) DB.stocks = {};
+  if (!Array.isArray(DB.stocks.watchlist)) {
+    // Seed with a sensible starter set so a brand-new user has something
+    // to look at. They can remove any of these.
+    DB.stocks.watchlist = ["AAPL", "MSFT", "VOO", "GOOGL", "NVDA"];
+    save();
+  }
+  const watchlist = DB.stocks.watchlist;
+
   page.innerHTML = `
-    <div style="margin:-16px -14px 0;display:flex;flex-direction:column;height:calc(100dvh - 130px);background:var(--bg)">
-      <div style="padding:10px 14px;background:var(--bg);border-bottom:1px solid var(--sep);flex-shrink:0">
-        <div class="row tappable" onclick="openCounselor(null, 'stocks')" role="button" tabindex="0"
-          style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:10px 12px;align-items:center;cursor:pointer;margin:0">
-          <div style="width:30px;height:30px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0;color:var(--purple);margin-right:10px">✨</div>
-          <div class="body">
-            <div class="t1" style="margin:0;font-size:13px">Ask Cornileus: stocks, ETFs, money moves</div>
-            <div class="t2" style="font-size:11px;margin-top:1px">Specific ideas with the why — you do the final research</div>
-          </div>
-          <div class="trail chev"></div>
-        </div>
+    <div class="lg-title">Stocks</div>
+    <div class="muted" style="margin:-12px 0 18px;font-size:14px">Live quotes, sparklines, and AI analysis on your watchlist.</div>
+
+    <!-- Ask Cornileus card -->
+    <div class="row tappable" onclick="openCounselor(null, 'stocks')" role="button" tabindex="0"
+      style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--purple);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;align-items:center;cursor:pointer">
+      <div style="width:32px;height:32px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;color:var(--purple);margin-right:10px">✨</div>
+      <div class="body">
+        <div class="t1" style="margin:0;font-size:13.5px">Ask Cornileus: stocks, ETFs, allocation</div>
+        <div class="t2" style="font-size:11.5px;margin-top:1px">Specific picks + the why behind them</div>
       </div>
-      <iframe id="stk-iframe" src="/stockanalyzer?v=7" loading="eager"
-        style="border:0;flex:1;width:100%;-webkit-overflow-scrolling:touch;background:var(--bg)"
-        title="Stock research"></iframe>
+      <div class="trail chev"></div>
+    </div>
+
+    <!-- Quick add + scan -->
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input id="stk-add-input" placeholder="Add ticker — e.g. AAPL" autocapitalize="characters" autocorrect="off"
+        style="flex:1;background:var(--card);padding:11px 14px;border-radius:var(--r3, 10px);font-size:14px;border:0.5px solid var(--sep);color:var(--t1);box-sizing:border-box"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();_stocksAddTicker(this.value);}" />
+      <button class="btn" style="font-size:13px;padding:10px 16px" onclick="_stocksAddTicker(document.getElementById('stk-add-input').value)">Add</button>
+    </div>
+
+    <!-- Watchlist -->
+    <div class="section-h" style="margin-top:14px"><span class="lbl">Watchlist</span><button class="act" onclick="_stocksRefreshAll()" id="stk-refresh-btn">↻ Refresh</button></div>
+    <div id="stk-watchlist" class="list"></div>
+
+    <!-- Market scan + housing/mortgage links -->
+    <div class="section-h" style="margin-top:14px"><span class="lbl">Research tools</span></div>
+    <div class="list">
+      <div class="row tappable" onclick="marketScanSheet()" role="button" tabindex="0">
+        <div class="lead">🔍</div>
+        <div class="body"><div class="t1">Market scan</div><div class="t2">Scan S&amp;P 500, ETFs, REITs — find buys/sells across hundreds of tickers</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="window.open('/stockanalyzer','_blank')" role="button" tabindex="0">
+        <div class="lead">🏠</div>
+        <div class="body"><div class="t1">Housing &amp; mortgages</div><div class="t2">Live mortgage rates, ZIP-level housing data, affordability calc</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="financialNewsSheet()" role="button" tabindex="0">
+        <div class="lead">📰</div>
+        <div class="body"><div class="t1">Financial news</div><div class="t2">Aggregated headlines from major publications</div></div>
+        <div class="trail chev"></div>
+      </div>
     </div>
   `;
+
+  _stocksRenderWatchlist();
+  _stocksRefreshAll();
+}
+
+// Renders the watchlist with cached data (no fetch). Refresh fetches.
+function _stocksRenderWatchlist() {
+  const out = document.getElementById("stk-watchlist");
+  if (!out) return;
+  const watchlist = (DB.stocks && DB.stocks.watchlist) || [];
+  if (!watchlist.length) {
+    out.innerHTML = `<div class="empty" style="padding:24px 14px">
+      <div class="e-emoji">📊</div>
+      <div class="e-title">Watchlist is empty</div>
+      <div class="e-sub">Add a ticker above to start tracking.</div>
+    </div>`;
+    return;
+  }
+  const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  out.innerHTML = watchlist.map(tk => _stocksTickerRowHtml(tk, cache[tk])).join("");
+}
+
+function _stocksTickerRowHtml(tk, q) {
+  if (!q || q.error) {
+    return `
+      <div class="row tappable" onclick="_stocksOpenDetail(${jsAttr(tk)})">
+        <div class="lead" style="font-weight:700;font-size:14px;letter-spacing:0.02em">${esc(tk)}</div>
+        <div class="body">
+          <div class="t1">${esc(tk)}</div>
+          <div class="t2" style="color:var(--t3)">${q && q.error ? esc(q.error.slice(0, 40)) : "Loading…"}</div>
+        </div>
+        <button class="del-x" onclick="event.stopPropagation();_stocksRemoveTicker(${jsAttr(tk)})">×</button>
+      </div>
+    `;
+  }
+  const change = +q.change || 0;
+  const pct = (+q.change_pct || 0) * 100;
+  const color = change > 0 ? "var(--green, #34C759)" : change < 0 ? "var(--red, #FF3B30)" : "var(--t3)";
+  const arrow = change > 0 ? "↗" : change < 0 ? "↘" : "·";
+  // Tiny sparkline SVG inline
+  const spark = (() => {
+    const pts = q.spark_30d || [];
+    if (pts.length < 2) return "";
+    const W = 72, H = 28;
+    const min = Math.min(...pts), max = Math.max(...pts);
+    const range = (max - min) || 1;
+    const coords = pts.map((v, i) => `${((i / (pts.length - 1)) * W).toFixed(1)},${(H - ((v - min) / range) * H).toFixed(1)}`).join(" ");
+    return `<svg viewBox="0 0 ${W} ${H}" width="72" height="28" style="display:block;flex-shrink:0">
+      <polyline points="${coords}" fill="none" stroke="${color}" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+  })();
+  return `
+    <div class="row tappable" onclick="_stocksOpenDetail(${jsAttr(tk)})" style="align-items:center">
+      <div class="lead" style="font-weight:700;font-size:13px;letter-spacing:0.02em;color:var(--t1);width:48px">${esc(tk)}</div>
+      <div class="body">
+        <div class="t1" style="font-variant-numeric:tabular-nums">$${(+q.price).toFixed(2)}</div>
+        <div class="t2" style="color:${color};font-variant-numeric:tabular-nums;font-weight:600">${arrow} ${change >= 0 ? "+" : ""}$${Math.abs(change).toFixed(2)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-shrink:0">
+        ${spark}
+        <button class="del-x" onclick="event.stopPropagation();_stocksRemoveTicker(${jsAttr(tk)})" aria-label="Remove">×</button>
+      </div>
+    </div>
+  `;
+}
+
+async function _stocksRefreshAll() {
+  const watchlist = (DB.stocks && DB.stocks.watchlist) || [];
+  if (!watchlist.length) return;
+  const btn = document.getElementById("stk-refresh-btn");
+  if (btn) { btn.textContent = "Loading…"; btn.disabled = true; }
+  try {
+    const url = "/api/quote/batch?tickers=" + encodeURIComponent(watchlist.join(","));
+    const r = await fetch(url);
+    const data = await r.json();
+    if (data && data.quotes) {
+      DB.stocks.quoteCache = data.quotes;
+      DB.stocks.lastFetched = Date.now();
+      await save();
+      _stocksRenderWatchlist();
+    }
+  } catch (e) {
+    toast("Couldn't fetch quotes: " + (e.message || "network"));
+  } finally {
+    if (btn) { btn.textContent = "↻ Refresh"; btn.disabled = false; }
+  }
+}
+
+async function _stocksAddTicker(raw) {
+  const tk = (raw || "").trim().toUpperCase().replace(/[^A-Z.\-]/g, "");
+  if (!tk) { toast("Enter a ticker"); return; }
+  if (!DB.stocks) DB.stocks = {};
+  if (!Array.isArray(DB.stocks.watchlist)) DB.stocks.watchlist = [];
+  if (DB.stocks.watchlist.includes(tk)) { toast(`${tk} already on watchlist`); return; }
+  DB.stocks.watchlist.push(tk);
+  await save();
+  const inp = document.getElementById("stk-add-input");
+  if (inp) inp.value = "";
+  _stocksRenderWatchlist();
+  // Fetch just the new ticker without spamming the batch endpoint
+  try {
+    const r = await fetch("/api/quote/batch?tickers=" + encodeURIComponent(tk));
+    const data = await r.json();
+    if (data && data.quotes) {
+      if (!DB.stocks.quoteCache) DB.stocks.quoteCache = {};
+      Object.assign(DB.stocks.quoteCache, data.quotes);
+      await save();
+      _stocksRenderWatchlist();
+    }
+  } catch {}
+  toast(`Added ${tk}`);
+}
+
+async function _stocksRemoveTicker(tk) {
+  if (!DB.stocks || !Array.isArray(DB.stocks.watchlist)) return;
+  DB.stocks.watchlist = DB.stocks.watchlist.filter(x => x !== tk);
+  if (DB.stocks.quoteCache) delete DB.stocks.quoteCache[tk];
+  await save();
+  _stocksRenderWatchlist();
+}
+
+// Per-ticker detail sheet — pulls /api/quote/<ticker>/full and renders
+// the rich data card with chart, stats, news, and Cornileus button.
+async function _stocksOpenDetail(tk) {
+  openSheet(`
+    <h2 style="margin-bottom:4px">${esc(tk)}</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Loading rich quote + 1-year chart…</p>
+    <div style="text-align:center;padding:40px 14px;color:var(--t3)">⏳</div>
+  `);
+  try {
+    const r = await fetch("/api/quote/" + encodeURIComponent(tk) + "/full");
+    const q = await r.json();
+    if (!r.ok || q.error) {
+      openSheet(`
+        <h2 style="margin-bottom:4px">${esc(tk)}</h2>
+        <p class="muted" style="font-size:12.5px;margin-bottom:14px">Couldn't load: ${esc(q.error || "unknown error")}</p>
+        <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+      `);
+      return;
+    }
+    _stocksRenderDetail(q);
+  } catch (e) {
+    openSheet(`
+      <h2 style="margin-bottom:4px">${esc(tk)}</h2>
+      <p class="muted" style="font-size:12.5px;margin-bottom:14px">Network error: ${esc(e.message)}</p>
+      <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+    `);
+  }
+}
+
+function _stocksRenderDetail(q) {
+  const change = +q.change || 0;
+  const pct = (+q.change_pct || 0) * 100;
+  const color = change >= 0 ? "var(--green, #34C759)" : "var(--red, #FF3B30)";
+  const arrow = change >= 0 ? "↗" : "↘";
+  // Big 1-year chart
+  const chart = (() => {
+    const closes = q.history_1y_closes || [];
+    if (closes.length < 2) return "";
+    const W = 320, H = 110;
+    const min = Math.min(...closes), max = Math.max(...closes);
+    const range = (max - min) || 1;
+    const pts = closes.map((v, i) => `${((i / (closes.length - 1)) * W).toFixed(1)},${(H - ((v - min) / range) * H).toFixed(1)}`).join(" ");
+    const areaPath = `M 0,${H} L ${pts.split(' ').join(' L ')} L ${W},${H} Z`;
+    const gradId = "stk-grad-" + Math.floor(Math.random() * 1e9).toString(36);
+    return `<svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:auto;display:block">
+      <defs><linearGradient id="${gradId}" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${color}" stop-opacity="0.35"/>
+        <stop offset="100%" stop-color="${color}" stop-opacity="0.02"/>
+      </linearGradient></defs>
+      <path d="${areaPath}" fill="url(#${gradId})"/>
+      <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </svg>`;
+  })();
+  // 52-week range visualization
+  const rangeBar = (() => {
+    const pos = Math.max(0, Math.min(1, +q.range_pos || 0)) * 100;
+    return `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:12px 14px;margin-bottom:8px">
+        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-bottom:6px"><span>52w low $${(+q.lo52).toFixed(2)}</span><span>52w high $${(+q.hi52).toFixed(2)}</span></div>
+        <div style="position:relative;height:6px;background:var(--bg-elev);border-radius:3px;overflow:visible">
+          <div style="position:absolute;left:${pos}%;top:-3px;width:2px;height:12px;background:${color};border-radius:1px;transform:translateX(-50%)"></div>
+        </div>
+        <div style="text-align:center;font-size:11.5px;color:var(--t2);margin-top:6px">Currently at <b style="color:var(--t1);font-variant-numeric:tabular-nums">${pos.toFixed(0)}%</b> of 52-week range</div>
+      </div>
+    `;
+  })();
+  // Stats grid
+  const fmtNum = (n, suffix = "") => {
+    if (n == null) return "—";
+    if (n >= 1e12) return (n / 1e12).toFixed(2) + "T" + suffix;
+    if (n >= 1e9)  return (n / 1e9).toFixed(2) + "B" + suffix;
+    if (n >= 1e6)  return (n / 1e6).toFixed(2) + "M" + suffix;
+    if (n >= 1e3)  return (n / 1e3).toFixed(1) + "K" + suffix;
+    return n.toFixed(2) + suffix;
+  };
+  const stats = [
+    { label: "Market cap",     value: fmtNum(q.market_cap) },
+    { label: "Trailing P/E",   value: q.trailing_pe != null ? (+q.trailing_pe).toFixed(2) : "—" },
+    { label: "Forward P/E",    value: q.forward_pe != null ? (+q.forward_pe).toFixed(2) : "—" },
+    { label: "Beta",           value: q.beta != null ? (+q.beta).toFixed(2) : "—" },
+    { label: "Dividend",       value: q.dividend_yield != null ? (+q.dividend_yield * 100).toFixed(2) + "%" : "—" },
+    { label: "Avg volume",     value: fmtNum(q.average_volume) },
+    { label: "YTD return",     value: q.ytd_return != null ? ((+q.ytd_return * 100).toFixed(2) + "%") : "—" },
+    { label: "30-day return",  value: q.return_30d != null ? ((+q.return_30d * 100).toFixed(2) + "%") : "—" },
+  ];
+  const statsGrid = `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+      ${stats.map(s => `
+        <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:8px 12px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.05em;font-weight:600;margin-bottom:2px">${esc(s.label)}</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${esc(s.value)}</div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+  openSheet(`
+    <div data-stocks-detail>
+      <div style="display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:4px">
+        <h2 style="margin:0">${esc(q.ticker)}</h2>
+        <span style="font-size:13.5px;color:var(--t3)">${esc(q.name || q.ticker)}</span>
+      </div>
+      <p class="muted" style="font-size:12px;margin-bottom:8px">${q.sector ? esc(q.sector) : ""}${q.sector && q.industry ? " · " : ""}${q.industry ? esc(q.industry) : ""}${(!q.sector && !q.industry) ? "Equity" : ""}</p>
+      <div style="display:flex;align-items:baseline;gap:10px;margin:8px 0 14px">
+        <div style="font-size:38px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-0.02em">$${(+q.price).toFixed(2)}</div>
+        <div style="font-size:14px;font-weight:700;color:${color};font-variant-numeric:tabular-nums">${arrow} ${change >= 0 ? "+" : ""}$${Math.abs(change).toFixed(2)} (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%)</div>
+      </div>
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:12px;margin-bottom:10px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">1-year price</div>
+        ${chart}
+      </div>
+      ${rangeBar}
+      ${statsGrid}
+      <button onclick="_stocksRunAnalyze(${jsAttr(q.ticker)})" id="stk-analyze-btn" class="btn" style="width:100%;margin-bottom:6px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none">✨ Run full analysis (buy/hold/sell)</button>
+      <button onclick="openCounselor(${jsAttr(`What's your read on ${q.ticker}? Currently $${(+q.price).toFixed(2)}, ${(pct).toFixed(1)}% today${q.ytd_return != null ? `, ${((+q.ytd_return) * 100).toFixed(1)}% YTD` : ''}, P/E ${q.trailing_pe ? (+q.trailing_pe).toFixed(1) : 'n/a'}. Should I add it to my portfolio given my situation? Give me the why, not just a verdict.`)})" class="btn secondary" style="width:100%;margin-bottom:14px;font-size:13px">✨ Ask Cornileus about ${esc(q.ticker)}</button>
+      <div id="stk-analyze-result"></div>
+      <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+    </div>
+  `);
+}
+
+// Pulls the full pillar analysis from /api/analyze and renders the
+// decision (buy/hold/sell) + reasoning inline in the detail sheet.
+async function _stocksRunAnalyze(tk) {
+  const btn = document.getElementById("stk-analyze-btn");
+  const out = document.getElementById("stk-analyze-result");
+  if (btn) { btn.textContent = "Analyzing…"; btn.disabled = true; }
+  if (out) out.innerHTML = `<div style="background:var(--card);border-radius:var(--r);padding:18px;margin-bottom:10px;text-align:center;color:var(--t3);font-size:13px">Running 5-year pillar analysis (~10s)…</div>`;
+  try {
+    const r = await fetch("/api/analyze", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tickers: tk, period: "5y", account: 10000 }),
+    });
+    const data = await r.json();
+    if (!r.ok) throw new Error(data.error || "HTTP " + r.status);
+    const result = (data.results || [])[0];
+    if (!result || result.error) {
+      out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;margin-bottom:10px;color:var(--red);font-size:13px">${esc(result?.error || "No data")}</div>`;
+    } else {
+      out.innerHTML = _stocksFormatDecision(result.decision);
+    }
+  } catch (e) {
+    out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;margin-bottom:10px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  } finally {
+    if (btn) { btn.textContent = "✨ Run full analysis (buy/hold/sell)"; btn.disabled = false; }
+  }
+}
+
+function _stocksFormatDecision(d) {
+  if (!d) return "";
+  const verdictColor = (d.verdict || "").toLowerCase() === "buy" ? "var(--green,#34C759)" :
+                       (d.verdict || "").toLowerCase() === "sell" ? "var(--red,#FF3B30)" :
+                       "var(--orange,#FF9500)";
+  const conf = d.confidence != null ? Math.round(+d.confidence * 100) : null;
+  const pillars = Array.isArray(d.pillars) ? d.pillars : [];
+  return `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${verdictColor};border-radius:var(--r);padding:16px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+        <div style="font-size:32px;font-weight:800;color:${verdictColor};text-transform:uppercase;letter-spacing:0.02em">${esc((d.verdict||"hold").toString())}</div>
+        ${conf != null ? `<div style="background:var(--bg-elev);border:0.5px solid var(--sep);border-radius:999px;padding:4px 12px;font-size:11.5px;font-weight:600;color:var(--t2)">${conf}% confidence</div>` : ""}
+      </div>
+      ${d.thesis ? `<div style="font-size:13px;color:var(--t2);line-height:1.5;margin-bottom:12px">${esc(d.thesis)}</div>` : ""}
+      ${pillars.length ? `
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Why</div>
+        <div style="display:flex;flex-direction:column;gap:6px">
+          ${pillars.map(p => `
+            <div style="display:flex;align-items:flex-start;gap:8px;font-size:12.5px;color:var(--t2);line-height:1.4">
+              <div style="flex-shrink:0;width:14px;text-align:center;color:${(p.score >= 0.6 ? 'var(--green)' : p.score <= 0.4 ? 'var(--red)' : 'var(--orange)')}">${p.score >= 0.6 ? '✓' : p.score <= 0.4 ? '✗' : '~'}</div>
+              <div style="flex:1"><b style="color:var(--t1)">${esc(p.name || "Pillar")}</b> ${p.note ? `· ${esc(p.note)}` : ''}</div>
+            </div>
+          `).join("")}
+        </div>
+      ` : ""}
+    </div>
+  `;
+}
+
+// Market scan sheet — uses the existing SSE /api/scan endpoint to scan
+// hundreds of tickers across a universe and surface the best buys/sells.
+function marketScanSheet() {
+  const universes = [
+    { id: "stocks",  label: "S&P 500" },
+    { id: "etfs",    label: "Major ETFs" },
+    { id: "reits",   label: "REITs" },
+    { id: "crypto",  label: "Crypto" },
+  ];
+  openSheet(`
+    <h2 style="margin-bottom:4px">Market scan</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Scan hundreds of tickers and surface buy/sell verdicts with the why.</p>
+    <label>Universe</label>
+    <select id="scan-universe" style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px">
+      ${universes.map(u => `<option value="${esc(u.id)}">${esc(u.label)}</option>`).join("")}
+    </select>
+    <button id="scan-go" class="btn" style="width:100%;margin-top:12px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="_stocksRunMarketScan()">✨ Scan now</button>
+    <div id="scan-progress" style="font-size:12px;color:var(--t3);margin-top:14px;text-align:center;display:none"></div>
+    <div id="scan-results" style="margin-top:14px"></div>
+    <div class="actions"><button class="btn secondary" onclick="if(window._scanStop)window._scanStop();closeSheet()">Close</button></div>
+  `);
+}
+
+async function _stocksRunMarketScan() {
+  const sel = document.getElementById("scan-universe");
+  const goBtn = document.getElementById("scan-go");
+  const prog = document.getElementById("scan-progress");
+  const out = document.getElementById("scan-results");
+  if (!sel || !goBtn || !out) return;
+  const universe = sel.value || "stocks";
+  goBtn.disabled = true; goBtn.textContent = "Scanning…";
+  prog.style.display = "block";
+  out.innerHTML = "";
+  const results = [];
+  try {
+    const es = new EventSource("/api/scan?universe=" + encodeURIComponent(universe) + "&period=5y&account=10000");
+    window._scanStop = () => { try { es.close(); } catch {} };
+    es.addEventListener("start", e => { try { const d = JSON.parse(e.data); prog.textContent = `Starting scan of ${d.total} tickers…`; } catch {} });
+    es.addEventListener("progress", e => { try { const d = JSON.parse(e.data); prog.textContent = `${d.completed} / ${d.total}`; } catch {} });
+    es.addEventListener("result", e => {
+      try {
+        const r = JSON.parse(e.data);
+        if (r.error || !r.decision) return;
+        results.push(r);
+        // Live-update top buy/sell lists
+        _stocksRenderScanResults(out, results);
+      } catch {}
+    });
+    es.addEventListener("done", () => {
+      try { es.close(); } catch {}
+      goBtn.disabled = false; goBtn.textContent = "✨ Scan again";
+      prog.textContent = `Done · ${results.length} tickers analyzed`;
+    });
+    es.onerror = () => {
+      try { es.close(); } catch {}
+      goBtn.disabled = false; goBtn.textContent = "✨ Scan now";
+      prog.textContent = "Scan ended (connection closed)";
+    };
+  } catch (e) {
+    goBtn.disabled = false; goBtn.textContent = "✨ Scan now";
+    out.innerHTML = `<div style="color:var(--red);font-size:13px;padding:14px">${esc(e.message)}</div>`;
+  }
+}
+
+function _stocksRenderScanResults(out, results) {
+  const byVerdict = { buy: [], hold: [], sell: [] };
+  for (const r of results) {
+    const v = ((r.decision || {}).verdict || "hold").toLowerCase();
+    if (byVerdict[v]) byVerdict[v].push(r);
+  }
+  // Sort each by confidence desc
+  for (const k of Object.keys(byVerdict)) {
+    byVerdict[k].sort((a, b) => ((b.decision || {}).confidence || 0) - ((a.decision || {}).confidence || 0));
+  }
+  const section = (title, color, list) => `
+    <div style="margin-bottom:14px">
+      <div style="font-size:10.5px;color:${color};text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">${title} (${list.length})</div>
+      ${list.slice(0, 10).map(r => {
+        const conf = Math.round(((r.decision || {}).confidence || 0) * 100);
+        return `
+          <div onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(r.ticker)}),120)" role="button" tabindex="0" style="display:flex;justify-content:space-between;align-items:center;padding:8px 12px;background:var(--card);border:0.5px solid var(--sep);border-radius:10px;margin-bottom:4px;cursor:pointer">
+            <div style="font-weight:700;font-size:13px">${esc(r.ticker)}</div>
+            <div style="font-size:11.5px;color:${color};font-weight:600">${conf}%</div>
+          </div>
+        `;
+      }).join("") || `<div style="color:var(--t3);font-size:12px;padding:8px">None yet</div>`}
+    </div>
+  `;
+  out.innerHTML =
+    section("BUY", "var(--green, #34C759)", byVerdict.buy) +
+    section("SELL", "var(--red, #FF3B30)", byVerdict.sell) +
+    section("HOLD", "var(--orange, #FF9500)", byVerdict.hold);
+}
+
+// Financial news sheet — pulls from /api/news with optional source filter
+async function financialNewsSheet() {
+  openSheet(`
+    <h2 style="margin-bottom:4px">Financial news</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Aggregated from major publications. Cached 5 min.</p>
+    <div id="news-list" style="text-align:center;color:var(--t3);padding:30px">Loading…</div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  try {
+    const r = await fetch("/api/news?limit=30");
+    const data = await r.json();
+    const items = (data && (data.items || data.articles || data.news || [])) || [];
+    const list = Array.isArray(items) ? items : (Array.isArray(data) ? data : []);
+    const out = document.getElementById("news-list");
+    if (!out) return;
+    if (!list.length) {
+      out.innerHTML = `<div style="text-align:center;color:var(--t3);padding:30px">No news available</div>`;
+      return;
+    }
+    out.innerHTML = list.slice(0, 30).map(item => `
+      <a href="${esc(item.url || item.link || '#')}" target="_blank" rel="noopener" style="display:block;background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:12px 14px;margin-bottom:8px;text-decoration:none;color:inherit">
+        <div style="font-size:10.5px;color:var(--purple,#8957d9);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">${esc(item.source || item.publisher || 'News')}</div>
+        <div style="font-size:13.5px;font-weight:600;color:var(--t1);line-height:1.35;margin-bottom:4px">${esc(item.title || item.headline || '')}</div>
+        ${item.summary ? `<div style="font-size:11.5px;color:var(--t3);line-height:1.4">${esc(item.summary.slice(0, 140))}${item.summary.length > 140 ? '…' : ''}</div>` : ''}
+      </a>
+    `).join("");
+  } catch (e) {
+    const out = document.getElementById("news-list");
+    if (out) out.innerHTML = `<div style="color:var(--red);font-size:13px;padding:14px;text-align:center">${esc(e.message)}</div>`;
+  }
 }
 
 // Removed: native sub-tab helpers (_stocksTickersBody, _stocksHousingBody,

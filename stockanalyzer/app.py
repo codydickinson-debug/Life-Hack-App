@@ -193,6 +193,129 @@ def api_quote(ticker):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/quote/<ticker>/full")
+def api_quote_full(ticker):
+    """Rich quote — current price + 30-day sparkline + 52-week range +
+    volume + market cap + P/E. Designed for a native stocks watchlist UI.
+    Cached by yfinance so repeat calls within a few minutes are fast.
+    """
+    import yfinance as yf
+    try:
+        t = yf.Ticker(ticker)
+        # 1-year history (used for 52-week range + 30-day sparkline + 1y chart)
+        df = t.history(period="1y", auto_adjust=True)
+        if df is None or df.empty or len(df) < 2:
+            return jsonify({"error": "no data"}), 404
+
+        closes = [float(x) for x in df["Close"].tolist()]
+        dates = [d.strftime("%Y-%m-%d") for d in df.index.tolist()]
+        last = closes[-1]
+        prev = closes[-2]
+        change = last - prev
+        change_pct = (change / prev) if prev > 0 else 0.0
+
+        # 52-week high/low (anywhere in the 1y window)
+        hi52 = max(closes)
+        lo52 = min(closes)
+        # Where is the current price between the two? (0 = at low, 1 = at high)
+        rng_pos = (last - lo52) / (hi52 - lo52) if hi52 > lo52 else 0.5
+
+        # 30-day sparkline data
+        spark = closes[-30:] if len(closes) >= 30 else closes
+        # Daily-change list for the recent month (used by clients for volatility)
+        # YTD-style return: last vs first close
+        ytd_ret = ((last - closes[0]) / closes[0]) if closes[0] > 0 else 0.0
+        # 30-day return
+        ret30 = ((last - closes[-30]) / closes[-30]) if len(closes) >= 30 and closes[-30] > 0 else None
+
+        # Extra info from yfinance .info (may be slow / partial — guard each field)
+        info = {}
+        try:
+            info = t.info or {}
+        except Exception:
+            info = {}
+        def _f(k):
+            v = info.get(k)
+            try:
+                return float(v) if v is not None else None
+            except (TypeError, ValueError):
+                return None
+        market_cap = _f("marketCap")
+        trailing_pe = _f("trailingPE")
+        forward_pe = _f("forwardPE")
+        dividend_yield = _f("dividendYield")
+        avg_vol = _f("averageVolume")
+        last_vol = _f("regularMarketVolume") or _f("volume")
+        sector = info.get("sector") if isinstance(info.get("sector"), str) else None
+        industry = info.get("industry") if isinstance(info.get("industry"), str) else None
+        long_name = info.get("longName") or info.get("shortName") if isinstance(info.get("longName") or info.get("shortName"), str) else None
+        beta = _f("beta")
+
+        return jsonify({
+            "ticker": ticker.upper(),
+            "name": long_name,
+            "sector": sector,
+            "industry": industry,
+            "price": last,
+            "prev_close": prev,
+            "change": change,
+            "change_pct": change_pct,
+            "as_of": df.index[-1].strftime("%Y-%m-%d"),
+            "hi52": hi52,
+            "lo52": lo52,
+            "range_pos": rng_pos,
+            "ytd_return": ytd_ret,
+            "return_30d": ret30,
+            "market_cap": market_cap,
+            "trailing_pe": trailing_pe,
+            "forward_pe": forward_pe,
+            "dividend_yield": dividend_yield,
+            "average_volume": avg_vol,
+            "last_volume": last_vol,
+            "beta": beta,
+            "spark_30d": spark,
+            "history_1y_dates": dates[-252:] if len(dates) > 252 else dates,
+            "history_1y_closes": closes[-252:] if len(closes) > 252 else closes,
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/quote/batch")
+def api_quote_batch():
+    """Batch quote endpoint — returns lightweight quotes for multiple
+    tickers in one round-trip. Used by the watchlist to refresh all rows.
+    Usage: GET /api/quote/batch?tickers=AAPL,GOOG,MSFT
+    """
+    import yfinance as yf
+    tickers_arg = (request.args.get("tickers") or "").strip()
+    if not tickers_arg:
+        return jsonify({"error": "tickers query param required"}), 400
+    tickers = [t.strip().upper() for t in tickers_arg.split(",") if t.strip()][:25]
+    out = {}
+    for tk in tickers:
+        try:
+            t = yf.Ticker(tk)
+            df = t.history(period="30d", auto_adjust=True)
+            if df is None or df.empty or len(df) < 2:
+                out[tk] = {"error": "no data"}
+                continue
+            closes = [float(x) for x in df["Close"].tolist()]
+            last = closes[-1]
+            prev = closes[-2]
+            change = last - prev
+            change_pct = (change / prev) if prev > 0 else 0.0
+            out[tk] = {
+                "price": last,
+                "change": change,
+                "change_pct": change_pct,
+                "spark_30d": closes[-30:] if len(closes) >= 30 else closes,
+            }
+        except Exception as e:
+            out[tk] = {"error": str(e)}
+    return jsonify({"quotes": out})
+
+
 @app.route("/api/housing/status")
 def api_housing_status():
     return jsonify(housing.status())
