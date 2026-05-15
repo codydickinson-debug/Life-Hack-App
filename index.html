@@ -4773,7 +4773,7 @@ function exploreAscendSheet() {
     ]},
     { group: "Cornileus", items: [
       { emoji: "✨", title: "Open Cornileus",      desc: "AI counselor that knows your numbers",       onclick: "closeSheet();setTimeout(()=>openCounselor(),100)" },
-      { emoji: "📌", title: "Saved insights",      desc: "Pinned replies that survive auto-clear",     onclick: "closeSheet();setTimeout(()=>cylanInsightsSheet(),100)" },
+      { emoji: "📌", title: "Saved insights",      desc: "Pinned replies that survive auto-clear",     onclick: "closeSheet();setTimeout(()=>cornileusInsightsSheet(),100)" },
     ]},
     { group: "Stats + history", items: [
       { emoji: "🏆", title: "Achievements",        desc: "22 milestones across the app",               onclick: "closeSheet();setTimeout(()=>achievementsSheet(),100)" },
@@ -11165,7 +11165,7 @@ function renderSettings() {
         <div class="body"><div class="t1">Run monthly insight</div><div class="t2">Quick monthly review on Haiku 4.5 (cheaper — counts against daily cap)</div></div>
         <div class="trail chev"></div>
       </div>
-      <div class="row tappable" onclick="cylanInsightsSheet()">
+      <div class="row tappable" onclick="cornileusInsightsSheet()">
         <div class="lead">📌</div>
         <div class="body"><div class="t1">Saved Cornileus insights</div><div class="t2">${((DB.counselor && DB.counselor.insights) || []).length} pinned${((DB.counselor && DB.counselor.insights) || []).length ? ' · stays even after chat auto-clears' : ''}</div></div>
         <div class="trail chev"></div>
@@ -13463,7 +13463,7 @@ function _isInsightSaved(text) {
 
 // Browse + manage saved insights. Standalone sheet so the user can reread
 // the gems Cornileus has said without re-running an AI call.
-function cylanInsightsSheet() {
+function cornileusInsightsSheet() {
   const list = (DB.counselor && DB.counselor.insights) || [];
   const rows = list.length ? list.map(i => `
     <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r2,14px);padding:14px;margin-bottom:10px;position:relative">
@@ -13510,7 +13510,7 @@ async function _removeInsight(id) {
   if (!DB.counselor || !Array.isArray(DB.counselor.insights)) return;
   DB.counselor.insights = DB.counselor.insights.filter(i => i.id !== id);
   await save();
-  cylanInsightsSheet();
+  cornileusInsightsSheet();
 }
 
 // Small relative-time helper (used in insights list)
@@ -23115,7 +23115,7 @@ function init() {
     openCounselor, toggleCounselorLauncher, counselorRender, counselorSend, counselorClear, buildCounselorSnapshot,
     CORNILEUS_SVG, cornAvatarHtml, cornileusSvg, setCornileusMood, detectCornMood,
     counselorToggleKeep, counselorNewChat,
-    saveCornileusInsight, cylanInsightsSheet, _copyInsightText, _removeInsight,
+    saveCornileusInsight, cornileusInsightsSheet, _copyInsightText, _removeInsight,
     _parseAndRunActions, _runCornileusAction, _renderActionChips,
     counselorVoiceToggle, negotiateBillWithAI, negotiateBillWithAISeed,
     _whatIfState, whatIfCardHtml, _whatIfUpdate, renderPlanningWhatIfOnly,

@@ -1,6 +1,6 @@
 # Ascend
 
-A focused habit, goal, and money tracker. Single-file PWA — installs on your iPhone home screen and works offline. Optional bank sync (Plaid), live stocks research, and an in-app financial counselor (Cylan).
+A focused habit, goal, and money tracker. Single-file PWA — installs on your iPhone home screen and works offline. Optional bank sync (Plaid), live stocks research, and an in-app financial counselor (Cornileus).
 
 ## What's in this folder
 
@@ -55,7 +55,7 @@ Seven bottom tabs:
 | **▦ Stats** | Your Journey lifetime totals, 12-week heatmap, streak insights, year review |
 
 Plus:
-- **✨ Cylan FAB** (bottom-right) — your in-app financial counselor. CFP-level planning, knows your numbers, available from any tab.
+- **✨ Cornileus FAB** (bottom-right) — your in-app financial counselor. CFP-level planning, knows your numbers, available from any tab.
 - **➕ Quick-add FAB** — log spend/wins/habits from anywhere
 - **⚙ Settings** (top-right gear) — name, theme, accent color, encryption, customize tabs/sections, take the tour, export/import
 - **👁 Privacy mode** (top-right eye) — blurs every dollar amount across the app for screen-sharing
@@ -72,7 +72,7 @@ Everything lives in `localStorage` on your device (`ascend_v2` key). Nothing lea
 
 **Bank sync (Plaid)**: optional. Plaid access tokens are AES-GCM encrypted server-side in Cloudflare KV before storage. Read-only — Ascend never moves money.
 
-**AI (Cylan)**: routed through a backend proxy (Vercel Python or Cloudflare Worker). The Anthropic API key never touches the browser. Per-user daily call cap enforced server-side.
+**AI (Cornileus)**: routed through a backend proxy (Vercel Python or Cloudflare Worker). The Anthropic API key never touches the browser. Per-user daily call cap enforced server-side.
 
 Use **Settings → Export data** to back up regularly. **Reset everything** wipes all local data.
 
