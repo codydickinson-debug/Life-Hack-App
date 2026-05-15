@@ -3546,10 +3546,13 @@ function deleteSpend(id) {
   save(); render();
 }
 function monthSpend() {
+  // Sum positive amounts only — by the app's convention (CLAUDE.md) positive
+  // = outflow, negative = income. The "This month spent" label everywhere
+  // implies outflows; summing both would return a confusing "$-1,641" net.
   const now = new Date(), y = now.getFullYear(), m = now.getMonth();
   return DB.spend.filter(t => {
     const d = new Date(t.date+"T00:00:00");
-    return d.getFullYear() === y && d.getMonth() === m;
+    return d.getFullYear() === y && d.getMonth() === m && (+t.amount || 0) > 0;
   }).reduce((a,t)=>a+(+t.amount||0), 0);
 }
 function spendCategories() {
@@ -4964,23 +4967,27 @@ function renderToday() {
           ? "var(--orange,#FF9500)"
           : "var(--t1)";
       const todaySpent = (DB.spend || []).filter(t => t.date === tk0 && (+t.amount || 0) > 0).reduce((a,t) => a + (+t.amount || 0), 0);
+      // Unified pictograph set — all geometric/symbolic, not mixed emoji
+      // styles. Same weight + scale across cells so the row reads as one
+      // visual rhythm. Labels are all single-word + "today/week" qualifier
+      // to avoid the same word repeating twice in a row.
       const cells = [];
       if (dayHabits.length) cells.push({
-        icon: "✓", value: `${dayDone}/${dayHabits.length}`, label: "today",
-        color: dayHabitColor, onclick: "document.querySelectorAll('.row').forEach(()=>{}); window.scrollTo({top: document.querySelector('[class*=\"section-h\"]')?.offsetTop || 200, behavior: 'smooth'});"
+        icon: "✓", value: `${dayDone}/${dayHabits.length}`, label: "habits",
+        color: dayHabitColor, onclick: "window.scrollTo({top:0,behavior:'smooth'})"
       });
       if (weekSummary.habitPossible) cells.push({
-        icon: "📊", value: `${Math.round(100 * weekSummary.habitDones / weekSummary.habitPossible)}%`, label: "this week",
+        icon: "▲", value: `${Math.round(100 * weekSummary.habitDones / weekSummary.habitPossible)}%`, label: "this week",
         color: "var(--t1)", onclick: "showTab('stats')"
       });
       cells.push({
-        icon: "⭐", value: String(weekSummary.winsW), label: `win${weekSummary.winsW === 1 ? '' : 's'} wk`,
+        icon: "★", value: String(weekSummary.winsW), label: `win${weekSummary.winsW === 1 ? '' : 's'} this wk`,
         color: weekSummary.winsW > 0 ? "var(--orange,#FF9500)" : "var(--t1)",
         onclick: "allWinsSheet()"
       });
       if (todaySpent > 0 || weekSummary.spendW > 0) cells.push({
-        icon: "💸", value: fmt$0(Math.round(todaySpent || weekSummary.spendW)),
-        label: todaySpent > 0 ? "today" : "wk",
+        icon: "$", value: fmt$0(Math.round(todaySpent || weekSummary.spendW)),
+        label: todaySpent > 0 ? "spent today" : "spent this wk",
         color: "var(--t1)", priv: true,
         onclick: "showTab('money')"
       });
@@ -4995,7 +5002,7 @@ function renderToday() {
           const delta = (nwHist[nwHist.length - 1].total || 0) - (past[past.length - 1].total || 0);
           if (Math.abs(delta) >= 50) {
             cells.push({
-              icon: delta >= 0 ? "📈" : "📉",
+              icon: delta >= 0 ? "↗" : "↘",
               value: `${delta >= 0 ? '+' : ''}${fmt$0(Math.round(delta))}`,
               label: "net 30d",
               color: delta >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)",
@@ -5013,10 +5020,10 @@ function renderToday() {
       return `
         <div style="display:grid;grid-template-columns:repeat(${top.length},1fr);gap:6px;margin:8px 0 16px">
           ${top.map(c => `
-            <button onclick="${c.onclick}" style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r2,12px);padding:8px 6px;text-align:center;cursor:pointer;color:inherit;font:inherit">
-              <div style="font-size:12px;margin-bottom:1px">${c.icon}</div>
-              <div style="font-size:15px;font-weight:700;color:${c.color};font-variant-numeric:tabular-nums;line-height:1"${c.priv ? ' data-priv="amount"' : ''}>${c.value}</div>
-              <div style="font-size:9.5px;color:var(--t3);margin-top:3px;text-transform:uppercase;letter-spacing:0.04em">${c.label}</div>
+            <button onclick="${c.onclick}" style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r2,12px);padding:10px 6px 9px;text-align:center;cursor:pointer;color:inherit;font:inherit;transition:transform .12s ease,border-color .12s ease">
+              <div style="font-size:11px;color:var(--t3);margin-bottom:2px;font-weight:600">${c.icon}</div>
+              <div style="font-size:16px;font-weight:700;color:${c.color};font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-0.01em"${c.priv ? ' data-priv="amount"' : ''}>${c.value}</div>
+              <div style="font-size:9.5px;color:var(--t3);margin-top:4px;text-transform:uppercase;letter-spacing:0.04em;font-weight:600">${c.label}</div>
             </button>
           `).join("")}
         </div>
