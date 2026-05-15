@@ -22635,7 +22635,7 @@ function importData() {
           const key = await deriveKey(String(pass), obj.salt, obj.v);
           obj = await decryptObject({ iv: obj.iv, ct: obj.ct }, key);
         } catch {
-          alert("Couldn't decrypt — wrong passphrase or corrupt file.");
+          toast("Couldn't decrypt — wrong passphrase or corrupt file");
           return;
         }
         if (!obj || typeof obj !== "object" || Array.isArray(obj)) throw new Error("bad file");
@@ -22668,9 +22668,9 @@ function importData() {
       DB = merged;
       await save(); applyTheme(); render(); toast("Imported");
     } catch (e) {
-      // Don't leak parse error specifics into the alert — the message can
+      // Don't leak parse error specifics into the toast — the message can
       // include excerpts of the source file. A generic message is enough.
-      alert("Could not import that file.");
+      toast("Could not import that file");
     }
   };
   inp.click();
@@ -26570,7 +26570,7 @@ function showLockScreen() {
       localStorage.clear();
       location.reload();
     } else if (typed != null) {
-      alert("Cancelled — your data is unchanged. (You must type DELETE exactly.)");
+      toast("Cancelled — type DELETE exactly to confirm reset");
     }
   });
 
