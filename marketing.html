@@ -343,15 +343,37 @@
 
 <section class="hero">
   <div class="container">
-    <div class="pill">A real personal-finance app — yours, on your device.</div>
+    <div class="pill">A credit score for the rest of your life.</div>
     <h1>
-      Track your <span class="gradient">habits, money, and life</span><br/>
-      in one quiet app.
+      Your <span class="gradient">Wealth Score</span>,<br/>
+      day by day.
     </h1>
-    <p>Ascend is a habits + finance tracker with Cornileus, an AI counselor that actually knows your numbers. No accounts. No tracking. Everything lives on your device.</p>
+    <p>Ascend gives you one legible 0-100 number for your overall financial trajectory — and every habit, every dollar, every plan in the app is in service of moving it up. Yours, on your device. No accounts. No tracking.</p>
     <div class="hero-ctas">
       <a class="btn btn-primary" href="/">Open app →</a>
       <a class="btn btn-secondary" href="#features">See what it does</a>
+    </div>
+    <!-- Hero gauge preview — a static-but-accurate Wealth Score visual -->
+    <div style="margin:48px auto 0;max-width:420px;background:#16161c;border:0.5px solid #26262e;border-radius:18px;padding:24px;display:flex;align-items:center;gap:18px;text-align:left">
+      <svg viewBox="0 0 120 120" width="116" height="116" style="flex-shrink:0">
+        <defs>
+          <linearGradient id="m-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#34C759" stop-opacity="0.35"/>
+            <stop offset="100%" stop-color="#34C759" stop-opacity="0.02"/>
+          </linearGradient>
+        </defs>
+        <circle cx="60" cy="60" r="52" stroke="#26262e" stroke-width="9" fill="none"/>
+        <circle cx="60" cy="60" r="52" stroke="#34C759" stroke-width="9" fill="none"
+          stroke-dasharray="260 327" stroke-linecap="round"
+          transform="rotate(-90 60 60)"/>
+        <text x="60" y="60" text-anchor="middle" dominant-baseline="central" font-size="34" font-weight="800" fill="#f6f7f9" font-family="-apple-system,system-ui,sans-serif" letter-spacing="-1.5">80</text>
+        <text x="60" y="84" text-anchor="middle" font-size="9.5" font-weight="700" fill="#7e8189" font-family="-apple-system,system-ui,sans-serif" letter-spacing="0.6">/ 100</text>
+      </svg>
+      <div>
+        <div style="font-size:10.5px;font-weight:700;color:#7e8189;text-transform:uppercase;letter-spacing:0.08em;margin-bottom:2px">Wealth Score</div>
+        <div style="font-size:18px;font-weight:800;color:#34C759;line-height:1.1;letter-spacing:-0.02em;margin-bottom:6px">Excellent <span style="font-size:13px;font-weight:600;color:#34C759;margin-left:6px">+12 wk</span></div>
+        <div style="font-size:12.5px;color:#c2c4ca;line-height:1.4">Stretch emergency fund to 6 months</div>
+      </div>
     </div>
     <div class="stats-row">
       <div class="stat-card"><div class="stat-num">7</div><div class="stat-label">Tabs</div></div>
