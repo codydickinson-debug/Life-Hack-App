@@ -2639,7 +2639,10 @@ window.addEventListener("beforeunload", flushPendingSave);
 document.addEventListener("visibilitychange", () => { if (document.hidden) flushPendingSave(); });
 
 async function setPassphrase(pass) {
-  if (!pass || pass.length < 4) throw new Error("Passphrase too short (min 4)");
+  // 8-char floor: 4-char passphrases (even at PBKDF2 600k) are
+  // offline-brute-forceable on a GPU in minutes. 8 chars of mixed
+  // alphanum gives ~218 trillion combinations — meaningfully harder.
+  if (!pass || pass.length < 8) throw new Error("Passphrase too short (min 8 characters)");
   const salt = DB.__salt || newSalt();
   DB.__salt = salt;
   APP_KEY = await deriveKey(pass, salt, CRYPTO_V_CURRENT);
@@ -2922,8 +2925,8 @@ function applyTheme() {
 applyTheme();
 
 /* ================ BUILD INFO ================ */
-// Why: with three people deploying to the same Vercel project from two
-// computers + Cody, we need a quick way to confirm which build is loaded.
+// Why: when multiple devices/collaborators deploy to the same project,
+// we need a quick way to confirm which build is loaded on each.
 // BUILD_ID matches the service worker's cache hash (first 4 bytes of
 // SHA-256 over index.html), so "the build I see in Settings" lines up
 // with "the cache the SW is serving" without any build-step coordination.
@@ -3743,7 +3746,7 @@ function addGoalSheet(existing) {
     <h2>${isEdit ? "Edit goal" : "New goal"}</h2>
     ${feedingPlansHtml}
     <label>Goal</label>
-    <input id="g-title" placeholder="e.g. Save $20k for truck" value="${esc(g.title)}" />
+    <input id="g-title" placeholder="e.g. Save $10k for a down payment" value="${esc(g.title)}" />
     <label>Note (optional)</label>
     <textarea id="g-note" placeholder="Why does this matter? Any details?">${esc(g.note||"")}</textarea>
     <label>Tier</label>
@@ -4714,7 +4717,7 @@ function addWinSheet() {
     <h2 style="margin-bottom:4px">Capture a win</h2>
     <p class="muted" style="font-size:12.5px;margin-bottom:14px">One short line. The little stuff adds up.</p>
     <div style="display:flex;gap:8px;align-items:stretch">
-      <input id="win-input" placeholder="e.g. Closed first MCA deal" maxlength="200" autocomplete="off"
+      <input id="win-input" placeholder="e.g. Finished the proposal early" maxlength="200" autocomplete="off"
         style="flex:1;background:var(--card);padding:14px;border-radius:var(--r);font-size:16px;border:1px solid var(--sep);box-sizing:border-box;color:var(--t1)" />
       ${hasVoice ? `<button id="win-voice-btn" onclick="startWinVoice()" title="Voice input" style="background:var(--bg-elev);border:1px solid var(--sep);border-radius:var(--r);width:54px;font-size:20px;cursor:pointer;color:var(--t1)">🎤</button>` : ""}
     </div>
@@ -5027,7 +5030,7 @@ function helpTipsSheet() {
 }
 
 // Send feedback sheet — builds a useful debug snapshot the user can copy
-// and paste into an email or message to Cody. Doesn't try to phone home —
+// and paste into an email or GitHub issue. Doesn't try to phone home —
 // keeps everything in the user's hands.
 function sendFeedbackSheet() {
   const snapshot = [
@@ -5230,11 +5233,12 @@ function renderToday() {
 
     // 0-pre) Runway < 1 month — the most urgent financial signal. Surfaces
     //   only when the user has both savings AND a fixed-expense estimate so
-    //   the math is real, and only when they DON'T already know (recurring
-    //   data exists so we can compute fixed). Money safety > everything.
+    //   the math is real. Uses the canonical _playsTotalSavings() helper
+    //   which takes max() of savings-buckets vs depository accounts — they
+    //   typically reflect the same money, so SUMMING them double-counts
+    //   (the pulse never fires when it should). Money safety > everything.
     try {
-      const totalSavings = (DB.savings || []).reduce((s, x) => s + (+x.current || 0), 0)
-                        + (DB.accounts || []).filter(a => a.type === "depository").reduce((s, a) => s + (+a.balance_current || 0), 0);
+      const totalSavings = (typeof _playsTotalSavings === "function") ? _playsTotalSavings() : 0;
       const fixedMonthly = (typeof _playsMonthlyFixed === "function") ? _playsMonthlyFixed() : 0;
       if (fixedMonthly >= 500 && totalSavings >= 0) {
         const runwayMonths = totalSavings / fixedMonthly;
@@ -8223,7 +8227,7 @@ function renderMoney() {
       }).join("") : emptyStateHtml({
         emoji: "💰",
         title: "Start a savings bucket",
-        sub: "Emergency fund, truck down payment, retirement, that trip you keep putting off — name it and watch it grow.",
+        sub: "Emergency fund, house down payment, retirement, that trip you keep putting off — name it and watch it grow.",
         primary: { label: "+ New savings goal", onclick: "addSavingSheet()" },
         secondary: { label: "✨ Let Cornileus help me pick", onclick: "openCounselor('What savings buckets should I have given my situation? Suggest 3-5 specific ones with target amounts.')" },
       })}
@@ -8414,8 +8418,8 @@ function renderMoney() {
     // the user sees plan-vs-actual tracking below.
     const BUDGET_CAT_COLORS = {
       "rent":     "#5856D6",
-      "rent (se florida)": "#5856D6",
       "housing":  "#5856D6",
+      "mortgage": "#5856D6",
       "groceries":"#34C759",
       "food":     "#FF9500",
       "gas":      "#007AFF",
@@ -16123,7 +16127,7 @@ function _stocksRenderNewsBriefing({ tk, verdict, conf, oneLine, bullish, bearis
       ` : ""}
       <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:10px 0 6px">Source headlines (${items.length})</div>
       ${items.slice(0, 8).map(n => `
-        <a href="${esc(n.url || '#')}" target="_blank" rel="noopener" style="display:block;padding:7px 0;border-bottom:0.5px solid var(--sep);text-decoration:none;color:inherit">
+        <a href="${esc(safeUrl(n.url || '#'))}" target="_blank" rel="noopener" style="display:block;padding:7px 0;border-bottom:0.5px solid var(--sep);text-decoration:none;color:inherit">
           <div style="font-size:12.5px;color:var(--t1);font-weight:600;line-height:1.35">${esc(n.title || "")}</div>
           <div style="font-size:10.5px;color:var(--t3);margin-top:1px">${esc(n.publisher || "")}</div>
         </a>
@@ -16514,7 +16518,7 @@ function _stocksRenderDetail(q) {
       <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
         <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Latest news</div>
         ${items.map(n => `
-          <a href="${esc(n.url || '#')}" target="_blank" rel="noopener" style="display:block;padding:8px 0;border-bottom:0.5px solid var(--sep);text-decoration:none;color:inherit">
+          <a href="${esc(safeUrl(n.url || '#'))}" target="_blank" rel="noopener" style="display:block;padding:8px 0;border-bottom:0.5px solid var(--sep);text-decoration:none;color:inherit">
             <div style="font-size:13px;color:var(--t1);font-weight:600;line-height:1.35;margin-bottom:2px">${esc(n.title || "")}</div>
             <div style="font-size:11px;color:var(--t3)">${esc(n.publisher || "")}</div>
           </a>
@@ -17140,7 +17144,7 @@ async function financialNewsSheet() {
       return;
     }
     out.innerHTML = list.slice(0, 30).map(item => `
-      <a href="${esc(item.url || item.link || '#')}" target="_blank" rel="noopener" style="display:block;background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:12px 14px;margin-bottom:8px;text-decoration:none;color:inherit">
+      <a href="${esc(safeUrl(item.url || item.link || '#'))}" target="_blank" rel="noopener" style="display:block;background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:12px 14px;margin-bottom:8px;text-decoration:none;color:inherit">
         <div style="font-size:10.5px;color:var(--purple,#8957d9);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">${esc(item.source || item.publisher || 'News')}</div>
         <div style="font-size:13.5px;font-weight:600;color:var(--t1);line-height:1.35;margin-bottom:4px">${esc(item.title || item.headline || '')}</div>
         ${item.summary ? `<div style="font-size:11.5px;color:var(--t3);line-height:1.4">${esc(item.summary.slice(0, 140))}${item.summary.length > 140 ? '…' : ''}</div>` : ''}
@@ -17265,8 +17269,7 @@ async function stocksFetchNews() {
 /* ===== CALENDAR =====
    Unified monthly grid view pulling together: habit completion intensity per day,
    wins, bills coming up, savings logs, and goal completions. Tap a day to see the
-   detail sheet for that date. Per Dylan's request — a single time-based lens on
-   everything Ascend tracks.
+   detail sheet for that date. A single time-based lens on everything Ascend tracks.
 */
 function calendarPrevMonth() {
   if (calendarView === "year") {
@@ -18821,9 +18824,11 @@ let reminderTimer;
 // the app. Falls back to habit progress when nothing urgent is happening.
 function _dailyReminderBody() {
   try {
-    // Runway under 1 month — financial-safety signal trumps everything
-    const totalLiquid = (DB.savings || []).reduce((s, x) => s + (+x.current || 0), 0)
-                      + (DB.accounts || []).filter(a => a.type === "depository").reduce((s, a) => s + (+a.balance_current || 0), 0);
+    // Runway under 1 month — financial-safety signal trumps everything.
+    // Uses _playsTotalSavings() which takes max(buckets, depository) to
+    // avoid double-counting the same dollars (a $6k Emergency Fund bucket
+    // is usually living inside the user's $6k Plaid checking).
+    const totalLiquid = (typeof _playsTotalSavings === "function") ? _playsTotalSavings() : 0;
     const fixed = (typeof _playsMonthlyFixed === "function") ? _playsMonthlyFixed() : 0;
     if (fixed >= 500 && totalLiquid >= 0) {
       const months = totalLiquid / fixed;
@@ -18965,10 +18970,10 @@ function fireOnOpenTriggers() {
     } catch {}
   };
   try {
-    // 1. Runway under 1 month — top priority financial signal
+    // 1. Runway under 1 month — top priority financial signal. Uses
+    // canonical helpers so this matches Daily Pulse + scheduleReminder body.
     if (cats.runway !== false && !fired("runway")) {
-      const totalLiquid = (DB.savings || []).reduce((s, x) => s + (+x.current || 0), 0)
-                        + (DB.accounts || []).filter(a => a.type === "depository").reduce((s, a) => s + (+a.balance_current || 0), 0);
+      const totalLiquid = (typeof _playsTotalSavings === "function") ? _playsTotalSavings() : 0;
       const fixed = (typeof _playsMonthlyFixed === "function") ? _playsMonthlyFixed() : 0;
       if (fixed >= 500 && totalLiquid >= 0 && totalLiquid / fixed < 1) {
         fire("⚠️ Runway under 1 month", `${(totalLiquid/fixed).toFixed(1)} months of fixed expenses covered`, "runway");
@@ -19150,7 +19155,7 @@ async function exportData() {
   }
   if (pass == null) return;
   pass = String(pass);
-  if (pass.length < 4) { alert("Passphrase too short (min 4 chars)."); return; }
+  if (pass.length < 8) { alert("Passphrase too short (min 8 characters). 4-char passphrases are crackable in minutes."); return; }
   try {
     const salt = newSalt();
     const key = await deriveKey(pass, salt, CRYPTO_V_CURRENT);
@@ -23415,7 +23420,11 @@ function _buildDemoData(currentDB) {
   const back = (n) => { const x = new Date(today); x.setDate(x.getDate()-n); return tk(x); };
 
   const fresh = clone(DEFAULT_DB);
-  fresh.user.name = currentDB.user.name || "Dylan";
+  // Generic persona for demo mode — a 28-year-old early-career professional
+  // with a typical financial situation: some cash, manageable debt, just
+  // starting to invest. Numbers chosen to show every feature in action
+  // without resembling any specific person's real data.
+  fresh.user.name = currentDB.user.name || "Alex";
   fresh.user.userId = currentDB.user.userId || ("u_" + uid() + uid());
   // Preserve the device's enrollment with the backend across demo reset, otherwise the user
   // would need to re-paste the enrollment key after demo mode.
@@ -23455,7 +23464,7 @@ function _buildDemoData(currentDB) {
     }
     return log;
   };
-  // h2 (Read Bible) gets a deterministic 14-day streak so the tour's
+  // h2 (Read 30 min) gets a deterministic 14-day streak so the tour's
   // "Tap a streak" step always has a visible 🔥 pill to land on — pure
   // randomization could produce a habit with no consecutive run.
   const guaranteedStreakLog = (() => {
@@ -23466,53 +23475,54 @@ function _buildDemoData(currentDB) {
     return log;
   })();
   fresh.habits = [
-    { id:"h1", name:"Workout",       emoji:"\u{1F4AA}", type:"check", group:"health", color:"#34C759", createdAt:Date.now(), log: habitDays(0.78) },
-    { id:"h2", name:"Read Bible",    emoji:"\u{1F4D6}", type:"check", group:"faith",  color:"#AF52DE", createdAt:Date.now(), log: guaranteedStreakLog },
-    { id:"h3", name:"Drink water",   emoji:"\u{1F4A7}", type:"count", target:64, unit:"oz", group:"health", color:"#5AC8FA", createdAt:Date.now(), log: habitCounts(64, 0.85) },
-    { id:"h4", name:"Read & learn",  emoji:"\u{1F4DA}", type:"check", group:"mind",   color:"#5856D6", createdAt:Date.now(), log: habitDays(0.70) },
-    { id:"h5", name:"Log savings",   emoji:"\u{1F4B0}", type:"count", target:41, unit:"$", group:"money", color:"#FF9500", createdAt:Date.now(), log: habitCounts(41, 0.60) },
-    { id:"h6", name:"Prayer",        emoji:"\u{1F64F}", type:"check", group:"faith",  color:"#AF52DE", createdAt:Date.now(), log: habitDays(0.88) },
-    { id:"h7", name:"Sleep < 11pm",  emoji:"\u{1F319}", type:"check", group:"health", color:"#5856D6", createdAt:Date.now(), log: habitDays(0.72) },
-    { id:"h8", name:"Walk 10k steps",emoji:"\u{1F6B6}", type:"count", target:10000, unit:"steps", group:"health", color:"#34C759", createdAt:Date.now(), log: habitCounts(10000, 0.80) },
+    { id:"h1", name:"Workout",        emoji:"\u{1F4AA}", type:"check", group:"health", color:"#34C759", createdAt:Date.now(), log: habitDays(0.78) },
+    { id:"h2", name:"Read 30 min",    emoji:"\u{1F4D6}", type:"check", group:"mind",   color:"#5856D6", createdAt:Date.now(), log: guaranteedStreakLog },
+    { id:"h3", name:"Drink water",    emoji:"\u{1F4A7}", type:"count", target:64, unit:"oz", group:"health", color:"#5AC8FA", createdAt:Date.now(), log: habitCounts(64, 0.85) },
+    { id:"h4", name:"Learn something",emoji:"\u{1F4DA}", type:"check", group:"mind",   color:"#5856D6", createdAt:Date.now(), log: habitDays(0.70) },
+    { id:"h5", name:"Save $25",       emoji:"\u{1F4B0}", type:"count", target:25, unit:"$", group:"money", color:"#FF9500", createdAt:Date.now(), log: habitCounts(25, 0.60) },
+    { id:"h6", name:"Meditate",       emoji:"\u{1F9D8}", type:"check", group:"mind",   color:"#AF52DE", createdAt:Date.now(), log: habitDays(0.88) },
+    { id:"h7", name:"Sleep before 11",emoji:"\u{1F319}", type:"check", group:"health", color:"#5856D6", createdAt:Date.now(), log: habitDays(0.72) },
+    { id:"h8", name:"Walk 8k steps",  emoji:"\u{1F6B6}", type:"count", target:8000, unit:"steps", group:"health", color:"#34C759", createdAt:Date.now(), log: habitCounts(8000, 0.80) },
   ];
   fresh.goals = [
-    { id:"g1", title:"Hit the gym 5x/week",   note:"Morning sessions only",         tier:"daily",  steps:[], done:false, createdAt:Date.now() },
-    { id:"g2", title:"Eat clean - no junk",   note:"Meal prep Sunday",              tier:"daily",  steps:[], done:false, createdAt:Date.now() },
-    { id:"g3", title:"Save $20k for truck",   note:"Track every dollar",            tier:"short",  steps:[
-      { id:"s1", text:"Reach $5,000",  done:true },
-      { id:"s2", text:"Reach $10,000", done:false },
-      { id:"s3", text:"Reach $15,000", done:false },
-      { id:"s4", text:"Reach $20,000 - buy the truck", done:false },
+    { id:"g1", title:"Move every day",       note:"Workout, walk, or hike — something physical",  tier:"daily",  steps:[], done:false, createdAt:Date.now() },
+    { id:"g2", title:"Cook 5 dinners/week",  note:"Cuts dining-out, builds the habit",            tier:"daily",  steps:[], done:false, createdAt:Date.now() },
+    { id:"g3", title:"Build $10k emergency fund", note:"Three months of expenses, untouchable",  tier:"short",  steps:[
+      { id:"s1", text:"Reach $2,500",  done:true },
+      { id:"s2", text:"Reach $5,000",  done:false },
+      { id:"s3", text:"Reach $7,500",  done:false },
+      { id:"s4", text:"Reach $10,000 — fully funded", done:false },
     ], done:false, createdAt:Date.now() },
-    { id:"g4", title:"Income > $1,000/wk",    note:"Mortgage industry",             tier:"short",  steps:[
-      { id:"s1", text:"Hit $500/week", done:true },
-      { id:"s2", text:"Hit $1,000/week 4 weeks straight", done:false },
+    { id:"g4", title:"Grow take-home 15%",    note:"Raise, side income, or a switch",             tier:"short",  steps:[
+      { id:"s1", text:"List options + first step", done:true },
+      { id:"s2", text:"Three months of higher income", done:false },
     ], done:false, createdAt:Date.now() },
-    { id:"g5", title:"Max Roth IRA this year ($7k)", note:"$583/month auto-transfer", tier:"short", steps:[
-      { id:"s1", text:"Open Roth IRA", done:true },
-      { id:"s2", text:"Reach $3,500 (halfway)", done:false },
-      { id:"s3", text:"Reach $7,000 - fully maxed", done:false },
+    { id:"g5", title:"Contribute to a Roth IRA", note:"Even $100/mo is enough to start",          tier:"short", steps:[
+      { id:"s1", text:"Open the account",       done:true },
+      { id:"s2", text:"Reach $2,000 contributed", done:false },
+      { id:"s3", text:"Hit the annual limit",   done:false },
     ], done:false, createdAt:Date.now() },
-    { id:"g6", title:"Buy a rental property", note:"FHA: 3.5% + reserves",          tier:"life",   steps:[], done:false, createdAt:Date.now() },
-    { id:"g7", title:"Financial freedom",     note:"Net worth > $500k",             tier:"life",   steps:[], done:false, createdAt:Date.now() },
+    { id:"g6", title:"Own a home",            note:"Down payment + closing covered in cash",      tier:"life",   steps:[], done:false, createdAt:Date.now() },
+    { id:"g7", title:"Hit $500K net worth",   note:"Patience + steady investing",                 tier:"life",   steps:[], done:false, createdAt:Date.now() },
   ];
   fresh.savings = [
-    { id:"sv1", name:"Emergency Fund",     emoji:"\u{1F6E1}", color:"#34C759", current:7075, target:6000,  log:[
+    { id:"sv1", name:"Emergency Fund",  emoji:"\u{1F6E1}", color:"#34C759", current:4200, target:10000, log:[
       { date:back(120), amount:1000, note:"Initial deposit" },
       { date:back(60),  amount:1500, note:"Tax refund" },
       { date:back(15),  amount:500,  note:"Monthly transfer" }
     ]},
-    { id:"sv2", name:"Truck Down Payment", emoji:"\u{1F69B}", color:"#007AFF", current:1200, target:20000, log:[
-      { date:back(45), amount:600, note:"Payday transfer" },
-      { date:back(15), amount:600, note:"Payday transfer" }
+    { id:"sv2", name:"Travel",          emoji:"\u{2708}\u{FE0F}",  color:"#007AFF", current:850,  target:3500, log:[
+      { date:back(45), amount:400, note:"Payday transfer" },
+      { date:back(15), amount:450, note:"Payday transfer" }
     ]},
-    { id:"sv3", name:"Roth IRA 2026",      emoji:"\u{1F4C8}", color:"#AF52DE", current:1166, target:7000,  log:[
-      { date:back(60), amount:583, note:"Auto-contribution" },
-      { date:back(30), amount:583, note:"Auto-contribution" }
+    { id:"sv3", name:"Roth IRA",        emoji:"\u{1F4C8}", color:"#AF52DE", current:1500, target:7000, log:[
+      { date:back(60), amount:500, note:"Auto-contribution" },
+      { date:back(30), amount:500, note:"Auto-contribution" },
+      { date:back(2),  amount:500, note:"Auto-contribution" }
     ]},
-    { id:"sv4", name:"Brokerage - Schwab", emoji:"\u{1F4B9}", color:"#FF9500", current:1000, target:8000,  log:[
-      { date:back(40), amount:500, note:"First transfer" },
-      { date:back(10), amount:500, note:"Monthly contribution" }
+    { id:"sv4", name:"House Down Payment", emoji:"\u{1F3E0}", color:"#FF9500", current:2000, target:25000, log:[
+      { date:back(40), amount:1000, note:"First transfer" },
+      { date:back(10), amount:1000, note:"Monthly contribution" }
     ]},
   ];
   fresh.budget = {
@@ -23521,25 +23531,26 @@ function _buildDemoData(currentDB) {
     // avoids double-counting income in safe-to-spend / FIRE projections.
     income: 0,
     expenses: [
-      { id:"e1", name:"Rent (SE Florida)", amount:1100 },
-      { id:"e2", name:"Groceries",          amount:300 },
-      { id:"e3", name:"Gas",                amount:250 },
-      { id:"e4", name:"Dining out",         amount:150 },
-      { id:"e5", name:"Gym",                amount:55 },
-      { id:"e6", name:"Investing",          amount:1000 },
-      { id:"e7", name:"Other",              amount:150 },
+      { id:"e1", name:"Rent",        amount:1300 },
+      { id:"e2", name:"Groceries",   amount:350 },
+      { id:"e3", name:"Transit/Gas", amount:200 },
+      { id:"e4", name:"Dining out",  amount:150 },
+      { id:"e5", name:"Subscriptions", amount:80 },
+      { id:"e6", name:"Investing",   amount:600 },
+      { id:"e7", name:"Other",       amount:150 },
     ]
   };
-  // Plaid-style transactions over ~75 days
+  // Plaid-style transactions over ~75 days — generic merchants seen
+  // across most US metro areas so demo doesn't reveal any specific city.
   const merchants = [
-    { name:"Chevron",        amt:38.50, cat:"Gas",     freq:7 },
-    { name:"Publix",         amt:62.00, cat:"Groceries", freq:5 },
-    { name:"Wolf Fitness",   amt:55.00, cat:"Subs",    freq:30 },
+    { name:"Shell",          amt:42.00, cat:"Gas",     freq:7 },
+    { name:"Trader Joe's",   amt:58.00, cat:"Groceries", freq:5 },
+    { name:"Gym Membership", amt:45.00, cat:"Subs",    freq:30 },
     { name:"Netflix",        amt:15.99, cat:"Subs",    freq:30 },
-    { name:"Starbucks",      amt:7.50,  cat:"Food",    freq:3 },
-    { name:"Chipotle",       amt:14.00, cat:"Food",    freq:7 },
-    { name:"Amazon",         amt:32.00, cat:"Shopping",freq:10 },
-    { name:"Spotify",        amt:9.99,  cat:"Subs",    freq:30 },
+    { name:"Starbucks",      amt:6.50,  cat:"Food",    freq:3 },
+    { name:"Local Cafe",     amt:12.00, cat:"Food",    freq:7 },
+    { name:"Amazon",         amt:28.00, cat:"Shopping",freq:10 },
+    { name:"Spotify",        amt:11.99, cat:"Subs",    freq:30 },
     { name:"Direct Deposit", amt:-2000, cat:"Income",  freq:14 },
   ];
   let txid = 1;
@@ -23552,19 +23563,22 @@ function _buildDemoData(currentDB) {
     }
   }
   fresh.spend = plaid;
+  // Demo accounts use generic institution labels — feel free to imagine
+  // these as Chase/Schwab/etc. but the names here don't claim any specific
+  // bank. Balances are round-ish to read clearly as illustrative numbers.
   fresh.accounts = [
-    { item_id:"i1", institution_name:"Chase",      account_id:"a1", name:"Total Checking",   type:"depository", subtype:"checking",     mask:"1234", balance_current:3200,  balance_available:3200 },
-    { item_id:"i1", institution_name:"Chase",      account_id:"a2", name:"Premier Savings",  type:"depository", subtype:"savings",      mask:"5678", balance_current:7075,  balance_available:7075 },
-    { item_id:"i2", institution_name:"Schwab",     account_id:"a3", name:"Roth IRA",         type:"investment", subtype:"ira",          mask:"9999", balance_current:1166 },
-    { item_id:"i2", institution_name:"Schwab",     account_id:"a4", name:"Brokerage",        type:"investment", subtype:"brokerage",    mask:"1111", balance_current:1000 },
-    { item_id:"i3", institution_name:"Capital One",account_id:"a5", name:"Quicksilver Visa", type:"credit",     subtype:"credit card",  mask:"2468", balance_current:485 },
+    { item_id:"i1", institution_name:"Sample Bank",    account_id:"a1", name:"Checking",         type:"depository", subtype:"checking",     mask:"1234", balance_current:2800,  balance_available:2800 },
+    { item_id:"i1", institution_name:"Sample Bank",    account_id:"a2", name:"Savings",          type:"depository", subtype:"savings",      mask:"5678", balance_current:4200,  balance_available:4200 },
+    { item_id:"i2", institution_name:"Sample Broker",  account_id:"a3", name:"Roth IRA",         type:"investment", subtype:"ira",          mask:"9999", balance_current:1500 },
+    { item_id:"i2", institution_name:"Sample Broker",  account_id:"a4", name:"Brokerage",        type:"investment", subtype:"brokerage",    mask:"1111", balance_current:1000 },
+    { item_id:"i3", institution_name:"Sample Card",    account_id:"a5", name:"Rewards Visa",     type:"credit",     subtype:"credit card",  mask:"2468", balance_current:600 },
   ];
   fresh.holdings = [
-    { account_id:"a3", ticker:"VTI",  name:"Vanguard Total Stock Market", quantity:4.85, institution_price:240, institution_value:1166, cost_basis:1100 },
-    { account_id:"a4", ticker:"AAPL", name:"Apple Inc",                   quantity:5.5,  institution_price:181, institution_value:996,  cost_basis:850 },
+    { account_id:"a3", ticker:"VTI",  name:"Vanguard Total Stock Market", quantity:6.0, institution_price:250, institution_value:1500, cost_basis:1400 },
+    { account_id:"a4", ticker:"VXUS", name:"Vanguard Total International", quantity:18.0, institution_price:56,  institution_value:1008, cost_basis:950 },
   ];
   // 90 days of net worth history with mild upward drift, anchored so
-  // today's historical entry lands near the live net worth ($10K-ish
+  // today's historical entry lands near the live net worth (~$10K
   // computed from demo accounts + assets - liabilities + savings). Keeps
   // the Money Health snapshot card's 30d-change indicator showing
   // positive growth instead of a phantom drop.
@@ -23574,37 +23588,32 @@ function _buildDemoData(currentDB) {
     const dt = new Date(today); dt.setDate(dt.getDate() - d);
     fresh.netWorthHistory.push({ date: tk(dt), total: Math.round(total), by_type: {} });
   }
-  fresh.wins = [
-    { id:"w1", date: back(0), text:"Got up at 6am" },
-    { id:"w2", date: back(0), text:"Closed first MCA deal" },
-    { id:"w3", date: back(1), text:"Hit gym 4 days in a row" },
-  ];
   fresh.allocations = [
-    { id:"al1", savingId:"sv3", percent:20, label:"Roth IRA contribution" },
-    { id:"al2", savingId:"sv2", percent:30, label:"Truck fund" },
+    { id:"al1", savingId:"sv3", percent:15, label:"Roth IRA" },
+    { id:"al2", savingId:"sv4", percent:20, label:"House fund" },
   ];
   fresh.categoryRules = [
-    { id:"r1", pattern:"chevron", field:"note", category:"Gas" },
-    { id:"r2", pattern:"publix",  field:"note", category:"Groceries" },
+    { id:"r1", pattern:"shell",        field:"note", category:"Gas" },
+    { id:"r2", pattern:"trader joe",   field:"note", category:"Groceries" },
   ];
   fresh.items = [
-    { item_id:"i1", institution_name:"Chase",       last_sync_at:new Date().toISOString(), created_at:new Date().toISOString() },
-    { item_id:"i2", institution_name:"Schwab",      last_sync_at:new Date().toISOString(), created_at:new Date().toISOString() },
-    { item_id:"i3", institution_name:"Capital One", last_sync_at:new Date().toISOString(), created_at:new Date().toISOString() },
+    { item_id:"i1", institution_name:"Sample Bank",   last_sync_at:new Date().toISOString(), created_at:new Date().toISOString() },
+    { item_id:"i2", institution_name:"Sample Broker", last_sync_at:new Date().toISOString(), created_at:new Date().toISOString() },
+    { item_id:"i3", institution_name:"Sample Card",   last_sync_at:new Date().toISOString(), created_at:new Date().toISOString() },
   ];
-  fresh.debtMeta = { "a5": { apr: 22.99, minPayment: 35 } };
+  fresh.debtMeta = { "a5": { apr: 21.99, minPayment: 35 } };
   fresh.assets = [
-    { id:"as1", name:"2019 Honda Civic", type:"vehicle", value:14500, note:"KBB estimate", updatedAt:new Date().toISOString() },
-    { id:"as2", name:"Crypto wallet",    type:"crypto",  value:850,   note:"Coinbase, mostly BTC", updatedAt:new Date().toISOString() },
+    { id:"as1", name:"Car",           type:"vehicle", value:12000, note:"KBB estimate", updatedAt:new Date().toISOString() },
+    { id:"as2", name:"Index fund (taxable)", type:"investment", value:1500, note:"VOO at Sample Broker", updatedAt:new Date().toISOString() },
   ];
   fresh.liabilities = [
-    { id:"lb1", name:"Federal student loan", type:"student", balance:18500, apr:6.8, minPayment:215, note:"Sallie Mae", updatedAt:new Date().toISOString() },
-    { id:"lb2", name:"Honda auto loan",      type:"auto",    balance:9200,  apr:5.9, minPayment:285, note:"36 months left", updatedAt:new Date().toISOString() },
+    { id:"lb1", name:"Federal student loan", type:"student", balance:14500, apr:5.5, minPayment:165, note:"Standard repayment", updatedAt:new Date().toISOString() },
+    { id:"lb2", name:"Auto loan",            type:"auto",    balance:7800,  apr:6.2, minPayment:250, note:"30 months remaining", updatedAt:new Date().toISOString() },
   ];
   fresh.recurring = [
-    { id:"rc1", name:"Rent",     amount: 1100, cadence: "monthly",  dayOfMonth: 1,  category: "Bills",  kind: "expense", createdAt: Date.now() },
-    { id:"rc2", name:"Spotify",  amount: 9.99, cadence: "monthly",  dayOfMonth: 14, category: "Subs",   kind: "expense", createdAt: Date.now() },
-    { id:"rc3", name:"Gym",      amount: 55,   cadence: "monthly",  dayOfMonth: 5,  category: "Health", kind: "expense", createdAt: Date.now() },
+    { id:"rc1", name:"Rent",     amount: 1300, cadence: "monthly",  dayOfMonth: 1,  category: "Bills",  kind: "expense", createdAt: Date.now() },
+    { id:"rc2", name:"Spotify",  amount: 11.99,cadence: "monthly",  dayOfMonth: 14, category: "Subs",   kind: "expense", createdAt: Date.now() },
+    { id:"rc3", name:"Gym",      amount: 45,   cadence: "monthly",  dayOfMonth: 5,  category: "Health", kind: "expense", createdAt: Date.now() },
     { id:"rc4", name:"Paycheck", amount: 2000, cadence: "biweekly", dayOfMonth: 1,  category: "Income", kind: "income",  createdAt: Date.now() },
   ];
   // Plans for the Plan tab — short/mid/long with money targets and dates
@@ -23618,29 +23627,29 @@ function _buildDemoData(currentDB) {
     // Linked plans: current_amount stays 0 because _planLiveCurrent adds the
     // linked savings bucket balance on top. This showcases the Plans ↔ Savings
     // integration — logging a deposit auto-advances the plan, no double entry.
-    { id:"pl1", title:"6-month emergency fund",   emoji:"🛡️",  tier:"short", target_amount: 6000, current_amount: 0, linkedSavingsIds: ["sv1"], target_date: planTargetDate(150),
-      note:"Three months of expenses fully covered.",      completed:false, completedAt:0, createdAt: Date.now() - 90*86400000 },
-    { id:"pl2", title:"Pay off Capital One card", emoji:"💳",  tier:"short", target_amount: 485,  current_amount: 200,  target_date: planTargetDate(60),
-      note:"Stop the 22.99% APR bleed.",                   completed:false, completedAt:0, createdAt: Date.now() - 45*86400000 },
-    { id:"pl3", title:"Max Roth IRA 2026",        emoji:"📈",  tier:"short", target_amount: 7000, current_amount: 0, linkedSavingsIds: ["sv3"], linkedGoalIds: ["g5"], target_date: planTargetDate(330),
-      note:"$583/mo auto-contribution. Don't touch.",      completed:false, completedAt:0, createdAt: Date.now() - 60*86400000 },
-    { id:"pl4", title:"Truck down payment",       emoji:"🚛",  tier:"mid",   target_amount: 8000, current_amount: 0, linkedSavingsIds: ["sv2"], linkedGoalIds: ["g3"], target_date: planTargetDate(720),
-      note:"20% down on a $40K used pickup.",              completed:false, completedAt:0, createdAt: Date.now() - 45*86400000 },
-    { id:"pl5", title:"Get my real estate license", emoji:"🏠", tier:"mid",  target_amount: 0,    current_amount: 0,    target_date: planTargetDate(365),
-      note:"Side income + future investing leverage.",     completed:false, completedAt:0, createdAt: Date.now() - 30*86400000 },
-    { id:"pl6", title:"First rental property",    emoji:"🏘️", tier:"long",   target_amount: 25000, current_amount: 0,   target_date: planTargetDate(1825),
-      note:"FHA 3.5% down + closing costs + reserves.",    completed:false, completedAt:0, createdAt: Date.now() - 15*86400000 },
-    { id:"pl7", title:"Read 12 finance books this year", emoji:"📚", tier:"short", target_amount: 0, current_amount: 0, target_date: planTargetDate(220),
-      note:"Atomic Habits, Psychology of Money, etc.",     completed:true,  completedAt: Date.now() - 7*86400000, createdAt: Date.now() - 180*86400000 },
+    { id:"pl1", title:"3-month emergency fund",   emoji:"🛡️",  tier:"short", target_amount: 4000, current_amount: 0, linkedSavingsIds: ["sv1"], target_date: planTargetDate(120),
+      note:"Three months of fixed expenses fully covered.",  completed:false, completedAt:0, createdAt: Date.now() - 90*86400000 },
+    { id:"pl2", title:"Pay off the credit card",  emoji:"💳",  tier:"short", target_amount: 600,  current_amount: 250,  target_date: planTargetDate(90),
+      note:"Stop the 21.99% APR bleed.",                     completed:false, completedAt:0, createdAt: Date.now() - 45*86400000 },
+    { id:"pl3", title:"Contribute $7,000 to Roth IRA", emoji:"📈", tier:"short", target_amount: 7000, current_amount: 0, linkedSavingsIds: ["sv3"], linkedGoalIds: ["g5"], target_date: planTargetDate(330),
+      note:"Automated monthly transfer. Compound math is on your side.", completed:false, completedAt:0, createdAt: Date.now() - 60*86400000 },
+    { id:"pl4", title:"Save $3,500 for a trip",   emoji:"✈️",  tier:"mid",   target_amount: 3500, current_amount: 0, linkedSavingsIds: ["sv2"], target_date: planTargetDate(540),
+      note:"Cap on lodging + flights. Stay under budget.",   completed:false, completedAt:0, createdAt: Date.now() - 45*86400000 },
+    { id:"pl5", title:"Earn a certification",     emoji:"🎓",  tier:"mid",   target_amount: 0,    current_amount: 0,    target_date: planTargetDate(365),
+      note:"Career step up. Path to a 15% raise.",           completed:false, completedAt:0, createdAt: Date.now() - 30*86400000 },
+    { id:"pl6", title:"House down payment",       emoji:"🏠",  tier:"long",  target_amount: 25000, current_amount: 0, linkedSavingsIds: ["sv4"], linkedGoalIds: ["g6"], target_date: planTargetDate(1825),
+      note:"5-10% down + closing costs + reserves.",         completed:false, completedAt:0, createdAt: Date.now() - 15*86400000 },
+    { id:"pl7", title:"Read 6 finance books this year", emoji:"📚", tier:"short", target_amount: 0, current_amount: 0, target_date: planTargetDate(220),
+      note:"Anything by Bogle, Housel, Sethi to start.",     completed:true,  completedAt: Date.now() - 7*86400000, createdAt: Date.now() - 180*86400000 },
   ];
   fresh.reflections = [
-    { id:"rf1", date: back(0),  text:"Logged a real workout. Felt good. Slow morning otherwise — start water earlier tomorrow.",      createdAt: Date.now() },
-    { id:"rf2", date: back(2),  text:"Closed my first MCA deal today. Took 11 calls but the pattern works. Repeatable.",              createdAt: Date.now() },
-    { id:"rf3", date: back(5),  text:"Ate out 4x this week. The dining-out line on the budget is bleeding. Meal-prep Sunday.",       createdAt: Date.now() },
-    { id:"rf4", date: back(7),  text:"Saw the truck fund cross $1k. Small but it's moving. Keep the auto transfer on Fridays.",      createdAt: Date.now() },
-    { id:"rf5", date: back(10), text:"Roth IRA auto-contribution hit. $1,166 in. Compound math is on my side — just don't touch it.", createdAt: Date.now() },
-    { id:"rf6", date: back(14), text:"Skipped the gym twice this week. Sleep early Sunday → Monday workout → momentum.",             createdAt: Date.now() },
-    { id:"rf7", date: back(21), text:"Read 'I Will Teach You To Be Rich' chapter 3. Set up the Roth IRA auto. Done is better than perfect.", createdAt: Date.now() },
+    { id:"rf1", date: back(0),  text:"Decent workout today. Slow morning otherwise — start water earlier tomorrow.",                 createdAt: Date.now() },
+    { id:"rf2", date: back(2),  text:"Wrapped a tough project at work. The plan + checklist approach kept me out of overwhelm.",     createdAt: Date.now() },
+    { id:"rf3", date: back(5),  text:"Dining out 4x this week again. That line on the budget is bleeding. Meal-prep this Sunday.",   createdAt: Date.now() },
+    { id:"rf4", date: back(7),  text:"Travel fund crossed $850. Small but it's moving. Keep the auto-transfer on Fridays.",          createdAt: Date.now() },
+    { id:"rf5", date: back(10), text:"Roth IRA auto-contribution hit. Compound math is on my side — just don't touch it.",          createdAt: Date.now() },
+    { id:"rf6", date: back(14), text:"Skipped the gym twice this week. Plan: sleep early Sunday → Monday workout → momentum.",      createdAt: Date.now() },
+    { id:"rf7", date: back(21), text:"Read a chapter on automating finances. Set up auto-transfers. Done is better than perfect.",   createdAt: Date.now() },
   ];
 
   // 21 days of mood entries — varied so the Calendar / Stats trend shows
@@ -23659,28 +23668,28 @@ function _buildDemoData(currentDB) {
 
   // A handful of calendar journal notes — short, realistic, varied days
   fresh.calendarNotes = {
-    [back(0)]:  "Closed first MCA deal — keep doing what worked: short pitch, ask for the no.",
-    [back(2)]:  "Workout streak day 3. Hit deadlift PR. Sleep was great.",
-    [back(5)]:  "Skipped gym. Stress-ate at Chipotle. Reset tomorrow.",
-    [back(9)]:  "Payday — moved $600 to Truck fund + $583 to Roth. Don't see it, don't spend it.",
-    [back(14)]: "Started reading 'I Will Teach You'. Setting up auto-transfers per chapter 3.",
-    [back(20)]: "Bought new running shoes (budget approved). Streak refresh feels worth it.",
+    [back(0)]:  "Wrapped a tough piece of work. Plan + checklist kept me out of overwhelm.",
+    [back(2)]:  "Workout streak day 3. Felt strong. Sleep was great.",
+    [back(5)]:  "Skipped the gym. Stress-ate. Reset tomorrow.",
+    [back(9)]:  "Payday — moved transfers to savings + Roth. Don't see it, don't spend it.",
+    [back(14)]: "Started a new finance book. Setting up auto-transfers this week.",
+    [back(20)]: "Bought new running shoes (budget approved). Worth it for the streak.",
   };
 
   // Wins spread over 14 days, not just today — Calendar + Stats look richer
   fresh.wins = [
-    { id:"w01", date: back(0),  text:"Got up at 6am" },
-    { id:"w02", date: back(0),  text:"Closed first MCA deal" },
-    { id:"w03", date: back(1),  text:"Hit gym 4 days in a row" },
+    { id:"w01", date: back(0),  text:"Up early — quiet hour before the day" },
+    { id:"w02", date: back(0),  text:"Finished the proposal a day early" },
+    { id:"w03", date: back(1),  text:"Worked out 4 days in a row" },
     { id:"w04", date: back(2),  text:"Made coffee at home — saved $7" },
     { id:"w05", date: back(3),  text:"Read 2 chapters before bed" },
-    { id:"w06", date: back(4),  text:"Walked the dog twice" },
+    { id:"w06", date: back(4),  text:"Walked twice today" },
     { id:"w07", date: back(6),  text:"Said no to a $400 'sale' I didn't need" },
-    { id:"w08", date: back(7),  text:"Truck fund crossed $1,000" },
+    { id:"w08", date: back(7),  text:"Travel fund crossed $850" },
     { id:"w09", date: back(9),  text:"Cooked all meals at home" },
     { id:"w10", date: back(11), text:"Set up Roth IRA auto-contribution" },
-    { id:"w11", date: back(13), text:"Called Mom" },
-    { id:"w12", date: back(14), text:"Finished Atomic Habits" },
+    { id:"w11", date: back(13), text:"Called a friend I'd been meaning to" },
+    { id:"w12", date: back(14), text:"Finished a finance book" },
   ];
 
   // Reading list progress — a few books read so the Wealth Reading List feels lived-in.
@@ -24837,17 +24846,24 @@ function safeToSpend() {
   const income = monthlyIncome();
   const fixedRecurring = recurringMonthlyTotal("expense");
   const fixedBudget = ((DB.budget && DB.budget.expenses) || []).reduce((a, e) => a + (+e.amount || 0), 0);
+  // Recurring entries and budget category amounts typically describe the
+  // SAME bills (Rent in recurring + a Housing line in budget categories).
+  // Summing them double-counts and crushes the safe-to-spend number. Take
+  // the larger of the two — matches _playsMonthlyFixed which already does
+  // this. The shape of the return still surfaces both individually so the
+  // UI can show the user where each number came from.
+  const fixed = Math.max(fixedRecurring, fixedBudget);
   const savingsTarget = +(DB.settings && DB.settings.monthlySavingsTarget) || 0;
   const mtd = monthSpend();
   const now = new Date();
   const daysInMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0).getDate();
   const daysLeft = Math.max(1, daysInMonth - now.getDate() + 1);
-  const remainingBudget = income - fixedRecurring - fixedBudget - savingsTarget - mtd;
+  const remainingBudget = income - fixed - savingsTarget - mtd;
   const perDay = remainingBudget / daysLeft;
   return {
     perDay: Math.max(0, perDay),
     remaining: Math.max(0, remainingBudget),
-    income, fixedRecurring, fixedBudget, savingsTarget, mtd, daysLeft, daysInMonth,
+    income, fixedRecurring, fixedBudget, fixed, savingsTarget, mtd, daysLeft, daysInMonth,
     onTrack: remainingBudget >= 0,
   };
 }
@@ -31583,7 +31599,7 @@ const GOAL_TEMPLATES = [
     sub: "Big save → monthly milestones → daily habit",
     tree: {
       life:  { title: "Buy a reliable vehicle in cash",  note: "No car payment, full ownership." },
-      short: { title: "Save $5,000 toward truck this quarter", note: "Auto-transfer every payday." },
+      short: { title: "Save $5,000 toward the car this quarter", note: "Auto-transfer every payday." },
       daily: [
         { title: "Log every dollar spent", note: "" },
         { title: "Skip one optional purchase today", note: "Coffee, snack, impulse buy" },

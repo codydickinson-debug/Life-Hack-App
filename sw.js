@@ -133,15 +133,29 @@ self.addEventListener("push", (event) => {
 });
 
 // Clicking a notification opens (or focuses) the app to the URL the push
-// included. Falls back to the root if the push didn't specify.
+// included. Falls back to the root if the push didn't specify. The target
+// URL is sanitized to same-origin or a safe relative path to prevent a
+// crafted push payload from navigating an existing tab to evil.com.
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
-  const target = (event.notification.data && event.notification.data.url) || "/";
+  const rawTarget = (event.notification.data && event.notification.data.url) || "/";
+  // Resolve to a same-origin path. If the URL escapes our origin or uses
+  // a non-https scheme, fall back to the root.
+  let target = "/";
+  try {
+    const parsed = new URL(rawTarget, self.location.origin);
+    if (parsed.origin === self.location.origin) {
+      target = parsed.pathname + parsed.search + parsed.hash;
+    }
+  } catch {}
   event.waitUntil((async () => {
     const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const c of all) {
-      // If a window is already open, focus it instead of opening a new one.
-      if (c.url.includes(self.location.origin)) {
+      // Use a parsed-origin check instead of substring — "evil.com/?u=https://app"
+      // would have falsely matched origin.includes().
+      let sameOrigin = false;
+      try { sameOrigin = (new URL(c.url).origin === self.location.origin); } catch {}
+      if (sameOrigin) {
         await c.focus();
         if ("navigate" in c) { try { await c.navigate(target); } catch {} }
         return;

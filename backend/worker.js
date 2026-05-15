@@ -997,14 +997,61 @@ async function _removeFromPushIndex(env, userId) {
   await env.ASCEND_KV.put(PUSH_INDEX_KEY, JSON.stringify(next));
 }
 
+// Push services we'll deliver to. Without an allowlist, an enrolled user
+// could pass any URL as `subscription.endpoint` and turn the Worker (which
+// signs with our VAPID key) into an authenticated outbound-request engine
+// — SSRF + abuse vector. These four hosts cover every browser/OS that
+// implements Web Push today (Chrome/Edge/Android via FCM, Safari/iOS via
+// Apple's push gateway, Firefox via Mozilla's autopush, Windows via WNS).
+const ALLOWED_PUSH_HOSTS = [
+  /^https:\/\/(fcm|android|gcm-http)\.googleapis\.com\//i,
+  /^https:\/\/[a-z0-9-]+\.push\.apple\.com\//i,
+  /^https:\/\/(updates|autopush)\.push\.services\.mozilla\.com\//i,
+  /^https:\/\/[a-z0-9.-]+\.notify\.windows\.com\//i,
+];
+function _isAllowedPushEndpoint(url) {
+  if (typeof url !== "string" || url.length > 500) return false;
+  try { if (new URL(url).protocol !== "https:") return false; } catch { return false; }
+  return ALLOWED_PUSH_HOSTS.some(rx => rx.test(url));
+}
+
+// Per-user rate limit for the push endpoints. Cheap counter in KV — the
+// burst cap stops a runaway client from cycling subscriptions / spamming
+// /push/test before the daily cap kicks in. Returns 429 response if hit.
+async function _pushRateGate(env, userId, bucket, perHourCap, origin) {
+  const key = `u:${userId}:push:${bucket}:${new Date().toISOString().slice(0, 13)}`; // YYYY-MM-DDTHH
+  const cur = parseInt(await env.ASCEND_KV.get(key) || "0", 10) || 0;
+  if (cur >= perHourCap) {
+    return json({ error: `Rate limit: ${perHourCap}/hour for ${bucket}. Slow down.`, code: "rate_limit" }, 429, origin);
+  }
+  // Reserve before doing the work; TTL ~70 min covers any clock skew.
+  await env.ASCEND_KV.put(key, String(cur + 1), { expirationTtl: 70 * 60 });
+  return null;
+}
+
 async function handlePushSubscribe(request, env, userId, origin) {
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) {
     return json({ error: "Push not configured on this backend (missing VAPID_*)" }, 503, origin);
   }
+  const limited = await _pushRateGate(env, userId, "subscribe", 20, origin);
+  if (limited) return limited;
   const body = await request.json().catch(() => ({}));
   const sub = body.subscription;
   if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
     return json({ error: "invalid subscription" }, 400, origin);
+  }
+  // Endpoint must be a known push service — no SSRF target of operator's choosing.
+  if (!_isAllowedPushEndpoint(sub.endpoint)) {
+    return json({ error: "subscription endpoint not on push-service allowlist" }, 400, origin);
+  }
+  // Cap key/secret sizes so an enrolled attacker can't bloat KV records.
+  // Real p256dh is 65 bytes (88 b64), auth is 16 bytes (24 b64). 200 / 64
+  // are generous ceilings that still constrain memory.
+  if (typeof sub.keys.p256dh !== "string" || sub.keys.p256dh.length > 200) {
+    return json({ error: "p256dh too long" }, 400, origin);
+  }
+  if (typeof sub.keys.auth !== "string" || sub.keys.auth.length > 64) {
+    return json({ error: "auth too long" }, 400, origin);
   }
   // schedule = [{ hhmm: "08:00", body: "Optional body" }] — sent by frontend
   // when reminderTimes change. Body is optional; backend uses a generic
@@ -1019,7 +1066,7 @@ async function handlePushSubscribe(request, env, userId, origin) {
   // tz = IANA timezone (e.g. "America/New_York"). Defaults to UTC if missing.
   const tz = (typeof body.tz === "string" && body.tz.length < 60) ? body.tz : "UTC";
   await env.ASCEND_KV.put(pushKey(userId), JSON.stringify({
-    subscription: sub,
+    subscription: { endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } },
     schedule,
     tz,
     createdAt: new Date().toISOString(),
@@ -1035,6 +1082,8 @@ async function handlePushUnsubscribe(env, userId, origin) {
 }
 
 async function handlePushTest(env, userId, origin) {
+  const limited = await _pushRateGate(env, userId, "test", 10, origin);
+  if (limited) return limited;
   const raw = await env.ASCEND_KV.get(pushKey(userId));
   if (!raw) return json({ error: "not subscribed" }, 400, origin);
   const rec = JSON.parse(raw);
@@ -1051,7 +1100,21 @@ async function handlePushTest(env, userId, origin) {
   }
 }
 
+// Sanitize a push `url` field to a same-origin relative path. The SW already
+// re-validates, but stripping at the boundary keeps malicious payloads out
+// of KV (so an old stored push doesn't leak past a future SW that's less
+// strict). Returns "/" for anything unsafe.
+function _safePushUrl(raw) {
+  if (typeof raw !== "string" || raw.length > 200) return "/";
+  // Only allow same-origin paths; reject absolute URLs (including data:,
+  // javascript:, etc.) and protocol-relative paths.
+  if (!/^\//.test(raw) || /^\/\//.test(raw)) return "/";
+  return raw;
+}
+
 async function handlePushSend(request, env, userId, origin) {
+  const limited = await _pushRateGate(env, userId, "send", 30, origin);
+  if (limited) return limited;
   const raw = await env.ASCEND_KV.get(pushKey(userId));
   if (!raw) return json({ error: "not subscribed" }, 400, origin);
   const body = await request.json().catch(() => ({}));
@@ -1060,7 +1123,7 @@ async function handlePushSend(request, env, userId, origin) {
     title: String(body.title || "Ascend").slice(0, 100),
     body: String(body.body || "").slice(0, 400),
     tag: String(body.tag || "ascend").slice(0, 60),
-    url: String(body.url || "/").slice(0, 200),
+    url: _safePushUrl(body.url),
   };
   try {
     await sendWebPush(env, rec.subscription, payload);
