@@ -1,0 +1,503 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0a0c" />
+<title>Ascend — habits, money, and a real AI counselor</title>
+<meta name="description" content="One app for habits, money, goals, and a financial counselor (Cornileus) that actually knows your numbers. No accounts. No tracking. Yours." />
+<link rel="icon" type="image/png" href="icons/icon-192.png" />
+<style>
+  :root {
+    --bg: #0a0a0c;
+    --bg-elev: #14141a;
+    --card: #16161c;
+    --sep: #26262e;
+    --t1: #f6f7f9;
+    --t2: #c2c4ca;
+    --t3: #7e8189;
+    --t4: #4a4d54;
+    --blue: #007AFF;
+    --purple: #7c3aed;
+    --pink: #ec4899;
+    --orange: #FF9500;
+    --green: #34C759;
+    --r: 14px;
+    --r2: 12px;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--t1);
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
+  a { color: inherit; text-decoration: none; }
+  .container {
+    max-width: 1100px; margin: 0 auto;
+    padding: 0 24px;
+  }
+  /* ===== Header ===== */
+  header.site {
+    position: sticky; top: 0; z-index: 10;
+    background: rgba(10,10,12,0.85);
+    backdrop-filter: saturate(140%) blur(14px);
+    -webkit-backdrop-filter: saturate(140%) blur(14px);
+    border-bottom: 0.5px solid var(--sep);
+  }
+  .nav {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 14px 0;
+  }
+  .brand {
+    display: flex; align-items: center; gap: 10px;
+    font-weight: 700; font-size: 18px; letter-spacing: -0.01em;
+  }
+  .brand-mark {
+    width: 28px; height: 28px;
+    background: linear-gradient(135deg, var(--purple), var(--pink));
+    border-radius: 7px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 14px;
+  }
+  .nav-cta {
+    background: var(--t1); color: var(--bg);
+    padding: 9px 18px; border-radius: 999px;
+    font-weight: 600; font-size: 14px;
+    transition: opacity .15s;
+  }
+  .nav-cta:hover { opacity: 0.85; }
+  /* ===== Hero ===== */
+  .hero {
+    padding: 80px 0 60px;
+    text-align: center;
+  }
+  .hero h1 {
+    margin: 0 0 18px;
+    font-size: clamp(38px, 6vw, 64px);
+    line-height: 1.05;
+    letter-spacing: -0.035em;
+    font-weight: 800;
+  }
+  .hero h1 .gradient {
+    background: linear-gradient(135deg, var(--purple), var(--pink), var(--orange));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    color: transparent;
+  }
+  .hero p {
+    margin: 0 auto 32px;
+    max-width: 640px;
+    font-size: 19px;
+    color: var(--t2);
+    line-height: 1.5;
+  }
+  .hero-ctas {
+    display: flex; gap: 12px; justify-content: center; flex-wrap: wrap;
+  }
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 14px 26px;
+    border-radius: 999px;
+    font-weight: 600; font-size: 15px;
+    cursor: pointer; border: 0;
+    transition: transform .1s, opacity .15s, box-shadow .15s;
+  }
+  .btn-primary {
+    background: var(--t1); color: var(--bg);
+    box-shadow: 0 8px 24px rgba(255,255,255,0.10);
+  }
+  .btn-primary:hover { transform: translateY(-1px); }
+  .btn-secondary {
+    background: var(--card); color: var(--t1);
+    border: 1px solid var(--sep);
+  }
+  .btn-secondary:hover { border-color: var(--t3); }
+  .pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 4px 12px; border-radius: 999px;
+    background: rgba(124,58,237,0.10);
+    border: 1px solid rgba(124,58,237,0.35);
+    color: var(--purple);
+    font-size: 12px; font-weight: 600;
+    margin-bottom: 18px;
+    letter-spacing: 0.01em;
+  }
+  /* ===== Feature grid ===== */
+  section.features {
+    padding: 60px 0;
+  }
+  .section-eyebrow {
+    text-align: center;
+    text-transform: uppercase; letter-spacing: 0.08em;
+    font-size: 12px; font-weight: 700;
+    color: var(--t3);
+    margin-bottom: 8px;
+  }
+  .section-h2 {
+    text-align: center;
+    font-size: clamp(28px, 4vw, 38px);
+    line-height: 1.15; letter-spacing: -0.02em;
+    font-weight: 800;
+    margin: 0 auto 48px;
+    max-width: 760px;
+  }
+  .grid {
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  }
+  .feature {
+    background: var(--card);
+    border: 0.5px solid var(--sep);
+    border-radius: var(--r);
+    padding: 22px;
+    transition: transform .15s, border-color .15s;
+  }
+  .feature:hover { border-color: var(--t4); transform: translateY(-2px); }
+  .feature-icon {
+    width: 38px; height: 38px;
+    background: var(--bg-elev);
+    border-radius: 10px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px;
+    margin-bottom: 14px;
+  }
+  .feature h3 {
+    margin: 0 0 6px;
+    font-size: 17px;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+  }
+  .feature p {
+    margin: 0;
+    color: var(--t2);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+  /* ===== Cornileus callout ===== */
+  section.cornileus {
+    padding: 80px 0;
+  }
+  .corn-card {
+    background: linear-gradient(135deg, rgba(124,58,237,0.10), rgba(236,72,153,0.06));
+    border: 1px solid rgba(124,58,237,0.35);
+    border-radius: 24px;
+    padding: 48px;
+    display: grid;
+    gap: 32px;
+    grid-template-columns: 1fr;
+    align-items: center;
+  }
+  @media (min-width: 760px) {
+    .corn-card { grid-template-columns: 1fr 1fr; padding: 56px; }
+  }
+  .corn-card h2 {
+    margin: 0 0 14px;
+    font-size: clamp(26px, 3.4vw, 34px);
+    line-height: 1.15; letter-spacing: -0.02em;
+    font-weight: 800;
+  }
+  .corn-card p {
+    margin: 0 0 18px;
+    color: var(--t2);
+    font-size: 15.5px;
+    line-height: 1.6;
+  }
+  .corn-card .corn-points {
+    list-style: none; padding: 0; margin: 0;
+  }
+  .corn-card .corn-points li {
+    color: var(--t2);
+    font-size: 14.5px;
+    padding: 8px 0;
+    padding-left: 26px;
+    position: relative;
+    line-height: 1.5;
+  }
+  .corn-card .corn-points li::before {
+    content: "→";
+    position: absolute; left: 0; top: 8px;
+    color: var(--purple);
+    font-weight: 700;
+  }
+  .corn-art {
+    background: var(--bg-elev);
+    border: 0.5px solid var(--sep);
+    border-radius: 16px;
+    padding: 28px;
+    text-align: center;
+  }
+  .corn-avatar {
+    width: 96px; height: 96px;
+    margin: 0 auto 18px;
+    background: linear-gradient(135deg, var(--purple), var(--pink));
+    border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 48px;
+    box-shadow: 0 12px 40px rgba(124,58,237,0.40);
+  }
+  .corn-bubble {
+    background: var(--card);
+    border: 0.5px solid var(--sep);
+    border-radius: 14px;
+    padding: 14px 16px;
+    text-align: left;
+    font-size: 14px;
+    color: var(--t1);
+    line-height: 1.5;
+  }
+  .corn-bubble strong { color: var(--orange); }
+  /* ===== Visual section ===== */
+  section.visual {
+    padding: 60px 0;
+  }
+  .viz-card {
+    background: var(--card);
+    border: 0.5px solid var(--sep);
+    border-radius: 18px;
+    padding: 28px;
+    text-align: center;
+    margin-bottom: 14px;
+  }
+  .viz-emoji {
+    font-size: 36px;
+    margin-bottom: 10px;
+  }
+  /* ===== Final CTA ===== */
+  section.final {
+    padding: 100px 0 80px;
+    text-align: center;
+  }
+  section.final h2 {
+    margin: 0 0 22px;
+    font-size: clamp(32px, 5vw, 48px);
+    line-height: 1.1; letter-spacing: -0.03em;
+    font-weight: 800;
+  }
+  section.final p {
+    color: var(--t2);
+    font-size: 17px;
+    max-width: 560px; margin: 0 auto 32px;
+    line-height: 1.5;
+  }
+  /* ===== Footer ===== */
+  footer.site {
+    border-top: 0.5px solid var(--sep);
+    padding: 32px 0;
+    color: var(--t3);
+    font-size: 13px;
+    text-align: center;
+  }
+  footer.site a { color: var(--t2); }
+  footer.site a:hover { color: var(--t1); }
+  /* ===== Highlight cards row ===== */
+  .stats-row {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 14px;
+    margin: 48px 0 0;
+  }
+  .stat-card {
+    background: var(--card);
+    border: 0.5px solid var(--sep);
+    border-radius: var(--r);
+    padding: 18px;
+    text-align: center;
+  }
+  .stat-num {
+    font-size: 28px;
+    font-weight: 800;
+    background: linear-gradient(135deg, var(--purple), var(--pink));
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    line-height: 1;
+    margin-bottom: 6px;
+  }
+  .stat-label {
+    color: var(--t3);
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    font-weight: 600;
+  }
+</style>
+</head>
+<body>
+
+<header class="site">
+  <div class="container">
+    <nav class="nav">
+      <a class="brand" href="/marketing">
+        <span class="brand-mark">↑</span>
+        Ascend
+      </a>
+      <a class="nav-cta" href="/">Open app</a>
+    </nav>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="container">
+    <div class="pill">A real personal-finance app — yours, on your device.</div>
+    <h1>
+      Track your <span class="gradient">habits, money, and life</span><br/>
+      in one quiet app.
+    </h1>
+    <p>Ascend is a habits + finance tracker with Cornileus, an AI counselor that actually knows your numbers. No accounts. No tracking. Everything lives on your device.</p>
+    <div class="hero-ctas">
+      <a class="btn btn-primary" href="/">Open app →</a>
+      <a class="btn btn-secondary" href="#features">See what it does</a>
+    </div>
+    <div class="stats-row">
+      <div class="stat-card"><div class="stat-num">7</div><div class="stat-label">Tabs</div></div>
+      <div class="stat-card"><div class="stat-num">22</div><div class="stat-label">Achievements</div></div>
+      <div class="stat-card"><div class="stat-num">13</div><div class="stat-label">AI actions</div></div>
+      <div class="stat-card"><div class="stat-num">$0</div><div class="stat-label">Forever</div></div>
+    </div>
+  </div>
+</section>
+
+<section class="features" id="features">
+  <div class="container">
+    <div class="section-eyebrow">What's in the box</div>
+    <h2 class="section-h2">Everything you need for a clear head on habits and money.</h2>
+    <div class="grid">
+      <div class="feature">
+        <div class="feature-icon">✓</div>
+        <h3>Habits with streaks</h3>
+        <p>Daily check-off or count-based habits. Streak protection via pause/snooze. 7-day mini-strip and 30-day grid for every habit.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">⭐</div>
+        <h3>Wins log</h3>
+        <p>Capture small wins as they happen. They compound. See your year of wins as a bar chart on Stats.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">◎</div>
+        <h3>Goals + milestones</h3>
+        <p>Daily, short-term, life-tier goals. Up to 8 milestones per goal. Goal-completion celebration when you finish.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🗺️</div>
+        <h3>Visual roadmaps</h3>
+        <p>Multi-phase plans with milestones, monthly actions, and a projection chart showing exactly where you'll be at the end.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">💸</div>
+        <h3>Spend tracking</h3>
+        <p>Quick add, AI receipt scan, optional Plaid bank sync. 6-month trend chart by category. Auto-detect untracked recurring charges.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">💰</div>
+        <h3>Savings buckets</h3>
+        <p>Earmark money toward emergency fund, vacation, anything. Monthly-pace ETA shows when you'll hit each target.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">📈</div>
+        <h3>Net worth over time</h3>
+        <p>Manual or auto. 12-month growth chart. "Where it sits" donut showing cash vs invested vs assets vs debt.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">📅</div>
+        <h3>Calendar everything</h3>
+        <p>Habits, wins, mood, bills, savings — all surfaced on a unified calendar. Year view shows your whole year at a glance.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🏆</div>
+        <h3>Achievements</h3>
+        <p>22 milestones across getting started, habits, goals, money, and mastery. They light up retroactively when you hit them.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🔒</div>
+        <h3>Encrypted on device</h3>
+        <p>Optional passphrase encrypts everything with AES-GCM. Keys never leave your browser. No accounts, no cloud sync by default.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">↗</div>
+        <h3>Stocks &amp; markets</h3>
+        <p>Live quotes, market scans, housing &amp; mortgage analyzers — built for research, not trading.</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">📊</div>
+        <h3>Stats &amp; insights</h3>
+        <p>Auto-detected patterns. Wins per month, goal velocity, spending leaks, perfect-day rate. Every number tappable.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cornileus">
+  <div class="container">
+    <div class="corn-card">
+      <div>
+        <div class="pill">Meet Cornileus</div>
+        <h2>An AI counselor that actually knows your numbers.</h2>
+        <p>Cornileus is a financial counselor built into Ascend. He combines fee-only-CFP planning instincts with index-fund discipline — and he sees your full snapshot, so his answers reference your real situation.</p>
+        <ul class="corn-points">
+          <li>Builds full multi-phase roadmaps with one prompt</li>
+          <li>Surfaces spending leaks before you overspend further</li>
+          <li>Detects untracked recurring charges</li>
+          <li>Captures wins, logs deposits, completes goals — does the work</li>
+          <li>13 action verbs. Pin any reply to keep forever.</li>
+        </ul>
+      </div>
+      <div class="corn-art">
+        <div class="corn-avatar">✨</div>
+        <div class="corn-bubble">
+          "Looking at your $200/mo Food category — that's <strong>+150%</strong> vs last month. Three Chipotle runs and a grocery split that should've been Groceries not Food. Want me to log a categorization rule?"
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="visual">
+  <div class="container">
+    <div class="section-eyebrow">Visualized end-to-end</div>
+    <h2 class="section-h2">Charts, sparklines, and timelines on every tab.</h2>
+    <div class="grid">
+      <div class="viz-card">
+        <div class="viz-emoji">📈</div>
+        <h3 style="margin:0 0 6px;font-size:16px">Roadmap projection</h3>
+        <p style="margin:0;color:var(--t2);font-size:13.5px">See where you'll be at every phase. Gradient line chart with a "you are here" marker.</p>
+      </div>
+      <div class="viz-card">
+        <div class="viz-emoji">🔥</div>
+        <h3 style="margin:0 0 6px;font-size:16px">12-week habit trend</h3>
+        <p style="margin:0;color:var(--t2);font-size:13.5px">Column chart with an improving / steady / slipping pill. Catch a drift early.</p>
+      </div>
+      <div class="viz-card">
+        <div class="viz-emoji">💸</div>
+        <h3 style="margin:0 0 6px;font-size:16px">Spend by category</h3>
+        <p style="margin:0;color:var(--t2);font-size:13.5px">6-month stacked bars. Top merchants this month. Detect untracked recurring.</p>
+      </div>
+      <div class="viz-card">
+        <div class="viz-emoji">🎯</div>
+        <h3 style="margin:0 0 6px;font-size:16px">Goal velocity</h3>
+        <p style="margin:0;color:var(--t2);font-size:13.5px">Cumulative completion sparkline. Are you finishing what you start?</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="final">
+  <div class="container">
+    <h2>Quiet by default.<br/>Powerful when you ask.</h2>
+    <p>No accounts. No data leaving your device. Free forever. Just open it and start.</p>
+    <a class="btn btn-primary" style="font-size:17px;padding:16px 32px" href="/">Open Ascend →</a>
+  </div>
+</section>
+
+<footer class="site">
+  <div class="container">
+    Made with care. Open source on <a href="https://github.com/codydickinson-debug/Life-Hack-App" target="_blank" rel="noopener">GitHub</a>.
+  </div>
+</footer>
+
+</body>
+</html>
