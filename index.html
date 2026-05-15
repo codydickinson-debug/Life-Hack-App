@@ -2002,6 +2002,11 @@ const DEFAULT_DB = {
   lifestyleScenarios: [],       // [{id, name, params, savedAt}]
   futureLetters: [],            // [{id, prompt, reply, addedAt}]
   hoursOfLifeRate: null,        // hourly wage for the "hours of life" view
+  // Phase 16 — anti-impulse + life context + career
+  wishlist: [],                 // [{id, name, cost, url, addedAt, decision, resolvedAt}]
+  lifeEvents: [],               // [{id, date, label, kind, note, dollarImpact}]
+  paperTrades: [],              // [{id, ticker, action, shares, price, date, note}]
+  careerHistory: [],            // [{id, startDate, endDate, title, employer, baseSalary, totalComp, note}]
   // Timestamp (ms) of the user's last successful exportData() — drives the
   // backup-reminder Pulse on Today. 0 = never exported.
   lastExportAt: 0,
@@ -4989,6 +4994,13 @@ function exploreAscendSheet() {
       { emoji: "🌳", title: "Skill tree",          desc: "25-node financial XP — auto-unlocks as you progress", onclick: "closeSheet();setTimeout(()=>skillTreeSheet(),100)" },
       { emoji: "🌳", title: "Generational impact", desc: "What today's $X/mo becomes for your grandkids",  onclick: "closeSheet();setTimeout(()=>generationalImpactSheet(),100)" },
       { emoji: "📝", title: "Negotiation script",  desc: "AI drafts cancellation / retention emails for you", onclick: "closeSheet();setTimeout(()=>negotiationScriptSheet(),100)" },
+      { emoji: "📅", title: "Life events timeline",desc: "Mark big life events — context for every money decision", onclick: "closeSheet();setTimeout(()=>lifeEventsSheet(),100)" },
+      { emoji: "⌛", title: "Time remaining",      desc: "Your life in weeks — mortality salience applied to money", onclick: "closeSheet();setTimeout(()=>timeRemainingSheet(),100)" },
+      { emoji: "💼", title: "Career trajectory",   desc: "Job + raise history with CAGR + visual timeline",  onclick: "closeSheet();setTimeout(()=>careerSheet(),100)" },
+    ]},
+    { group: "Anti-impulse", items: [
+      { emoji: "🪞", title: "Wishlist (30-day rule)", desc: "Wait 30 days before any want becomes a buy — most things die in the wait", onclick: "closeSheet();setTimeout(()=>wishlistSheet(),100)" },
+      { emoji: "📋", title: "Paper trading",       desc: "Test investing ideas without committing real money", onclick: "closeSheet();setTimeout(()=>paperTradingSheet(),100)" },
     ]},
     { group: "Cornileus", items: [
       { emoji: "✨", title: "Open Cornileus",      desc: "AI counselor that knows your numbers",       onclick: "closeSheet();setTimeout(()=>openCounselor(),100)" },
@@ -15902,6 +15914,487 @@ ${JSON.stringify(snap).slice(0, 8000)}
   } catch (e) {
     out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
   }
+}
+
+/* ============================================================
+   PHASE 16 — anti-impulse, life context, career
+   Wishlist · Life events · Time remaining · Paper trade · Career
+   ============================================================ */
+
+/* ---------- 15. Wishlist + 30-day cooling-off ----------
+   Add a "want" → sits for 30 days before you can mark Buy or Skip.
+   Breaks the impulse loop. Real friction at the moment of desire. */
+function wishlistSheet() {
+  if (!Array.isArray(DB.wishlist)) DB.wishlist = [];
+  const all = DB.wishlist.slice().reverse();
+  const pending = all.filter(w => !w.decision);
+  const bought = all.filter(w => w.decision === "buy");
+  const skipped = all.filter(w => w.decision === "skip");
+  const moneySaved = skipped.reduce((s, w) => s + (+w.cost || 0), 0);
+  openSheet(`
+    <h2 style="margin-bottom:4px">🪞 Wishlist</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Want something? Add it. Wait at least 30 days before deciding. Most things don't survive the wait.</p>
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-bottom:14px">
+      <div style="background:var(--bg-elev);border-radius:8px;padding:9px 10px;text-align:center">
+        <div style="font-size:16px;font-weight:800;color:var(--orange,#FF9500);font-variant-numeric:tabular-nums">${pending.length}</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:2px">pending</div>
+      </div>
+      <div style="background:var(--bg-elev);border-radius:8px;padding:9px 10px;text-align:center">
+        <div style="font-size:16px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">${bought.length}</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:2px">bought</div>
+      </div>
+      <div style="background:rgba(52,199,89,0.10);border:0.5px solid rgba(52,199,89,0.30);border-radius:8px;padding:9px 10px;text-align:center">
+        <div style="font-size:14px;font-weight:800;color:var(--green,#34C759);font-variant-numeric:tabular-nums" data-priv="amount">$${moneySaved.toFixed(0)}</div>
+        <div style="font-size:10px;color:var(--t3);margin-top:2px">skipped (saved)</div>
+      </div>
+    </div>
+    <label>Add to wishlist</label>
+    <div style="display:grid;grid-template-columns:1.6fr 1fr;gap:6px;margin-bottom:8px">
+      <input id="wl-name" placeholder="e.g. Sony WH-1000XM5 headphones"
+        style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box" />
+      <input id="wl-cost" type="number" placeholder="$ cost"
+        style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box" />
+    </div>
+    <input id="wl-url" placeholder="Link (optional)"
+      style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:12px;margin-bottom:10px;box-sizing:border-box" />
+    <button class="btn" style="width:100%;margin-bottom:14px" onclick="_wlAdd()">+ Save to wishlist</button>
+    ${pending.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Pending (cooling off)</div>
+      ${pending.map(w => {
+        const days = Math.floor((Date.now() - w.addedAt) / 86400000);
+        const remaining = Math.max(0, 30 - days);
+        const ready = remaining === 0;
+        return `
+          <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${ready ? 'var(--green,#34C759)' : 'var(--orange,#FF9500)'};border-radius:10px;padding:11px 13px;margin-bottom:6px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:3px">
+              <div style="font-size:13.5px;color:var(--t1);font-weight:700;flex:1;min-width:0">${esc(w.name)}</div>
+              ${w.cost ? `<div style="font-size:13px;color:var(--t1);font-weight:700;font-variant-numeric:tabular-nums">$${(+w.cost).toFixed(0)}</div>` : ""}
+            </div>
+            <div style="font-size:11px;color:${ready ? 'var(--green,#34C759)' : 'var(--t3)'};margin-bottom:6px">
+              ${ready ? `✓ ${days} days have passed — decide now` : `⏳ Day ${days} of 30 — wait ${remaining} more day${remaining===1?"":"s"} before deciding`}
+            </div>
+            ${w.url ? `<div style="font-size:10.5px;color:var(--t3);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><a href="${esc(w.url)}" target="_blank" rel="noopener" style="color:var(--blue,#007AFF);text-decoration:none">${esc(w.url)} ↗</a></div>` : ""}
+            <div style="display:flex;gap:6px">
+              <button onclick="_wlDecide(${jsAttr(w.id)}, 'buy')" ${ready ? "" : "disabled"} style="flex:1;background:${ready?'var(--green,#34C759)':'var(--bg-elev)'};color:${ready?'#fff':'var(--t3)'};border:0;border-radius:6px;padding:6px 8px;font-size:11.5px;font-weight:700;cursor:${ready?'pointer':'not-allowed'};opacity:${ready?1:0.5}">✓ Bought it</button>
+              <button onclick="_wlDecide(${jsAttr(w.id)}, 'skip')" style="flex:1;background:var(--bg-elev);color:var(--t1);border:0.5px solid var(--sep);border-radius:6px;padding:6px 8px;font-size:11.5px;font-weight:600;cursor:pointer">✗ Skip — don't want anymore</button>
+              <button onclick="_wlRemove(${jsAttr(w.id)})" style="background:transparent;color:var(--t3);border:0;font-size:14px;padding:0 6px;cursor:pointer">×</button>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    ` : `<div style="text-align:center;padding:18px 14px;color:var(--t3);font-size:12.5px;font-style:italic">No pending wants. Add things you're tempted to buy above.</div>`}
+    ${bought.length || skipped.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:14px 0 6px">Resolved (${bought.length + skipped.length})</div>
+      ${[...bought, ...skipped].slice(0, 10).map(w => {
+        const c = w.decision === "buy" ? "var(--t2)" : "var(--green,#34C759)";
+        const ic = w.decision === "buy" ? "✓" : "✗";
+        return `<div style="display:flex;justify-content:space-between;align-items:baseline;padding:7px 11px;background:var(--bg-elev);border-radius:6px;margin-bottom:3px;opacity:${w.decision==="buy"?1:0.85}">
+          <div style="flex:1;min-width:0;font-size:11.5px;color:${c}">${ic} ${esc(w.name)}</div>
+          ${w.cost ? `<div style="font-size:11px;color:${c};font-variant-numeric:tabular-nums">$${(+w.cost).toFixed(0)}</div>` : ""}
+        </div>`;
+      }).join("")}
+    ` : ""}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  setTimeout(() => { const el = document.getElementById("wl-name"); if (el) el.focus(); }, 60);
+}
+async function _wlAdd() {
+  const name = ((document.getElementById("wl-name") || {}).value || "").trim();
+  const cost = parseFloat((document.getElementById("wl-cost") || {}).value);
+  const url  = ((document.getElementById("wl-url")  || {}).value || "").trim();
+  if (!name) { toast("Add a name"); return; }
+  if (!Array.isArray(DB.wishlist)) DB.wishlist = [];
+  DB.wishlist.push({
+    id: "wl_" + Date.now().toString(36),
+    name: name.slice(0, 200),
+    cost: isFinite(cost) ? cost : null,
+    url: url.slice(0, 500),
+    addedAt: Date.now(),
+    decision: null,
+  });
+  await save();
+  toast("🪞 Wait 30 days before deciding");
+  wishlistSheet();
+}
+async function _wlDecide(id, decision) {
+  const w = (DB.wishlist || []).find(x => x.id === id);
+  if (!w) return;
+  w.decision = decision;
+  w.resolvedAt = Date.now();
+  await save();
+  if (decision === "skip" && w.cost) toast(`✓ Skipped · $${(+w.cost).toFixed(0)} saved`);
+  else if (decision === "buy") toast("Logged as bought");
+  wishlistSheet();
+}
+async function _wlRemove(id) {
+  DB.wishlist = (DB.wishlist || []).filter(w => w.id !== id);
+  await save();
+  wishlistSheet();
+}
+
+/* ---------- 16. Life events timeline (money biography) ----------
+   Plot major life events on a timeline — job change, marriage, kid,
+   inheritance, layoff, big purchase, divorce. Context for Cornileus +
+   visual grounding for the user. */
+const LIFE_EVENT_KINDS = [
+  { id: "job",       label: "🧑‍💻 Job change",   color: "#007AFF" },
+  { id: "raise",     label: "📈 Raise / promotion", color: "#34C759" },
+  { id: "layoff",    label: "💼 Lost a job",     color: "#FF3B30" },
+  { id: "marriage",  label: "💍 Marriage",       color: "#ec4899" },
+  { id: "divorce",   label: "💔 Divorce",        color: "#9a9a9f" },
+  { id: "kid",       label: "👶 New kid",        color: "#FF9500" },
+  { id: "move",      label: "🚚 Move",           color: "#AF52DE" },
+  { id: "house",     label: "🏠 Bought home",    color: "#5856D6" },
+  { id: "inherit",   label: "💎 Inheritance",    color: "#FFCC00" },
+  { id: "windfall",  label: "🎁 Windfall",       color: "#34C7A8" },
+  { id: "loss",      label: "😢 Loss in family", color: "#7a7a7f" },
+  { id: "illness",   label: "🏥 Health event",   color: "#FF2D55" },
+  { id: "buy",       label: "💸 Big purchase",    color: "#8E8E93" },
+  { id: "other",     label: "📌 Other",          color: "#5AC8FA" },
+];
+function lifeEventsSheet() {
+  if (!Array.isArray(DB.lifeEvents)) DB.lifeEvents = [];
+  const events = DB.lifeEvents.slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  openSheet(`
+    <h2 style="margin-bottom:4px">📅 Life events timeline</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Money decisions don't happen in a vacuum. Mark the big life events. Cornileus uses them for context.</p>
+    <label>Add event</label>
+    <div style="display:grid;grid-template-columns:1fr 1.4fr;gap:6px;margin-bottom:8px">
+      <input id="le-date" type="date" value="${todayKey()}"
+        style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box" />
+      <select id="le-kind" style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box">
+        ${LIFE_EVENT_KINDS.map(k => `<option value="${esc(k.id)}">${esc(k.label)}</option>`).join("")}
+      </select>
+    </div>
+    <input id="le-label" placeholder="What happened? (e.g. Started at Acme Co)"
+      style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;margin-bottom:6px;box-sizing:border-box" />
+    <input id="le-impact" type="number" placeholder="$ dollar impact (optional, signed)"
+      style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;margin-bottom:10px;box-sizing:border-box" />
+    <button class="btn" style="width:100%;margin-bottom:14px" onclick="_leAdd()">+ Add event</button>
+    ${events.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">${events.length} event${events.length===1?"":"s"}</div>
+      <div style="position:relative;padding-left:14px">
+        <div style="position:absolute;left:6px;top:8px;bottom:8px;width:1.5px;background:var(--sep)"></div>
+        ${events.map(e => {
+          const k = LIFE_EVENT_KINDS.find(x => x.id === e.kind) || LIFE_EVENT_KINDS[LIFE_EVENT_KINDS.length-1];
+          const dateLbl = new Date(e.date + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+          const impact = +e.dollarImpact;
+          return `
+            <div style="position:relative;padding:0 0 14px 18px">
+              <div style="position:absolute;left:-4px;top:4px;width:12px;height:12px;border-radius:50%;background:${k.color};border:2px solid var(--bg)"></div>
+              <div style="background:var(--bg-elev);border-radius:8px;padding:9px 11px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:3px">
+                  <div style="font-size:13px;color:var(--t1);font-weight:700">${esc(k.label)}</div>
+                  <div style="font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums">${esc(dateLbl)}</div>
+                </div>
+                <div style="font-size:12.5px;color:var(--t1);line-height:1.45">${esc(e.label)}</div>
+                ${isFinite(impact) && impact !== 0 ? `<div style="font-size:11.5px;color:${impact > 0 ? 'var(--green,#34C759)' : 'var(--red,#FF3B30)'};font-weight:700;margin-top:4px;font-variant-numeric:tabular-nums">${impact > 0 ? "+" : "-"}$${Math.abs(impact).toLocaleString()}</div>` : ""}
+                <button onclick="_leRemove(${jsAttr(e.id)})" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:2px 4px;cursor:pointer;text-decoration:underline;margin-top:2px">Remove</button>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    ` : `<div style="text-align:center;padding:18px 14px;color:var(--t3);font-size:12.5px;font-style:italic">Mark the events that shaped your money story.</div>`}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+async function _leAdd() {
+  const date = ((document.getElementById("le-date")  || {}).value || "").trim();
+  const kind = ((document.getElementById("le-kind")  || {}).value || "other");
+  const label = ((document.getElementById("le-label") || {}).value || "").trim();
+  const impact = parseFloat((document.getElementById("le-impact") || {}).value);
+  if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast("Pick a date"); return; }
+  if (!label) { toast("What happened?"); return; }
+  if (!Array.isArray(DB.lifeEvents)) DB.lifeEvents = [];
+  DB.lifeEvents.push({
+    id: "le_" + Date.now().toString(36),
+    date, kind, label: label.slice(0, 240),
+    dollarImpact: isFinite(impact) ? impact : null,
+  });
+  await save();
+  toast("📅 Event added");
+  lifeEventsSheet();
+}
+async function _leRemove(id) {
+  DB.lifeEvents = (DB.lifeEvents || []).filter(e => e.id !== id);
+  await save();
+  lifeEventsSheet();
+}
+
+/* ---------- 17. Time-remaining visualizer ----------
+   Show your life in weeks (4,000 of them if you live to ~78). Past weeks
+   filled, future ones empty. Mortality salience applied to money. */
+function timeRemainingSheet() {
+  const profile = DB.profile || {};
+  const age = +profile.age || 30;
+  const targetAge = 85; // typical life expectancy + buffer
+  const totalWeeks = targetAge * 52;
+  const livedWeeks = age * 52;
+  const remainingWeeks = Math.max(0, totalWeeks - livedWeeks);
+  const remainingYears = (remainingWeeks / 52).toFixed(1);
+  // Decade slots
+  const decades = [];
+  for (let d = 0; d < Math.ceil(targetAge / 10); d++) {
+    const start = d * 10;
+    const end = Math.min((d + 1) * 10, targetAge);
+    decades.push({ start, end, label: `${start}s` });
+  }
+  openSheet(`
+    <h2 style="margin-bottom:4px">⌛ Your time, visualized</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Most people get ~4,000 weeks. Every dollar is a trade for a slice of these. Filled circles are the weeks you've already lived.</p>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid #7c3aed;border-radius:var(--r);padding:14px;margin-bottom:14px;text-align:center">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Time remaining (if you live to ${targetAge})</div>
+      <div style="font-size:32px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-0.02em;margin-top:4px">${remainingWeeks.toLocaleString()} weeks</div>
+      <div style="font-size:13px;color:var(--t3);margin-top:2px">≈ ${remainingYears} years · You've lived ${livedWeeks.toLocaleString()} (${Math.round(livedWeeks/totalWeeks*100)}%)</div>
+    </div>
+    <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Your life in weeks</div>
+    ${decades.map(d => {
+      const livedWeeksInDecade = Math.max(0, Math.min((d.end - d.start) * 52, livedWeeks - d.start * 52));
+      const totalInDecade = (d.end - d.start) * 52;
+      const dots = [];
+      for (let w = 0; w < totalInDecade; w++) {
+        const lived = w < livedWeeksInDecade;
+        const isFuture = (d.start * 52 + w) >= livedWeeks;
+        dots.push(`<div style="width:5px;height:5px;border-radius:50%;background:${lived ? '#7c3aed' : 'transparent'};border:0.5px solid ${lived ? '#7c3aed' : 'var(--sep)'}"></div>`);
+      }
+      const isCurrent = age >= d.start && age < d.end;
+      return `
+        <div style="margin-bottom:10px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+            <div style="font-size:11.5px;color:${isCurrent ? 'var(--blue,#007AFF)' : 'var(--t2)'};font-weight:${isCurrent?700:600}">Age ${esc(d.label)}${isCurrent ? " · you are here" : ""}</div>
+            <div style="font-size:10.5px;color:var(--t3)">${Math.round(livedWeeksInDecade)} / ${totalInDecade} wks</div>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:1.5px;background:var(--bg-elev);border-radius:6px;padding:5px;${isCurrent ? 'border:0.5px solid var(--blue,#007AFF)' : ''}">${dots.join("")}</div>
+        </div>
+      `;
+    }).join("")}
+    <div style="background:var(--bg-elev);border-radius:10px;padding:11px 13px;margin-top:14px;font-size:12px;color:var(--t2);line-height:1.5">
+      Try this: the next time you face a big purchase, ask "how many of my remaining weeks does this cost me?" Compute hours-of-life via Settings → Stocks → Hours of life.
+    </div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+/* ---------- 18. Paper trading scratch pad ----------
+   Test investing ideas without committing real money. Each trade is a
+   hypothetical record (ticker, action, shares, price, date, note) that
+   doesn't touch DB.stocks.holdings. */
+function paperTradingSheet() {
+  if (!Array.isArray(DB.paperTrades)) DB.paperTrades = [];
+  const trades = DB.paperTrades.slice().reverse();
+  // Compute current positions from buys minus sells
+  const positions = {};
+  for (const t of DB.paperTrades) {
+    const tk = t.ticker;
+    if (!positions[tk]) positions[tk] = { shares: 0, costBasis: 0, totalCost: 0 };
+    if (t.action === "buy") {
+      positions[tk].shares += +t.shares;
+      positions[tk].totalCost += (+t.shares) * (+t.price);
+    } else {
+      positions[tk].shares -= +t.shares;
+      // Don't recompute cost basis for partial sells (FIFO approximation skipped)
+    }
+  }
+  for (const tk of Object.keys(positions)) {
+    const p = positions[tk];
+    p.costBasis = p.shares > 0 ? p.totalCost / Math.max(1, p.shares) : 0;
+  }
+  const openPositions = Object.entries(positions).filter(([_, p]) => p.shares > 0);
+  openSheet(`
+    <h2 style="margin-bottom:4px">📋 Paper trading</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Test investing ideas without committing real money. Track your hypothetical conviction. Real-money holdings stay separate.</p>
+    <label>Log a paper trade</label>
+    <div style="display:grid;grid-template-columns:1.4fr 1fr 1fr;gap:6px;margin-bottom:6px">
+      <input id="pt-ticker" placeholder="Ticker" autocapitalize="characters"
+        style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box" />
+      <select id="pt-action" style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box">
+        <option value="buy">Buy</option><option value="sell">Sell</option>
+      </select>
+      <input id="pt-shares" type="number" placeholder="Shares"
+        style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box" />
+    </div>
+    <input id="pt-price" type="number" placeholder="Price per share"
+      style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;margin-bottom:6px;box-sizing:border-box" />
+    <input id="pt-note" placeholder="Note — why you're doing this (optional)"
+      style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;margin-bottom:10px;box-sizing:border-box" />
+    <button class="btn" style="width:100%;margin-bottom:14px" onclick="_ptAdd()">+ Log paper trade</button>
+    ${openPositions.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Open paper positions</div>
+      ${openPositions.map(([tk, p]) => {
+        const live = (DB.stocks && DB.stocks.quoteCache || {})[tk];
+        const livePrice = live && !live.error && live.price != null ? +live.price : null;
+        const pl = livePrice != null ? (livePrice - p.costBasis) * p.shares : null;
+        const plPct = livePrice != null && p.costBasis > 0 ? ((livePrice - p.costBasis) / p.costBasis) * 100 : null;
+        const c = pl != null && pl >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+        return `
+          <div style="display:flex;align-items:center;gap:8px;padding:9px 11px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px">
+            ${_stkTickerAvatar(tk, 26)}
+            <div style="width:48px;font-weight:700;font-size:13px">${esc(tk)}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:11.5px;color:var(--t2)">${p.shares.toFixed(2)} sh @ avg $${p.costBasis.toFixed(2)}</div>
+              ${livePrice != null ? `<div style="font-size:10.5px;color:${c}">now $${livePrice.toFixed(2)} · ${pl >= 0 ? "+" : "-"}$${Math.abs(pl).toFixed(0)} (${plPct >= 0 ? "+" : ""}${plPct.toFixed(1)}%)</div>` : `<div style="font-size:10.5px;color:var(--t3)">live price unavailable</div>`}
+            </div>
+          </div>
+        `;
+      }).join("")}
+    ` : ""}
+    ${trades.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:14px 0 6px">Trade log (${trades.length})</div>
+      ${trades.slice(0, 30).map(t => `
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 11px;background:var(--bg-elev);border-radius:6px;margin-bottom:3px">
+          ${_stkTickerAvatar(t.ticker, 22)}
+          <div style="flex:1;font-size:11.5px;color:var(--t1)"><b style="color:${t.action==='buy'?'var(--green,#34C759)':'var(--red,#FF3B30)'}">${t.action === "buy" ? "Buy" : "Sell"}</b> ${esc(t.ticker)} · ${t.shares} sh @ $${(+t.price).toFixed(2)}</div>
+          <div style="font-size:10.5px;color:var(--t3);font-variant-numeric:tabular-nums">${esc(t.date)}</div>
+          <button onclick="_ptRemove(${jsAttr(t.id)})" style="background:transparent;border:0;color:var(--t3);font-size:13px;padding:0 4px;cursor:pointer">×</button>
+        </div>
+      `).join("")}
+    ` : ""}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  setTimeout(() => { const el = document.getElementById("pt-ticker"); if (el) el.focus(); }, 60);
+}
+async function _ptAdd() {
+  const ticker = (((document.getElementById("pt-ticker") || {}).value) || "").trim().toUpperCase().replace(/[^A-Z0-9.-]/g, "");
+  const action = ((document.getElementById("pt-action") || {}).value) || "buy";
+  const shares = parseFloat((document.getElementById("pt-shares") || {}).value);
+  const price = parseFloat((document.getElementById("pt-price") || {}).value);
+  const note = (((document.getElementById("pt-note") || {}).value) || "").trim().slice(0, 240);
+  if (!ticker) { toast("Ticker required"); return; }
+  if (!isFinite(shares) || shares <= 0) { toast("Shares > 0"); return; }
+  if (!isFinite(price) || price <= 0) { toast("Price > 0"); return; }
+  if (!Array.isArray(DB.paperTrades)) DB.paperTrades = [];
+  DB.paperTrades.push({
+    id: "pt_" + Date.now().toString(36),
+    ticker, action, shares, price, note,
+    date: new Date().toISOString().slice(0, 10),
+  });
+  await save();
+  toast(`📋 Paper ${action} logged`);
+  paperTradingSheet();
+}
+async function _ptRemove(id) {
+  DB.paperTrades = (DB.paperTrades || []).filter(t => t.id !== id);
+  await save();
+  paperTradingSheet();
+}
+
+/* ---------- 19. Career compensation tracker ----------
+   Track every job — start/end, title, employer, base + total comp.
+   Surfaces trajectory + raise velocity. */
+function careerSheet() {
+  if (!Array.isArray(DB.careerHistory)) DB.careerHistory = [];
+  const jobs = DB.careerHistory.slice().sort((a, b) => (b.startDate || "").localeCompare(a.startDate || ""));
+  const current = jobs.find(j => !j.endDate);
+  // Compute trajectory: total comp delta per year
+  const sorted = jobs.slice().sort((a, b) => (a.startDate || "").localeCompare(b.startDate || ""));
+  let yearsTotal = 0, compDelta = 0;
+  if (sorted.length >= 2) {
+    const first = sorted[0], last = sorted[sorted.length - 1];
+    const startY = parseInt((first.startDate || "").slice(0, 4), 10);
+    const endY = current ? new Date().getFullYear() : parseInt((last.endDate || last.startDate || "").slice(0, 4), 10);
+    yearsTotal = Math.max(1, endY - startY);
+    compDelta = (+last.totalComp || +last.baseSalary || 0) - (+first.baseSalary || 0);
+  }
+  const cagr = yearsTotal > 0 && sorted.length >= 2 && (+sorted[0].baseSalary || 0) > 0
+    ? Math.pow((+sorted[sorted.length-1].totalComp || +sorted[sorted.length-1].baseSalary || 0) / (+sorted[0].baseSalary || 1), 1 / yearsTotal) - 1
+    : 0;
+  openSheet(`
+    <h2 style="margin-bottom:4px">💼 Career trajectory</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Every job + every raise on one page. Your real comp curve over time.</p>
+    ${jobs.length >= 2 ? `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${cagr >= 0.05 ? 'var(--green,#34C759)' : cagr >= 0.02 ? '#9ACD32' : 'var(--orange,#FF9500)'};border-radius:var(--r);padding:13px;margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+          <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Comp growth rate</div>
+          <div style="font-size:11.5px;color:var(--t3)">${yearsTotal} years tracked</div>
+        </div>
+        <div style="font-size:24px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">${(cagr*100).toFixed(1)}%/yr CAGR</div>
+        <div style="font-size:11.5px;color:var(--t3);margin-top:2px" data-priv="amount">$${(+sorted[0].baseSalary || 0).toLocaleString()} → $${(+sorted[sorted.length-1].totalComp || +sorted[sorted.length-1].baseSalary || 0).toLocaleString()}</div>
+      </div>
+    ` : ""}
+    <label>Add a job</label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+      <input id="cr-title" placeholder="Title (e.g. SWE II)"
+        style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box" />
+      <input id="cr-employer" placeholder="Employer"
+        style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box" />
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+      <input id="cr-start" type="date" placeholder="Start"
+        style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box" />
+      <input id="cr-end" type="date" placeholder="End (blank if current)"
+        style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box" />
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:10px">
+      <input id="cr-base" type="number" placeholder="Base salary $"
+        style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box" />
+      <input id="cr-total" type="number" placeholder="Total comp $ (incl. bonus/equity)"
+        style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box" />
+    </div>
+    <button class="btn" style="width:100%;margin-bottom:14px" onclick="_crAdd()">+ Add job</button>
+    ${jobs.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Timeline (${jobs.length} job${jobs.length===1?"":"s"})</div>
+      <div style="position:relative;padding-left:14px">
+        <div style="position:absolute;left:6px;top:8px;bottom:8px;width:1.5px;background:var(--sep)"></div>
+        ${jobs.map(j => {
+          const dur = (() => {
+            if (!j.startDate) return "";
+            const start = new Date(j.startDate + "T00:00:00");
+            const end = j.endDate ? new Date(j.endDate + "T00:00:00") : new Date();
+            const mo = Math.max(0, Math.round((end - start) / (1000 * 60 * 60 * 24 * 30)));
+            if (mo < 12) return mo + " mo";
+            return (mo / 12).toFixed(1) + "y";
+          })();
+          const isCurrent = !j.endDate;
+          return `
+            <div style="position:relative;padding:0 0 12px 18px">
+              <div style="position:absolute;left:-4px;top:4px;width:12px;height:12px;border-radius:50%;background:${isCurrent ? 'var(--green,#34C759)' : 'var(--t3)'};border:2px solid var(--bg)"></div>
+              <div style="background:var(--bg-elev);border-radius:8px;padding:10px 12px">
+                <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:2px">
+                  <div style="font-size:13px;color:var(--t1);font-weight:700">${esc(j.title || "—")}${isCurrent ? ` <span style="background:rgba(52,199,89,0.15);color:var(--green,#34C759);font-size:9px;padding:1px 6px;border-radius:999px;margin-left:4px;text-transform:uppercase;letter-spacing:0.04em;font-weight:700">Current</span>` : ""}</div>
+                  <div style="font-size:10.5px;color:var(--t3)">${esc(dur)}</div>
+                </div>
+                <div style="font-size:11.5px;color:var(--t3);margin-bottom:4px">${esc(j.employer || "")} · ${esc(j.startDate || "")} – ${esc(j.endDate || "current")}</div>
+                <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;font-variant-numeric:tabular-nums">
+                  <span style="color:var(--t2)">Base <b style="color:var(--t1)" data-priv="amount">$${(+j.baseSalary || 0).toLocaleString()}</b></span>
+                  ${j.totalComp ? `<span style="color:var(--green,#34C759)">Total <b data-priv="amount">$${(+j.totalComp).toLocaleString()}</b></span>` : ""}
+                </div>
+                <button onclick="_crRemove(${jsAttr(j.id)})" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:4px 0 0 0;cursor:pointer;text-decoration:underline">Remove</button>
+              </div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    ` : `<div style="text-align:center;padding:18px 14px;color:var(--t3);font-size:12.5px;font-style:italic">Add jobs to see your trajectory.</div>`}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+async function _crAdd() {
+  const title = (((document.getElementById("cr-title") || {}).value) || "").trim();
+  const employer = (((document.getElementById("cr-employer") || {}).value) || "").trim();
+  const startDate = (((document.getElementById("cr-start") || {}).value) || "").trim();
+  const endDate = (((document.getElementById("cr-end") || {}).value) || "").trim();
+  const baseSalary = parseFloat((document.getElementById("cr-base") || {}).value);
+  const totalComp = parseFloat((document.getElementById("cr-total") || {}).value);
+  if (!title || !startDate) { toast("Title + start date required"); return; }
+  if (!Array.isArray(DB.careerHistory)) DB.careerHistory = [];
+  DB.careerHistory.push({
+    id: "cr_" + Date.now().toString(36),
+    title: title.slice(0, 100),
+    employer: employer.slice(0, 100),
+    startDate,
+    endDate: endDate || null,
+    baseSalary: isFinite(baseSalary) ? baseSalary : null,
+    totalComp: isFinite(totalComp) ? totalComp : null,
+  });
+  await save();
+  toast("💼 Job added");
+  careerSheet();
+}
+async function _crRemove(id) {
+  DB.careerHistory = (DB.careerHistory || []).filter(j => j.id !== id);
+  await save();
+  careerSheet();
 }
 
 function insuranceAuditSheet() {
@@ -33114,14 +33607,8 @@ function weeklyReviewSheet() {
 }
 
 /* --- "What's new" sheet (one-time on upgrade) ------------------- */
-<<<<<<< Updated upstream
-const WHATS_NEW_KEY = "v3.6-sync-and-push";
-=======
-const WHATS_NEW_KEY = "v3.6-behavioral";
->>>>>>> Stashed changes
+const WHATS_NEW_KEY = "v3.7-everything";
 function maybeShowWhatsNew() {
-  // Skip if a PWA shortcut is opening its own action sheet — the user
-  // didn't launch the app to see What's New, they tapped Quick Add.
   if (window._suppressWhatsNew) return;
   if ((DB.user || {}).onboardedAt && DB.lastSeenWhatsNew !== WHATS_NEW_KEY) {
     setTimeout(() => whatsNewSheet(), 600);
@@ -33129,44 +33616,24 @@ function maybeShowWhatsNew() {
 }
 function whatsNewSheet() {
   openSheet(
-<<<<<<< Updated upstream
-    '<h2>What\'s new — everything in sync</h2>' +
-    '<p class="muted" style="font-size:13px;margin-bottom:14px">Your bank, brokerage, and credit accounts pull more data than ever — APRs, due dates, holdings, dividends, and recurring patterns sync automatically. Plus background push notifications when the app is closed.</p>' +
+    '<h2>What\'s new — Ascend v3.7</h2>' +
+    '<p class="muted" style="font-size:13px;margin-bottom:14px">The biggest update ever. Two parallel tracks merged: full account sync + the largest set of behavioral-science features ever in a personal-finance app.</p>' +
     '<div class="list">' +
-      '<div class="row"><div class="lead">\u{1F3E6}</div><div class="body"><div class="t1">Liabilities sync</div><div class="t2">Credit card APRs + minimum payments + statement balances + due dates pull automatically. Mortgage rate, term, escrow, YTD interest. Student loan repayment plan. No more typing it in.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F9E0}</div><div class="body"><div class="t1">Auto-detected recurring</div><div class="t2">Plaid spots your paychecks, rent, subscriptions across all linked accounts. One tap to add them to your recurring list — no manual entry.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4C8}</div><div class="body"><div class="t1">Investment transactions</div><div class="t2">90 days of buys/sells/dividends from brokerage accounts. Cornileus can comment on trade activity + dividend income.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F514}</div><div class="body"><div class="t1">Reminders, fully rebuilt</div><div class="t2">Multiple daily times, 11 categories (streak risk, bills, plans, runway, stocks…), per-habit reminders, smart on-open triggers that fire one consolidated notification when something matters.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4F2}</div><div class="body"><div class="t1">Background push</div><div class="t2">When configured on the backend (VAPID keys), reminders arrive even when the app is closed. iOS 16.4+ Home-Screen PWA, Android, desktop. Settings → \u{1F514} → Background push.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F517}</div><div class="body"><div class="t1">Plans ↔ Savings ↔ Goals</div><div class="t2">Link a plan to a savings bucket: deposits auto-advance the plan. Link a plan to goals: completing the plan finishes the goals. "Wired up" achievement for both.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F6E1}</div><div class="body"><div class="t1">Smarter math everywhere</div><div class="t2">Single source of truth for income, fixed expenses, runway, net worth. Overlap detection between manual + synced accounts so nothing double-counts.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F9F9}</div><div class="body"><div class="t1">Privacy + safety hardening</div><div class="t2">Demo data is now a generic persona. Personal info from older builds removed. Stronger passphrase floor. News-link safety. Push endpoint allowlist + rate limits.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{2600}\u{FE0F}</div><div class="body"><div class="t1">Plus v3.5: Cornileus, more personal</div><div class="t2">Morning briefing, four tone options (Direct/Encouraging/Strict/Friendly), full transparency on what he knows, plain-English ticker explainers.</div></div></div>' +
-    '</div>' +
-    '<div class="actions"><button class="btn secondary" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet()">Got it</button>' +
-    '<button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet();setTimeout(()=>{if(typeof notificationSettingsSheet===\'function\')notificationSettingsSheet();},120)">\u{1F514} Set up reminders</button></div>'
-=======
-    '<h2>What\'s new — Ascend goes behavioral</h2>' +
-    '<p class="muted" style="font-size:13px;margin-bottom:14px">14 new features rooted in actual behavioral science. Things no other personal-finance app does — at all.</p>' +
-    '<div class="list">' +
-      '<div class="row"><div class="lead">\u{1F52E}</div><div class="body"><div class="t1">Lifestyle simulator</div><div class="t2">"What if I went part-time when the kids are born?" 4 live sliders, instant net-worth re-projection. Nobody has a life chart.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F3AF}</div><div class="body"><div class="t1">Reverse life math</div><div class="t2">Pick the life you want (retire at 55 living on $7K/mo) — backsolves required savings + 5-year waypoints.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F9E0}</div><div class="body"><div class="t1">Behavioral bias diagnostic + real-time interruptions</div><div class="t2">10 questions → bias profile. Selling a loser at a loss? Cornileus interrupts: "Your loss-aversion is 8/10 — has the business changed, or just the price?"</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4DC}</div><div class="body"><div class="t1">Money rules engine</div><div class="t2">Write your own financial commandments ("Never finance depreciating assets"). Cornileus enforces them on every reply.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F9EC}</div><div class="body"><div class="t1">Money identity</div><div class="t2">Atomic Habits for money. "I\'m someone who saves before spending" — frames every decision. Nobody else does this.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F510}</div><div class="body"><div class="t1">Pre-commitment contracts</div><div class="t2">Lock a future commitment with optional stake ("If I don\'t, donate $100 to a politician I dislike"). StickK for money.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{23F3}</div><div class="body"><div class="t1">Hours of your life</div><div class="t2">Every $ shows as time worked. $50 = 1.7h of your life. Reframes the dollar permanently.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4E8}</div><div class="body"><div class="t1">Letter from your 80-year-old self</div><div class="t2">Write a decision you\'re wrestling with → receive a serif-typewriter letter back from your future self with regret + perspective.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F333}</div><div class="body"><div class="t1">Skill tree (25 nodes)</div><div class="t2">Financial XP. Nodes auto-unlock as you hit real milestones. First habit → 7-day streak → first investment → $10K net worth → millionaire.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F333}</div><div class="body"><div class="t1">Generational impact</div><div class="t2">What does $100/mo extra today become for your grandkids? Backwards-discounted math made visceral.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4DD}</div><div class="body"><div class="t1">Negotiation script generator</div><div class="t2">Cornileus drafts cancellation / retention / renewal emails anchored to your actual tenure + spend.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F6CB}\u{FE0F}</div><div class="body"><div class="t1">Financial therapy mode</div><div class="t2">Money anxiety, named and grounded in your actual numbers. 4-section response: name the feeling, reality check, one action, what to let go.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F636}</div><div class="body"><div class="t1">Money mood journal</div><div class="t2">Tag transactions with the emotion driving them. Patterns surface fast: "You spend 3x more on Sundays when bored."</div></div></div>' +
-      '<div class="row"><div class="lead">\u{2696}\u{FE0F}</div><div class="body"><div class="t1">Decision tree builder</div><div class="t2">Big binary choice (buy vs rent, change jobs)? Cornileus walks an MBA case-study: cost, reversibility, non-financial trade-offs, hidden costs, recommendation.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F3E6}</div><div class="body"><div class="t1">Liabilities + investments sync</div><div class="t2">Credit card APRs, due dates, statements, mortgage terms, brokerage transactions — all pulled automatically. No more typing it in.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4F2}</div><div class="body"><div class="t1">Background push + smart reminders</div><div class="t2">11-category reminders, multiple daily times, per-habit reminders, background push when the app is closed (iOS 16.4+ Home-Screen PWA, Android, desktop).</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F52E}</div><div class="body"><div class="t1">Lifestyle + reverse life math</div><div class="t2">"What if I went part-time when the kids are born?" live sliders. Or backsolve: "Retire at 55 on $7K/mo — what does my path look like?"</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F9E0}</div><div class="body"><div class="t1">Behavioral bias diagnostic + interruptions</div><div class="t2">10 questions → your bias profile. Selling at a loss? Cornileus interrupts in real time: "Your loss-aversion is 8/10 — has the business changed, or just the price?"</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4DC}</div><div class="body"><div class="t1">Money identity + rules engine</div><div class="t2">"I\'m someone who saves before spending" + your own financial commandments. Both injected into every Cornileus chat.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F510}</div><div class="body"><div class="t1">Pre-commitment + 30-day wishlist</div><div class="t2">Lock future commitments with optional stake. Add wants to a wishlist; can\'t buy for 30 days. Real friction.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{23F3}</div><div class="body"><div class="t1">Time-context tools</div><div class="t2">Hours of your life (every $ as time worked). Time-remaining viz (your life in weeks). Letter from your 80-year-old self.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F333}</div><div class="body"><div class="t1">Skill tree + generational impact</div><div class="t2">25-node financial XP. Plus see what $100/mo today becomes for your grandkids.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F6CB}\u{FE0F}</div><div class="body"><div class="t1">Financial therapy + decision tree</div><div class="t2">Name money anxiety + ground in real numbers. MBA-style walkthrough for big binary choices.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4DD}</div><div class="body"><div class="t1">Negotiation scripts + paper trading + career tracker</div><div class="t2">Cornileus drafts cancellation emails. Test investing ideas without committing. Track every job + raise + total comp CAGR.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4C5}</div><div class="body"><div class="t1">Life events timeline + money mood</div><div class="t2">Map the big life moments that shaped your money story. Tag transactions with the emotion driving them.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{2600}\u{FE0F}</div><div class="body"><div class="t1">Cornileus relationship</div><div class="t2">Morning briefing, 4 tone options, full transparency on what he knows, memory (pinned facts), followups (did you do it?), annual review.</div></div></div>' +
     '</div>' +
     '<div class="actions"><button class="btn secondary" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet()">Got it</button>' +
     '<button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet();setTimeout(()=>skillTreeSheet(),120)">🌳 See my skill tree</button></div>'
->>>>>>> Stashed changes
   );
 }
 
