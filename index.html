@@ -3412,6 +3412,48 @@ function spendCategories() {
   return Array.from(cats);
 }
 
+// Top merchants this month — small horizontal-bar chart that shows the
+// user where their dollars are going at the brand level (not just category).
+// Returns "" when there's no useful merchant data this month.
+function topMerchantsHtml() {
+  const spend = DB.spend || [];
+  const monthKey = todayKey().slice(0, 7);
+  const byMerchant = {};
+  for (const t of spend) {
+    if (!t.date || !t.date.startsWith(monthKey)) continue;
+    const amt = +t.amount || 0;
+    if (amt <= 0) continue;
+    const name = (t.merchant_name || t.note || "").trim();
+    if (!name || name.length < 2) continue;
+    const key = name.toLowerCase().replace(/\s+/g, " ");
+    if (!byMerchant[key]) byMerchant[key] = { display: name.replace(/\s+/g, " "), amount: 0, count: 0 };
+    byMerchant[key].amount += amt;
+    byMerchant[key].count++;
+  }
+  const top = Object.values(byMerchant).sort((a, b) => b.amount - a.amount).slice(0, 8);
+  if (top.length < 3) return "";
+  const maxAmt = top[0].amount;
+  return `
+    <div class="section-h" style="margin-top:14px"><span class="lbl">Top merchants · this month</span></div>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px 14px 10px;margin-bottom:14px">
+      ${top.map(m => {
+        const pct = Math.round((m.amount / maxAmt) * 100);
+        return `
+          <div style="margin-bottom:9px">
+            <div style="display:flex;justify-content:space-between;align-items:center;font-size:12.5px;margin-bottom:3px">
+              <span style="color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:65%">${esc(m.display)}</span>
+              <span style="color:var(--t2);font-variant-numeric:tabular-nums;font-weight:600" data-priv="amount">${fmt$0(m.amount)} <span style="color:var(--t3);font-weight:400">· ${m.count}×</span></span>
+            </div>
+            <div style="height:5px;background:var(--bg-elev);border-radius:3px;overflow:hidden">
+              <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#7c3aed,#ec4899);border-radius:3px;transition:width 0.4s ease"></div>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+  `;
+}
+
 // 12-month net-worth growth chart for Stats. Plots the latest snapshot
 // in each month over the last 12. Returns "" when fewer than 2 monthly
 // data points exist.
@@ -7998,6 +8040,7 @@ function renderMoney() {
         `;
       })()}
       ${spendTrendChartHtml()}
+      ${topMerchantsHtml()}
       <div class="section-h"><span class="lbl">Log a manual transaction</span></div>
       <div class="spend-amount-form">
         <input id="sp-amt" type="number" inputmode="decimal" placeholder="Amount $" />
