@@ -3460,7 +3460,7 @@ function _goalStepInputRow(step, idx) {
   return `
     <div class="goal-step-input" data-sid="${esc(step.id || "")}" style="display:flex;gap:6px;align-items:center">
       <span style="color:var(--t3);font-size:11px;width:18px;text-align:center">${idx + 1}.</span>
-      <input maxlength="120" placeholder="Step ${idx + 1} — e.g. Save first $1k" value="${esc(step.text || "")}" style="flex:1;background:var(--bg-elev);padding:8px 10px;border-radius:8px;font-size:13px;border:0.5px solid var(--sep);color:var(--t1)" />
+      <input maxlength="120" placeholder="${idx === 0 ? 'e.g. Open the account' : idx === 1 ? 'e.g. Save first $1k' : idx === 2 ? 'e.g. Hit halfway' : 'Milestone ' + (idx + 1)}" value="${esc(step.text || "")}" style="flex:1;background:var(--bg-elev);padding:8px 10px;border-radius:8px;font-size:13px;border:0.5px solid var(--sep);color:var(--t1)" />
       <button type="button" onclick="this.closest('.goal-step-input').remove();document.getElementById('g-add-step').removeAttribute('disabled');" style="background:none;border:none;color:var(--t3);font-size:18px;cursor:pointer;padding:0 6px;flex-shrink:0">×</button>
     </div>
   `;
@@ -12001,7 +12001,7 @@ function cylanInsightsSheet() {
   `).join("") : `
     <div class="muted" style="text-align:center;padding:30px 14px;line-height:1.5;font-size:13px">
       No saved insights yet.<br><br>
-      Open Cornileus, tap 📌 next to any reply you want to remember, and it'll show up here.<br>
+      Open Cornileus, tap 📍 Save under any reply you want to remember, and it'll show up here.<br>
       Insights survive the chat auto-clear.
     </div>
   `;
