@@ -5316,6 +5316,12 @@ function exploreAscendSheet() {
       { emoji: "🔁", title: "Rule of 72",           desc: "How fast does money double? 7 doublings = lifetime wealth.", onclick: "closeSheet();setTimeout(()=>ruleOf72Sheet(),100)" },
       { emoji: "🎯", title: "Money values quiz",    desc: "What is money FOR for you? 8 values → Cornileus speaks your language.", onclick: "closeSheet();setTimeout(()=>moneyValuesSheet(),100)" },
       { emoji: "🔥", title: "Roast my budget",      desc: "Cornileus in maximum-honesty mode — late-night TV style call-outs", onclick: "closeSheet();setTimeout(()=>roastBudgetSheet(),100)" },
+      { emoji: "📊", title: "Asset class breakdown", desc: "Auto: stocks vs bonds vs cash vs real estate vs crypto · vs age rule-of-thumb", onclick: "closeSheet();setTimeout(()=>assetClassBreakdownSheet(),100)" },
+    ]},
+    { group: "Resilience + legacy", items: [
+      { emoji: "💥", title: "Stress test",          desc: "Job loss + market crash + emergency — months of runway, what breaks first", onclick: "closeSheet();setTimeout(()=>stressTestSheet(),100)" },
+      { emoji: "📜", title: "Estate checklist",     desc: "Will · beneficiaries · POA · healthcare directive · digital legacy — 8 items", onclick: "closeSheet();setTimeout(()=>estateChecklistSheet(),100)" },
+      { emoji: "🌍", title: "Charitable giving",    desc: "Set a target % of income · log donations · track YTD progress", onclick: "closeSheet();setTimeout(()=>charitableSheet(),100)" },
     ]},
     { group: "Cornileus", items: [
       { emoji: "✨", title: "Open Cornileus",      desc: "AI counselor that knows your numbers",       onclick: "closeSheet();setTimeout(()=>openCounselor(),100)" },
@@ -17168,6 +17174,343 @@ function _moneyValuesSystemBlock() {
   const top = DB.moneyValues.ranked.filter(v => v.score > 0).slice(0, 3);
   if (!top.length) return "";
   return "\n\nMONEY VALUES (frame advice through the user's top-ranked values — speak their language):\n" + top.map((v, i) => (i+1) + ". " + v.name + " (" + v.score + "/5)").join("\n");
+}
+
+/* ============================================================
+   PHASE 18 — stress test · estate · giving · asset class
+   ============================================================ */
+
+/* ---------- 27. Stress test mode ----------
+   Simulate income loss + market crash + medical emergency, all
+   simultaneously. Output: months of runway, what breaks first. */
+function stressTestSheet() {
+  const comp = (typeof wealthComposition === "function") ? wealthComposition() : null;
+  const monthlyExpense = (typeof recurringMonthlyTotal === "function") ? recurringMonthlyTotal("expense") : 3000;
+  const monthlyIncome = (typeof recurringMonthlyTotal === "function") ? recurringMonthlyTotal("income") : 5000;
+  // Liquid assets (cash + investments at 70% during crash)
+  const cash = (comp && comp.cash) || 0;
+  const inv = (comp && comp.investments) || 0;
+  openSheet(`
+    <h2 style="margin-bottom:4px">💥 Stress test</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Run your financial picture through the worst-case scenario. See what breaks first and where the cracks are.</p>
+    <label>Income drop (%)</label>
+    <input id="st-income" type="range" min="0" max="100" step="5" value="100" oninput="_stRecompute()"
+      style="width:100%;margin-bottom:6px" />
+    <div id="st-income-lbl" style="font-size:11px;color:var(--t3);margin-bottom:10px;text-align:center"></div>
+    <label>Stock market drop (%)</label>
+    <input id="st-market" type="range" min="0" max="60" step="5" value="30" oninput="_stRecompute()"
+      style="width:100%;margin-bottom:6px" />
+    <div id="st-market-lbl" style="font-size:11px;color:var(--t3);margin-bottom:10px;text-align:center"></div>
+    <label>Surprise medical/emergency expense ($)</label>
+    <input id="st-emergency" type="number" min="0" step="500" value="5000" oninput="_stRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box" />
+    <div id="st-result"></div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  window._stBaseline = { cash, inv, monthlyExpense, monthlyIncome };
+  _stRecompute();
+}
+function _stRecompute() {
+  const b = window._stBaseline; if (!b) return;
+  const incomeDrop = parseFloat(document.getElementById("st-income").value) / 100;
+  const marketDrop = parseFloat(document.getElementById("st-market").value) / 100;
+  const emergency = parseFloat(document.getElementById("st-emergency").value) || 0;
+  document.getElementById("st-income-lbl").textContent = `Income drops ${Math.round(incomeDrop*100)}%`;
+  document.getElementById("st-market-lbl").textContent = `Market drops ${Math.round(marketDrop*100)}%`;
+  const newIncome = b.monthlyIncome * (1 - incomeDrop);
+  const monthlyDeficit = Math.max(0, b.monthlyExpense - newIncome);
+  const liquidAfterCrash = b.cash + b.inv * (1 - marketDrop);
+  const afterEmergency = Math.max(0, liquidAfterCrash - emergency);
+  const runwayMonths = monthlyDeficit > 0 ? afterEmergency / monthlyDeficit : 999;
+  const color = runwayMonths >= 12 ? "var(--green,#34C759)" : runwayMonths >= 6 ? "#9ACD32" : runwayMonths >= 3 ? "var(--orange,#FF9500)" : "var(--red,#FF3B30)";
+  const label = runwayMonths >= 12 ? "Strong" : runwayMonths >= 6 ? "Decent" : runwayMonths >= 3 ? "Thin" : "Critical";
+  const fmt = (v) => v >= 1e6 ? "$" + (v/1e6).toFixed(2) + "M" : v >= 1e3 ? "$" + (v/1e3).toFixed(0) + "K" : "$" + Math.round(v);
+  const out = document.getElementById("st-result");
+  out.innerHTML = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${color};border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="text-align:center;margin-bottom:12px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">In this scenario, you can survive</div>
+        <div style="font-size:32px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">${runwayMonths >= 999 ? "∞" : runwayMonths.toFixed(1)} months</div>
+        <div style="font-size:13px;color:${color};font-weight:700;margin-top:2px">${esc(label)}</div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div style="background:var(--bg-elev);border-radius:8px;padding:9px 11px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600">After crash</div>
+          <div style="font-size:13px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt(liquidAfterCrash)}</div>
+          <div style="font-size:10.5px;color:var(--t3);font-variant-numeric:tabular-nums">from ${fmt(b.cash + b.inv)}</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:9px 11px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600">After emergency</div>
+          <div style="font-size:13px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt(afterEmergency)}</div>
+          <div style="font-size:10.5px;color:var(--t3)">spent ${fmt(emergency)}</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:9px 11px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600">New income</div>
+          <div style="font-size:13px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt(newIncome)}/mo</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:9px 11px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600">Monthly deficit</div>
+          <div style="font-size:13px;font-weight:700;color:var(--red,#FF3B30);font-variant-numeric:tabular-nums" data-priv="amount">${fmt(monthlyDeficit)}/mo</div>
+        </div>
+      </div>
+      <div style="font-size:11.5px;color:var(--t3);margin-top:12px;line-height:1.5;text-align:center">${runwayMonths >= 12 ? "✓ You can ride out a full year. Most people can't." : runwayMonths >= 6 ? "Half a year of runway. Solid base, but a few more months would let you wait for the right next job." : runwayMonths >= 3 ? "Three months goes fast. Build the emergency fund to 6 months minimum." : "This is the danger zone. Build cash before another investment dollar."}</div>
+    </div>
+  `;
+}
+
+/* ---------- 28. Estate planning checklist ----------
+   Critical-but-ignored checklist most people never finish. */
+const ESTATE_ITEMS = [
+  { id: "will",        title: "Will / Trust",                   icon: "📜", desc: "Legally specifies who gets what and who takes care of minor children. Without one, the state decides." },
+  { id: "beneficiaries", title: "Beneficiaries on accounts",     icon: "👥", desc: "401k, IRA, life insurance, brokerage TOD/POD. Beneficiary forms override your will. Check them annually." },
+  { id: "poa-fin",     title: "Power of Attorney (financial)",  icon: "🔑", desc: "If you're incapacitated, who handles your money? Without one, your family needs a court order." },
+  { id: "poa-med",     title: "Healthcare directive",           icon: "🏥", desc: "What medical treatment do you want if you can't speak? Living will + healthcare proxy combined." },
+  { id: "guardian",    title: "Guardian for minor kids",         icon: "👶", desc: "If you have kids: who raises them if you and your partner are gone? Name it in the will." },
+  { id: "digital",     title: "Digital legacy",                  icon: "💻", desc: "Password manager backup, social media accounts, crypto wallets — written instructions for someone you trust." },
+  { id: "letter",      title: "Letter of intent",                icon: "💌", desc: "Non-legal but priceless: a letter to loved ones about your wishes, location of documents, your story." },
+  { id: "review",      title: "Reviewed in last 3 years",        icon: "🔁", desc: "Marriage, divorce, kids, job changes, big purchases all trigger updates. Three-year audit minimum." },
+];
+function estateChecklistSheet() {
+  if (!DB.insurance) DB.insurance = {}; // reuse for estate too — under .estate key
+  if (!DB.insurance.estate) DB.insurance.estate = {};
+  const e = DB.insurance.estate;
+  const done = ESTATE_ITEMS.filter(i => e[i.id] && e[i.id].have === "yes").length;
+  const pct = Math.round((done / ESTATE_ITEMS.length) * 100);
+  openSheet(`
+    <h2 style="margin-bottom:4px">📜 Estate planning checklist</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Most people die without these in place. Family chaos for years follows. Knock them out one at a time.</p>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${pct===100?'var(--green,#34C759)':pct>=50?'#9ACD32':'var(--orange,#FF9500)'};border-radius:var(--r);padding:14px;margin-bottom:14px">
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Estate readiness</div>
+        <div style="font-size:13px;color:var(--t1);font-weight:700;font-variant-numeric:tabular-nums">${done} / ${ESTATE_ITEMS.length} done</div>
+      </div>
+      <div style="height:8px;background:var(--bg-elev);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${pct===100?'var(--green,#34C759)':pct>=50?'#9ACD32':'var(--orange,#FF9500)'};transition:width .4s"></div></div>
+    </div>
+    ${ESTATE_ITEMS.map(i => {
+      const s = e[i.id] || {};
+      const have = s.have || "unsure";
+      const color = have === "yes" ? "var(--green,#34C759)" : have === "no" ? "var(--red,#FF3B30)" : "var(--t3)";
+      const label = have === "yes" ? "✓ Done" : have === "no" ? "Not yet" : "Not sure";
+      return `
+        <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:12px 14px;margin-bottom:8px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+            <div style="font-size:13.5px;font-weight:700;color:var(--t1)">${i.icon} ${esc(i.title)}</div>
+            <div style="font-size:11px;color:${color};font-weight:700">${esc(label)}</div>
+          </div>
+          <div style="font-size:11.5px;color:var(--t2);line-height:1.45;margin-bottom:8px">${esc(i.desc)}</div>
+          <div style="display:flex;gap:4px">
+            ${["yes","no","unsure"].map(opt => {
+              const sel = have === opt;
+              const lbl = opt === "yes" ? "✓ Done" : opt === "no" ? "Not yet" : "? Unsure";
+              const optColor = opt === "yes" ? "var(--green,#34C759)" : opt === "no" ? "var(--red,#FF3B30)" : "var(--t3)";
+              return `<button onclick="_estSet(${jsAttr(i.id)}, ${jsAttr(opt)})" style="flex:1;background:${sel?optColor:'var(--bg-elev)'};color:${sel?'#fff':'var(--t2)'};border:0.5px solid var(--sep);border-radius:8px;padding:6px 8px;font-size:11px;font-weight:600;cursor:pointer">${lbl}</button>`;
+            }).join("")}
+          </div>
+        </div>
+      `;
+    }).join("")}
+    <div style="background:var(--bg-elev);border-radius:10px;padding:10px 12px;margin-top:6px;font-size:11px;color:var(--t2);line-height:1.5">
+      Estate planning is not a one-and-done — review whenever life changes (marriage, kids, divorce, big windfall). A simple online will service (LegalZoom, Trust & Will) costs ~$100-300 and beats nothing forever.
+    </div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+async function _estSet(id, val) {
+  if (!DB.insurance) DB.insurance = {};
+  if (!DB.insurance.estate) DB.insurance.estate = {};
+  if (!DB.insurance.estate[id]) DB.insurance.estate[id] = {};
+  DB.insurance.estate[id].have = val;
+  DB.insurance.estate[id].ts = Date.now();
+  await save();
+  estateChecklistSheet();
+}
+
+/* ---------- 29. Charitable giving tracker ----------
+   Intentional giving plan with target % of income + log. */
+function charitableSheet() {
+  if (!DB.charitable) DB.charitable = { targetPctIncome: 0, log: [] };
+  if (!Array.isArray(DB.charitable.log)) DB.charitable.log = [];
+  const target = +DB.charitable.targetPctIncome || 0;
+  const incomeM = (typeof recurringMonthlyTotal === "function") ? recurringMonthlyTotal("income") : 5000;
+  const annualIncome = incomeM * 12;
+  const annualTarget = annualIncome * (target / 100);
+  const yearStr = new Date().getFullYear().toString();
+  const givenYTD = DB.charitable.log.filter(g => (g.date || "").startsWith(yearStr)).reduce((s, g) => s + (+g.amount || 0), 0);
+  const pct = annualTarget > 0 ? Math.min(100, (givenYTD / annualTarget) * 100) : 0;
+  const allLog = DB.charitable.log.slice().reverse();
+  openSheet(`
+    <h2 style="margin-bottom:4px">🌍 Charitable giving</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Intentional giving — pick a % of income and track it. The point isn't just deduction. It's deciding now who you want to be.</p>
+    <label>Target % of income to give annually</label>
+    <input id="ch-pct" type="number" min="0" max="50" step="0.5" value="${esc(target)}"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <button class="btn secondary" style="width:100%;margin-bottom:14px;font-size:12.5px" onclick="_chSavePct()">Save target %</button>
+    ${target > 0 ? `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${pct>=100?'var(--green,#34C759)':'var(--orange,#FF9500)'};border-radius:var(--r);padding:14px;margin-bottom:14px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+          <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">${yearStr} progress</div>
+          <div style="font-size:11.5px;color:var(--t3)">$${givenYTD.toLocaleString()} of $${annualTarget.toLocaleString()}</div>
+        </div>
+        <div style="font-size:24px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">${pct.toFixed(0)}%</div>
+        <div style="height:6px;background:var(--bg-elev);border-radius:3px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${pct}%;background:${pct>=100?'var(--green,#34C759)':'#9ACD32'}"></div></div>
+        <div style="font-size:11px;color:var(--t3);margin-top:6px">${target}% of $${annualIncome.toLocaleString()}/yr income = $${annualTarget.toLocaleString()}/yr · $${(annualTarget/12).toFixed(0)}/mo</div>
+      </div>
+    ` : ""}
+    <label>Log a donation</label>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:6px">
+      <input id="ch-org" placeholder="Organization"
+        style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box" />
+      <input id="ch-amt" type="number" min="1" placeholder="Amount $"
+        style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box" />
+    </div>
+    <input id="ch-date" type="date" value="${todayKey()}"
+      style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;margin-bottom:10px;box-sizing:border-box" />
+    <button class="btn" style="width:100%;margin-bottom:14px" onclick="_chLog()">+ Log donation</button>
+    ${allLog.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">All donations (${allLog.length})</div>
+      ${allLog.slice(0, 30).map(g => `
+        <div style="display:flex;justify-content:space-between;align-items:baseline;padding:9px 11px;background:var(--bg-elev);border-radius:8px;margin-bottom:3px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:12.5px;color:var(--t1);font-weight:600">${esc(g.org)}</div>
+            <div style="font-size:10.5px;color:var(--t3)">${esc(g.date)}</div>
+          </div>
+          <div style="font-size:13px;color:var(--green,#34C759);font-weight:700;font-variant-numeric:tabular-nums" data-priv="amount">$${(+g.amount).toLocaleString()}</div>
+          <button onclick="_chRemove(${jsAttr(g.id)})" style="background:transparent;border:0;color:var(--t3);font-size:14px;padding:0 6px;cursor:pointer;margin-left:6px">×</button>
+        </div>
+      `).join("")}
+    ` : ""}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+async function _chSavePct() {
+  const p = parseFloat((document.getElementById("ch-pct") || {}).value);
+  if (!isFinite(p) || p < 0 || p > 50) { toast("0-50% range"); return; }
+  if (!DB.charitable) DB.charitable = { targetPctIncome: 0, log: [] };
+  DB.charitable.targetPctIncome = p;
+  await save();
+  toast("Target saved");
+  charitableSheet();
+}
+async function _chLog() {
+  const org = ((document.getElementById("ch-org") || {}).value || "").trim();
+  const amt = parseFloat((document.getElementById("ch-amt") || {}).value);
+  const date = ((document.getElementById("ch-date") || {}).value || todayKey());
+  if (!org || !isFinite(amt) || amt <= 0) { toast("Org + amount required"); return; }
+  if (!DB.charitable) DB.charitable = { targetPctIncome: 0, log: [] };
+  if (!Array.isArray(DB.charitable.log)) DB.charitable.log = [];
+  DB.charitable.log.push({ id: "ch_" + Date.now().toString(36), org: org.slice(0, 120), amount: amt, date });
+  await save();
+  toast("✓ Donation logged");
+  charitableSheet();
+}
+async function _chRemove(id) {
+  if (!DB.charitable) return;
+  DB.charitable.log = (DB.charitable.log || []).filter(g => g.id !== id);
+  await save();
+  charitableSheet();
+}
+
+/* ---------- 30. Asset-class breakdown ----------
+   Auto-classify holdings into stocks / bonds / cash / real estate.
+   No manual marking — guess from ticker symbol patterns. */
+function _classifyTicker(tk) {
+  const t = (tk || "").toUpperCase();
+  // Bond ETFs (common ones)
+  if (/^(BND|AGG|TLT|IEF|SHV|SHY|BIL|VCIT|VCSH|VGIT|VGLT|TIP|VTIP|MUB|HYG|LQD|EMB|BNDX|VWOB|BSV|BIV|BLV)$/.test(t)) return "bonds";
+  // Cash-equivalents
+  if (/^(BIL|GBIL|SGOV|VUSXX|VMFXX|SPRXX)$/.test(t)) return "cash";
+  // Real estate
+  if (/^(VNQ|VNQI|REIT|XLRE|IYR|SCHH|MORT|REM|REZ)$/.test(t) || /REIT/.test(t)) return "real_estate";
+  // Crypto
+  if (/-USD$/.test(t) || /BTC|ETH/.test(t)) return "crypto";
+  // Commodities
+  if (/^(GLD|SLV|IAU|GLDM|PDBC|DBC|USO|UNG)$/.test(t)) return "commodities";
+  // Default: stocks/ETF
+  return "stocks";
+}
+function assetClassBreakdownSheet() {
+  const holdings = (DB.stocks && DB.stocks.holdings) || {};
+  const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  const breakdown = { stocks: 0, bonds: 0, cash: 0, real_estate: 0, crypto: 0, commodities: 0 };
+  let total = 0;
+  for (const [tk, h] of Object.entries(holdings)) {
+    const shares = +h.shares || 0; if (shares <= 0) continue;
+    const q = cache[tk];
+    const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+    const value = price * shares;
+    const cls = _classifyTicker(tk);
+    breakdown[cls] += value;
+    total += value;
+  }
+  // Add cash from depository accounts
+  const cashFromAccts = (DB.accounts || []).filter(a => a.type === "depository").reduce((s, a) => s + (+a.balance_current || 0), 0);
+  breakdown.cash += cashFromAccts;
+  total += cashFromAccts;
+  // Add manual real estate assets
+  const realEstateAssets = (DB.assets || []).filter(a => a.type === "home" || a.type === "real_estate").reduce((s, a) => s + (+a.value || 0), 0);
+  breakdown.real_estate += realEstateAssets;
+  total += realEstateAssets;
+  const config = [
+    { id: "stocks",      label: "Stocks / ETFs", color: "#34C759" },
+    { id: "bonds",       label: "Bonds",         color: "#007AFF" },
+    { id: "cash",        label: "Cash",          color: "#9ACD32" },
+    { id: "real_estate", label: "Real estate",   color: "#AF52DE" },
+    { id: "commodities", label: "Commodities",   color: "#FF9500" },
+    { id: "crypto",      label: "Crypto",        color: "#FF3B30" },
+  ];
+  const rows = config.filter(c => breakdown[c.id] > 0).sort((a, b) => breakdown[b.id] - breakdown[a.id]);
+  if (!rows.length) {
+    openSheet(`<h2>📊 Asset class</h2><p class="muted">Add some holdings or cash accounts first to see your asset class breakdown.</p><div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>`);
+    return;
+  }
+  // Donut pie
+  const cx = 60, cy = 60, rOut = 50, rIn = 32;
+  const circ = 2 * Math.PI * ((rOut + rIn) / 2);
+  let cum = 0;
+  const segs = rows.map(r => {
+    const pct = breakdown[r.id] / total;
+    const dash = (pct * circ).toFixed(2);
+    const gap = (circ - +dash).toFixed(2);
+    const offset = (-cum * circ).toFixed(2);
+    cum += pct;
+    return `<circle cx="${cx}" cy="${cy}" r="${(rOut + rIn) / 2}" fill="none" stroke="${r.color}" stroke-width="${rOut - rIn}" stroke-dasharray="${dash} ${gap}" stroke-dashoffset="${offset}" transform="rotate(-90 ${cx} ${cy})"/>`;
+  }).join("");
+  // Recommended allocations (age-based — only if user has age)
+  const profile = DB.profile || {};
+  const age = +profile.age;
+  const recStocks = age ? Math.max(40, Math.min(95, 110 - age)) : null;
+  const recBonds = age ? 100 - recStocks - 5 : null;
+  const recCash = age ? 5 : null;
+  const fmt = (v) => "$" + Math.round(v).toLocaleString();
+  openSheet(`
+    <h2 style="margin-bottom:4px">📊 Asset class breakdown</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Auto-classified from your holdings, cash accounts, and real-estate assets. Compare to the age-based "rule of thumb" allocation.</p>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:14px;display:flex;align-items:center;gap:14px">
+      <svg viewBox="0 0 120 120" style="width:120px;height:120px;flex-shrink:0">
+        <circle cx="${cx}" cy="${cy}" r="${(rOut + rIn) / 2}" fill="none" stroke="var(--bg-elev)" stroke-width="${rOut - rIn}"/>
+        ${segs}
+        <text x="${cx}" y="${cy - 2}" text-anchor="middle" font-size="9" fill="var(--t3)">Total</text>
+        <text x="${cx}" y="${cy + 13}" text-anchor="middle" font-size="14" font-weight="800" fill="var(--t1)">${fmt(total)}</text>
+      </svg>
+      <div style="flex:1;min-width:0">
+        ${rows.map(r => {
+          const pct = (breakdown[r.id] / total) * 100;
+          return `<div style="display:flex;align-items:center;gap:6px;margin-bottom:5px;font-size:11.5px"><span style="width:10px;height:10px;border-radius:2px;background:${r.color};flex-shrink:0"></span><span style="flex:1;color:var(--t2)">${esc(r.label)}</span><span style="color:var(--t1);font-weight:700;font-variant-numeric:tabular-nums">${pct.toFixed(0)}%</span></div>`;
+        }).join("")}
+      </div>
+    </div>
+    ${recStocks ? `
+      <div style="background:var(--bg-elev);border-radius:10px;padding:11px 13px;margin-bottom:10px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Rule-of-thumb at age ${age}</div>
+        <div style="font-size:11.5px;color:var(--t2);line-height:1.6">
+          Suggested mix: <b style="color:#34C759">${recStocks}% stocks</b> · <b style="color:#007AFF">${recBonds}% bonds</b> · <b style="color:#9ACD32">${recCash}% cash</b><br>
+          Your mix:    <b>${((breakdown.stocks/total)*100).toFixed(0)}% stocks</b> · <b>${((breakdown.bonds/total)*100).toFixed(0)}% bonds</b> · <b>${((breakdown.cash/total)*100).toFixed(0)}% cash</b>
+        </div>
+      </div>
+    ` : ""}
+    <div style="font-size:10.5px;color:var(--t3);line-height:1.5;font-style:italic">Classification is heuristic from ticker symbols + account types — not perfect. Manually tag assets if needed. Real estate excludes mortgage; subtract that from net worth separately.</div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
 }
 
 function insuranceAuditSheet() {
