@@ -2860,7 +2860,7 @@ async function pauseHabit(id, days) {
   h.pauses.push({ from, to });
   await save();
   render();
-  toast(days ? `Paused ${esc(h.name)} for ${days} day${days === 1 ? '' : 's'}` : `Paused ${esc(h.name)} indefinitely`);
+  toast(days ? `Paused ${h.name} for ${days} day${days === 1 ? '' : 's'}` : `Paused ${h.name} indefinitely`);
 }
 
 // Resume a paused habit. Closes the most recent open pause as of yesterday
@@ -2884,7 +2884,7 @@ async function resumeHabit(id) {
   if (!modified) return;
   await save();
   render();
-  toast(`Resumed ${esc(h.name)}`);
+  toast(`Resumed ${h.name}`);
 }
 function habitDoneToday(h) {
   const v = h.log[todayKey()];
@@ -17614,7 +17614,7 @@ function contributeSinkingFund(id, amount) {
   if (!f) return;
   f.current = Math.max(0, (+f.current || 0) + (+amount || 0));
   save();
-  toast(`+${fmt$0(amount)} → ${esc(f.name)}`);
+  toast(`+${fmt$0(amount)} → ${f.name}`);
 }
 
 function resetSinkingFund(id) {
@@ -17623,7 +17623,7 @@ function resetSinkingFund(id) {
   f.current = 0;
   f.lastReset = Date.now();
   save();
-  toast(`${esc(f.name)} reset — fund used`);
+  toast(`${f.name} reset — fund used`);
 }
 
 function deleteSinkingFund(id) {
