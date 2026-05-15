@@ -5430,6 +5430,33 @@ function renderToday() {
             letter-spacing="0.6">/ 100</text>
         </svg>
       `;
+      // Tangible "next milestone" projection — when does the user cross
+      // the next round number ($10k / $25k / $50k / $100k / $1M etc) at
+      // their current contribution pace + assumed return. Shown as a
+      // footer chip in the hero card so the abstract Wealth Score has a
+      // concrete dollar promise attached to it.
+      const nextMilestone = (() => {
+        try {
+          const invested = (typeof currentInvested === "function") ? currentInvested() : 0;
+          if (invested <= 0) return null;
+          const retire = DB.retirement || {};
+          const annualReturn = Math.max(0, +retire.annualReturn || 7);
+          const monthlyContrib = Math.max(0, +retire.monthlyContribution || +DB.settings.monthlySavingsTarget || 0);
+          if (monthlyContrib <= 0) return null;
+          const monthlyR = (annualReturn / 100) / 12;
+          const tiers = [10000, 25000, 50000, 100000, 250000, 500000, 1_000_000];
+          const target = tiers.find(t => t > invested);
+          if (!target) return null;
+          let bal = invested, m = 0;
+          while (bal < target && m < 50 * 12) {
+            bal = bal * (1 + monthlyR) + monthlyContrib;
+            m++;
+          }
+          if (m >= 50 * 12) return null;
+          const d = new Date(); d.setMonth(d.getMonth() + m);
+          return { amount: target, when: d.toLocaleDateString("en-US", { month: "short", year: "numeric" }) };
+        } catch { return null; }
+      })();
       // 30-day score history sparkline. Pulls from the same rolling
       // wealthScoreHistory we already maintain. Only shown when ≥3 days
       // of data exist; otherwise the chart would be a single dot.
@@ -5471,6 +5498,12 @@ function renderToday() {
             </div>
           </div>
           <button onclick="event.stopPropagation();shareWealthScoreCard()" title="Share" aria-label="Share Wealth Score" style="position:absolute;top:12px;right:12px;background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t3);font-size:11px;padding:4px 10px;border-radius:999px;cursor:pointer;font-weight:600">Share ↗</button>
+          ${nextMilestone ? `
+            <div style="margin-top:10px;padding-top:10px;border-top:0.5px solid var(--sep);display:flex;align-items:center;gap:8px;font-size:12px;color:var(--t3)">
+              <span style="font-size:14px">🎯</span>
+              <span>At your current pace, you'll cross <b style="color:var(--t1)" data-priv="amount">${fmt$0(nextMilestone.amount)}</b> by <b style="color:var(--t1)">${esc(nextMilestone.when)}</b></span>
+            </div>
+          ` : ''}
           ${sparkSvg}
         </div>
       `;
