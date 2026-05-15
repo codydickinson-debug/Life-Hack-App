@@ -7839,7 +7839,7 @@ function renderMoney() {
 
     // Navigation pills — the dashboard has 20+ sections. Pills scroll to anchors.
     const navPills = `
-      <div style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:8px 0;margin:-4px -2px 12px;border-bottom:1px solid var(--sep);scrollbar-width:none" id="wealth-nav">
+      <div style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:8px 2px;margin:-4px -2px 12px;border-bottom:1px solid var(--sep);scrollbar-width:none;position:sticky;top:0;z-index:5;background:var(--bg);backdrop-filter:saturate(120%) blur(8px);-webkit-backdrop-filter:saturate(120%) blur(8px)" id="wealth-nav">
         ${[
           { id: "wh-score",       label: "Health" },
           { id: "wh-chart",       label: "Net worth" },
@@ -9744,7 +9744,7 @@ function renderSettings() {
   // Quick-jump strip: groups Settings into thematic chips so the user
   // can jump to a section without scrolling through 24 of them.
   const settingsJumpStrip = `
-    <div style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:8px 0;margin:-4px -2px 14px;scrollbar-width:none" id="settings-nav">
+    <div style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding:8px 2px;margin:-4px -2px 14px;scrollbar-width:none;position:sticky;top:0;z-index:5;background:var(--bg);backdrop-filter:saturate(120%) blur(8px);-webkit-backdrop-filter:saturate(120%) blur(8px)" id="settings-nav">
       ${[
         { id: "sec-you",       label: "You" },
         { id: "sec-customize", label: "Customize" },
