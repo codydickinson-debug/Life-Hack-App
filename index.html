@@ -15306,6 +15306,19 @@ function renderCalendar() {
   const userDates = new Set((DB.calendarDates || [])
     .filter(d => /^\d{4}-\d{2}-\d{2}$/.test(d.date || ""))
     .map(d => d.date));
+  // Earnings + ex-dividend dates from Stocks caches
+  const earningsDates = new Set();
+  const exDivDates = new Set();
+  try {
+    const ec = (DB.stocks && DB.stocks.earningsCache) || {};
+    for (const info of Object.values(ec)) {
+      if (info && /^\d{4}-\d{2}-\d{2}$/.test(info.next_earnings || "")) earningsDates.add(info.next_earnings);
+    }
+    const dc = (DB.stocks && DB.stocks.exDivCache) || {};
+    for (const info of Object.values(dc)) {
+      if (info && /^\d{4}-\d{2}-\d{2}$/.test(info.ex_dividend_date || "")) exDivDates.add(info.ex_dividend_date);
+    }
+  } catch {}
 
   // Aggregate month-level stats for the header strip
   let monthHabitDone = 0, monthHabitPossible = 0;
@@ -15355,6 +15368,8 @@ function renderCalendar() {
       hasNote: noteDates.has(k),
       hasPlan: planDates.has(k),
       hasUserDate: userDates.has(k),
+      hasEarnings: earningsDates.has(k),
+      hasExDiv: exDivDates.has(k),
       mood: moodMap[k] || "",
     });
   }
@@ -15383,6 +15398,8 @@ function renderCalendar() {
       c.hasNote && '<span style="background:var(--blue)"></span>',
       c.hasPlan && '<span style="background:var(--purple);box-shadow:0 0 0 1px rgba(124,58,237,0.4)" title="Plan deadline"></span>',
       c.hasUserDate && '<span style="background:var(--pink,#ec4899)" title="Important date"></span>',
+      c.hasEarnings && '<span style="background:#0ea5e9" title="Stock earnings"></span>',
+      c.hasExDiv && '<span style="background:#22d3ee" title="Ex-dividend"></span>',
     ].filter(Boolean).join("");
     return `
       <div class="cal-cell" style="background:${bg};${ring}" onclick="calendarDaySheet('${c.key}')" role="button" tabindex="0">
@@ -17568,6 +17585,61 @@ function buildCounselorSnapshot() {
       }))
     : [];
 
+  // --- Stocks: live portfolio snapshot (positions w/ P&L + alloc + diversification)
+  let stocksPortfolio = null;
+  try {
+    const h = stocksObj.holdings || {};
+    const qc = stocksObj.quoteCache || {};
+    const divc = stocksObj.dividendCache || {};
+    const targets = stocksObj.allocationTargets || {};
+    let mkt = 0, cost = 0, dayChg = 0, annDiv = 0;
+    const positions = Object.entries(h).filter(([_, x]) => +x.shares > 0).map(([tk, x]) => {
+      const q = qc[tk];
+      const price = q && !q.error && q.price != null ? +q.price : (+x.cost || 0);
+      const shares = +x.shares;
+      const c = +x.cost || 0;
+      const mv = price * shares;
+      mkt += mv; cost += c * shares;
+      if (q && q.change != null) dayChg += +q.change * shares;
+      const yld = divc[tk] && divc[tk].yield != null ? +divc[tk].yield : null;
+      if (yld != null) annDiv += yld * mv;
+      const target = targets[tk] != null ? +targets[tk] : null;
+      return {
+        ticker: tk, shares, cost_per_share: c, current_price: price,
+        market_value: Math.round(mv * 100) / 100,
+        pl: Math.round((mv - c * shares) * 100) / 100,
+        pl_pct: c > 0 ? Math.round(((mv - c * shares) / (c * shares)) * 10000) / 100 : null,
+        target_pct: target,
+      };
+    });
+    positions.forEach(p => p.weight_pct = mkt > 0 ? Math.round((p.market_value / mkt) * 10000) / 100 : 0);
+    positions.sort((a, b) => b.market_value - a.market_value);
+    // Diversification HHI
+    let hhi = 0;
+    if (mkt > 0) for (const p of positions) hhi += Math.pow(p.market_value / mkt, 2);
+    const effN = hhi > 0 ? 1 / hhi : 0;
+    const realized = stocksObj.realizedPL || [];
+    const realizedYtd = realized
+      .filter(r => (r.date || "").startsWith(new Date().getFullYear().toString()))
+      .reduce((s, r) => s + (+r.pl || 0), 0);
+    if (positions.length > 0) {
+      stocksPortfolio = {
+        market_value: Math.round(mkt),
+        cost_basis: Math.round(cost),
+        unrealized_pl: Math.round(mkt - cost),
+        unrealized_pl_pct: cost > 0 ? Math.round(((mkt - cost) / cost) * 10000) / 100 : null,
+        day_change: Math.round(dayChg * 100) / 100,
+        positions,
+        n_positions: positions.length,
+        diversification_hhi: Math.round(hhi * 1000) / 1000,
+        effective_n_holdings: Math.round(effN * 10) / 10,
+        projected_annual_dividends: Math.round(annDiv),
+        realized_pl_ytd: Math.round(realizedYtd),
+        targets_set: Object.keys(targets).length > 0,
+      };
+    }
+  } catch {}
+
   // --- Estimated annual dividend income — centralized helper.
   let annualDividends = 0;
   try { annualDividends = estimatedAnnualDividends(); } catch {}
@@ -17668,6 +17740,7 @@ function buildCounselorSnapshot() {
     investments: { total_invested: Math.round(investedTotal), holdings },
     stocks_watchlist: watchlist,
     stocks_alerts_active: stockAlerts,
+    stocks_portfolio: stocksPortfolio,
     active_subscriptions: activeSubs,
     habits_top: habits,
     longest_current_habit_streak: longestCurrentStreak,
@@ -22410,6 +22483,29 @@ function wealthHealthSheet() {
         <button class="btn sm" style="margin-top:10px;font-size:12px" onclick="closeSheet();smartPlaysSheet()">See Smart Plays</button>
       </div>
     ` : ""}
+    ${(() => {
+      // Stock portfolio contribution callout — when user has holdings,
+      // surface how much they're contributing to total assets.
+      const holdings = (DB.stocks && DB.stocks.holdings) || {};
+      const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+      let mkt = 0;
+      for (const [tk, h] of Object.entries(holdings)) {
+        const shares = +h.shares || 0; if (shares <= 0) continue;
+        const q = cache[tk];
+        const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+        mkt += price * shares;
+      }
+      if (mkt <= 0) return "";
+      const comp = (typeof wealthComposition === "function") ? wealthComposition() : null;
+      const invPct = comp && comp.investments > 0 ? Math.min(100, Math.round((mkt / comp.investments) * 100)) : null;
+      return `
+        <div onclick="closeSheet();setTimeout(()=>showTab('stocks'),120)" role="button" tabindex="0" style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:14px;cursor:pointer">
+          <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Stock portfolio impact</div>
+          <div style="font-size:13.5px;color:var(--t1);line-height:1.5">Your live stock portfolio is worth <b data-priv="amount">${fmt$0(mkt)}</b>${invPct != null ? ` — that's <b>${invPct}%</b> of your Investments bucket` : ""}. Wealth Score updates as the market moves your portfolio.</div>
+          <div style="display:inline-flex;align-items:center;gap:4px;color:var(--blue,#007AFF);font-size:12px;font-weight:600;margin-top:6px">Open Stocks <span style="font-size:13px">→</span></div>
+        </div>
+      `;
+    })()}
     <div class="actions">
       <button class="btn secondary" style="width:100%" onclick="closeSheet()">Close</button>
     </div>
