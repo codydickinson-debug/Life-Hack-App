@@ -6340,7 +6340,10 @@ function dayRecord(dateKey) {
   if (!dateKey || typeof dateKey !== "string") return null;
   const moodKey = (DB.moods || {})[dateKey] || null;
   const note = (DB.calendarNotes || {})[dateKey] || "";
-  const importantTags = ((DB.calendarDates || {})[dateKey] || null);
+  // calendarDates is an ARRAY of {id,title,date,icon,note}, not a map.
+  // Filter rather than indexing — getting that wrong was returning null
+  // for every day's important-date list.
+  const importantDates = (DB.calendarDates || []).filter(d => d && d.date === dateKey);
   const wins = (DB.wins || []).filter(w => w.date === dateKey);
   const spend = (DB.spend || []).filter(t => t.date === dateKey);
   const spendOutflow = spend.reduce((s, t) => s + Math.max(0, +t.amount || 0), 0);
@@ -6362,14 +6365,14 @@ function dayRecord(dateKey) {
     dateKey,
     mood: moodKey,
     note,
-    importantTags,
+    importantDates,
     wins, winsCount: wins.length,
     spend, spendOutflow, spendInflow,
     habitsDone, habitsTotal: (DB.habits || []).length,
     reflection,
     plansDueToday,
     savingDeposits,
-    hasAnything: !!(moodKey || note || wins.length || spend.length || habitsDone || reflection || plansDueToday.length || savingDeposits.length),
+    hasAnything: !!(moodKey || note || wins.length || spend.length || habitsDone || reflection || plansDueToday.length || savingDeposits.length || importantDates.length),
   };
 }
 // After savings changes, auto-complete any plan whose live amount >= target.
