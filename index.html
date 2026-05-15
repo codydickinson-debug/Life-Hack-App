@@ -7417,7 +7417,18 @@ function _moneyHealthSnapshot() {
   const manualAssets = (DB.assets || []).reduce((s, a) => s + (+a.value || 0), 0);
   const manualLiab   = (DB.liabilities || []).reduce((s, l) => s + (+l.balance || 0), 0);
   const savingsTotal = (DB.savings || []).reduce((s, sv) => s + (+sv.current || 0), 0);
-  const totalAssets = accountsCash + manualAssets + savingsTotal;
+  // Stock portfolio: shares × cached price for each holding.
+  // Quote cache is refreshed on Stocks-tab open; falls back to cost basis
+  // if no live price has been fetched yet so net-worth doesn't jump to 0.
+  const stkHoldings = (DB.stocks && DB.stocks.holdings) || {};
+  const stkCache = (DB.stocks && DB.stocks.quoteCache) || {};
+  const stocksValue = Object.entries(stkHoldings).reduce((sum, [tk, h]) => {
+    const shares = +h.shares || 0;
+    const q = stkCache[tk];
+    const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+    return sum + shares * price;
+  }, 0);
+  const totalAssets = accountsCash + manualAssets + savingsTotal + stocksValue;
   const totalDebt   = accountsDebt + manualLiab;
   const netWorth = totalAssets - totalDebt;
   // 30-day net-worth change from history snapshots (if any).
@@ -9578,6 +9589,9 @@ function renderStocks() {
       <button class="btn" style="font-size:13px;padding:10px 16px" onclick="_stocksAddTicker(document.getElementById('stk-add-input').value)">Add</button>
     </div>
 
+    <!-- Sector heatmap -->
+    <div id="stk-heatmap-wrap"></div>
+
     <!-- Portfolio summary hero (shows only if user has holdings) -->
     <div id="stk-portfolio-hero"></div>
 
@@ -9606,6 +9620,11 @@ function renderStocks() {
         <div class="body"><div class="t1">Compare tickers</div><div class="t2">Side-by-side metrics for any two stocks</div></div>
         <div class="trail chev"></div>
       </div>
+      <div class="row tappable" onclick="earningsCalendarSheet()" role="button" tabindex="0">
+        <div class="lead">📅</div>
+        <div class="body"><div class="t1">Upcoming earnings</div><div class="t2">Next earnings dates across your watchlist + holdings</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="window.open('/stockanalyzer','_blank')" role="button" tabindex="0">
         <div class="lead">🏠</div>
         <div class="body"><div class="t1">Housing &amp; mortgages</div><div class="t2">Live mortgage rates, ZIP-level housing data, affordability calc</div></div>
@@ -9622,6 +9641,100 @@ function renderStocks() {
   _stocksRenderWatchlist();
   _stocksRenderPortfolio();
   _stocksRefreshAll();
+  _stocksLoadHeatmap();
+}
+
+/* ---------- Sector heatmap ----------
+   Pulse of today's market by sector. Uses the SPDR sector ETFs as
+   proxies — each ETF is a basket of ~30-80 sector stocks so today's
+   change captures the sector mood without us having to aggregate
+   individual tickers. Cached in DB.stocks.heatmapCache for a few
+   minutes so we don't re-fetch on every tab open. */
+const _STK_SECTOR_ETFS = [
+  { tk: "XLK", label: "Technology",       emoji: "💻" },
+  { tk: "XLF", label: "Financials",       emoji: "🏦" },
+  { tk: "XLV", label: "Healthcare",       emoji: "⚕️" },
+  { tk: "XLY", label: "Consumer Disc.",   emoji: "🛍️" },
+  { tk: "XLP", label: "Consumer Staples", emoji: "🛒" },
+  { tk: "XLE", label: "Energy",           emoji: "⛽" },
+  { tk: "XLI", label: "Industrials",      emoji: "🏭" },
+  { tk: "XLB", label: "Materials",        emoji: "⚒️" },
+  { tk: "XLU", label: "Utilities",        emoji: "💡" },
+  { tk: "XLRE",label: "Real Estate",      emoji: "🏢" },
+  { tk: "XLC", label: "Communications",   emoji: "📡" },
+];
+
+async function _stocksLoadHeatmap() {
+  const wrap = document.getElementById("stk-heatmap-wrap");
+  if (!wrap) return;
+  if (!DB.stocks) DB.stocks = {};
+  const cache = DB.stocks.heatmapCache || {};
+  const cacheAge = cache.fetchedAt ? (Date.now() - cache.fetchedAt) : Infinity;
+  // 10-minute cache for the heatmap
+  if (cacheAge < 10 * 60 * 1000 && cache.quotes) {
+    _stocksRenderHeatmap(cache.quotes);
+    return;
+  }
+  // Skeleton while loading
+  wrap.innerHTML = `
+    <div class="section-h" style="margin-top:14px"><span class="lbl">Today's market</span></div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px">
+      ${_STK_SECTOR_ETFS.slice(0, 11).map(() => `<div style="background:var(--bg-elev);border-radius:8px;height:62px;animation:pulse 1.5s ease-in-out infinite"></div>`).join("")}
+    </div>`;
+  try {
+    const tickers = _STK_SECTOR_ETFS.map(e => e.tk).join(",");
+    const r = await fetch("/api/quote/batch?tickers=" + encodeURIComponent(tickers));
+    const data = await r.json();
+    if (data && data.quotes) {
+      DB.stocks.heatmapCache = { quotes: data.quotes, fetchedAt: Date.now() };
+      await save();
+      _stocksRenderHeatmap(data.quotes);
+    }
+  } catch (e) {
+    wrap.innerHTML = "";
+  }
+}
+
+function _stocksRenderHeatmap(quotes) {
+  const wrap = document.getElementById("stk-heatmap-wrap");
+  if (!wrap) return;
+  const rows = _STK_SECTOR_ETFS.map(e => {
+    const q = quotes[e.tk];
+    const chg = q && !q.error ? +q.change_pct : null;
+    return { ...e, chg };
+  }).filter(r => r.chg != null);
+  if (!rows.length) { wrap.innerHTML = ""; return; }
+  // Sort: biggest gainers first
+  rows.sort((a, b) => (b.chg || 0) - (a.chg || 0));
+  const colorFor = (chg) => {
+    if (chg == null) return "var(--bg-elev)";
+    const p = Math.max(-3, Math.min(3, chg * 100));   // clamp to ±3%
+    const intensity = Math.min(1, Math.abs(p) / 2.5); // 0..1
+    if (p >= 0) return `rgba(52,199,89,${0.10 + intensity * 0.45})`;
+    return `rgba(255,59,48,${0.10 + intensity * 0.45})`;
+  };
+  // Aggregate market mood
+  const avg = rows.reduce((s, r) => s + r.chg, 0) / rows.length;
+  const mood = avg > 0.005 ? "Risk-on" : avg < -0.005 ? "Risk-off" : "Mixed";
+  const moodColor = avg > 0.005 ? "var(--green,#34C759)" : avg < -0.005 ? "var(--red,#FF3B30)" : "var(--orange,#FF9500)";
+  wrap.innerHTML = `
+    <div class="section-h" style="margin-top:14px;display:flex;align-items:center;gap:8px">
+      <span class="lbl">Today's market</span>
+      <div style="background:var(--bg-elev);color:${moodColor};border-radius:999px;padding:2px 9px;font-size:10.5px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase">${mood} · ${avg >= 0 ? "+" : ""}${(avg * 100).toFixed(2)}%</div>
+      <div style="flex:1"></div>
+      <button class="act" onclick="DB.stocks.heatmapCache=null;_stocksLoadHeatmap()" style="font-size:11px">↻</button>
+    </div>
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:6px">
+      ${rows.map(r => `
+        <div onclick="_stocksOpenDetail(${jsAttr(r.tk)})" role="button" tabindex="0" title="${esc(r.label)} (${esc(r.tk)}): ${(r.chg*100).toFixed(2)}%" style="background:${colorFor(r.chg)};border-radius:8px;padding:8px 6px;text-align:center;cursor:pointer">
+          <div style="font-size:14px;line-height:1">${r.emoji}</div>
+          <div style="font-size:9.5px;color:var(--t2);margin-top:3px;font-weight:600;text-transform:uppercase;letter-spacing:0.02em;line-height:1.1;height:22px;display:flex;align-items:center;justify-content:center;text-align:center">${esc(r.label)}</div>
+          <div style="font-size:11.5px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;margin-top:2px">${r.chg >= 0 ? "+" : ""}${(r.chg * 100).toFixed(2)}%</div>
+        </div>
+      `).join("")}
+    </div>
+    <div style="font-size:10.5px;color:var(--t3);text-align:right;line-height:1.4">Sectors via SPDR ETFs · tap to drill in</div>
+  `;
 }
 
 /* ---------- Portfolio / holdings tracker ----------
@@ -10904,6 +11017,96 @@ function _stocksFormatDecision(d) {
           `).join("")}
         </div>
       ` : ""}
+    </div>
+  `;
+}
+
+// Earnings calendar sheet — batch-fetch next earnings dates for every
+// ticker in the watchlist + holdings, group by week.
+async function earningsCalendarSheet() {
+  const wl = (DB.stocks && DB.stocks.watchlist) || [];
+  const hold = Object.keys((DB.stocks && DB.stocks.holdings) || {});
+  const all = Array.from(new Set([...wl, ...hold]));
+  if (!all.length) {
+    openSheet(`
+      <h2 style="margin-bottom:4px">Upcoming earnings</h2>
+      <p class="muted" style="font-size:12.5px;margin-bottom:14px">Add tickers to your watchlist or portfolio first, then come back.</p>
+      <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+    `);
+    return;
+  }
+  openSheet(`
+    <h2 style="margin-bottom:4px">Upcoming earnings</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Pulling next earnings dates for ${all.length} tickers…</p>
+    <div id="earn-result" style="text-align:center;padding:30px 14px;color:var(--t3);font-size:13px">📅 Looking up earnings calendar…</div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  try {
+    const r = await fetch("/api/earnings/batch?tickers=" + encodeURIComponent(all.join(",")));
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || "HTTP " + r.status);
+    _stocksRenderEarningsCalendar(data.calendar || {});
+  } catch (e) {
+    const out = document.getElementById("earn-result");
+    if (out) out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  }
+}
+
+function _stocksRenderEarningsCalendar(calendar) {
+  const out = document.getElementById("earn-result");
+  if (!out) return;
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const upcoming = Object.entries(calendar)
+    .map(([tk, info]) => {
+      if (!info || !info.next_earnings) return null;
+      const d = new Date(info.next_earnings + "T00:00:00");
+      if (isNaN(d.getTime())) return null;
+      const days = Math.ceil((d.getTime() - today.getTime()) / 86400000);
+      return { tk, date: d, days };
+    })
+    .filter(x => x && x.days >= -1 && x.days <= 60)
+    .sort((a, b) => a.days - b.days);
+  if (!upcoming.length) {
+    out.innerHTML = `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:13px">No earnings within the next 60 days for your tickers.</div>`;
+    return;
+  }
+  // Group by bucket: this week / next week / 2-4 weeks / later
+  const buckets = { thisWeek: [], nextWeek: [], soon: [], later: [] };
+  for (const u of upcoming) {
+    if (u.days <= 7) buckets.thisWeek.push(u);
+    else if (u.days <= 14) buckets.nextWeek.push(u);
+    else if (u.days <= 28) buckets.soon.push(u);
+    else buckets.later.push(u);
+  }
+  const renderBucket = (list, label, color) => {
+    if (!list.length) return "";
+    return `
+      <div style="margin-bottom:10px">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px">
+          <span style="font-size:10.5px;color:${color};text-transform:uppercase;letter-spacing:0.06em;font-weight:700">${esc(label)}</span>
+          <span style="font-size:11px;color:var(--t3)">${list.length} ticker${list.length === 1 ? "" : "s"}</span>
+        </div>
+        ${list.map(u => {
+          const lbl = u.days < 0 ? "Yesterday" : u.days === 0 ? "Today" : u.days === 1 ? "Tomorrow" : `in ${u.days} days`;
+          const dateStr = u.date.toLocaleDateString("en-US", { weekday: "short", month: "short", day: "numeric" });
+          return `
+            <div onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(u.tk)}),120)" role="button" tabindex="0" style="display:flex;justify-content:space-between;align-items:center;padding:9px 11px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px;cursor:pointer">
+              <div style="font-weight:700;font-size:13.5px;color:var(--t1);width:60px">${esc(u.tk)}</div>
+              <div style="flex:1;font-size:12px;color:var(--t2)">${esc(dateStr)}</div>
+              <div style="font-size:11.5px;color:${color};font-weight:700">${esc(lbl)}</div>
+            </div>
+          `;
+        }).join("")}
+      </div>
+    `;
+  };
+  out.innerHTML = `
+    <div style="text-align:left;padding:0">
+      ${renderBucket(buckets.thisWeek, "This week", "var(--red,#FF3B30)")}
+      ${renderBucket(buckets.nextWeek, "Next week", "var(--orange,#FF9500)")}
+      ${renderBucket(buckets.soon,     "2-4 weeks", "var(--blue,#007AFF)")}
+      ${renderBucket(buckets.later,    "Later this month +", "var(--t3)")}
+      <div style="font-size:10.5px;color:var(--t3);margin-top:10px;line-height:1.4;font-style:italic">Tap any ticker to open its research card with the full earnings countdown.</div>
     </div>
   `;
 }

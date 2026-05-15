@@ -656,6 +656,48 @@ def api_peers(ticker):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/earnings/batch")
+def api_earnings_batch():
+    """Batch endpoint: for each ticker, return next upcoming earnings date.
+    Used by the watchlist earnings calendar so we can show "AAPL reports
+    in 3 days" across the user's whole watchlist in one round-trip.
+
+    Usage: GET /api/earnings/batch?tickers=AAPL,MSFT,GOOG
+    Returns: {ticker: {next_earnings: 'YYYY-MM-DD' or null}}
+    """
+    import yfinance as yf
+    tickers_arg = (request.args.get("tickers") or "").strip()
+    if not tickers_arg:
+        return jsonify({"error": "tickers query param required"}), 400
+    tickers = [t.strip().upper() for t in tickers_arg.split(",") if t.strip()][:30]
+    out = {}
+    def lookup(tk):
+        try:
+            t = yf.Ticker(tk)
+            cal = t.calendar
+            ed_str = None
+            try:
+                if cal is not None and hasattr(cal, "get"):
+                    ed = cal.get("Earnings Date") if hasattr(cal, "get") else None
+                    if ed is not None and len(ed) > 0:
+                        d0 = ed[0]
+                        ed_str = d0.strftime("%Y-%m-%d") if hasattr(d0, "strftime") else str(d0)
+                elif isinstance(cal, dict):
+                    ed = cal.get("Earnings Date")
+                    if ed and len(ed) > 0:
+                        ed_str = ed[0].strftime("%Y-%m-%d") if hasattr(ed[0], "strftime") else str(ed[0])
+            except Exception:
+                ed_str = None
+            return tk, {"next_earnings": ed_str}
+        except Exception as e:
+            return tk, {"error": str(e)}
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        for tk, res in pool.map(lookup, tickers):
+            out[tk] = res
+    return jsonify({"calendar": out})
+
+
 @app.route("/api/screener")
 def api_screener():
     """Stream screener results as SSE. The user picks a preset filter and a
