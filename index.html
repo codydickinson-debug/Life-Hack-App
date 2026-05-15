@@ -10293,12 +10293,13 @@ function renderStocks() {
       <div class="trail chev"></div>
     </div>
 
-    <!-- Quick add + scan -->
-    <div style="display:flex;gap:8px;margin-bottom:12px">
+    <!-- Quick add + browse + scan -->
+    <div style="display:flex;gap:6px;margin-bottom:12px">
       <input id="stk-add-input" placeholder="Add ticker — e.g. AAPL" autocapitalize="characters" autocorrect="off"
-        style="flex:1;background:var(--card);padding:11px 14px;border-radius:var(--r3, 10px);font-size:14px;border:0.5px solid var(--sep);color:var(--t1);box-sizing:border-box"
+        style="flex:1;background:var(--card);padding:11px 14px;border-radius:var(--r3, 10px);font-size:14px;border:0.5px solid var(--sep);color:var(--t1);box-sizing:border-box;min-width:0"
         onkeydown="if(event.key==='Enter'){event.preventDefault();_stocksAddTicker(this.value);}" />
-      <button class="btn" style="font-size:13px;padding:10px 16px" onclick="_stocksAddTicker(document.getElementById('stk-add-input').value)">Add</button>
+      <button class="btn secondary" style="font-size:13px;padding:10px 12px;flex-shrink:0" onclick="tickerQuickSearchSheet()" aria-label="Browse popular tickers" title="Browse">🔍</button>
+      <button class="btn" style="font-size:13px;padding:10px 16px;flex-shrink:0" onclick="_stocksAddTicker(document.getElementById('stk-add-input').value)">Add</button>
     </div>
 
     <!-- Section nav pills -->
@@ -13682,7 +13683,16 @@ function _stocksDcaSheet(tk) {
   if (!q) { toast("Open the ticker first"); return; }
   openSheet(`
     <h2 style="margin-bottom:4px">DCA into ${esc(q.ticker)}</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px">What if you'd bought $X of ${esc(q.ticker)} every month for N years?</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:10px">What if you'd bought $X of ${esc(q.ticker)} every month for N years?</p>
+    <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Try a preset</div>
+    <div style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:12px">
+      ${[
+        { lbl: "$100/mo · 1y", m: 100, y: 1 },
+        { lbl: "$500/mo · 3y", m: 500, y: 3 },
+        { lbl: "$1k/mo · 5y", m: 1000, y: 5 },
+        { lbl: "$250/mo · 5y", m: 250, y: 5 },
+      ].map(p => `<button onclick="_stocksDcaLoadPreset(${p.m},${p.y})" style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t1);border-radius:999px;padding:5px 11px;font-size:11px;font-weight:600;cursor:pointer">${esc(p.lbl)}</button>`).join("")}
+    </div>
     <label>Monthly amount ($)</label>
     <input id="dca-amt" type="number" inputmode="decimal" value="500" min="10" oninput="_stocksDcaRecompute()"
       style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
@@ -13696,6 +13706,14 @@ function _stocksDcaSheet(tk) {
     <div id="dca-result"></div>
     <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
   `);
+  _stocksDcaRecompute();
+}
+
+function _stocksDcaLoadPreset(monthly, years) {
+  const m = document.getElementById("dca-amt");
+  const y = document.getElementById("dca-yrs");
+  if (m) m.value = monthly;
+  if (y) y.value = String(years);
   _stocksDcaRecompute();
 }
 
@@ -14052,6 +14070,142 @@ function _stocksSetWatchlistSort(s) {
   DB.stocks.watchlistSort = s;
   save();
   _stocksRenderWatchlist();
+}
+
+/* ---------- Ticker quick-search ----------
+   A curated list of ~120 popular tickers (major indices, mega-caps,
+   sector ETFs, classic dividend stocks) so users can browse + filter
+   without remembering exact symbols. Tap any → opens the broker detail. */
+const STK_POPULAR_TICKERS = [
+  // Indices / broad ETFs
+  { tk: "VOO",  name: "Vanguard S&P 500" },
+  { tk: "SPY",  name: "SPDR S&P 500" },
+  { tk: "VTI",  name: "Vanguard Total Stock Market" },
+  { tk: "QQQ",  name: "Invesco Nasdaq-100" },
+  { tk: "IWM",  name: "iShares Russell 2000" },
+  { tk: "VXUS", name: "Vanguard Total International Stock" },
+  { tk: "VEA",  name: "Vanguard Developed Markets" },
+  { tk: "VWO",  name: "Vanguard Emerging Markets" },
+  { tk: "BND",  name: "Vanguard Total Bond Market" },
+  { tk: "TLT",  name: "iShares 20+ Year Treasury Bond" },
+  { tk: "GLD",  name: "SPDR Gold Trust" },
+  { tk: "SLV",  name: "iShares Silver Trust" },
+  // Sector ETFs
+  { tk: "XLK",  name: "Technology Select Sector SPDR" },
+  { tk: "XLF",  name: "Financial Select Sector SPDR" },
+  { tk: "XLV",  name: "Health Care Select Sector SPDR" },
+  { tk: "XLY",  name: "Consumer Discretionary SPDR" },
+  { tk: "XLP",  name: "Consumer Staples SPDR" },
+  { tk: "XLE",  name: "Energy Select Sector SPDR" },
+  { tk: "XLI",  name: "Industrial Select Sector SPDR" },
+  { tk: "XLU",  name: "Utilities Select Sector SPDR" },
+  { tk: "XLRE", name: "Real Estate Select Sector SPDR" },
+  { tk: "XLC",  name: "Communication Services SPDR" },
+  { tk: "XLB",  name: "Materials Select Sector SPDR" },
+  // Dividend / income
+  { tk: "SCHD", name: "Schwab US Dividend Equity" },
+  { tk: "VYM",  name: "Vanguard High Dividend Yield" },
+  { tk: "VIG",  name: "Vanguard Dividend Appreciation" },
+  // Mega-cap tech (US)
+  { tk: "AAPL", name: "Apple" },
+  { tk: "MSFT", name: "Microsoft" },
+  { tk: "GOOGL",name: "Alphabet (Google)" },
+  { tk: "AMZN", name: "Amazon" },
+  { tk: "META", name: "Meta Platforms" },
+  { tk: "NVDA", name: "NVIDIA" },
+  { tk: "TSLA", name: "Tesla" },
+  // Other large cap
+  { tk: "BRK-B",name: "Berkshire Hathaway B" },
+  { tk: "JPM",  name: "JPMorgan Chase" },
+  { tk: "V",    name: "Visa" },
+  { tk: "MA",   name: "Mastercard" },
+  { tk: "JNJ",  name: "Johnson & Johnson" },
+  { tk: "UNH",  name: "UnitedHealth" },
+  { tk: "PG",   name: "Procter & Gamble" },
+  { tk: "HD",   name: "Home Depot" },
+  { tk: "KO",   name: "Coca-Cola" },
+  { tk: "PEP",  name: "PepsiCo" },
+  { tk: "WMT",  name: "Walmart" },
+  { tk: "COST", name: "Costco" },
+  { tk: "DIS",  name: "Disney" },
+  { tk: "NFLX", name: "Netflix" },
+  { tk: "ADBE", name: "Adobe" },
+  { tk: "CRM",  name: "Salesforce" },
+  { tk: "ORCL", name: "Oracle" },
+  { tk: "AMD",  name: "AMD" },
+  { tk: "INTC", name: "Intel" },
+  { tk: "CSCO", name: "Cisco" },
+  { tk: "IBM",  name: "IBM" },
+  { tk: "T",    name: "AT&T" },
+  { tk: "VZ",   name: "Verizon" },
+  { tk: "PFE",  name: "Pfizer" },
+  { tk: "MRK",  name: "Merck" },
+  { tk: "ABBV", name: "AbbVie" },
+  { tk: "LLY",  name: "Eli Lilly" },
+  { tk: "XOM",  name: "Exxon Mobil" },
+  { tk: "CVX",  name: "Chevron" },
+  { tk: "NEE",  name: "NextEra Energy" },
+  { tk: "BAC",  name: "Bank of America" },
+  { tk: "WFC",  name: "Wells Fargo" },
+  { tk: "GS",   name: "Goldman Sachs" },
+  { tk: "MS",   name: "Morgan Stanley" },
+  { tk: "AXP",  name: "American Express" },
+  { tk: "PYPL", name: "PayPal" },
+  { tk: "UBER", name: "Uber" },
+  { tk: "ABNB", name: "Airbnb" },
+  { tk: "SHOP", name: "Shopify" },
+  { tk: "SQ",   name: "Block (Square)" },
+  { tk: "SOFI", name: "SoFi Technologies" },
+  { tk: "PLTR", name: "Palantir" },
+  { tk: "COIN", name: "Coinbase" },
+  { tk: "RBLX", name: "Roblox" },
+  { tk: "F",    name: "Ford Motor" },
+  { tk: "GM",   name: "General Motors" },
+  { tk: "BA",   name: "Boeing" },
+  { tk: "CAT",  name: "Caterpillar" },
+  { tk: "MMM",  name: "3M" },
+  { tk: "GE",   name: "General Electric" },
+  { tk: "HON",  name: "Honeywell" },
+  // Crypto-adjacent
+  { tk: "BTC-USD", name: "Bitcoin USD" },
+  { tk: "ETH-USD", name: "Ethereum USD" },
+];
+
+function tickerQuickSearchSheet() {
+  openSheet(`
+    <h2 style="margin-bottom:4px">🔍 Browse popular tickers</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:12px">${STK_POPULAR_TICKERS.length} hand-picked names. Type to filter, tap to open research.</p>
+    <input id="ticker-search-q" placeholder="Apple, AAPL, dividend, S&P…" autocomplete="off" oninput="_tickerSearchFilter()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:12px;box-sizing:border-box" />
+    <div id="ticker-search-results" style="max-height:60vh;overflow-y:auto"></div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  _tickerSearchFilter();
+  setTimeout(() => { const el = document.getElementById("ticker-search-q"); if (el) el.focus(); }, 60);
+}
+
+function _tickerSearchFilter() {
+  const q = ((document.getElementById("ticker-search-q") || {}).value || "").trim().toLowerCase();
+  const list = STK_POPULAR_TICKERS.filter(t => {
+    if (!q) return true;
+    return t.tk.toLowerCase().includes(q) || t.name.toLowerCase().includes(q);
+  });
+  const out = document.getElementById("ticker-search-results");
+  if (!out) return;
+  if (!list.length) {
+    out.innerHTML = `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:13px">No matches. Add the ticker directly above the watchlist.</div>`;
+    return;
+  }
+  out.innerHTML = list.map(t => `
+    <div onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(t.tk)}),120)" role="button" tabindex="0" style="display:flex;align-items:center;gap:10px;padding:9px 11px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px;cursor:pointer">
+      ${_stkTickerAvatar(t.tk, 28)}
+      <div style="flex:1;min-width:0">
+        <div style="font-weight:700;font-size:13px;color:var(--t1)">${esc(t.tk)}</div>
+        <div style="font-size:11px;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(t.name)}</div>
+      </div>
+      <div style="font-size:14px;color:var(--t3)">→</div>
+    </div>
+  `).join("");
 }
 
 /* ---------- Tax estimation sheet ----------
