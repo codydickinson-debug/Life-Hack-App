@@ -5505,6 +5505,9 @@ function renderToday() {
             </div>
           ` : ''}
           ${sparkSvg}
+          <button onclick="event.stopPropagation();openCounselor(${jsAttr(`My Wealth Score is ${r.total}/100 (${lbl.word}). ${r.topGap ? `The biggest gap is: ${r.topGap.suggest}.` : ''} What's one concrete thing I should do this week to raise my score the most?`)})" style="margin-top:10px;width:100%;background:linear-gradient(135deg,rgba(124,58,237,0.10),rgba(236,72,153,0.06));border:0.5px solid rgba(124,58,237,0.35);border-radius:10px;padding:9px 12px;color:var(--purple,#8957d9);font-size:12.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px">
+            ✨ Ask Cornileus how to raise this <span style="font-size:13px">→</span>
+          </button>
         </div>
       `;
     })()}
