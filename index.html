@@ -3605,6 +3605,13 @@ async function _captureGoalAsWin(goalId) {
 }
 function deleteGoal(id) {
   DB.goals = DB.goals.filter(g => g.id !== id);
+  // Strip references in any plan that linked this goal so the dangling id
+  // doesn't survive in storage forever.
+  (DB.plans || []).forEach(p => {
+    if (Array.isArray(p.linkedGoalIds) && p.linkedGoalIds.includes(id)) {
+      p.linkedGoalIds = p.linkedGoalIds.filter(x => x !== id);
+    }
+  });
   save(); render();
 }
 function addStepInline(gid) {
@@ -3623,8 +3630,20 @@ function addGoalSheet(existing) {
   const g = existing || { title: "", note: "", tier: activeTier, steps: [] };
   const isEdit = !!existing;
   if (!Array.isArray(g.steps)) g.steps = [];
+  // Reverse-lookup: which plans count this goal as part of their progress?
+  const feedingPlans = isEdit && g.id
+    ? (DB.plans || []).filter(p => Array.isArray(p.linkedGoalIds) && p.linkedGoalIds.includes(g.id))
+    : [];
+  const feedingPlansHtml = feedingPlans.length ? `
+    <div style="background:rgba(236,72,153,0.08);border:1px solid rgba(236,72,153,0.25);border-radius:10px;padding:10px 12px;margin:14px 0 4px;font-size:12.5px;line-height:1.5">
+      <div style="color:#ec4899;font-weight:700;margin-bottom:4px">🔗 Feeds ${feedingPlans.length} plan${feedingPlans.length===1?'':'s'}</div>
+      <div style="color:var(--t2)">${feedingPlans.slice(0,3).map(p => `${esc(p.emoji||'✨')} ${esc(p.title)}`).join(" · ")}${feedingPlans.length>3?` +${feedingPlans.length-3}`:""}</div>
+      <div style="color:var(--t3);font-size:11px;margin-top:5px">Completing those plans auto-finishes this goal.</div>
+    </div>
+  ` : "";
   openSheet(`
     <h2>${isEdit ? "Edit goal" : "New goal"}</h2>
+    ${feedingPlansHtml}
     <label>Goal</label>
     <input id="g-title" placeholder="e.g. Save $20k for truck" value="${esc(g.title)}" />
     <label>Note (optional)</label>
@@ -6297,7 +6316,52 @@ function _planLinkedSavingsSum(p) {
 function _planLiveCurrent(p) {
   return (+(p && p.current_amount) || 0) + _planLinkedSavingsSum(p);
 }
+
+// dayRecord(dateKey) — unified read of every per-day fact across the three
+// parallel overlays (calendarDates, calendarNotes, moods) plus other
+// day-keyed data (wins, spend totals, habits done, plan deadlines, savings
+// deposits). Read-only — no migration. Centralizes "what happened on this
+// day" so callers don't have to know which top-level key stores what.
+// Future code reads here; old code reading from the underlying maps still
+// works untouched.
+function dayRecord(dateKey) {
+  if (!dateKey || typeof dateKey !== "string") return null;
+  const moodKey = (DB.moods || {})[dateKey] || null;
+  const note = (DB.calendarNotes || {})[dateKey] || "";
+  const importantTags = ((DB.calendarDates || {})[dateKey] || null);
+  const wins = (DB.wins || []).filter(w => w.date === dateKey);
+  const spend = (DB.spend || []).filter(t => t.date === dateKey);
+  const spendOutflow = spend.reduce((s, t) => s + Math.max(0, +t.amount || 0), 0);
+  const spendInflow  = spend.reduce((s, t) => s + Math.max(0, -(+t.amount || 0)), 0);
+  const habitsDone = (DB.habits || []).reduce((acc, h) => {
+    const v = (h.log || {})[dateKey];
+    const did = h.type === "count" ? (+v || 0) >= (+h.target || 1) : !!v;
+    return acc + (did ? 1 : 0);
+  }, 0);
+  const reflection = (DB.reflections || []).find(r => r.date === dateKey) || null;
+  const plansDueToday = (DB.plans || []).filter(p => !p.completed && p.target_date === dateKey);
+  const savingDeposits = [];
+  for (const s of (DB.savings || [])) {
+    for (const log of (s.log || [])) {
+      if (log.date === dateKey) savingDeposits.push({ bucket: s.name, amount: +log.amount || 0 });
+    }
+  }
+  return {
+    dateKey,
+    mood: moodKey,
+    note,
+    importantTags,
+    wins, winsCount: wins.length,
+    spend, spendOutflow, spendInflow,
+    habitsDone, habitsTotal: (DB.habits || []).length,
+    reflection,
+    plansDueToday,
+    savingDeposits,
+    hasAnything: !!(moodKey || note || wins.length || spend.length || habitsDone || reflection || plansDueToday.length || savingDeposits.length),
+  };
+}
 // After savings changes, auto-complete any plan whose live amount >= target.
+// Cascades: when a plan auto-completes, any goals linked to it also flip done.
 // Safe to call from save paths; no-op if nothing flips.
 function _autoCompletePlans() {
   let flipped = 0;
@@ -6307,6 +6371,7 @@ function _autoCompletePlans() {
     if (_planLiveCurrent(p) >= +p.target_amount) {
       p.completed = true;
       p.completedAt = Date.now();
+      _completeLinkedGoals(p);
       flipped++;
     }
   });
@@ -6335,9 +6400,27 @@ function addPlan(tier, fields) {
     completedAt: 0,
     createdAt: Date.now(),
     linkedSavingsIds: Array.isArray(fields.linkedSavingsIds) ? fields.linkedSavingsIds.slice() : [],
+    linkedGoalIds: Array.isArray(fields.linkedGoalIds) ? fields.linkedGoalIds.slice() : [],
   });
   save();
   render();
+}
+
+// When a plan completes, auto-mark every linked goal done (if any). Called
+// from togglePlan + _autoCompletePlans. Returns the number of goals flipped
+// so callers can decide whether to celebrate/toast.
+function _completeLinkedGoals(plan) {
+  if (!plan || !plan.completed || !Array.isArray(plan.linkedGoalIds) || !plan.linkedGoalIds.length) return 0;
+  let flipped = 0;
+  for (const gid of plan.linkedGoalIds) {
+    const g = (DB.goals || []).find(x => x.id === gid);
+    if (g && !g.done) {
+      g.done = true;
+      g.completedAt = Date.now();
+      flipped++;
+    }
+  }
+  return flipped;
 }
 
 function togglePlan(id) {
@@ -6345,7 +6428,11 @@ function togglePlan(id) {
   if (!p) return;
   p.completed = !p.completed;
   p.completedAt = p.completed ? Date.now() : 0;
-  if (p.completed) celebrate && celebrate();
+  if (p.completed) {
+    celebrate && celebrate();
+    const flippedGoals = _completeLinkedGoals(p);
+    if (flippedGoals > 0) toast(`Plan complete · ${flippedGoals} linked goal${flippedGoals===1?"":"s"} finished 🎯`);
+  }
   save();
   render();
 }
@@ -6364,6 +6451,7 @@ function updatePlanProgress(id, amount) {
   if (p.target_amount && _planLiveCurrent(p) >= p.target_amount && !p.completed) {
     p.completed = true;
     p.completedAt = Date.now();
+    _completeLinkedGoals(p);
     celebrate && celebrate();
   }
   save();
@@ -6400,6 +6488,7 @@ function addPlanSheet(opts = {}) {
   const tierMeta = PLAN_TIERS.find(t => t.id === tier);
   const allSavings = DB.savings || [];
   const existingLinked = (existing && Array.isArray(existing.linkedSavingsIds)) ? existing.linkedSavingsIds : [];
+  const existingLinkedGoals = (existing && Array.isArray(existing.linkedGoalIds)) ? existing.linkedGoalIds : [];
   const savingsPickerHtml = allSavings.length ? `
     <label>Linked savings buckets (optional)</label>
     <p class="muted" style="font-size:12px;margin:-4px 0 6px">Tap buckets to credit their balance toward this plan automatically.</p>
@@ -6409,6 +6498,22 @@ function addPlanSheet(opts = {}) {
         return `<button type="button" data-sid="${esc(s.id)}" data-on="${on?1:0}"
           onclick="(()=>{const b=this;const on=b.dataset.on==='1';b.dataset.on=on?'0':'1';b.style.background=on?'var(--bg-elev)':'rgba(124,58,237,0.18)';b.style.color=on?'var(--t2)':'#7c3aed';b.style.borderColor=on?'var(--sep)':'#7c3aed';}).call(this)"
           style="padding:6px 12px;border-radius:999px;background:${on?'rgba(124,58,237,0.18)':'var(--bg-elev)'};color:${on?'#7c3aed':'var(--t2)'};border:1px solid ${on?'#7c3aed':'var(--sep)'};font-size:12px;cursor:pointer">${esc(s.emoji || '💰')} ${esc(s.name)}</button>`;
+      }).join("")}
+    </div>
+  ` : "";
+  // Goals picker — same UX pattern as savings. Only shows incomplete goals
+  // because once a goal is done you wouldn't be wiring NEW progress to it.
+  const allGoals = (DB.goals || []).filter(g => !g.done);
+  const goalsPickerHtml = allGoals.length ? `
+    <label>Linked goals (optional)</label>
+    <p class="muted" style="font-size:12px;margin:-4px 0 6px">Goals that count this plan as part of their progress. Completing the plan can finish these goals.</p>
+    <div id="plan-linked-goals" style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:10px">
+      ${allGoals.map(g => {
+        const on = existingLinkedGoals.includes(g.id);
+        const tierEmoji = (TIERS.find(t => t.id === g.tier) || {}).emoji || "🎯";
+        return `<button type="button" data-gid="${esc(g.id)}" data-on="${on?1:0}"
+          onclick="(()=>{const b=this;const on=b.dataset.on==='1';b.dataset.on=on?'0':'1';b.style.background=on?'var(--bg-elev)':'rgba(236,72,153,0.18)';b.style.color=on?'var(--t2)':'#ec4899';b.style.borderColor=on?'var(--sep)':'#ec4899';}).call(this)"
+          style="padding:6px 12px;border-radius:999px;background:${on?'rgba(236,72,153,0.18)':'var(--bg-elev)'};color:${on?'#ec4899':'var(--t2)'};border:1px solid ${on?'#ec4899':'var(--sep)'};font-size:12px;cursor:pointer">${tierEmoji} ${esc(g.title)}</button>`;
       }).join("")}
     </div>
   ` : "";
@@ -6430,12 +6535,14 @@ function addPlanSheet(opts = {}) {
     <label>Target date (optional)</label>
     <input id="plan-date" type="date" value="${esc((existing && existing.target_date) || "")}" />
     ${savingsPickerHtml}
+    ${goalsPickerHtml}
     <label>Notes (optional)</label>
     <textarea id="plan-note" maxlength="${NOTE_MAX}" placeholder="Why this matters, first step, anything else.">${esc((existing && existing.note) || "")}</textarea>
     <div class="actions">
       ${existing ? `<button class="btn secondary" onclick="deletePlan(${jsAttr(existing.id)});closeSheet()">Delete</button>` : `<button class="btn secondary" onclick="closeSheet()">Cancel</button>`}
       <button class="btn" onclick="(()=>{
         const linked = Array.from(document.querySelectorAll('#plan-linked-savings button[data-on=\\'1\\']')).map(b => b.dataset.sid);
+        const linkedGoals = Array.from(document.querySelectorAll('#plan-linked-goals button[data-on=\\'1\\']')).map(b => b.dataset.gid);
         const fields = {
           title: document.getElementById('plan-title').value,
           emoji: document.getElementById('plan-emoji').value,
@@ -6443,6 +6550,7 @@ function addPlanSheet(opts = {}) {
           target_date: document.getElementById('plan-date').value,
           note: document.getElementById('plan-note').value,
           linkedSavingsIds: linked,
+          linkedGoalIds: linkedGoals,
         };
         const newTier = document.getElementById('plan-tier').value;
         if (${existing ? "true" : "false"}) {
@@ -6455,6 +6563,7 @@ function addPlanSheet(opts = {}) {
             p.target_date = fields.target_date || '';
             p.note = sanitizeText(fields.note, ${NOTE_MAX});
             p.linkedSavingsIds = linked;
+            p.linkedGoalIds = linkedGoals;
             _autoCompletePlans();
             save(); render(); closeSheet();
           }
@@ -7024,6 +7133,14 @@ function renderPlanning() {
       const linkedChip = linkedNames.length
         ? `<span class="plan-chip" style="background:rgba(124,58,237,0.10);color:#7c3aed" title="Linked savings buckets feed this plan automatically">🔗 ${esc(linkedNames.slice(0,2).join(" · "))}${linkedNames.length>2?` +${linkedNames.length-2}`:""}</span>`
         : "";
+      // Linked-goals chip — separate visual from savings (pink, not purple) so
+      // the two relationships read distinct at a glance.
+      const linkedGoalsList = (Array.isArray(p.linkedGoalIds) && p.linkedGoalIds.length)
+        ? (DB.goals || []).filter(g => p.linkedGoalIds.includes(g.id))
+        : [];
+      const goalsChip = linkedGoalsList.length
+        ? `<span class="plan-chip" style="background:rgba(236,72,153,0.10);color:#ec4899" title="Completing this plan will finish these goals">🎯 ${esc(linkedGoalsList.slice(0,2).map(g => g.title).join(" · "))}${linkedGoalsList.length>2?` +${linkedGoalsList.length-2}`:""}</span>`
+        : "";
       return `
         <div class="plan-card ${p.completed ? 'done' : ''}" style="border-left-color:${t.color}">
           <div class="plan-card-head">
@@ -7037,6 +7154,7 @@ function renderPlanning() {
                 ${dateChip}
                 ${_planPaceChip(p)}
                 ${linkedChip}
+                ${goalsChip}
               </div>
             </div>
             <button class="del-x" onclick="addPlanSheet({id:${jsAttr(p.id)}})" title="Edit">⋯</button>
@@ -17567,6 +17685,7 @@ function buildCounselorSnapshot() {
       current_amount: Math.round(live),
       target_date: p.target_date || null,
       linked_savings: (Array.isArray(p.linkedSavingsIds) && p.linkedSavingsIds.length) ? p.linkedSavingsIds.length : 0,
+      linked_goals: (Array.isArray(p.linkedGoalIds) && p.linkedGoalIds.length) ? p.linkedGoalIds.length : 0,
     };
   });
 
@@ -20383,9 +20502,9 @@ function _buildDemoData(currentDB) {
       note:"Three months of expenses fully covered.",      completed:false, completedAt:0, createdAt: Date.now() - 90*86400000 },
     { id:"pl2", title:"Pay off Capital One card", emoji:"💳",  tier:"short", target_amount: 485,  current_amount: 200,  target_date: planTargetDate(60),
       note:"Stop the 22.99% APR bleed.",                   completed:false, completedAt:0, createdAt: Date.now() - 45*86400000 },
-    { id:"pl3", title:"Max Roth IRA 2026",        emoji:"📈",  tier:"short", target_amount: 7000, current_amount: 0, linkedSavingsIds: ["sv3"], target_date: planTargetDate(330),
+    { id:"pl3", title:"Max Roth IRA 2026",        emoji:"📈",  tier:"short", target_amount: 7000, current_amount: 0, linkedSavingsIds: ["sv3"], linkedGoalIds: ["g5"], target_date: planTargetDate(330),
       note:"$583/mo auto-contribution. Don't touch.",      completed:false, completedAt:0, createdAt: Date.now() - 60*86400000 },
-    { id:"pl4", title:"Truck down payment",       emoji:"🚛",  tier:"mid",   target_amount: 8000, current_amount: 0, linkedSavingsIds: ["sv2"], target_date: planTargetDate(720),
+    { id:"pl4", title:"Truck down payment",       emoji:"🚛",  tier:"mid",   target_amount: 8000, current_amount: 0, linkedSavingsIds: ["sv2"], linkedGoalIds: ["g3"], target_date: planTargetDate(720),
       note:"20% down on a $40K used pickup.",              completed:false, completedAt:0, createdAt: Date.now() - 45*86400000 },
     { id:"pl5", title:"Get my real estate license", emoji:"🏠", tier:"mid",  target_amount: 0,    current_amount: 0,    target_date: planTargetDate(365),
       note:"Side income + future investing leverage.",     completed:false, completedAt:0, createdAt: Date.now() - 30*86400000 },
@@ -28500,6 +28619,7 @@ function init() {
 
   Object.assign(window, {
     DB, save, load, clone, todayKey, fmt$, fmt$0, esc, uid,
+    monthlyIncome, dayRecord, _planLiveCurrent, _planLinkedSavingsSum, _completeLinkedGoals,
     sanitizeText, sanitizeBackendUrl, safeUrl, URL_MAX, TEXT_MAX, NOTE_MAX,
     showTab, render, renderToday, renderGoals, renderPlanning, renderMoney, renderStocks, renderStats, renderSettings, renderHeader,
     renderCalendar, calendarPrevMonth, calendarNextMonth, calendarToday, calendarDaySheet, saveCalendarNote, calendarSetView, calendarJumpToMonth, addWinForDate, toggleHabitForDate, habitDetailSheet, setDayMood, allNotesSheet,
