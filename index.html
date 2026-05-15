@@ -20055,9 +20055,17 @@ function _achievementsList() {
         if (run > maxMoodRun) maxMoodRun = run;
         prev = d;
       }
+      // Wired up = one plan with BOTH a linked savings bucket AND a linked
+      // goal. The user explicitly connected two systems through one plan —
+      // that's the "I get how this works" moment.
+      const wiredUp = (DB.plans || []).some(p =>
+        Array.isArray(p.linkedSavingsIds) && p.linkedSavingsIds.length > 0 &&
+        Array.isArray(p.linkedGoalIds)    && p.linkedGoalIds.length    > 0
+      );
       return [
         { id: "first-linked-plan", emoji: "🔗",  group: "Integration", title: "First link",          desc: "Link a plan to a savings bucket",        earned: linkedPlans >= 1 },
         { id: "three-linked",      emoji: "🔗",  group: "Integration", title: "Three linked plans",  desc: "Three+ plans connected to their buckets",earned: linkedPlans >= 3, progress: Math.min(1, linkedPlans / 3) },
+        { id: "wired-up",          emoji: "🪢",  group: "Integration", title: "Wired up",            desc: "Link a plan to BOTH a savings bucket and a goal", earned: wiredUp },
         { id: "mood-streak-7",     emoji: "🌤", group: "Integration", title: "Mood streak",         desc: "Log your mood 7 days in a row",          earned: maxMoodRun >= 7,  progress: Math.min(1, maxMoodRun / 7) },
         { id: "reflective",        emoji: "📝",  group: "Integration", title: "Reflective practice", desc: "Write 10 daily reflections",             earned: reflections >= 10, progress: Math.min(1, reflections / 10) },
       ];
