@@ -2183,12 +2183,30 @@ function _parseDb(raw) {
   const p = safeJsonParse(raw); // throws on bad JSON
   if (isLockedEnvelope(p)) return { __locked: true, __salt: p.salt };
   if (!p || typeof p !== "object" || Array.isArray(p)) throw new Error("not an object");
-  return Object.assign(clone(DEFAULT_DB), p, {
+  const merged = Object.assign(clone(DEFAULT_DB), p, {
     settings:  Object.assign({}, DEFAULT_DB.settings,  p.settings  || {}),
     budget:    Object.assign({}, DEFAULT_DB.budget,    p.budget    || {}),
     user:      Object.assign({}, DEFAULT_DB.user,      p.user      || {}),
     counselor: Object.assign({}, DEFAULT_DB.counselor, p.counselor || {}),
   });
+  // Load-time migrations — these run once at every load and self-correct
+  // any drift from buggy past saves. Cheap; no-op when state is already clean.
+  if (Array.isArray(merged.settings.recentSearches) && merged.settings.recentSearches.length > 12) {
+    merged.settings.recentSearches = merged.settings.recentSearches.slice(0, 12);
+  }
+  if (Array.isArray(merged.settings.dismissedRecurringStreams) && merged.settings.dismissedRecurringStreams.length > 500) {
+    merged.settings.dismissedRecurringStreams = merged.settings.dismissedRecurringStreams.slice(-500);
+  }
+  if (Array.isArray(merged.netWorthHistory) && merged.netWorthHistory.length > 730) {
+    merged.netWorthHistory = merged.netWorthHistory.slice(-730);
+  }
+  if (Array.isArray(merged.investmentTransactions) && merged.investmentTransactions.length > 2000) {
+    merged.investmentTransactions = merged.investmentTransactions.slice(0, 2000);
+  }
+  // Migration: drop the legacy top-level cornileusFollowups if any user save
+  // still carries it. Real ones live on counselor.followups.
+  if ("cornileusFollowups" in merged) delete merged.cornileusFollowups;
+  return merged;
 }
 function load() {
   // Try primary, then rolling backups. localStorage writes are atomic per
@@ -3967,6 +3985,10 @@ function monthSpend() {
   // implies outflows; summing both would return a confusing "$-1,641" net.
   const now = new Date(), y = now.getFullYear(), m = now.getMonth();
   return DB.spend.filter(t => {
+    // Defensive: a tx with no date or non-YYYY-MM-DD shape would NaN out
+    // and silently get excluded; explicit check makes the failure mode
+    // obvious if upstream code ever stores a different format.
+    if (!t || !t.date || !/^\d{4}-\d{2}-\d{2}/.test(t.date)) return false;
     const d = new Date(t.date+"T00:00:00");
     return d.getFullYear() === y && d.getMonth() === m && (+t.amount || 0) > 0;
   }).reduce((a,t)=>a+(+t.amount||0), 0);
@@ -5404,12 +5426,24 @@ function renderToday() {
         text: `Quick check-in: how's the day going?`,
         onclick: `calendarDaySheet(${jsAttr(todayKey())})` };
     }
-    // 5) Backup nudge — only when nothing more pressing surfaced. Targets
+    // 5) Setup nudge — user has been around for a week+, has habits set up,
+    //    but hasn't turned on notifications. Notifications are a major
+    //    retention lever and orphaned from onboarding; the Daily Pulse is
+    //    the only place they'll naturally see the prompt.
+    const onboardedDays = DB.user && DB.user.onboardedAt
+      ? (Date.now() - DB.user.onboardedAt) / 86400000 : 0;
+    if (onboardedDays >= 7 &&
+        (DB.habits || []).length >= 2 &&
+        !DB.settings.notifications &&
+        !DB.settings._notifyNudgeDismissed) {
+      return { emoji: "🔔",
+        text: `Set up reminders — never miss a streak`,
+        onclick: `notificationSettingsSheet()` };
+    }
+    // 6) Backup nudge — only when nothing more pressing surfaced. Targets
     //    users who haven't exported in >60 days (or never), AND who have
     //    enough data to be worth backing up, AND who've been onboarded
     //    for at least 30 days so we don't pester new users.
-    const onboardedDays = DB.user && DB.user.onboardedAt
-      ? (Date.now() - DB.user.onboardedAt) / 86400000 : 0;
     const lastExp = +DB.lastExportAt || 0;
     const daysSinceExport = lastExp ? (Date.now() - lastExp) / 86400000 : Infinity;
     const hasMeaningfulData =
@@ -5422,6 +5456,17 @@ function renderToday() {
           ? `It's been a while — back up your data`
           : `Back up your data — keep what you've built safe`,
         onclick: `exportData()` };
+    }
+    // 7) Passphrase nudge — user has been around 30+ days with data but
+    //    hasn't enabled encryption. Defense-in-depth nudge for users with
+    //    real financial data sitting in plaintext localStorage.
+    if (onboardedDays >= 30 &&
+        !DB.settings.encrypted &&
+        !DB.settings._encryptNudgeDismissed &&
+        ((DB.spend || []).length >= 30 || (DB.accounts || []).length > 0)) {
+      return { emoji: "🔒",
+        text: `Encrypt your data — set a passphrase`,
+        onclick: `setupPassphraseSheet()` };
     }
     return null;
   })();
@@ -20063,6 +20108,21 @@ function _reminderTimesActive() {
 let _reminderGen = 0;
 let _firedKeyToday = {}; // { "08:00": "YYYY-MM-DD" } — guards against double-fire across DST
 
+// Prune the fire-key dicts so they don't grow forever — only the current
+// day's keys matter for double-fire detection. Called at the top of each
+// schedule pass and inside the tick when the day rolls over.
+function _pruneFireKeys() {
+  const tk = todayKey();
+  for (const k of Object.keys(_firedKeyToday)) {
+    if (_firedKeyToday[k] !== tk) delete _firedKeyToday[k];
+  }
+  if (typeof _firedHabitToday !== "undefined") {
+    for (const k of Object.keys(_firedHabitToday)) {
+      if (_firedHabitToday[k] !== tk) delete _firedHabitToday[k];
+    }
+  }
+}
+
 function scheduleReminder() {
   // Tear down any prior timers — we may be re-scheduling because settings
   // changed mid-day.
@@ -20070,6 +20130,7 @@ function scheduleReminder() {
   _reminderTimers = [];
   const myGen = ++_reminderGen;
   if (!DB.settings.notifications) return;
+  _pruneFireKeys();
   const times = _reminderTimesActive();
   // DST-safe pattern: instead of one giant setTimeout for many hours
   // out (which gets stale when wall-clock jumps via DST), we tick every
@@ -20082,6 +20143,10 @@ function scheduleReminder() {
     const now = new Date();
     const hhmm = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
     const tk = todayKey();
+    // If the day rolled over since the last tick, prune any stale fire keys
+    // so memory doesn't grow forever and yesterday's "fired" state can't
+    // suppress today's notifications.
+    if (hhmm === "00:00" || hhmm === "00:01") _pruneFireKeys();
     if (times.includes(hhmm) && _firedKeyToday[hhmm] !== tk) {
       _firedKeyToday[hhmm] = tk;
       if (typeof Notification !== "undefined" && Notification.permission === "granted") {
@@ -24686,7 +24751,27 @@ function _buildDemoData(currentDB) {
     autoLockMinutes: +currentDB.settings.autoLockMinutes || 0,
     celebrationsEnabled: currentDB.settings.celebrationsEnabled !== false,
     monthlySavingsTarget: +currentDB.settings.monthlySavingsTarget || 0,
+    notifications: !!currentDB.settings.notifications,
+    reminderTimes: Array.isArray(currentDB.settings.reminderTimes) ? currentDB.settings.reminderTimes.slice() : [],
+    notifyCategories: currentDB.settings.notifyCategories ? Object.assign({}, currentDB.settings.notifyCategories) : fresh.settings.notifyCategories,
+    pushSubscription: currentDB.settings.pushSubscription || null,
+    accentColor: currentDB.settings.accentColor || "",
   });
+  // Preserve Cornileus conversation + pinned memories across demo reset.
+  // Demo data is meant to make the rest of the app look populated; the
+  // counselor relationship is something the user built up over time and
+  // would feel surprising to lose. (`thread` carries chat history;
+  // `insights` and `longTermMemories` carry pinned items.)
+  if (currentDB.counselor && typeof currentDB.counselor === "object") {
+    fresh.counselor = Object.assign({}, fresh.counselor, {
+      thread: Array.isArray(currentDB.counselor.thread) ? currentDB.counselor.thread.slice() : [],
+      insights: Array.isArray(currentDB.counselor.insights) ? currentDB.counselor.insights.slice() : [],
+      longTermMemories: Array.isArray(currentDB.counselor.longTermMemories) ? currentDB.counselor.longTermMemories.slice() : [],
+      followups: Array.isArray(currentDB.counselor.followups) ? currentDB.counselor.followups.slice() : [],
+      tone: currentDB.counselor.tone || fresh.counselor.tone,
+      lastOpenedAt: currentDB.counselor.lastOpenedAt || 0,
+    });
+  }
 
   // Habits — 35-day rolling logs so streaks, heatmaps, and Stats look populated.
   // Pattern per habit is realistic, not 100%, so completion-rate stats vary.
