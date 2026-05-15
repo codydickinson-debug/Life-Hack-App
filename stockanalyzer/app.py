@@ -656,6 +656,155 @@ def api_peers(ticker):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/screener")
+def api_screener():
+    """Stream screener results as SSE. The user picks a preset filter and a
+    universe; we walk the universe ticker-by-ticker (threaded) and emit
+    'match' events for tickers that pass the filter, plus 'progress' for
+    every completion regardless of match.
+
+    Presets (?preset=...):
+      value     — trailing P/E <= 15 AND positive earnings growth
+      growth    — revenue growth >= 15% AND positive earnings growth
+      dividend  — dividend yield >= 3%
+      momentum  — price > 50d SMA > 200d SMA AND 40 <= RSI(14) <= 70
+      oversold  — price <= 20% off 52w high AND RSI(14) <= 35
+      quality   — profit margin >= 20% AND debt/equity <= 50
+
+    Each 'match' event payload: {ticker, name, price, sector, ...key_metric}.
+    """
+    import yfinance as yf
+    preset = (request.args.get("preset") or "value").strip().lower()
+    universe_name = request.args.get("universe", "stocks")
+    try:
+        universe = list(get_universe(universe_name))
+    except Exception:
+        universe = []
+    # Cap to keep response time sane on a free Vercel tier
+    universe = universe[:120]
+
+    def sse(event: str, data) -> str:
+        return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+    def evaluate(tk):
+        """Return (passes, payload_dict) for a single ticker."""
+        try:
+            t = yf.Ticker(tk)
+            info = {}
+            try: info = t.info or {}
+            except Exception: pass
+            def _f(k):
+                v = info.get(k)
+                try: return float(v) if v is not None else None
+                except (TypeError, ValueError): return None
+            price = _f("regularMarketPrice") or _f("currentPrice")
+            pe = _f("trailingPE")
+            fpe = _f("forwardPE")
+            div = _f("dividendYield")
+            rg  = _f("revenueGrowth")
+            eg  = _f("earningsGrowth")
+            pm  = _f("profitMargins")
+            de  = _f("debtToEquity")
+            mc  = _f("marketCap")
+            sector = info.get("sector") if isinstance(info.get("sector"), str) else None
+            name = info.get("shortName") or info.get("longName") or tk
+
+            # Need history for momentum / oversold presets
+            need_hist = preset in ("momentum", "oversold")
+            sma50 = sma200 = rsi = hi52 = None
+            if need_hist:
+                df = t.history(period="1y", auto_adjust=True)
+                if df is not None and not df.empty and len(df) >= 50:
+                    closes = [float(x) for x in df["Close"].tolist()]
+                    if len(closes) >= 200:
+                        sma200 = sum(closes[-200:]) / 200.0
+                    sma50 = sum(closes[-50:]) / 50.0
+                    hi52 = max(closes)
+                    # RSI(14)
+                    if len(closes) >= 15:
+                        gains = losses = 0.0
+                        for i in range(1, 15):
+                            d = closes[i] - closes[i-1]
+                            if d > 0: gains += d
+                            else: losses += -d
+                        ag, al = gains / 14, losses / 14
+                        for i in range(15, len(closes)):
+                            d = closes[i] - closes[i-1]
+                            g = d if d > 0 else 0; l = -d if d < 0 else 0
+                            ag = (ag * 13 + g) / 14
+                            al = (al * 13 + l) / 14
+                        rsi = 100.0 if al == 0 else (100 - 100 / (1 + ag/al))
+                    if price is None and closes:
+                        price = closes[-1]
+
+            passes = False; metric = None; metric_label = None
+            if preset == "value":
+                passes = pe is not None and 0 < pe <= 15 and (eg is None or eg > 0)
+                metric = pe; metric_label = "P/E"
+            elif preset == "growth":
+                passes = rg is not None and rg >= 0.15 and (eg is None or eg > 0)
+                metric = rg; metric_label = "Rev growth"
+            elif preset == "dividend":
+                passes = div is not None and div >= 0.03
+                metric = div; metric_label = "Yield"
+            elif preset == "momentum":
+                if price and sma50 and sma200 and rsi is not None:
+                    passes = price > sma50 > sma200 and 40 <= rsi <= 70
+                metric = rsi; metric_label = "RSI"
+            elif preset == "oversold":
+                if price and hi52 and rsi is not None:
+                    off = (hi52 - price) / hi52
+                    passes = off >= 0.20 and rsi <= 35
+                metric = rsi; metric_label = "RSI"
+            elif preset == "quality":
+                passes = (pm is not None and pm >= 0.20 and
+                          (de is None or de <= 50))
+                metric = pm; metric_label = "Profit margin"
+            else:
+                passes = False
+
+            if not passes:
+                return False, None
+
+            return True, {
+                "ticker": tk.upper(),
+                "name": name,
+                "price": price,
+                "sector": sector,
+                "market_cap": mc,
+                "metric": metric,
+                "metric_label": metric_label,
+                "pe": pe,
+                "dividend": div,
+                "rev_growth": rg,
+                "profit_margin": pm,
+            }
+        except Exception:
+            return False, None
+
+    def stream():
+        yield sse("start", {"total": len(universe), "preset": preset, "universe": universe_name})
+        completed = 0; matched = 0
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            futures = [pool.submit(evaluate, tk) for tk in universe]
+            for fut in futures:
+                try:
+                    passes, payload = fut.result(timeout=30)
+                except Exception:
+                    passes, payload = False, None
+                completed += 1
+                if passes and payload:
+                    matched += 1
+                    yield sse("match", payload)
+                yield sse("progress", {"completed": completed, "total": len(universe), "matched": matched})
+        yield sse("done", {"completed": completed, "matched": matched})
+
+    return Response(stream(), mimetype="text/event-stream", headers={
+        "Cache-Control": "no-cache",
+        "X-Accel-Buffering": "no",
+    })
+
+
 @app.route("/api/quote/batch")
 def api_quote_batch():
     """Batch quote endpoint — returns lightweight quotes for multiple

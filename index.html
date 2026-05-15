@@ -9596,6 +9596,16 @@ function renderStocks() {
         <div class="body"><div class="t1">Market scan</div><div class="t2">Scan S&amp;P 500, ETFs, REITs — find buys/sells across hundreds of tickers</div></div>
         <div class="trail chev"></div>
       </div>
+      <div class="row tappable" onclick="stockScreenerSheet()" role="button" tabindex="0">
+        <div class="lead">📋</div>
+        <div class="body"><div class="t1">Stock screener</div><div class="t2">Filter by value, growth, dividend, momentum, oversold, quality</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="compareTickersSheet()" role="button" tabindex="0">
+        <div class="lead">⚖️</div>
+        <div class="body"><div class="t1">Compare tickers</div><div class="t2">Side-by-side metrics for any two stocks</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="window.open('/stockanalyzer','_blank')" role="button" tabindex="0">
         <div class="lead">🏠</div>
         <div class="body"><div class="t1">Housing &amp; mortgages</div><div class="t2">Live mortgage rates, ZIP-level housing data, affordability calc</div></div>
@@ -10894,6 +10904,242 @@ function _stocksFormatDecision(d) {
           `).join("")}
         </div>
       ` : ""}
+    </div>
+  `;
+}
+
+// Stock screener — preset-filter sheet that streams matches via SSE
+function stockScreenerSheet() {
+  const presets = [
+    { id: "value",    label: "💎 Value",       desc: "P/E ≤ 15, positive earnings growth" },
+    { id: "growth",   label: "🚀 Growth",      desc: "Revenue growth ≥ 15%" },
+    { id: "dividend", label: "💰 Dividend",    desc: "Yield ≥ 3%" },
+    { id: "momentum", label: "📈 Momentum",    desc: "Price > 50d > 200d, RSI 40-70" },
+    { id: "oversold", label: "❄️ Oversold",    desc: "≥ 20% off 52w high, RSI ≤ 35" },
+    { id: "quality",  label: "🏛️ Quality",     desc: "Profit margin ≥ 20%, low debt" },
+  ];
+  const universes = [
+    { id: "stocks", label: "S&P 500" },
+    { id: "etfs",   label: "Major ETFs" },
+    { id: "reits",  label: "REITs" },
+  ];
+  openSheet(`
+    <h2 style="margin-bottom:4px">Stock screener</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:12px">Filter the market by a preset strategy. Streams matches live as it scans.</p>
+    <label>Strategy</label>
+    <div id="scr-presets" style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px">
+      ${presets.map((p, i) => `
+        <button onclick="_stocksScrPickPreset(${jsAttr(p.id)})" data-preset="${esc(p.id)}" class="scr-preset" style="background:${i===0?'var(--blue,#007AFF)':'var(--bg-elev)'};color:${i===0?'#fff':'var(--t1)'};border:0.5px solid var(--sep);border-radius:10px;padding:8px 10px;text-align:left;cursor:pointer">
+          <div style="font-size:12.5px;font-weight:700">${esc(p.label)}</div>
+          <div style="font-size:10.5px;opacity:0.8;margin-top:2px;line-height:1.3">${esc(p.desc)}</div>
+        </button>
+      `).join("")}
+    </div>
+    <input type="hidden" id="scr-preset" value="value" />
+    <label>Universe</label>
+    <select id="scr-universe" style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:12px">
+      ${universes.map(u => `<option value="${esc(u.id)}">${esc(u.label)}</option>`).join("")}
+    </select>
+    <button id="scr-go" class="btn" style="width:100%;background:linear-gradient(135deg,#0ea5e9,#7c3aed);color:#fff;border:none" onclick="_stocksRunScreener()">📋 Run screener</button>
+    <div id="scr-progress" style="font-size:12px;color:var(--t3);margin-top:14px;text-align:center;display:none"></div>
+    <div id="scr-results" style="margin-top:12px"></div>
+    <div class="actions"><button class="btn secondary" onclick="if(window._scrStop)window._scrStop();closeSheet()">Close</button></div>
+  `);
+}
+
+function _stocksScrPickPreset(id) {
+  const hid = document.getElementById("scr-preset");
+  if (hid) hid.value = id;
+  document.querySelectorAll(".scr-preset").forEach(btn => {
+    const active = btn.getAttribute("data-preset") === id;
+    btn.style.background = active ? "var(--blue,#007AFF)" : "var(--bg-elev)";
+    btn.style.color = active ? "#fff" : "var(--t1)";
+  });
+}
+
+async function _stocksRunScreener() {
+  const preset = document.getElementById("scr-preset").value || "value";
+  const universe = document.getElementById("scr-universe").value || "stocks";
+  const goBtn = document.getElementById("scr-go");
+  const prog = document.getElementById("scr-progress");
+  const out = document.getElementById("scr-results");
+  if (!goBtn || !prog || !out) return;
+  goBtn.disabled = true; goBtn.textContent = "Scanning…";
+  prog.style.display = "block"; prog.textContent = "Starting…";
+  out.innerHTML = "";
+  const matches = [];
+  try {
+    const es = new EventSource(`/api/screener?preset=${encodeURIComponent(preset)}&universe=${encodeURIComponent(universe)}`);
+    window._scrStop = () => { try { es.close(); } catch {} };
+    es.addEventListener("start", e => { try { const d = JSON.parse(e.data); prog.textContent = `Scanning ${d.total} tickers for ${d.preset}…`; } catch {} });
+    es.addEventListener("progress", e => {
+      try { const d = JSON.parse(e.data); prog.textContent = `${d.completed} / ${d.total} · ${d.matched} matches so far`; } catch {}
+    });
+    es.addEventListener("match", e => {
+      try {
+        const m = JSON.parse(e.data);
+        matches.push(m);
+        out.innerHTML = _stocksScrRenderMatches(matches, preset);
+      } catch {}
+    });
+    es.addEventListener("done", e => {
+      try { es.close(); } catch {}
+      goBtn.disabled = false; goBtn.textContent = "📋 Run again";
+      try { const d = JSON.parse(e.data); prog.textContent = `Done. ${d.matched} of ${d.completed} matched.`; } catch {}
+    });
+    es.onerror = () => {
+      try { es.close(); } catch {}
+      goBtn.disabled = false; goBtn.textContent = "📋 Run screener";
+      if (!matches.length) out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">Connection lost. Try again.</div>`;
+    };
+  } catch (e) {
+    out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+    goBtn.disabled = false; goBtn.textContent = "📋 Run screener";
+  }
+}
+
+function _stocksScrRenderMatches(matches, preset) {
+  // Sort: most-attractive first per preset
+  const sorted = matches.slice();
+  if (preset === "value")    sorted.sort((a, b) => (a.metric || 9999) - (b.metric || 9999));
+  if (preset === "growth")   sorted.sort((a, b) => (b.metric || 0) - (a.metric || 0));
+  if (preset === "dividend") sorted.sort((a, b) => (b.metric || 0) - (a.metric || 0));
+  if (preset === "momentum") sorted.sort((a, b) => (b.market_cap || 0) - (a.market_cap || 0));
+  if (preset === "oversold") sorted.sort((a, b) => (a.metric || 100) - (b.metric || 100));
+  if (preset === "quality")  sorted.sort((a, b) => (b.metric || 0) - (a.metric || 0));
+  if (!sorted.length) return "";
+  const fmtMetric = (m, label) => {
+    if (m == null) return "—";
+    if (label === "Yield" || label === "Rev growth" || label === "Profit margin") return (m * 100).toFixed(1) + "%";
+    return (+m).toFixed(2);
+  };
+  return `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:12px;margin-top:10px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Matches (${sorted.length})</div>
+      ${sorted.map(m => `
+        <div onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(m.ticker)}),120)" role="button" tabindex="0" style="display:flex;justify-content:space-between;align-items:center;padding:8px 10px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px;cursor:pointer;gap:8px">
+          <div style="width:56px;flex-shrink:0">
+            <div style="font-weight:700;font-size:13px">${esc(m.ticker)}</div>
+            ${m.price != null ? `<div style="font-size:10.5px;color:var(--t3)">$${(+m.price).toFixed(2)}</div>` : ""}
+          </div>
+          <div style="flex:1;min-width:0;overflow:hidden">
+            <div style="font-size:12px;color:var(--t2);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.name || "")}</div>
+            ${m.sector ? `<div style="font-size:10px;color:var(--t3);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(m.sector)}</div>` : ""}
+          </div>
+          <div style="text-align:right;flex-shrink:0">
+            <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em">${esc(m.metric_label || "")}</div>
+            <div style="font-size:13px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${esc(fmtMetric(m.metric, m.metric_label))}</div>
+          </div>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+// Side-by-side ticker comparison sheet
+function compareTickersSheet() {
+  openSheet(`
+    <h2 style="margin-bottom:4px">Compare tickers</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Pick two tickers to compare key metrics side-by-side.</p>
+    <div style="display:flex;gap:8px;margin-bottom:12px">
+      <input id="cmp-a" placeholder="Ticker A — AAPL" autocapitalize="characters" autocorrect="off"
+        style="flex:1;background:var(--bg-elev);padding:11px 14px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;box-sizing:border-box" />
+      <input id="cmp-b" placeholder="Ticker B — MSFT" autocapitalize="characters" autocorrect="off"
+        style="flex:1;background:var(--bg-elev);padding:11px 14px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;box-sizing:border-box" />
+    </div>
+    <button id="cmp-go" class="btn" style="width:100%;background:linear-gradient(135deg,#0ea5e9,#7c3aed);color:#fff;border:none" onclick="_stocksRunCompare()">⚖️ Compare</button>
+    <div id="cmp-results" style="margin-top:14px"></div>
+    <div class="actions"><button class="btn secondary" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+async function _stocksRunCompare() {
+  const a = (document.getElementById("cmp-a").value || "").trim().toUpperCase();
+  const b = (document.getElementById("cmp-b").value || "").trim().toUpperCase();
+  const btn = document.getElementById("cmp-go");
+  const out = document.getElementById("cmp-results");
+  if (!a || !b) { toast("Enter two tickers"); return; }
+  if (a === b) { toast("Pick two different tickers"); return; }
+  btn.disabled = true; btn.textContent = "Loading…";
+  out.innerHTML = `<div style="text-align:center;padding:30px 14px;color:var(--t3);font-size:13px">📊 Pulling research bundles for ${esc(a)} and ${esc(b)}…</div>`;
+  try {
+    const [ra, rb] = await Promise.all([
+      fetch("/api/ticker/" + encodeURIComponent(a)).then(r => r.json()),
+      fetch("/api/ticker/" + encodeURIComponent(b)).then(r => r.json()),
+    ]);
+    if (ra.error || rb.error) throw new Error(ra.error || rb.error || "no data");
+    out.innerHTML = _stocksRenderCompare(ra, rb);
+  } catch (e) {
+    out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  } finally {
+    btn.disabled = false; btn.textContent = "⚖️ Compare again";
+  }
+}
+
+function _stocksRenderCompare(a, b) {
+  const rows = [
+    { label: "Price",            v: q => q.price != null ? "$" + (+q.price).toFixed(2) : "—", hi: (a,b) => null },
+    { label: "Day change",       v: q => q.change_pct != null ? ((q.change_pct >= 0 ? "+" : "") + (+q.change_pct * 100).toFixed(2) + "%") : "—",
+      hi: (a, b) => (a.change_pct || 0) > (b.change_pct || 0) ? "a" : (b.change_pct || 0) > (a.change_pct || 0) ? "b" : null },
+    { label: "YTD",              v: q => _stkFmtPct(q.ytd_return), hi: (a,b) => (a.ytd_return||0) > (b.ytd_return||0) ? "a" : (b.ytd_return||0) > (a.ytd_return||0) ? "b" : null },
+    { label: "5y return",        v: q => _stkFmtPct(q.return_5y), hi: (a,b) => (a.return_5y||0) > (b.return_5y||0) ? "a" : (b.return_5y||0) > (a.return_5y||0) ? "b" : null },
+    { label: "Market cap",       v: q => _stkFmtNum(q.market_cap), hi: (a,b) => (a.market_cap||0) > (b.market_cap||0) ? "a" : (b.market_cap||0) > (a.market_cap||0) ? "b" : null },
+    { label: "Trailing P/E",     v: q => q.trailing_pe != null ? (+q.trailing_pe).toFixed(2) : "—", hi: (a,b) => {
+      const av = a.trailing_pe; const bv = b.trailing_pe;
+      if (av == null && bv == null) return null;
+      if (av != null && bv != null) return av < bv ? "a" : av > bv ? "b" : null;  // lower P/E wins
+      return null; } },
+    { label: "Revenue growth",   v: q => _stkFmtPct(q.revenue_growth), hi: (a,b) => (a.revenue_growth||0) > (b.revenue_growth||0) ? "a" : (b.revenue_growth||0) > (a.revenue_growth||0) ? "b" : null },
+    { label: "Earnings growth",  v: q => _stkFmtPct(q.earnings_growth), hi: (a,b) => (a.earnings_growth||0) > (b.earnings_growth||0) ? "a" : (b.earnings_growth||0) > (a.earnings_growth||0) ? "b" : null },
+    { label: "Profit margin",    v: q => _stkFmtPct(q.profit_margin), hi: (a,b) => (a.profit_margin||0) > (b.profit_margin||0) ? "a" : (b.profit_margin||0) > (a.profit_margin||0) ? "b" : null },
+    { label: "Debt / equity",    v: q => q.debt_to_equity != null ? (+q.debt_to_equity).toFixed(2) : "—", hi: (a,b) => {
+      const av = a.debt_to_equity; const bv = b.debt_to_equity;
+      if (av != null && bv != null) return av < bv ? "a" : av > bv ? "b" : null;  // lower wins
+      return null; } },
+    { label: "Dividend yield",   v: q => _stkFmtPct(q.dividend_yield), hi: (a,b) => (a.dividend_yield||0) > (b.dividend_yield||0) ? "a" : (b.dividend_yield||0) > (a.dividend_yield||0) ? "b" : null },
+    { label: "Beta",             v: q => q.beta != null ? (+q.beta).toFixed(2) : "—", hi: () => null },
+    { label: "RSI(14)",          v: q => q.rsi14 != null ? (+q.rsi14).toFixed(0) : "—", hi: () => null },
+    { label: "Analyst target",   v: q => q.target_mean != null ? "$" + (+q.target_mean).toFixed(0) : "—", hi: (a,b) => {
+      const ag = a.target_mean != null && a.price > 0 ? (a.target_mean - a.price) / a.price : null;
+      const bg = b.target_mean != null && b.price > 0 ? (b.target_mean - b.price) / b.price : null;
+      if (ag != null && bg != null) return ag > bg ? "a" : bg > ag ? "b" : null;
+      return null; } },
+  ];
+
+  const headerCell = (q, color) => `
+    <div style="text-align:center;padding:14px 8px;background:var(--bg-elev);border-radius:10px">
+      <div style="font-size:18px;font-weight:800;color:var(--t1)">${esc(q.ticker)}</div>
+      <div style="font-size:11px;color:var(--t3);margin-top:2px;height:26px;overflow:hidden">${esc(q.name || "")}</div>
+      <div style="font-size:14px;font-weight:700;color:${color};margin-top:4px">$${(+q.price).toFixed(2)}</div>
+    </div>
+  `;
+  const colA = (+a.change_pct || 0) >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+  const colB = (+b.change_pct || 0) >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+  // Count wins
+  let winsA = 0, winsB = 0;
+  for (const r of rows) {
+    const w = r.hi(a, b);
+    if (w === "a") winsA++; else if (w === "b") winsB++;
+  }
+  return `
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">${headerCell(a, colA)}${headerCell(b, colB)}</div>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:12px;margin-bottom:10px">
+      ${rows.map(r => {
+        const w = r.hi(a, b);
+        const win = (side) => w === side ? "font-weight:800;color:var(--green,#34C759)" : "color:var(--t1)";
+        return `
+          <div style="display:grid;grid-template-columns:1fr auto 1fr;gap:8px;align-items:center;padding:6px 0;border-bottom:0.5px solid var(--sep);font-size:13px;font-variant-numeric:tabular-nums">
+            <div style="text-align:right;${win('a')}">${esc(r.v(a))}</div>
+            <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;text-align:center;min-width:80px">${esc(r.label)}</div>
+            <div style="text-align:left;${win('b')}">${esc(r.v(b))}</div>
+          </div>
+        `;
+      }).join("")}
+    </div>
+    <div style="background:var(--bg-elev);border-radius:10px;padding:10px 12px;margin-bottom:10px;text-align:center">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Head-to-head wins</div>
+      <div style="font-size:15px;font-weight:800">${esc(a.ticker)} ${winsA} — ${winsB} ${esc(b.ticker)}</div>
+      <div style="font-size:11px;color:var(--t3);margin-top:2px">Across ${rows.filter(r => r.hi(a,b) !== null).length} comparable metrics. Lower P/E and lower debt/equity count as wins.</div>
     </div>
   `;
 }
