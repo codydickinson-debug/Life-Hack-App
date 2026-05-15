@@ -15,8 +15,9 @@
     { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
   ],
   "shortcuts": [
-    { "name": "Today", "short_name": "Today", "description": "Open today's habits and safe-to-spend", "url": "./index.html?tab=today" },
-    { "name": "Add spend", "short_name": "+Spend", "description": "Log a transaction", "url": "./index.html?tab=money&action=add-spend" },
-    { "name": "Goals", "short_name": "Goals", "description": "Open goals tab", "url": "./index.html?tab=goals" }
+    { "name": "Add spend",  "short_name": "+Spend",  "description": "Log a transaction",                         "url": "./index.html?tab=money&action=add-spend" },
+    { "name": "Add a win",  "short_name": "+Win",    "description": "Capture a small victory",                   "url": "./index.html?tab=today&action=add-win" },
+    { "name": "Talk to Cylan", "short_name": "Cylan", "description": "Open the AI financial counselor",           "url": "./index.html?action=counselor" },
+    { "name": "Today",      "short_name": "Today",   "description": "Open today's habits and safe-to-spend",     "url": "./index.html?tab=today" }
   ]
 }
