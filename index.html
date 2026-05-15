@@ -629,7 +629,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: var(--blue);
   font-weight: 500;
 }
-.del-x { color: var(--t4); font-size: 20px; padding: 4px 6px; line-height: 1; align-self: flex-start; }
+.del-x { color: var(--t4); font-size: 20px; padding: 10px 12px; line-height: 1; align-self: flex-start; min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 0; cursor: pointer; }
+.del-x:hover { color: var(--t2); }
+.del-x:active { color: var(--red, #FF3B30); }
 
 /* ================ MONEY SUB-TABS ================ */
 .sub-tabs {
@@ -6033,13 +6035,20 @@ function renderToday() {
       const isFuture = false;
       days.push({ did, isToday, isPause, isFuture });
     }
-    return `<div class="hb-strip" aria-hidden="true">${days.map(dy => {
+    // tooltip on each dot so the legend is implicit — hover/long-press
+    // reveals "Mon · done" / "Tue · missed" / "Today" without a separate
+    // legend block cluttering the layout. Better for screen readers via
+    // title attribute too.
+    const dayNames = ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
+    return `<div class="hb-strip" aria-label="Last 7 days">${days.map((dy, i) => {
       let cls = "hb-dot";
-      if (dy.isPause) cls += " paused";
-      else if (dy.did) cls += " done";
-      else cls += " miss";
+      let state = "missed";
+      if (dy.isPause) { cls += " paused"; state = "paused"; }
+      else if (dy.did) { cls += " done"; state = "done"; }
+      else { cls += " miss"; }
       if (dy.isToday) cls += " today";
-      return `<span class="${cls}"></span>`;
+      const day = i === 6 ? "Today" : dayNames[(new Date().getDay() + 6 - (6 - i)) % 7];
+      return `<span class="${cls}" title="${day} · ${state}"></span>`;
     }).join("")}</div>`;
   };
 
@@ -8720,10 +8729,35 @@ function renderMoney() {
       <div class="trail chev"></div>
     </div>
   `;
+  // Surface a bank-sync CTA at the top of Money when:
+  //   - The user picked "manual" in onboarding (advancedFeaturesEnabled=false)
+  //   - They have no Plaid-synced data yet
+  //   - They've been around long enough to have considered manual entry
+  //     (3+ days OR have 5+ manual transactions)
+  // The Advanced features toggle in Settings hides bank sync entirely,
+  // which makes the path to "auto-import my transactions" effectively
+  // invisible. This row fixes that.
+  const showBankSyncCTA =
+    !DB.settings.advancedFeaturesEnabled &&
+    (DB.accounts || []).length === 0 &&
+    !DB.settings._dismissedBankCTA &&
+    ((DB.user.onboardedAt && (Date.now() - DB.user.onboardedAt) > 3 * 86400000) ||
+     (DB.spend || []).filter(t => t.source !== "plaid").length >= 5);
+  const bankSyncCTABanner = showBankSyncCTA ? `
+    <div style="background:linear-gradient(135deg,rgba(124,58,237,0.10),rgba(236,72,153,0.06));border:1px solid rgba(124,58,237,0.35);border-radius:12px;padding:14px 16px;margin-bottom:12px;display:flex;align-items:center;gap:12px;cursor:pointer" onclick="(()=>{DB.settings.advancedFeaturesEnabled=true;save();toast('Bank sync unlocked — set up in Settings');setTimeout(()=>showTab('settings'),200);})()">
+      <div style="font-size:24px;flex-shrink:0">🏦</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13.5px;font-weight:600;color:var(--t1)">Tired of typing transactions?</div>
+        <div style="font-size:11.5px;color:var(--t2);margin-top:2px">Connect a bank — your spend, balances, holdings, and APRs sync automatically.</div>
+      </div>
+      <button class="del-x" onclick="event.stopPropagation();DB.settings._dismissedBankCTA=true;save();render();" title="Dismiss">×</button>
+    </div>
+  ` : "";
   const hdr = `
     <div class="lg-title">Money</div>
     ${overlapBanner}
     ${accountOverlapBanner}
+    ${bankSyncCTABanner}
     ${healthSnapshot}
     ${cashflowBlock}
     ${counselorTeaser}
@@ -21848,7 +21882,7 @@ function sendTestNotification() {
       tag: "ascend-test",
     });
   } catch (e) {
-    toast("Failed: " + e.message);
+    toast("Test notification failed — " + (e.message || "permission may be blocked"));
   }
 }
 
@@ -22333,42 +22367,53 @@ function resetEverythingSheet() {
 }
 
 async function exportData() {
-  // If the app is currently encrypted-at-rest with a passphrase, default
-  // path is also encrypted export — same passphrase, same envelope format,
-  // can be re-imported without re-typing it.
+  // Opens a styled choice sheet — replaces the old native prompt() chain
+  // that read like a phishing nag on mobile and looked unprofessional next
+  // to every other surface.
+  openSheet(`
+    <h2 style="margin-bottom:4px">💾 Export backup</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">A copy of all your data — habits, transactions, savings, goals, accounts. Restore later by importing it.</p>
+    <div class="onb-choice-card" style="margin-bottom:8px" onclick="closeSheet();setTimeout(()=>_exportEncrypted(),120)">
+      <div class="ct">🔒 Encrypted backup</div>
+      <div class="cs">Recommended. Requires a passphrase to restore. Safe to store anywhere.</div>
+    </div>
+    <div class="onb-choice-card" style="border-color:rgba(255,149,0,0.30)" onclick="closeSheet();setTimeout(()=>_exportPlaintext(),120)">
+      <div class="ct">📄 Plaintext JSON</div>
+      <div class="cs" style="color:var(--orange,#FF9500)">⚠ Anyone with the file can read everything. Only choose this if you'll keep it private.</div>
+    </div>
+    <div class="actions"><button class="btn secondary" style="width:100%" onclick="closeSheet()">Cancel</button></div>
+  `);
+}
+
+function _exportPlaintext() {
+  if (!confirm("Plaintext export will include every financial figure, account, bill, name, and note in clear text. Files in Downloads are often synced to cloud storage. Continue with plaintext?")) return;
+  _downloadBlob(JSON.stringify(DB, null, 2), `ascend-backup-${todayKey()}.json`, "application/json");
+  DB.lastExportAt = Date.now();
+  try { save(); } catch {}
+  toast("Plaintext backup downloaded");
+}
+
+async function _exportEncrypted() {
   const encryptedByDefault = !!DB.settings.encrypted && !!APP_KEY;
-  const choice = prompt(
-    "Export format:\n\n" +
-    "  1 — Encrypted (recommended; requires passphrase to restore)\n" +
-    "  2 — Plaintext JSON (anyone with the file can read everything)\n\n" +
-    "Type 1 or 2:",
-    encryptedByDefault ? "1" : "1"
-  );
-  if (choice == null) return; // cancelled
-  if (choice.trim() === "2") {
-    if (!confirm("Plaintext export will include every financial figure, account, bill, " +
-                 "name, and note in clear text. Files in Downloads are often synced to " +
-                 "cloud storage. Continue with plaintext?")) return;
-    _downloadBlob(JSON.stringify(DB, null, 2), `ascend-backup-${todayKey()}.json`, "application/json");
-    DB.lastExportAt = Date.now();
-    try { save(); } catch {}
-    toast("Plaintext backup downloaded");
-    return;
-  }
-  // Encrypted path
-  let pass;
-  if (encryptedByDefault) {
-    // Re-prompt for the passphrase rather than reusing APP_KEY directly —
-    // the export should be portable across devices/installs, which means
-    // a fresh PBKDF2 derive against a new salt so the export file isn't
-    // bound to this device's stored salt.
-    pass = prompt("Enter a passphrase to encrypt this backup. You will need to re-enter it to import the file. Cannot be recovered if lost.");
-  } else {
-    pass = prompt("Set a passphrase for this encrypted backup. You will need it to import the file. Cannot be recovered if lost.");
-  }
-  if (pass == null) return;
-  pass = String(pass);
-  if (pass.length < 8) { alert("Passphrase too short (min 8 characters). 4-char passphrases are crackable in minutes."); return; }
+  openSheet(`
+    <h2 style="margin-bottom:4px">🔒 Encrypted backup</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">${encryptedByDefault
+      ? "You'll need this passphrase to restore the backup later. Cannot be recovered if lost."
+      : "Set a passphrase you can remember. You'll need it to restore the backup. Cannot be recovered if lost."
+    }</p>
+    <label>Passphrase</label>
+    <input id="exp-pp" type="password" placeholder="At least 8 characters" autofocus />
+    <p class="muted" style="font-size:11.5px;margin-top:6px">Tip: 4 random words is stronger and easier to remember than a short complex string.</p>
+    <div class="actions">
+      <button class="btn secondary" onclick="closeSheet()">Cancel</button>
+      <button class="btn" onclick="_doExportEncrypted()">Export</button>
+    </div>
+  `);
+}
+
+async function _doExportEncrypted() {
+  const pass = String(($("#exp-pp") || {}).value || "");
+  if (pass.length < 8) { toast("Passphrase too short — min 8 characters"); return; }
   try {
     const salt = newSalt();
     const key = await deriveKey(pass, salt, CRYPTO_V_CURRENT);
@@ -22382,9 +22427,10 @@ async function exportData() {
     _downloadBlob(JSON.stringify(blob, null, 2), `ascend-backup-${todayKey()}.ascend`, "application/octet-stream");
     DB.lastExportAt = Date.now();
     try { save(); } catch {}
+    closeSheet();
     toast("Encrypted backup downloaded");
   } catch (e) {
-    alert("Export failed. Try again.");
+    toast("Export failed — " + (e.message || "try again"));
   }
 }
 function importData() {
@@ -22487,12 +22533,12 @@ async function syncNow() {
     const suggested = ((DB.plaidRecurringSuggestions || {}).inflows || []).length +
                       ((DB.plaidRecurringSuggestions || {}).outflows || []).length;
     toast(
-      `+${r.added} tx · ${r.accounts} acc` +
-      ((DB.holdings||[]).length ? ` · ${DB.holdings.length} holdings` : "") +
+      `+${r.added} transaction${r.added===1?"":"s"} · ${r.accounts} account${r.accounts===1?"":"s"}` +
+      ((DB.holdings||[]).length ? ` · ${DB.holdings.length} holding${DB.holdings.length===1?"":"s"}` : "") +
       (suggested ? ` · ${suggested} recurring detected` : "")
     );
     render();
-  } catch (e) { toast("Sync failed: " + e.message); }
+  } catch (e) { toast(_friendlyApiError("Sync", e)); }
 }
 
 async function disconnectItem(itemId) {
@@ -22522,7 +22568,7 @@ async function disconnectItem(itemId) {
     // Note: keep historical transactions; the user can delete manually if they want
     await save(); render();
     toast("Disconnected");
-  } catch (e) { toast("Failed: " + e.message); }
+  } catch (e) { toast(_friendlyApiError("Disconnect", e)); }
 }
 
 
@@ -24643,9 +24689,9 @@ function counselorRender() {
   // buttons crowd the header, and "Your financial counselor" repeats info
   // the user already had on the first message. Shorten to just the mode.
   const subtitleText = thread.length
-    ? (keep ? "📌 Keeping this chat" : "Auto-clears on close")
-    : (keep ? "Your financial counselor · 📌 Keeping this chat"
-            : "Your financial counselor · auto-clears on close");
+    ? (keep ? "📌 Saved — won't be cleared" : "Closes private — tap 📌 to keep")
+    : (keep ? "Your financial counselor · 📌 Saving conversations"
+            : "Your financial counselor · conversations are private (cleared on close — tap 📌 to keep)");
   const headerControls = thread.length ? `
     <button onclick="counselorToggleKeep()" title="${keep ? 'Stop keeping this chat' : 'Keep this chat across opens'}"
       style="background:${keep ? 'rgba(124,58,237,0.18)' : 'var(--bg-elev)'};border:0.5px solid ${keep ? 'var(--purple,#8957d9)' : 'var(--sep)'};color:${keep ? 'var(--purple,#8957d9)' : 'var(--t2)'};padding:6px 10px;border-radius:var(--r-pill,999px);font-size:11.5px;cursor:pointer;font-weight:600;flex-shrink:0">${keep ? '📌 Kept' : '📌 Keep'}</button>
@@ -25639,8 +25685,8 @@ async function syncHoldings() {
     const r = await backendHoldings();
     DB.holdings = r.holdings || [];
     await save(); render();
-    toast(`+${DB.holdings.length} holdings`);
-  } catch (e) { toast("Holdings: " + e.message); }
+    toast(`+${DB.holdings.length} holding${DB.holdings.length===1?"":"s"} synced`);
+  } catch (e) { toast(_friendlyApiError("Holdings sync", e)); }
 }
 // Pulls Plaid liabilities and auto-populates DB.debtMeta with APR + min
 // payment for each credit/loan account, plus stashes the raw mortgage and
@@ -26338,7 +26384,37 @@ async function runAiInsight() {
     const r = await getMonthlyInsight();
     render();
     toast("Insight ready");
-  } catch (e) { toast("AI: " + e.message); }
+  } catch (e) { toast(_friendlyApiError("AI insight", e)); }
+}
+
+// Map common error patterns to user-actionable messages. Anything we don't
+// recognize falls through to the raw message so we don't hide useful info.
+function _friendlyApiError(context, e) {
+  const msg = String((e && e.message) || e || "Unknown error");
+  // Rate limit (429)
+  if (/429|rate.?limit|too many|daily AI limit|burst/i.test(msg)) {
+    if (/daily/i.test(msg)) return `${context} — daily AI cap hit. Resets at UTC midnight. Settings → AI to manage.`;
+    return `${context} — too many requests. Wait a minute and try again.`;
+  }
+  // Auth / enrollment
+  if (/401|unauthorized|not enrolled|enrollment/i.test(msg)) {
+    return `${context} — backend auth issue. Check Settings → Bank sync.`;
+  }
+  // Network
+  if (/network|fetch|timeout|connection/i.test(msg)) {
+    return `${context} — network issue. Check your connection and try again.`;
+  }
+  // Plaid item errors
+  if (/ITEM_LOGIN_REQUIRED|ITEM_ERROR|PENDING_EXPIRATION/i.test(msg)) {
+    return `${context} — bank needs you to reconnect. Settings → Bank sync.`;
+  }
+  // Quota / storage
+  if (/quota|storage/i.test(msg)) {
+    return `${context} — browser storage full. Export a backup and reset.`;
+  }
+  // Anything else: short clean version of the raw message
+  const short = msg.replace(/^Error:\s*/i, "").slice(0, 120);
+  return `${context} failed — ${short}`;
 }
 function debtMetaSheet(accountId) {
   const acct = (DB.accounts||[]).find(a => a.account_id === accountId);
@@ -27115,10 +27191,10 @@ function runOnboarding() {
 }
 
 function _onbShell(stepNum, body, footer) {
-  const dots = [1,2,3,4].map(n => `<div class="dot ${n===stepNum?'active':''}"></div>`).join("");
+  const dots = [1,2,3,4,5].map(n => `<div class="dot ${n===stepNum?'active':''}"></div>`).join("");
   openSheet(`
     <div class="onb-progress">${dots}</div>
-    <div class="onb-step-h">Step ${stepNum} of 4</div>
+    <div class="onb-step-h">Step ${stepNum} of 5</div>
     ${body}
     <div class="actions">${footer}</div>
   `);
@@ -27193,7 +27269,46 @@ function onboardingStep4() {
     <p class="muted" style="text-align:center;font-size:13px;margin-bottom:12px">You can change this anytime.</p>
     ${cards}
   `, `
-    <button class="btn" style="width:100%" onclick="finishOnboarding()">Done</button>
+    <button class="btn" style="width:100%" onclick="onboardingStep5()">Continue</button>
+  `);
+}
+
+function onboardingStep5() {
+  _onbState.step = 5;
+  const supported = ("Notification" in window);
+  const granted = supported && Notification.permission === "granted";
+  const denied = supported && Notification.permission === "denied";
+  _onbShell(5, `
+    <h2 style="text-align:center;margin-bottom:4px">${granted ? "Reminders are on ✓" : "Want gentle reminders?"}</h2>
+    <p class="muted" style="text-align:center;font-size:13px;margin-bottom:12px">${
+      !supported
+        ? "Your browser doesn't support notifications — you'll see reminders in-app instead."
+        : denied
+        ? "Notifications are blocked. You can enable them later in your browser settings."
+        : granted
+        ? "We'll nudge you about streaks at risk, bills due, plan deadlines, and runway warnings — only when it actually matters."
+        : "We'll nudge you about streaks at risk, bills due, plan deadlines, and runway warnings. Two times per day by default; you can customize what fires later."
+    }</p>
+    ${supported && !granted && !denied ? `
+      <div class="onb-choice-card" onclick="(()=>{const b=event.currentTarget;b.style.opacity='0.6';Notification.requestPermission().then(p=>{if(p==='granted'){DB.settings.notifications=true;DB.settings.reminderTimes=['08:00','20:00'];save();if(typeof scheduleReminder==='function')scheduleReminder();onboardingStep5();}else{onboardingStep5();}});})()">
+        <div class="ct">🔔 Yes — turn on reminders</div>
+        <div class="cs">Asks for browser permission. You can change times + categories anytime.</div>
+      </div>
+      <div class="onb-choice-card" onclick="(()=>{DB.settings.notifications=false;save();onboardingStep5();})()">
+        <div class="ct">Maybe later</div>
+        <div class="cs">You can enable it from Settings → Notifications at any time.</div>
+      </div>
+    ` : ""}
+    ${granted ? `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:12px 14px;margin:8px 0;font-size:13px;line-height:1.5">
+        <div style="font-weight:600;margin-bottom:6px">Default times</div>
+        <div style="color:var(--t2)">• 8:00 AM — morning check-in</div>
+        <div style="color:var(--t2)">• 8:00 PM — evening review</div>
+        <div style="font-size:11.5px;color:var(--t3);margin-top:6px">Plus smart triggers — fire only when something actually needs your attention.</div>
+      </div>
+    ` : ""}
+  `, `
+    <button class="btn" style="width:100%" onclick="finishOnboarding()">${granted ? "Finish setup" : "Skip — finish setup"}</button>
   `);
 }
 
@@ -35465,6 +35580,7 @@ function init() {
     nwAnnotationsSheet, deleteNwAnnotation, _agendaViewHtml,
     monteCarloRetirement, monteCarloFanChart,
     setupHealthSheet,
+    _exportEncrypted, _exportPlaintext, _doExportEncrypted, _friendlyApiError,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
     setPassphrase, unlockWithPassphrase, disablePassphrase, encryptObject, decryptObject, deriveKey,
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,
@@ -35536,7 +35652,7 @@ function init() {
     billsToIcs, exportBillsIcs,
     yearReview, yearReviewSheet, shareCardSvg, downloadShareCard, shareStreakCard,
     backendHoldings, syncHoldings,
-    runOnboarding, onboardingStep1, onboardingStep2, onboardingStep3, onboardingStep4, finishOnboarding,
+    runOnboarding, onboardingStep1, onboardingStep2, onboardingStep3, onboardingStep4, onboardingStep5, finishOnboarding,
     startTutorial, tutorialNext, tutorialBack, tutorialFinish, tutorialAsk,
     aiOnboardingStart, aiOnboardingRender, aiOnbSend, aiOnbToggleHabit, aiOnbToggleGoal,
     aiOnbAcceptPlan, aiOnbRestart, aiOnbClose,
