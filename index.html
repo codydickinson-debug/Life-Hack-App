@@ -10164,6 +10164,48 @@ function renderStocks() {
   _stocksRefreshAll();
   _stocksLoadHeatmap();
   _stocksLoadBreadth();
+  _stocksPrefetchCalendarEvents();
+}
+
+async function _stocksPrefetchCalendarEvents() {
+  if (!DB.stocks) DB.stocks = {};
+  const wl = DB.stocks.watchlist || [];
+  const hold = Object.keys(DB.stocks.holdings || {}).filter(tk => +DB.stocks.holdings[tk].shares > 0);
+  const all = Array.from(new Set([...wl, ...hold]));
+  if (!all.length) return;
+  const sixHours = 6 * 60 * 60 * 1000;
+  const eAge = DB.stocks.lastEarningsPrefetch ? Date.now() - DB.stocks.lastEarningsPrefetch : Infinity;
+  const dAge = DB.stocks.lastDivPrefetch ? Date.now() - DB.stocks.lastDivPrefetch : Infinity;
+  if (eAge > sixHours) {
+    try {
+      const r = await fetch("/api/earnings/batch?tickers=" + encodeURIComponent(all.join(",")));
+      const data = await r.json();
+      if (r.ok && data.calendar) {
+        if (!DB.stocks.earningsCache) DB.stocks.earningsCache = {};
+        for (const [tk, info] of Object.entries(data.calendar)) {
+          if (info && info.next_earnings) DB.stocks.earningsCache[tk] = { next_earnings: info.next_earnings, fetchedAt: Date.now() };
+        }
+        DB.stocks.lastEarningsPrefetch = Date.now();
+        save();
+      }
+    } catch {}
+  }
+  if (dAge > sixHours && hold.length) {
+    try {
+      const r = await fetch("/api/dividends/calendar?tickers=" + encodeURIComponent(hold.join(",")));
+      const data = await r.json();
+      if (r.ok && data.calendar) {
+        if (!DB.stocks.exDivCache) DB.stocks.exDivCache = {};
+        for (const [tk, info] of Object.entries(data.calendar)) {
+          if (info && info.ex_dividend_date) {
+            DB.stocks.exDivCache[tk] = { ex_dividend_date: info.ex_dividend_date, dividend_rate: info.dividend_rate, fetchedAt: Date.now() };
+          }
+        }
+        DB.stocks.lastDivPrefetch = Date.now();
+        save();
+      }
+    } catch {}
+  }
 }
 
 /* ---------- Top movers card ----------
