@@ -3384,7 +3384,7 @@ function logSavingSheet(id) {
       <button class="btn secondary" onclick="closeSheet()">Cancel</button>
       <button class="btn" id="ls-save">Log</button>
     </div>
-    <p class="muted" style="margin-top:14px;font-size:13px">Current: <b>${fmt$0(s.current)}</b> of ${fmt$0(s.target)}</p>
+    <p class="muted" style="margin-top:14px;font-size:13px">Current: <b data-priv="amount">${fmt$0(s.current)}</b> of <span data-priv="amount">${fmt$0(s.target)}</span></p>
   `);
   $("#ls-save").addEventListener("click", async () => {
     const a = Number($("#ls-amt").value);
@@ -7319,7 +7319,7 @@ function renderMoney() {
           <div style="font-size:24px;width:40px;text-align:center">📐</div>
           <div class="body">
             <div class="t1" style="margin:0">vs Age ${esc(bench.label)}: <span style="color:${color}">${ratio.toFixed(2)}× median</span></div>
-            <div class="t2">${fmt$0(bench.median)} typical · ${profile.age ? "" : "set age in profile for accuracy"}</div>
+            <div class="t2"><span data-priv="amount">${fmt$0(bench.median)}</span> typical · ${profile.age ? "" : "set age in profile for accuracy"}</div>
           </div>
           <div class="trail chev"></div>
         </div>
@@ -7628,7 +7628,7 @@ function renderMoney() {
               <div class="lead">🪣</div>
               <div class="body">
                 <div class="t1"><span data-priv="amount">${fmt$0(total)}</span> saved across ${funds.length} fund${funds.length===1?"":"s"}</div>
-                <div class="t2">${fmt$0(monthly)}/mo suggested contribution</div>
+                <div class="t2"><span data-priv="amount">${fmt$0(monthly)}</span>/mo suggested contribution</div>
               </div>
               <div class="trail chev"></div>
             </div>
@@ -7668,7 +7668,7 @@ function renderMoney() {
                 <div class="t1">${esc(a.name)}</div>
                 <div class="t2">${esc(t.label)}${a.note?' · '+esc(a.note):''}</div>
               </div>
-              <div class="trail" style="font-weight:600;color:var(--t1)">${fmt$0(a.value)}</div>
+              <div class="trail" style="font-weight:600;color:var(--t1)" data-priv="amount">${fmt$0(a.value)}</div>
             </div>
           `;
         }).join("") : `<div class="row"><div class="body"><div class="t2 muted">No manual assets yet — track your home, car, crypto, and other things not in your bank.</div></div></div>`}
@@ -7683,9 +7683,9 @@ function renderMoney() {
               <div class="lead">${t.emoji}</div>
               <div class="body">
                 <div class="t1">${esc(l.name)}</div>
-                <div class="t2">${esc(t.label)}${l.apr?' · '+l.apr+'% APR':''}${l.minPayment?' · min '+fmt$0(l.minPayment)+'/mo':''}</div>
+                <div class="t2">${esc(t.label)}${l.apr?' · '+l.apr+'% APR':''}${l.minPayment?' · min <span data-priv="amount">'+fmt$0(l.minPayment)+'</span>/mo':''}</div>
               </div>
-              <div class="trail" style="font-weight:600;color:var(--red)">${fmt$0(l.balance)}</div>
+              <div class="trail" style="font-weight:600;color:var(--red)" data-priv="amount">${fmt$0(l.balance)}</div>
             </div>
           `;
         }).join("") : `<div class="row"><div class="body"><div class="t2 muted">No manual debts yet — student loans, money owed to family, etc.</div></div></div>`}
@@ -7726,7 +7726,7 @@ function renderMoney() {
               <div class="t1">${esc(a.name)} ${a.mask ? `<span class="muted" style="font-weight:400">···${esc(a.mask)}</span>` : ""}</div>
               <div class="t2">${esc(a.institution_name)} · ${esc(a.subtype || a.type || "")}</div>
             </div>
-            <div class="trail" style="font-weight:600;color:var(--t1)">${fmt$0(a.balance_current||0)}</div>
+            <div class="trail" style="font-weight:600;color:var(--t1)" data-priv="amount">${fmt$0(a.balance_current||0)}</div>
           </div>
         `).join("")}
       </div>
@@ -7751,16 +7751,16 @@ function renderMoney() {
       </div>
     `) : "");
     const holdingsHtml = (DB.holdings && DB.holdings.length) ? `
-      <div class="section-h"><span class="lbl">Holdings</span><span class="muted" style="font-size:12px">${fmt$0(DB.holdings.reduce((s,h)=>s+(+h.institution_value||0),0))}</span></div>
+      <div class="section-h"><span class="lbl">Holdings</span><span class="muted" style="font-size:12px" data-priv="amount">${fmt$0(DB.holdings.reduce((s,h)=>s+(+h.institution_value||0),0))}</span></div>
       <div class="list">
         ${DB.holdings.slice().sort((a,b)=>(+b.institution_value||0)-(+a.institution_value||0)).slice(0,15).map(h => `
           <div class="row">
             <div class="lead" style="font-size:11px;font-weight:700;background:var(--bg-elev);width:36px;height:36px;border-radius:8px;display:inline-flex;align-items:center;justify-content:center">${esc((h.ticker||(h.name||"?")).slice(0,4))}</div>
             <div class="body">
               <div class="t1">${esc(h.name || h.ticker || "Holding")}</div>
-              <div class="t2">${(+h.quantity||0).toFixed(4)} × ${fmt$(h.institution_price||0)}${h.cost_basis ? ` · cost ${fmt$0(h.cost_basis)}` : ""}</div>
+              <div class="t2">${(+h.quantity||0).toFixed(4)} × <span data-priv="amount">${fmt$(h.institution_price||0)}</span>${h.cost_basis ? ` · cost <span data-priv="amount">${fmt$0(h.cost_basis)}</span>` : ""}</div>
             </div>
-            <div class="trail" style="font-weight:600;color:var(--t1)">${fmt$0(h.institution_value||0)}</div>
+            <div class="trail" style="font-weight:600;color:var(--t1)" data-priv="amount">${fmt$0(h.institution_value||0)}</div>
           </div>
         `).join("")}
       </div>
@@ -7771,16 +7771,16 @@ function renderMoney() {
       const totalDebt = debts.reduce((s,d)=>s+d.balance_current,0);
       const plan = payoffSchedule(DB.settings.debtPayoffStrategy || "avalanche", +DB.settings.debtExtraPayment || 0);
       return `
-        <div class="section-h"><span class="lbl">Debts</span><span class="muted" style="font-size:12px">${fmt$0(totalDebt)} total</span></div>
+        <div class="section-h"><span class="lbl">Debts</span><span class="muted" style="font-size:12px" data-priv="amount">${fmt$0(totalDebt)} total</span></div>
         <div class="list">
           ${debts.map(d => `
             <div class="row">
               <div class="lead">${d.type === "credit" ? "💳" : "🧾"}</div>
               <div class="body">
                 <div class="t1">${esc(d.name)} <span class="muted" style="font-weight:400">${d.apr?` · ${d.apr}% APR`:" · APR not set"}</span></div>
-                <div class="t2">Min ${fmt$0(d.minPayment)}/mo${d.mask?` · ···${esc(d.mask)}`:""}</div>
+                <div class="t2">Min <span data-priv="amount">${fmt$0(d.minPayment)}</span>/mo${d.mask?` · ···${esc(d.mask)}`:""}</div>
               </div>
-              <div class="trail" style="font-weight:600;color:var(--red)">${fmt$0(d.balance_current)}</div>
+              <div class="trail" style="font-weight:600;color:var(--red)" data-priv="amount">${fmt$0(d.balance_current)}</div>
             </div>
           `).join("")}
           ${plan ? `
