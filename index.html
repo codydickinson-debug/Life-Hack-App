@@ -10211,6 +10211,17 @@ function renderStocks() {
       <button class="btn" style="font-size:13px;padding:10px 16px" onclick="_stocksAddTicker(document.getElementById('stk-add-input').value)">Add</button>
     </div>
 
+    <!-- Section nav pills -->
+    <div style="display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;margin-bottom:14px;padding-bottom:4px">
+      ${[
+        { id: "stk-breadth-wrap",   label: "📊 Market" },
+        { id: "stk-heatmap-wrap",   label: "🌡️ Sectors" },
+        { id: "stk-portfolio-hero", label: "💼 Portfolio" },
+        { id: "stk-watchlist",      label: "👀 Watchlist" },
+        { id: "stk-holdings-wrap",  label: "📈 Holdings" },
+      ].map(p => `<button onclick="_stkScrollTo(${jsAttr(p.id)})" style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t1);border-radius:999px;padding:5px 12px;font-size:11.5px;font-weight:600;cursor:pointer;flex-shrink:0;white-space:nowrap">${esc(p.label)}</button>`).join("")}
+    </div>
+
     <!-- Market sentiment / breadth gauge -->
     <div id="stk-breadth-wrap"></div>
 
@@ -10684,27 +10695,37 @@ function _stocksRenderPortfolio() {
             ${stop && take ? " · " : ""}
             ${take ? `<span style="color:var(--green,#34C759)">⊤ $${take.toFixed(2)}</span>` : ""}
           </div>` : "";
+        const weightPct = mkt > 0 ? (r.m / mkt) * 100 : 0;
+        const tkColor = _stkTickerColor(r.tk);
         return `
-          <div class="row tappable" onclick="_stocksOpenDetail(${jsAttr(r.tk)})" role="button" tabindex="0" style="align-items:center">
-            <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;width:auto">
-              ${_stkTickerAvatar(r.tk, 30)}
-              <div style="width:48px">
-                <div style="font-weight:700;font-size:13.5px;color:var(--t1)">${esc(r.tk)}</div>
-                <div style="font-size:10.5px;color:var(--t3)">${r.shares} ${r.shares === 1 ? "share" : "shares"}</div>
+          <div class="row tappable" onclick="_stocksOpenDetail(${jsAttr(r.tk)})" role="button" tabindex="0" style="align-items:center;flex-direction:column;align-items:stretch;gap:6px">
+            <div style="display:flex;align-items:center;gap:8px;width:100%">
+              <div style="display:flex;align-items:center;gap:8px;flex-shrink:0;width:auto">
+                ${_stkTickerAvatar(r.tk, 30)}
+                <div style="width:48px">
+                  <div style="font-weight:700;font-size:13.5px;color:var(--t1)">${esc(r.tk)}</div>
+                  <div style="font-size:10.5px;color:var(--t3)">${r.shares} ${r.shares === 1 ? "share" : "shares"}</div>
+                </div>
+              </div>
+              <div class="body" style="flex:1;min-width:0;margin-left:6px">
+                <div style="font-size:12.5px;color:var(--t2);font-variant-numeric:tabular-nums">${r.price != null ? `$${r.price.toFixed(2)}` : "—"} <span style="color:var(--t3);font-size:10.5px">cost $${r.c.toFixed(2)}</span></div>
+                <div style="font-size:11px;color:${pColor};font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums">${r.pl >= 0 ? "+" : ""}$${Math.abs(r.pl).toFixed(2)} (${r.pl >= 0 ? "+" : ""}${(r.plPct * 100).toFixed(1)}%)</div>
+                ${limitsRow}
+              </div>
+              <div style="text-align:right;flex-shrink:0">
+                <div style="font-weight:700;font-size:13.5px;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${r.m.toFixed(2)}</div>
+                <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:2px">
+                  <button onclick="event.stopPropagation();_stocksHoldingLimitsSheet(${jsAttr(r.tk)})" title="Stop/target" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:2px 4px;cursor:pointer;text-decoration:underline">stop</button>
+                  <button onclick="event.stopPropagation();_stocksClosePositionSheet(${jsAttr(r.tk)})" title="Sell" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:2px 4px;cursor:pointer;text-decoration:underline">sell</button>
+                  <button onclick="event.stopPropagation();_stocksEditHoldingSheet(${jsAttr(r.tk)})" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:2px 4px;cursor:pointer;text-decoration:underline">edit</button>
+                </div>
               </div>
             </div>
-            <div class="body" style="flex:1;min-width:0;margin-left:6px">
-              <div style="font-size:12.5px;color:var(--t2);font-variant-numeric:tabular-nums">${r.price != null ? `$${r.price.toFixed(2)}` : "—"} <span style="color:var(--t3);font-size:10.5px">cost $${r.c.toFixed(2)}</span></div>
-              <div style="font-size:11px;color:${pColor};font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums">${r.pl >= 0 ? "+" : ""}$${Math.abs(r.pl).toFixed(2)} (${r.pl >= 0 ? "+" : ""}${(r.plPct * 100).toFixed(1)}%)</div>
-              ${limitsRow}
-            </div>
-            <div style="text-align:right;flex-shrink:0">
-              <div style="font-weight:700;font-size:13.5px;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${r.m.toFixed(2)}</div>
-              <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:2px">
-                <button onclick="event.stopPropagation();_stocksHoldingLimitsSheet(${jsAttr(r.tk)})" title="Stop/target" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:2px 4px;cursor:pointer;text-decoration:underline">stop</button>
-                <button onclick="event.stopPropagation();_stocksClosePositionSheet(${jsAttr(r.tk)})" title="Sell" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:2px 4px;cursor:pointer;text-decoration:underline">sell</button>
-                <button onclick="event.stopPropagation();_stocksEditHoldingSheet(${jsAttr(r.tk)})" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:2px 4px;cursor:pointer;text-decoration:underline">edit</button>
+            <div style="display:flex;align-items:center;gap:6px;padding-left:46px">
+              <div style="flex:1;height:4px;background:var(--bg-elev);border-radius:2px;overflow:hidden">
+                <div style="height:100%;background:${tkColor};width:${weightPct.toFixed(1)}%;border-radius:2px;transition:width .4s"></div>
               </div>
+              <div style="font-size:9.5px;color:var(--t3);font-variant-numeric:tabular-nums;width:36px;text-align:right">${weightPct.toFixed(1)}%</div>
             </div>
           </div>
         `;
@@ -13867,6 +13888,46 @@ function _stocksSetWatchlistSort(s) {
   _stocksRenderWatchlist();
 }
 
+/* ---------- Portfolio milestone celebrations ----------
+   When the live portfolio value crosses a milestone threshold for the
+   first time, fire a toast + confetti. Crossings are recorded in
+   DB.stocks.milestonesHit so we don't celebrate again on the way back
+   down (or after a refresh). */
+const STK_MILESTONES = [1000, 5000, 10000, 25000, 50000, 100000, 250000, 500000, 1000000];
+function _stocksCheckMilestones() {
+  if (!DB.stocks) DB.stocks = {};
+  const cache = DB.stocks.quoteCache || {};
+  const holdings = DB.stocks.holdings || {};
+  let mkt = 0;
+  for (const [tk, h] of Object.entries(holdings)) {
+    const shares = +h.shares || 0;
+    if (shares <= 0) continue;
+    const q = cache[tk];
+    if (!q || q.error || q.price == null) return; // need live prices
+    mkt += +q.price * shares;
+  }
+  if (mkt <= 0) return;
+  if (!Array.isArray(DB.stocks.milestonesHit)) DB.stocks.milestonesHit = [];
+  for (const m of STK_MILESTONES) {
+    if (mkt >= m && !DB.stocks.milestonesHit.includes(m)) {
+      DB.stocks.milestonesHit.push(m);
+      save();
+      const fmt = m >= 1e6 ? "$" + (m/1e6).toFixed(0) + "M" : m >= 1e3 ? "$" + (m/1e3).toFixed(0) + "K" : "$" + m;
+      try { toast(`🎉 Portfolio crossed ${fmt}!`); } catch {}
+      if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+        try { new Notification("Milestone reached", { body: `Your portfolio just crossed ${fmt} 🎉`, icon: "icon-180.png" }); } catch {}
+      }
+      // Confetti — reuses the existing celebration helper if present
+      if (typeof celebrationsEnabled !== "undefined" && celebrationsEnabled() && typeof confettiBurst === "function") {
+        try { confettiBurst(); } catch {}
+      }
+      // Break so we only fire one celebration per refresh — even if a
+      // large jump crosses multiple, queue the rest for subsequent refreshes.
+      break;
+    }
+  }
+}
+
 /* ---------- Price alerts ----------
    DB.stocks.alerts = [{id, ticker, threshold, direction: 'above'|'below',
                         createdAt, triggeredAt, message?}]
@@ -14088,6 +14149,7 @@ async function _stocksRefreshAll() {
       _stocksRenderPortfolio();
       _stocksRenderTopMovers();
       _stocksAlertsCheck();
+      _stocksCheckMilestones();
     }
   } catch (e) {
     toast("Couldn't fetch quotes: " + (e.message || "network"));
@@ -14178,6 +14240,15 @@ function _stocksSetTf(tf) {
   if (!window._stkDetail || !window._stkDetail.q) return;
   window._stkDetail.tf = tf;
   _stocksRenderDetail(window._stkDetail.q);
+}
+
+// Smooth-scroll the Stocks tab to a section anchor — used by the
+// nav pill row at the top of the tab.
+function _stkScrollTo(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  try { el.scrollIntoView({ behavior: "smooth", block: "start" }); }
+  catch { el.scrollIntoView(); }
 }
 
 // Deterministic colored avatar for any ticker — first letter on a
