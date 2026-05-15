@@ -1982,7 +1982,7 @@ const SK_BAK = "ascend_v2.bak";  // rolling backup of last known-good blob (same
 const SK_PREV = "ascend_v2.prev"; // one prior generation (3-tier recovery)
 
 const DEFAULT_DB = {
-  user: { name: "", userId: "", clientSecret: "", onboardedAt: 0, tutorialSeenAt: 0 },  // userId is generated once and persisted; identifies this device to the backend. clientSecret is a per-device random secret enrolled with the worker — never sent in plaintext after enrollment. onboardedAt = 0 → show first-run flow. tutorialSeenAt = 0 → show post-onboarding tab walkthrough once.
+  user: { name: "", userId: "", clientSecret: "", onboardedAt: 0, tutorialSeenAt: 0, pairedAt: 0 },  // userId is generated once and persisted; identifies this device to the backend. clientSecret is a per-device random secret enrolled with the worker — never sent in plaintext after enrollment. onboardedAt = 0 → show first-run flow. tutorialSeenAt = 0 → show post-onboarding tab walkthrough once. pairedAt = nonzero when this device imported its credentials from a partner's pairing token (couples mode).
   habits: [],   // {id, name, emoji, type, target, unit, color, group:'health'|'mind'|'money'|'faith'|'other', createdAt, log:{}}
   goals:  [],   // {id, title, note, tier:'daily'|'short'|'life', steps:[{id,text,done}], done, createdAt, completedAt}
   savings:[],   // {id, name, emoji, current, target, color, log:[{date,amount,note}]}
@@ -2076,6 +2076,7 @@ const DEFAULT_DB = {
   dismissedBills: {},
   pendingDeposits: [],
   dismissedDeposits: [],     // plaid_ids of deposits the user explicitly Skipped — prevents re-surfacing on next sync
+  dismissedAnomalies: [],    // [key] — tx ids/plaid_ids of anomalies the user dismissed; capped at 500
   // Plaid-pulled detail surfaced via /liabilities, /recurring, /investment-transactions.
   // All populated lazily by syncNow; the fallbacks below let renderers
   // assume the shape is always present.
@@ -2917,6 +2918,10 @@ async function backendSync() {
   applyRulesToAll();
   // detect income / paychecks for review
   processSyncedDeposits();
+  // Scan new transactions for outliers vs the user's own 90-day baseline.
+  // Surfaces in Daily Pulse + fires a push when something's clearly off
+  // ("Restaurants $240 ≈ 7× your usual").
+  try { (typeof processNewAnomalies === "function") && processNewAnomalies(); } catch {}
   await save();
   return { added, accounts: DB.accounts.length };
 }
@@ -2931,6 +2936,142 @@ async function backendRemoveItem(itemId) {
    Toast copy avoids the word "Plaid" in user-facing surfaces — most users
    won't recognize the vendor name, and "bank connect" is what the action
    actually does. */
+// ============================================================================
+// COUPLES / HOUSEHOLD MODE — share bank sync between two devices
+//
+// Two phones become a "household" by sharing the same backend userId +
+// clientSecret. Both devices then:
+//   • See the same Plaid-synced accounts, transactions, holdings, liabilities
+//   • Either can connect a new bank — appears on both
+//   • Either can disconnect a bank — removes from both
+// What's NOT shared (intentional):
+//   • Habits, goals, plans, savings buckets, reflections, calendar notes —
+//     these stay per-device. Each partner has their own behavioral life;
+//     finances are the shared layer.
+//   • Cornileus chat history (each partner has their own counselor relationship)
+//   • Encryption passphrase (each device manages its own at-rest crypto)
+//
+// Flow:
+//   1. Device A (already bank-synced) opens Settings → 🤝 Share with partner
+//   2. App shows a copyable pairing token: base64 JSON of {backendUrl, userId, clientSecret}
+//   3. Partner copies the token (text/QR/AirDrop) to Device B
+//   4. Device B opens Settings → 🤝 Pair with my partner → pastes the token
+//   5. Device B imports the credentials, calls /sync, sees the same accounts.
+//
+// Security: the pairing token contains the bank-sync clientSecret. Anyone
+// who has it can read the bank data. Surface clear warnings; recommend
+// sharing only via private/ephemeral channels (text/AirDrop); add an
+// "Unpair" option that rotates the secret (one-line backend call).
+
+function _pairingTokenString() {
+  if (!_backendReady()) return null;
+  const payload = {
+    v: 1,
+    backendUrl: DB.settings.backendUrl,
+    userId: DB.user.userId,
+    clientSecret: DB.user.clientSecret,
+    ts: Date.now(),
+  };
+  return btoa(JSON.stringify(payload));
+}
+
+function _decodePairingToken(s) {
+  try {
+    const json = atob(String(s || "").trim());
+    const obj = JSON.parse(json);
+    if (!obj || obj.v !== 1) throw new Error("unsupported token version");
+    if (!obj.backendUrl || !obj.userId || !obj.clientSecret) throw new Error("missing fields");
+    // Basic shape validation
+    if (!/^u_[A-Za-z0-9_-]+$/.test(obj.userId)) throw new Error("malformed userId");
+    if (typeof obj.clientSecret !== "string" || obj.clientSecret.length < 16) throw new Error("malformed secret");
+    if (!/^https:/.test(obj.backendUrl)) throw new Error("backend URL must be https");
+    return obj;
+  } catch (e) {
+    return null;
+  }
+}
+
+function shareWithPartnerSheet() {
+  const token = _pairingTokenString();
+  if (!token) {
+    openSheet(`
+      <h2 style="margin-bottom:4px">🤝 Share with partner</h2>
+      <p class="muted" style="font-size:13px;margin-bottom:14px">First, connect at least one bank from this device. Then come back here to share your synced finances with a partner.</p>
+      <div class="actions"><button class="btn" onclick="closeSheet()">OK</button></div>
+    `);
+    return;
+  }
+  openSheet(`
+    <h2 style="margin-bottom:4px">🤝 Share with partner</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Send this pairing code to your partner. Once they paste it on their phone, both devices will see the same bank accounts, transactions, holdings, and liabilities. Habits, goals, and Cornileus stay personal to each device.</p>
+    <div style="background:rgba(255,149,0,0.08);border:1px solid rgba(255,149,0,0.30);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:12px;line-height:1.5;color:var(--t2)">
+      <b style="color:var(--orange,#FF9500)">⚠ Treat this code like a password.</b> Anyone with it can read your bank-synced data. Share only with your partner, and only over a private channel (text, AirDrop, in-person). Do NOT post or email it.
+    </div>
+    <label>Pairing code</label>
+    <textarea id="pair-token-out" readonly style="width:100%;min-height:120px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;background:var(--bg-elev);border:0.5px solid var(--sep);border-radius:8px;padding:10px;color:var(--t1);word-break:break-all">${esc(token)}</textarea>
+    <div style="display:flex;gap:8px;margin-top:10px">
+      <button class="btn" style="flex:1" onclick="(()=>{const el=document.getElementById('pair-token-out');el.select();el.setSelectionRange(0,99999);try{navigator.clipboard.writeText(el.value).then(()=>toast('Copied — send to your partner privately'));}catch(_){document.execCommand('copy');toast('Copied');}})()">Copy code</button>
+      ${typeof navigator.share === "function" ? `<button class="btn secondary" style="flex:1" onclick="(()=>{try{navigator.share({title:'Ascend pairing',text:document.getElementById('pair-token-out').value});}catch(_){}})()">Share…</button>` : ""}
+    </div>
+    <p class="muted" style="font-size:11.5px;margin-top:14px">On your partner's phone: Settings → 🤝 Pair with partner → paste this code.</p>
+    <div class="actions"><button class="btn secondary" onclick="closeSheet()">Done</button></div>
+  `);
+}
+
+function pairWithPartnerSheet() {
+  openSheet(`
+    <h2 style="margin-bottom:4px">🤝 Pair with partner</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Paste the pairing code your partner sent you. This phone will then see the same bank-synced data they see. Your habits, goals, and Cornileus chats stay personal to this device.</p>
+    ${_backendReady() ? `
+      <div style="background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.30);border-radius:10px;padding:10px 12px;margin-bottom:14px;font-size:12px;line-height:1.5;color:var(--t2)">
+        <b style="color:var(--red,#FF3B30)">⚠ This will replace your current backend connection.</b> Any banks you connected from THIS device will become inaccessible until you re-share or re-enroll. Continue only if you understand.
+      </div>
+    ` : ""}
+    <label>Pairing code</label>
+    <textarea id="pair-token-in" placeholder="Paste the code your partner sent" autofocus
+      style="width:100%;min-height:120px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;background:var(--bg-elev);border:0.5px solid var(--sep);border-radius:8px;padding:10px;color:var(--t1)"></textarea>
+    <div class="actions">
+      <button class="btn secondary" onclick="closeSheet()">Cancel</button>
+      <button class="btn" onclick="(async()=>{
+        const raw=document.getElementById('pair-token-in').value;
+        const decoded=_decodePairingToken(raw);
+        if(!decoded){toast('Invalid code — check it was copied in full');return;}
+        DB.settings.backendUrl=decoded.backendUrl;
+        DB.settings.apiKey='';
+        DB.user.userId=decoded.userId;
+        DB.user.clientSecret=decoded.clientSecret;
+        DB.settings.advancedFeaturesEnabled=true;
+        DB.user.pairedAt=Date.now();
+        await save();
+        closeSheet();
+        toast('Paired — syncing shared data…');
+        setTimeout(()=>{ if(typeof syncNow==='function')syncNow(); },300);
+      })()">Pair</button>
+    </div>
+  `);
+}
+
+// Unpair from a household: locally clears the bank-sync creds + Plaid data.
+// Doesn't rotate the secret on the backend (that would orphan the other
+// device), but it does prompt the user to consider that. Pure local op.
+function unpairFromHouseholdSheet() {
+  if (!confirm("Stop seeing shared bank data on this device? Your habits, goals, and Cornileus chats are unaffected. Your partner's device will still work normally.\n\nThis does not rotate the pairing secret — if you want to lock out the other device, both should disconnect and re-enroll fresh.")) return;
+  DB.settings.backendUrl = "";
+  DB.settings.apiKey = "";
+  DB.user.clientSecret = "";
+  DB.user.pairedAt = 0;
+  // Clear the shared data so it doesn't linger as stale local copies
+  DB.accounts = [];
+  DB.holdings = [];
+  DB.items = [];
+  DB.spend = (DB.spend || []).filter(t => t.source !== "plaid");
+  DB.plaidLiabilities = { mortgage: {}, student: {}, lastSyncAt: null };
+  DB.plaidRecurringSuggestions = { inflows: [], outflows: [], lastSyncAt: null };
+  DB.investmentTransactions = [];
+  save(); render();
+  toast("Unpaired — local shared data cleared");
+}
+
 async function connectBank() {
   if (!window.Plaid) { toast("Bank connect still loading — try again"); return; }
   if (!_backendReady()) {
@@ -4006,6 +4147,168 @@ function spendCategories() {
   const cats = new Set(["Food","Gas","Groceries","Bills","Shopping","Fun","Other"]);
   DB.budget.expenses.forEach(e => cats.add(e.name));
   return Array.from(cats);
+}
+
+/* ================ ANOMALY DETECTION ================
+   Flags transactions that look unusual relative to the user's own history.
+   Per-category baseline = median + IQR of the last 90 days. A new tx is
+   "anomalous" if its amount is > 3× the category median AND > $50 (so a
+   $0.50 Spotify upcharge doesn't trigger from a 30¢ baseline).
+
+   Detection runs after every Plaid sync (in backendSync) — see hook below.
+   Surfaces as: Daily Pulse signal, push notification (if enabled), and a
+   dedicated review sheet (anomaliesSheet) accessible from Today + Money.
+
+   The user can dismiss each anomaly individually (saves to
+   DB.dismissedAnomalies) or mark "this is normal" which adjusts the
+   baseline by tagging the tx as a non-outlier going forward.
+*/
+function _categoryBaseline(category) {
+  // Rolling 90-day window, outflows only. Returns null if too sparse to be
+  // useful (< 5 transactions in the category over the window).
+  const cutoffK = (() => {
+    const d = new Date(); d.setDate(d.getDate() - 90);
+    return todayKey(d);
+  })();
+  const txs = (DB.spend || []).filter(t =>
+    t && t.date && t.date >= cutoffK &&
+    (+t.amount || 0) > 0 &&
+    String(t.category || "Other") === category &&
+    !t._notOutlier // user-tagged "this is normal" txs still count toward baseline
+  );
+  if (txs.length < 5) return null;
+  const amts = txs.map(t => +t.amount || 0).sort((a, b) => a - b);
+  const median = amts[Math.floor(amts.length / 2)];
+  const q1 = amts[Math.floor(amts.length * 0.25)];
+  const q3 = amts[Math.floor(amts.length * 0.75)];
+  return { median, q1, q3, count: amts.length, iqr: q3 - q1 };
+}
+
+// Detect anomalies in the user's recent transactions. Returns an array of
+// { tx, category, baseline, ratio } for each tx that looks unusual.
+// Idempotent — re-running over the same data returns the same anomalies.
+// Caller is expected to dedupe against DB.dismissedAnomalies / already-seen.
+function detectAnomalies({ daysBack = 7, minDollar = 50, ratio = 3 } = {}) {
+  const cutoffK = (() => {
+    const d = new Date(); d.setDate(d.getDate() - daysBack);
+    return todayKey(d);
+  })();
+  const recent = (DB.spend || []).filter(t =>
+    t && t.date && t.date >= cutoffK &&
+    (+t.amount || 0) >= minDollar &&
+    !t._notOutlier
+  );
+  const dismissed = new Set(DB.dismissedAnomalies || []);
+  const out = [];
+  const baselineCache = {};
+  for (const tx of recent) {
+    const cat = String(tx.category || "Other");
+    if (!(cat in baselineCache)) baselineCache[cat] = _categoryBaseline(cat);
+    const b = baselineCache[cat];
+    if (!b) continue;
+    const amt = +tx.amount || 0;
+    if (amt < b.median * ratio) continue;
+    // Don't flag if it's within Q3 + 1.5*IQR — that's the standard
+    // statistical "not an outlier" range and prevents false positives
+    // when the category has a lot of variance.
+    if (amt <= b.q3 + 1.5 * b.iqr) continue;
+    const key = tx.plaid_id || tx.id;
+    if (!key || dismissed.has(key)) continue;
+    out.push({
+      tx, key, category: cat, baseline: b,
+      ratio: amt / b.median,
+      amount: amt,
+    });
+  }
+  return out.sort((a, b) => b.ratio - a.ratio);
+}
+
+function dismissAnomaly(key) {
+  if (!key) return;
+  if (!Array.isArray(DB.dismissedAnomalies)) DB.dismissedAnomalies = [];
+  if (!DB.dismissedAnomalies.includes(key)) DB.dismissedAnomalies.push(key);
+  // Cap so the list doesn't grow forever.
+  if (DB.dismissedAnomalies.length > 500) DB.dismissedAnomalies = DB.dismissedAnomalies.slice(-500);
+  save(); render();
+}
+
+// "This is normal" — keep the tx in spend, but tag it so it doesn't get
+// flagged as an anomaly AND its amount still counts toward the baseline.
+// (dismissAnomaly just hides it; markAnomalyNormal tells the system the
+// pattern is legitimate.)
+function markAnomalyNormal(key) {
+  if (!key) return;
+  // Find the matching tx
+  const tx = (DB.spend || []).find(t => (t.plaid_id || t.id) === key);
+  if (!tx) return;
+  tx._notOutlier = true;
+  if (!Array.isArray(DB.dismissedAnomalies)) DB.dismissedAnomalies = [];
+  if (!DB.dismissedAnomalies.includes(key)) DB.dismissedAnomalies.push(key);
+  save(); render();
+}
+
+// Called after Plaid sync. Fires a push for the most-anomalous new tx the
+// user hasn't seen yet, then leaves the rest for the anomalies sheet.
+function processNewAnomalies() {
+  try {
+    const anomalies = detectAnomalies();
+    if (!anomalies.length) return;
+    const top = anomalies[0];
+    DB._pendingAnomaly = {
+      key: top.key,
+      summary: `${top.category}: ${fmt$0(top.amount)} (~${top.ratio.toFixed(1)}× usual)`,
+    };
+    // Fire a server-side push so it lands when the app is closed.
+    if ((DB.settings.notifyCategories || {}).bills !== false &&
+        typeof sendPushNow === "function" &&
+        DB.settings.pushSubscription) {
+      sendPushNow(
+        `⚠️ Unusual charge`,
+        `${top.tx.note || top.category}: ${fmt$0(top.amount)} — about ${top.ratio.toFixed(1)}× your usual ${top.category}.`,
+        "/?tab=money"
+      );
+    }
+    save();
+  } catch (e) { console.warn("processNewAnomalies failed:", e.message); }
+}
+
+// Sheet listing all currently-active anomalies with one-tap Dismiss /
+// Mark normal / Open tx actions. Reached from Today + Money tab.
+function anomaliesSheet() {
+  const list = detectAnomalies();
+  const body = list.length ? list.map(a => `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:10px;margin-bottom:8px">
+        <div style="flex:1;min-width:0">
+          <div style="font-weight:600;font-size:14px">${esc(a.tx.note || a.category)}</div>
+          <div style="font-size:11.5px;color:var(--t3);margin-top:2px">${esc(a.category)} · ${esc(a.tx.date)}${a.tx.source === "plaid" ? " · synced" : ""}</div>
+        </div>
+        <div style="text-align:right;flex-shrink:0">
+          <div style="font-weight:700;color:var(--orange,#FF9500);font-size:15px" data-priv="amount">${fmt$0(a.amount)}</div>
+          <div style="font-size:10.5px;color:var(--t3)">~${a.ratio.toFixed(1)}× usual</div>
+        </div>
+      </div>
+      <div style="font-size:11.5px;color:var(--t2);background:var(--bg-elev);padding:8px 10px;border-radius:8px;margin-bottom:8px">
+        Your typical <b>${esc(a.category)}</b> charge: <b data-priv="amount">${fmt$0(a.baseline.median)}</b> · range <b data-priv="amount">${fmt$0(a.baseline.q1)}–${fmt$0(a.baseline.q3)}</b> over ${a.baseline.count} recent transactions
+      </div>
+      <div style="display:flex;gap:6px">
+        <button class="btn sm" style="flex:1;font-size:11.5px;padding:8px" onclick="markAnomalyNormal(${jsAttr(a.key)});setTimeout(()=>anomaliesSheet(),60)">This is normal</button>
+        <button class="btn secondary sm" style="flex:1;font-size:11.5px;padding:8px" onclick="dismissAnomaly(${jsAttr(a.key)});setTimeout(()=>anomaliesSheet(),60)">Dismiss</button>
+      </div>
+    </div>
+  `).join("") : `
+    <div class="empty" style="padding:30px 14px">
+      <div class="e-emoji">✅</div>
+      <div class="e-title">Nothing unusual</div>
+      <div class="e-sub">Your recent transactions are all in line with your normal spend patterns. We'll let you know if something stands out.</div>
+    </div>
+  `;
+  openSheet(`
+    <h2 style="margin-bottom:4px">⚠️ Unusual charges</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Transactions that are at least 3× your usual amount for their category. Mark each as normal (so we learn your pattern) or dismiss (so it stops showing).</p>
+    ${body}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Done</button></div>
+  `);
 }
 
 // Pace chip for a roadmap phase: compares the phase's milestone-completion
@@ -5351,6 +5654,21 @@ function renderToday() {
           amount: fmt$0(+next.amount || 0 || +next.avg_amount || 0),
           suffix: `due ${when}`,
           onclick: `showTab('today')` };
+      }
+    } catch {}
+
+    // 0b-2) Unusual-charge alert — if there's a pending anomaly, surface it
+    //   right after bill-due so the user catches potential fraud or
+    //   lifestyle drift fast. Tap opens the dedicated review sheet.
+    try {
+      const anomalies = (typeof detectAnomalies === "function") ? detectAnomalies() : [];
+      if (anomalies.length) {
+        const top = anomalies[0];
+        return { emoji: "⚠️",
+          text: `Unusual ${top.category}: ${top.tx.note || ""}`.trim() + ` —`,
+          amount: fmt$0(top.amount),
+          suffix: `~${top.ratio.toFixed(1)}× usual`,
+          onclick: `anomaliesSheet()` };
       }
     } catch {}
 
@@ -20280,6 +20598,35 @@ function renderSettings() {
           <div class="trail chev"></div>
         </div>
       ` : ""}
+      ${_backendReady() ? `
+        <div class="row tappable" onclick="shareWithPartnerSheet()">
+          <div class="lead">🤝</div>
+          <div class="body">
+            <div class="t1">Share with partner${DB.user.pairedAt ? ' <span style="background:var(--purple,#8957d9);color:#fff;border-radius:999px;padding:2px 8px;font-size:10px;margin-left:6px;font-weight:700">PAIRED</span>' : ''}</div>
+            <div class="t2">Send a pairing code so your partner's phone sees the same bank-synced data. Habits + goals stay personal.</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      ` : `
+        <div class="row tappable" onclick="pairWithPartnerSheet()">
+          <div class="lead">🤝</div>
+          <div class="body">
+            <div class="t1">Pair with partner</div>
+            <div class="t2">Paste your partner's pairing code to see their bank-synced data on this phone</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      `}
+      ${DB.user.pairedAt ? `
+        <div class="row tappable" onclick="unpairFromHouseholdSheet()">
+          <div class="lead">🔗</div>
+          <div class="body">
+            <div class="t1">Unpair this device</div>
+            <div class="t2">Stop syncing shared finances. Your partner's device continues working.</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      ` : ""}
     </div>
 
     ${(DB.items||[]).length ? `
@@ -34261,6 +34608,9 @@ function init() {
     notificationSettingsSheet, addReminderTime, removeReminderTime, setReminderTime,
     toggleNotifyCategory, sendTestNotification, scheduleHabitReminders, fireOnOpenTriggers,
     subscribeToPush, unsubscribeFromPush, sendTestPush, refreshPushSchedule, sendPushNow,
+    detectAnomalies, dismissAnomaly, markAnomalyNormal, processNewAnomalies, anomaliesSheet,
+    shareWithPartnerSheet, pairWithPartnerSheet, unpairFromHouseholdSheet,
+    _pairingTokenString, _decodePairingToken,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
     setPassphrase, unlockWithPassphrase, disablePassphrase, encryptObject, decryptObject, deriveKey,
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,

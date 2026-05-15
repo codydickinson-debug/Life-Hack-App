@@ -1,0 +1,22 @@
+{
+  "appId": "com.codydickinson.ascend",
+  "appName": "Ascend",
+  "webDir": ".",
+  "bundledWebRuntime": false,
+  "server": {
+    "url": "https://life-hack-app.vercel.app",
+    "cleartext": false,
+    "androidScheme": "https"
+  },
+  "ios": {
+    "scheme": "Ascend",
+    "contentInset": "automatic",
+    "limitsNavigationsToAppBoundDomains": false,
+    "webContentsDebuggingEnabled": false
+  },
+  "plugins": {
+    "PushNotifications": {
+      "presentationOptions": ["badge", "sound", "alert"]
+    }
+  }
+}
