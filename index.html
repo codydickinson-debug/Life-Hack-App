@@ -3612,6 +3612,11 @@ function deleteGoal(id) {
       p.linkedGoalIds = p.linkedGoalIds.filter(x => x !== id);
     }
   });
+  // Also clear parentId on any child goals whose parent just got deleted —
+  // otherwise the child shows "linked to a bigger goal" with a broken ref.
+  (DB.goals || []).forEach(g => {
+    if (g.parentId === id) g.parentId = null;
+  });
   save(); render();
 }
 function addStepInline(gid) {
@@ -3733,6 +3738,9 @@ function deleteSaving(id) {
       p.linkedSavingsIds = p.linkedSavingsIds.filter(x => x !== id);
     }
   });
+  // Also drop allocation rules pointing at this bucket — they'd silently
+  // route deposits to a nonexistent savingId on next paycheck.
+  DB.allocations = (DB.allocations || []).filter(a => a.savingId !== id);
   save(); render();
 }
 function addSavingSheet(existing) {
@@ -17732,6 +17740,13 @@ async function disconnectItem(itemId) {
     // account is gone.
     if (removedAccountIds.size) {
       DB.holdings = (DB.holdings || []).filter(h => !removedAccountIds.has(h.account_id));
+      // Also drop debtMeta entries (apr/minPayment hints) keyed to the
+      // disconnected accounts so we don't keep them as zombie debt records.
+      if (DB.debtMeta && typeof DB.debtMeta === "object") {
+        for (const aid of removedAccountIds) {
+          if (DB.debtMeta[aid]) delete DB.debtMeta[aid];
+        }
+      }
     }
     // Note: keep historical transactions; the user can delete manually if they want
     await save(); render();
@@ -29075,6 +29090,12 @@ function addRecurringSheet(existing) {
 }
 function deleteRecurring(id) {
   DB.recurring = (DB.recurring || []).filter(r => r.id !== id);
+  // Clear any subscription-audit decision tied to this recurring item —
+  // otherwise the audit shows a "keep/cancel/negotiate" choice for an
+  // item that no longer exists.
+  if (DB.subscriptionUsage && DB.subscriptionUsage[id]) {
+    delete DB.subscriptionUsage[id];
+  }
   save(); render();
 }
 
