@@ -4959,8 +4959,44 @@ function renderToday() {
     ${isTodaySectionHidden('comingUp') ? "" : (() => {
       const bills = upcomingBills();
       if (!bills.length) return "";
+      // 14-day visual strip + sum
+      const bills14 = bills.filter(b => b.days <= 14 && b.days >= -3);
+      const strip14 = (() => {
+        if (!bills14.length) return "";
+        const days = 14;
+        const totalDue = bills14.reduce((s, b) => s + (+b.avg_amount || 0), 0);
+        // Bucket bills by relative day [0..14] (overdue → 0)
+        const buckets = Array.from({ length: days + 1 }, () => ({ amt: 0, n: 0 }));
+        for (const b of bills14) {
+          const idx = Math.max(0, Math.min(days, b.days));
+          buckets[idx].amt += (+b.avg_amount || 0);
+          buckets[idx].n++;
+        }
+        const maxAmt = Math.max(...buckets.map(b => b.amt), 1);
+        return `
+          <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:10px 12px 6px;margin-bottom:8px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+              <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:600">Next 14 days</div>
+              <div style="font-size:13px;font-weight:700;color:var(--t1)" data-priv="amount">${fmt$0(totalDue)} · ${bills14.length} bill${bills14.length===1?'':'s'}</div>
+            </div>
+            <div style="display:flex;gap:2px;align-items:end;height:36px">
+              ${buckets.map((b, i) => {
+                const h = b.amt > 0 ? Math.max(3, Math.round((b.amt / maxAmt) * 32)) : 1;
+                const isToday = i === 0;
+                const color = isToday ? "var(--red,#FF3B30)" : i <= 2 ? "var(--orange,#FF9500)" : "var(--blue,#007AFF)";
+                const opacity = b.n > 0 ? "1" : "0.18";
+                return `<div style="flex:1;height:${h}px;background:${color};opacity:${opacity};border-radius:2px 2px 0 0" title="${b.n ? fmt$0(b.amt) + ' due' : ''}"></div>`;
+              }).join("")}
+            </div>
+            <div style="display:flex;justify-content:space-between;font-size:10px;color:var(--t3);margin-top:4px">
+              <span>Today</span><span>+7d</span><span>+14d</span>
+            </div>
+          </div>
+        `;
+      })();
       return `
         <div class="section-h"><span class="lbl">Coming up</span></div>
+        ${strip14}
         <div class="list">
           ${bills.map(b => {
             const label = b.days <= 0 ? (b.days === 0 ? "Due today" : `${Math.abs(b.days)}d overdue`) : b.days === 1 ? "Tomorrow" : `In ${b.days} days`;
