@@ -9610,7 +9610,8 @@ function renderCalendar() {
     ].filter(Boolean).join("");
     return `
       <div class="cal-cell" style="background:${bg};${ring}" onclick="calendarDaySheet('${c.key}')" role="button" tabindex="0">
-        <span class="cal-day">${c.day}${c.mood ? `<span style="margin-left:3px;font-size:10px">${c.mood}</span>` : ''}</span>
+        <span class="cal-day">${c.day}</span>
+        ${c.mood ? `<span style="position:absolute;top:3px;right:3px;font-size:11px;line-height:1;opacity:0.85">${c.mood}</span>` : ''}
         ${dots ? `<span class="cal-dots">${dots}</span>` : ""}
       </div>
     `;
@@ -9703,17 +9704,17 @@ function renderCalendar() {
         const color = monthHabitPct >= 80 ? "var(--green,#34C759)" : monthHabitPct >= 50 ? "var(--orange,#FF9500)" : "var(--t1)";
         cells.push({ icon: "✓", value: `${monthHabitPct}%`, label: "habits", color });
       }
-      if (monthWins > 0) cells.push({ icon: "⭐", value: `${monthWins}`, label: `win${monthWins===1?'':'s'}`, color: "var(--orange,#FF9500)" });
-      if (monthSpend > 0) cells.push({ icon: "💸", value: fmt$0(monthSpend), label: "spent", color: "var(--t1)", priv: true });
-      if (monthSavings > 0) cells.push({ icon: "💰", value: fmt$0(monthSavings), label: "saved", color: "var(--green,#34C759)", priv: true });
+      if (monthWins > 0) cells.push({ icon: "★", value: `${monthWins}`, label: `win${monthWins===1?'':'s'}`, color: "var(--orange,#FF9500)" });
+      if (monthSpend > 0) cells.push({ icon: "$", value: fmt$0(monthSpend), label: "spent", color: "var(--t1)", priv: true });
+      if (monthSavings > 0) cells.push({ icon: "+$", value: fmt$0(monthSavings), label: "saved", color: "var(--green,#34C759)", priv: true });
       const cols = cells.length;
       return `
         <div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:8px;margin-bottom:14px">
           ${cells.map(c => `
             <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r2,12px);padding:10px 8px;text-align:center">
-              <div style="font-size:13.5px;margin-bottom:1px">${c.icon}</div>
-              <div style="font-size:17px;font-weight:700;color:${c.color};font-variant-numeric:tabular-nums;line-height:1"${c.priv ? ' data-priv="amount"' : ''}>${c.value}</div>
-              <div style="font-size:10px;color:var(--t3);margin-top:3px;text-transform:uppercase;letter-spacing:0.04em">${c.label}</div>
+              <div style="font-size:11px;color:var(--t3);margin-bottom:2px;font-weight:600">${c.icon}</div>
+              <div style="font-size:17px;font-weight:700;color:${c.color};font-variant-numeric:tabular-nums;line-height:1;letter-spacing:-0.01em"${c.priv ? ' data-priv="amount"' : ''}>${c.value}</div>
+              <div style="font-size:10px;color:var(--t3);margin-top:3px;text-transform:uppercase;letter-spacing:0.04em;font-weight:600">${c.label}</div>
             </div>
           `).join("")}
         </div>
