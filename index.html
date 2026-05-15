@@ -1584,6 +1584,23 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   border-radius: var(--r); padding: 24px 16px; text-align: center;
   margin-bottom: 14px;
 }
+/* 7-day mini-strip under habit rows on Today */
+.hb-strip {
+  display: flex; gap: 4px; margin-top: 5px; align-items: center;
+}
+.hb-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  display: inline-block; transition: transform 0.15s ease;
+}
+.hb-dot.done   { background: var(--green, #34C759); }
+.hb-dot.miss   { background: var(--bg-elev2, #2c2c34); }
+.hb-dot.paused { background: var(--bg-elev2, #2c2c34); border: 1px solid var(--sep); width: 4px; height: 4px; }
+.hb-dot.today  {
+  outline: 1.5px solid var(--blue, #007AFF);
+  outline-offset: 1.5px; transform: scale(1.15);
+}
+.hb-dot.today.miss { background: var(--card); }
+
 .rm-endstate {
   display: flex; align-items: baseline; gap: 8px;
   background: linear-gradient(135deg, rgba(124,58,237,0.10), rgba(236,72,153,0.06));
@@ -4170,6 +4187,34 @@ function renderToday() {
   };
 
   const visibleHabits = activeHabitGroup === "all" ? DB.habits : DB.habits.filter(h => (h.group||"other") === activeHabitGroup);
+  // Per-habit 7-day mini-strip: little dots showing M-T-W-T-F-S-S consistency.
+  // Filled = did the thing on that day, dim = missed, ringed = paused.
+  // Today's dot is highlighted regardless of state so the user always sees
+  // "this is right now".
+  const _hb7day = (h) => {
+    const d = new Date();
+    const days = [];
+    // Walk back 6 days + today, oldest first (left to right reads chronologically)
+    for (let i = 6; i >= 0; i--) {
+      const dt = new Date(d); dt.setDate(d.getDate() - i);
+      const k = todayKey(dt);
+      const v = h.log[k] || 0;
+      const did = h.type === "count" ? (+v >= (+h.target || 1)) : !!v;
+      const isToday = i === 0;
+      const isPause = _inPauseRange(h, k);
+      const isFuture = false;
+      days.push({ did, isToday, isPause, isFuture });
+    }
+    return `<div class="hb-strip" aria-hidden="true">${days.map(dy => {
+      let cls = "hb-dot";
+      if (dy.isPause) cls += " paused";
+      else if (dy.did) cls += " done";
+      else cls += " miss";
+      if (dy.isToday) cls += " today";
+      return `<span class="${cls}"></span>`;
+    }).join("")}</div>`;
+  };
+
   const habitsHtml = visibleHabits.length ? visibleHabits.map(h => {
     const paused = isHabitPaused(h);
     const v = h.log[todayKey()] || 0;
@@ -4192,6 +4237,7 @@ function renderToday() {
         <div class="body">
           <div class="t1">${esc(h.name)}${paused ? ` <span style="background:var(--bg-elev);color:var(--t3);border-radius:999px;padding:2px 8px;font-size:10px;margin-left:6px;font-weight:600">PAUSED</span>` : ''}</div>
           <div class="t2">${sub}</div>
+          ${_hb7day(h)}
           ${paused ? '' : dailyActionContextHtml(h.name)}
         </div>
         <div class="trail">
