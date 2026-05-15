@@ -543,6 +543,73 @@ def api_ticker_broker(ticker):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/news/<ticker>")
+def api_news_ticker(ticker):
+    """Extended per-ticker news feed (up to 15 headlines) for the news-driven
+    AI briefing. Lighter-weight than /api/ticker (no price data, no SMAs)
+    so it can be re-fetched on its own when the user opens the briefing
+    sheet without paying the broker-bundle cost again.
+
+    Each item: {title, publisher, url, published, summary?, thumbnail?}.
+    """
+    import yfinance as yf
+    try:
+        t = yf.Ticker(ticker)
+        raw_news = []
+        try:
+            raw_news = t.news or []
+        except Exception:
+            raw_news = []
+        items = []
+        for n in raw_news[:15]:
+            if not isinstance(n, dict):
+                continue
+            c = n.get("content") or n
+            title = c.get("title") or n.get("title")
+            if not title:
+                continue
+            publisher = None
+            if isinstance(c.get("provider"), dict):
+                publisher = c["provider"].get("displayName")
+            publisher = publisher or n.get("publisher") or c.get("publisher")
+            link = None
+            if isinstance(c.get("canonicalUrl"), dict):
+                link = c["canonicalUrl"].get("url")
+            link = link or n.get("link") or c.get("link")
+            summary = c.get("summary") or c.get("description") or n.get("summary")
+            thumb = None
+            if isinstance(c.get("thumbnail"), dict):
+                resolutions = c["thumbnail"].get("resolutions") or []
+                if resolutions and isinstance(resolutions, list):
+                    thumb = resolutions[0].get("url") if isinstance(resolutions[0], dict) else None
+            pub_ts = c.get("pubDate") or n.get("providerPublishTime")
+            items.append({
+                "title": title,
+                "publisher": publisher,
+                "url": link,
+                "published": pub_ts,
+                "summary": summary[:280] if isinstance(summary, str) else None,
+                "thumbnail": thumb,
+            })
+        # Best-effort: pull company name + sector for the briefing prompt
+        company_name = None; sector = None
+        try:
+            info = t.info or {}
+            company_name = info.get("longName") or info.get("shortName")
+            sector = info.get("sector")
+        except Exception:
+            pass
+        return jsonify({
+            "ticker": ticker.upper(),
+            "name": company_name,
+            "sector": sector,
+            "news": items,
+            "count": len(items),
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/peers/<ticker>")
 def api_peers(ticker):
     """Find peer tickers — yfinance doesn't expose this directly so we

@@ -9767,6 +9767,334 @@ function _stkFmtPct(n) {
   return (n * 100).toFixed(2) + "%";
 }
 
+/* ---------- Pattern detection layer ----------
+   Runs locally on the broker-bundle JSON. No extra fetch needed.
+   Surfaces the patterns a discretionary trader / equity analyst
+   would scan for: trend crossovers, momentum, breakouts, volume
+   spikes, mean reversion. Each pattern returns a small object:
+     { id, label, severity ('bullish'|'bearish'|'neutral'),
+       icon, detail }
+   The renderer groups them into a single card with colored stripes. */
+function _stkDetectPatterns(q) {
+  const out = [];
+  const c = (q.timeframes && q.timeframes["1Y"] && q.timeframes["1Y"].closes) || [];
+  const sma50 = q.sma50 || [];
+  const sma200 = q.sma200 || [];
+  const price = +q.price || 0;
+  const rsi = q.rsi14 != null ? +q.rsi14 : null;
+  const vol6m = q.volume_6m || [];
+
+  // ---- Golden cross / death cross (last 30 trading days) ----
+  if (sma50.length === sma200.length && sma50.length > 30) {
+    let crossIdx = -1, crossType = null;
+    for (let i = sma50.length - 30; i < sma50.length; i++) {
+      if (sma50[i] == null || sma200[i] == null || sma50[i-1] == null || sma200[i-1] == null) continue;
+      const prevDiff = sma50[i-1] - sma200[i-1];
+      const curDiff  = sma50[i]   - sma200[i];
+      if (prevDiff < 0 && curDiff >= 0) { crossIdx = i; crossType = "golden"; }
+      if (prevDiff > 0 && curDiff <= 0) { crossIdx = i; crossType = "death"; }
+    }
+    if (crossType === "golden") {
+      const daysAgo = sma50.length - 1 - crossIdx;
+      out.push({
+        id: "golden_cross", label: "Golden cross", severity: "bullish",
+        icon: "✨",
+        detail: `50-day SMA crossed above 200-day SMA ${daysAgo === 0 ? "today" : daysAgo + " day" + (daysAgo === 1 ? "" : "s") + " ago"}. Long-term bullish trend signal — historically tracks 6-12 mo of outperformance, though not guaranteed.`,
+      });
+    } else if (crossType === "death") {
+      const daysAgo = sma50.length - 1 - crossIdx;
+      out.push({
+        id: "death_cross", label: "Death cross", severity: "bearish",
+        icon: "⚠️",
+        detail: `50-day SMA crossed below 200-day SMA ${daysAgo === 0 ? "today" : daysAgo + " day" + (daysAgo === 1 ? "" : "s") + " ago"}. Bearish momentum signal — often precedes extended consolidation or further downside.`,
+      });
+    }
+  }
+
+  // ---- 200-SMA trend regime ----
+  const sma200Last = q.sma200_last != null ? +q.sma200_last : null;
+  if (sma200Last && price > 0) {
+    const above = price > sma200Last;
+    const distPct = ((price - sma200Last) / sma200Last) * 100;
+    if (Math.abs(distPct) >= 1) {
+      out.push({
+        id: "trend_regime",
+        label: above ? "In a bullish regime" : "In a bearish regime",
+        severity: above ? "bullish" : "bearish",
+        icon: above ? "📈" : "📉",
+        detail: `Price is ${Math.abs(distPct).toFixed(1)}% ${above ? "above" : "below"} the 200-day moving average. ${above ? "Long-side bias intact; pullbacks to the SMA often act as support." : "Long-side bias broken; rallies into the SMA often face resistance."}`,
+      });
+    }
+  }
+
+  // ---- RSI extremes ----
+  if (rsi != null) {
+    if (rsi >= 70) {
+      out.push({
+        id: "rsi_overbought", label: "Momentum overbought", severity: "bearish",
+        icon: "🔥",
+        detail: `RSI(14) at ${rsi.toFixed(1)} is above 70. Often precedes a short-term pullback. Strong trends can stay overbought for weeks — read alongside the trend regime, don't short blindly.`,
+      });
+    } else if (rsi <= 30) {
+      out.push({
+        id: "rsi_oversold", label: "Momentum oversold", severity: "bullish",
+        icon: "💧",
+        detail: `RSI(14) at ${rsi.toFixed(1)} is below 30. Often precedes a short-term bounce. Buy-the-dip candidate if the trend regime is still intact.`,
+      });
+    }
+  }
+
+  // ---- 52-week range position ----
+  const rngPos = q.range_pos != null ? +q.range_pos : null;
+  if (rngPos != null) {
+    if (rngPos >= 0.95) {
+      out.push({
+        id: "near_52w_high", label: "Near 52-week high", severity: "bullish",
+        icon: "🚀",
+        detail: `Trading in the top 5% of its 52-week range. Breakout candidate — institutional buyers often chase strength. Watch for follow-through volume.`,
+      });
+    } else if (rngPos <= 0.05) {
+      out.push({
+        id: "near_52w_low", label: "Near 52-week low", severity: "bearish",
+        icon: "❄️",
+        detail: `Trading in the bottom 5% of its 52-week range. Either a value setup or a falling knife — check the news feed before assuming the worst is priced in.`,
+      });
+    }
+  }
+
+  // ---- Volume spike (most recent day vs 6M avg) ----
+  if (vol6m.length > 10 && q.last_volume != null && q.avg_vol_6m) {
+    const ratio = q.last_volume / q.avg_vol_6m;
+    if (ratio >= 1.8) {
+      out.push({
+        id: "volume_spike",
+        label: "Volume spike",
+        severity: (q.change || 0) >= 0 ? "bullish" : "bearish",
+        icon: "🌊",
+        detail: `Today's volume (${_stkFmtNum(q.last_volume)}) is ${ratio.toFixed(1)}× the 6-month average. ${(q.change || 0) >= 0 ? "Conviction buying" : "Conviction selling"} — usually news or earnings driven. Check the news feed below.`,
+      });
+    }
+  }
+
+  // ---- Earnings imminent ----
+  if (q.next_earnings) {
+    const ed = new Date(q.next_earnings + "T00:00:00");
+    const days = Math.ceil((ed.getTime() - Date.now()) / 86400000);
+    if (days >= 0 && days <= 14) {
+      out.push({
+        id: "earnings_imminent", label: "Earnings within 2 weeks", severity: "neutral",
+        icon: "📅",
+        detail: `Reports ${days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`}. Implied vol typically rises into the print; position sizing should reflect the binary outcome.`,
+      });
+    }
+  }
+
+  // ---- Analyst price target gap ----
+  if (q.target_mean != null && price > 0) {
+    const gap = ((q.target_mean - price) / price) * 100;
+    if (gap >= 20) {
+      out.push({
+        id: "analyst_upside", label: "Analysts see >20% upside", severity: "bullish",
+        icon: "🎯",
+        detail: `Average 12-mo target of $${(+q.target_mean).toFixed(0)} is ${gap.toFixed(0)}% above the current price. ${q.num_analysts ? `${+q.num_analysts} analysts cover it.` : ""} Targets are slow to update — treat as a directional sentiment read, not a deadline.`,
+      });
+    } else if (gap <= -10) {
+      out.push({
+        id: "analyst_downside", label: "Trading above analyst targets", severity: "bearish",
+        icon: "🎯",
+        detail: `Price is ${Math.abs(gap).toFixed(0)}% above the average 12-mo target. ${q.num_analysts ? `${+q.num_analysts} analysts cover it.` : ""} Stretched expectations — earnings would need to surprise to the upside to sustain.`,
+      });
+    }
+  }
+
+  // ---- High institutional ownership = trader-influenced ----
+  if (q.held_institutions != null && q.held_institutions >= 0.85) {
+    out.push({
+      id: "instit_heavy", label: "Heavily institution-owned", severity: "neutral",
+      icon: "🏛️",
+      detail: `${(+q.held_institutions * 100).toFixed(0)}% of float is held by institutions. Moves are driven by big-money rebalancing, fund flows, and earnings reactions — not retail sentiment.`,
+    });
+  }
+
+  return out;
+}
+
+/* ---------- News-driven AI briefing ----------
+   Pulls extended news for the ticker, then asks Cornileus to deliver
+   a structured "based on this week's news, here's the take" verdict.
+   Renders inline in the detail sheet — no new modal. */
+async function _stocksNewsBriefing(tk) {
+  const btn = document.getElementById("stk-news-btn");
+  const out = document.getElementById("stk-news-result");
+  if (btn) { btn.textContent = "Reading the news…"; btn.disabled = true; }
+  if (out) out.innerHTML = `<div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:10px;text-align:center;color:var(--t3);font-size:13px">📰 Pulling the latest headlines and asking Cornileus for a take…</div>`;
+  try {
+    // 1. Pull extended news for the ticker
+    const r = await fetch("/api/news/" + encodeURIComponent(tk));
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || "HTTP " + r.status);
+    const items = data.news || [];
+    if (!items.length) {
+      out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px;color:var(--t3);font-size:13px;text-align:center">No recent news for ${esc(tk)} — try again in a few hours.</div>`;
+      return;
+    }
+    // 2. Cache for the rendered card so user can re-read sources
+    window._stkNewsCache = { ticker: tk, items, fetchedAt: Date.now() };
+    // 3. Build the prompt: company + each headline title + summary
+    const company = data.name ? `${data.name} (${tk})` : tk;
+    const q = (window._stkDetail && window._stkDetail.q) || {};
+    const price = q.price != null ? `$${(+q.price).toFixed(2)}` : "n/a";
+    const pct = q.change_pct != null ? `${((+q.change_pct) * 100).toFixed(1)}%` : "n/a";
+    const ytd = q.ytd_return != null ? `${((+q.ytd_return) * 100).toFixed(1)}% YTD` : "";
+    const headlinesText = items.slice(0, 12).map((n, i) => {
+      const pub = n.publisher ? ` — ${n.publisher}` : "";
+      const sm = n.summary ? `\n   ${n.summary}` : "";
+      return `${i+1}. ${n.title}${pub}${sm}`;
+    }).join("\n");
+    const userMsg = `Read these recent headlines for ${company} and give me a structured take.
+
+Context: price ${price}, today ${pct}${ytd ? ", " + ytd : ""}, sector ${data.sector || "n/a"}.
+
+Headlines:
+${headlinesText}
+
+Reply with this exact structure (no preamble, no markdown headers):
+VERDICT: <Buy | Hold | Sell | Wait>
+CONFIDENCE: <0-100>
+ONE-LINE: <a single sentence summary of the news story>
+BULLISH: <comma-separated list of 1-3 positive catalysts from the news, or "none">
+BEARISH: <comma-separated list of 1-3 risks/concerns from the news, or "none">
+WATCH: <one specific upcoming event, data point, or price level to watch>
+SUGGESTION: <2-3 sentences of plain-English actionable advice for a retail investor>`;
+    // 4. Ask Cornileus
+    const ai = await aiApi({
+      model: DB.settings.anthropicModel || "claude-haiku-4-5-20251001",
+      max_tokens: 600,
+      temperature: 0.4,
+      system: "You are Cornileus, a candid AI financial counselor. You read recent news headlines for a stock and give the user a clear, structured take — no hedging, no jargon, no advice disclaimers. Be direct. If the news is genuinely mixed, say so in the verdict (Hold / Wait). Never invent facts not in the headlines.",
+      messages: [{ role: "user", content: userMsg }],
+    });
+    const text = (ai.content && ai.content[0] && ai.content[0].text) || "";
+    if (!text) throw new Error("Empty AI response");
+    // 5. Parse the structured response
+    const parse = (key) => {
+      const m = text.match(new RegExp("^" + key + ":\\s*(.*?)$", "im"));
+      return m ? m[1].trim() : "";
+    };
+    const verdict = parse("VERDICT") || "Hold";
+    const conf = parseInt(parse("CONFIDENCE"), 10);
+    const oneLine = parse("ONE-LINE");
+    const bullish = parse("BULLISH");
+    const bearish = parse("BEARISH");
+    const watch = parse("WATCH");
+    const suggestion = parse("SUGGESTION");
+    out.innerHTML = _stocksRenderNewsBriefing({ tk, verdict, conf, oneLine, bullish, bearish, watch, suggestion, items });
+  } catch (e) {
+    out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;margin-bottom:10px;color:var(--red);font-size:13px">News briefing failed: ${esc(e.message)}</div>`;
+  } finally {
+    if (btn) { btn.textContent = "📰 News-driven AI take"; btn.disabled = false; }
+  }
+}
+
+function _stocksRenderNewsBriefing({ tk, verdict, conf, oneLine, bullish, bearish, watch, suggestion, items }) {
+  const v = (verdict || "").toLowerCase();
+  const color = v.startsWith("buy") ? "var(--green,#34C759)" :
+                v.startsWith("sell") ? "var(--red,#FF3B30)" :
+                v.startsWith("wait") ? "var(--blue,#007AFF)" :
+                "var(--orange,#FF9500)";
+  const pillBg = v.startsWith("buy") ? "rgba(52,199,89,0.12)" :
+                 v.startsWith("sell") ? "rgba(255,59,48,0.12)" :
+                 v.startsWith("wait") ? "rgba(0,122,255,0.12)" :
+                 "rgba(255,149,0,0.12)";
+  const splitList = (s) => (s || "")
+    .replace(/^none$/i, "")
+    .split(/[;,•·]/)
+    .map(x => x.trim())
+    .filter(x => x && x.toLowerCase() !== "none");
+  const bul = splitList(bullish);
+  const ber = splitList(bearish);
+
+  return `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${color};border-radius:var(--r);padding:16px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+        <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">News-driven take</div>
+        <div style="background:${pillBg};color:${color};border-radius:999px;padding:3px 10px;font-size:11px;font-weight:700;letter-spacing:0.02em;text-transform:uppercase">${esc(verdict)}</div>
+        ${isFinite(conf) ? `<div style="font-size:11px;color:var(--t3)">${conf}% confidence</div>` : ""}
+        <div style="flex:1"></div>
+        <button onclick="_stocksNewsBriefing(${jsAttr(tk)})" style="background:transparent;color:var(--t3);border:0.5px solid var(--sep);border-radius:8px;padding:3px 9px;font-size:11px;cursor:pointer">↻ Refresh</button>
+      </div>
+      ${oneLine ? `<div style="font-size:14.5px;color:var(--t1);font-weight:600;line-height:1.4;margin-bottom:10px">${esc(oneLine)}</div>` : ""}
+      ${suggestion ? `
+        <div style="background:var(--bg-elev);border-radius:10px;padding:10px 12px;margin-bottom:10px">
+          <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Cornileus says</div>
+          <div style="font-size:13px;color:var(--t1);line-height:1.5">${esc(suggestion)}</div>
+        </div>
+      ` : ""}
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
+        <div style="background:rgba(52,199,89,0.06);border:0.5px solid rgba(52,199,89,0.25);border-radius:10px;padding:9px 11px">
+          <div style="font-size:10px;color:var(--green,#34C759);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Bullish drivers</div>
+          ${bul.length ? bul.map(b => `<div style="font-size:11.5px;color:var(--t1);line-height:1.4;margin-bottom:3px">+ ${esc(b)}</div>`).join("") : `<div style="font-size:11.5px;color:var(--t3);font-style:italic">None in this batch</div>`}
+        </div>
+        <div style="background:rgba(255,59,48,0.06);border:0.5px solid rgba(255,59,48,0.25);border-radius:10px;padding:9px 11px">
+          <div style="font-size:10px;color:var(--red,#FF3B30);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Bearish risks</div>
+          ${ber.length ? ber.map(b => `<div style="font-size:11.5px;color:var(--t1);line-height:1.4;margin-bottom:3px">– ${esc(b)}</div>`).join("") : `<div style="font-size:11.5px;color:var(--t3);font-style:italic">None in this batch</div>`}
+        </div>
+      </div>
+      ${watch ? `
+        <div style="background:var(--bg-elev);border-left:3px solid var(--orange,#FF9500);border-radius:8px;padding:8px 11px;margin-bottom:10px">
+          <div style="font-size:10px;color:var(--orange,#FF9500);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:2px">👀 Watch</div>
+          <div style="font-size:12px;color:var(--t1);line-height:1.4">${esc(watch)}</div>
+        </div>
+      ` : ""}
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:10px 0 6px">Source headlines (${items.length})</div>
+      ${items.slice(0, 8).map(n => `
+        <a href="${esc(n.url || '#')}" target="_blank" rel="noopener" style="display:block;padding:7px 0;border-bottom:0.5px solid var(--sep);text-decoration:none;color:inherit">
+          <div style="font-size:12.5px;color:var(--t1);font-weight:600;line-height:1.35">${esc(n.title || "")}</div>
+          <div style="font-size:10.5px;color:var(--t3);margin-top:1px">${esc(n.publisher || "")}</div>
+        </a>
+      `).join("")}
+      <div style="font-size:10px;color:var(--t3);margin-top:8px;line-height:1.4;font-style:italic">AI summary of public news, not financial advice. Verify with the source links above before acting.</div>
+    </div>
+  `;
+}
+
+// Render the pattern-detection card from the broker bundle
+function _stocksRenderPatternCard(q) {
+  const patterns = _stkDetectPatterns(q);
+  if (!patterns.length) return "";
+  const sevColor = (s) => s === "bullish" ? "var(--green,#34C759)"
+                       : s === "bearish" ? "var(--red,#FF3B30)"
+                       : "var(--orange,#FF9500)";
+  const sevBg = (s) => s === "bullish" ? "rgba(52,199,89,0.06)"
+                    : s === "bearish" ? "rgba(255,59,48,0.06)"
+                    : "rgba(255,149,0,0.06)";
+  // Overall sentiment from pattern mix
+  const bull = patterns.filter(p => p.severity === "bullish").length;
+  const bear = patterns.filter(p => p.severity === "bearish").length;
+  const overall = bull > bear ? "Net bullish" : bear > bull ? "Net bearish" : "Mixed signals";
+  const overallColor = bull > bear ? "var(--green,#34C759)" : bear > bull ? "var(--red,#FF3B30)" : "var(--orange,#FF9500)";
+  return `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Pattern detection</div>
+        <div style="flex:1"></div>
+        <div style="background:var(--bg-elev);color:${overallColor};border-radius:999px;padding:2px 9px;font-size:10.5px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase">${overall}</div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:6px">
+        ${patterns.map(p => `
+          <div style="background:${sevBg(p.severity)};border:0.5px solid var(--sep);border-left:3px solid ${sevColor(p.severity)};border-radius:8px;padding:9px 11px">
+            <div style="display:flex;align-items:center;gap:8px;margin-bottom:3px">
+              <span style="font-size:14px">${p.icon}</span>
+              <span style="font-size:12.5px;color:var(--t1);font-weight:700">${esc(p.label)}</span>
+            </div>
+            <div style="font-size:11.5px;color:var(--t2);line-height:1.45">${esc(p.detail)}</div>
+          </div>
+        `).join("")}
+      </div>
+    </div>
+  `;
+}
+
 // Broker-grade detail renderer. Uses window._stkDetail.tf for chart
 // timeframe so the timeframe chips can re-render without refetching.
 function _stocksRenderDetail(q) {
@@ -10030,11 +10358,14 @@ function _stocksRenderDetail(q) {
         ${volSvg}
       </div>
       ${rangeBar}
+      ${_stocksRenderPatternCard(q)}
       ${techSignals}
       ${analystCard}
       ${earningsCard}
       ${fundGrid}
       ${newsCard}
+      <button onclick="_stocksNewsBriefing(${jsAttr(q.ticker)})" id="stk-news-btn" class="btn" style="width:100%;margin-bottom:6px;background:linear-gradient(135deg,#0ea5e9,#7c3aed);color:#fff;border:none">📰 News-driven AI take</button>
+      <div id="stk-news-result"></div>
       <button onclick="_stocksRunAnalyze(${jsAttr(q.ticker)})" id="stk-analyze-btn" class="btn" style="width:100%;margin-bottom:6px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none">✨ Run full analysis (buy/hold/sell)</button>
       <button onclick="_stocksLoadPeers(${jsAttr(q.ticker)})" id="stk-peers-btn" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">Show sector peers</button>
       <button onclick="openCounselor(${jsAttr(`What's your read on ${q.ticker}? Currently $${(+q.price).toFixed(2)}, ${(pct).toFixed(1)}% today${q.ytd_return != null ? `, ${((+q.ytd_return) * 100).toFixed(1)}% YTD` : ''}, P/E ${q.trailing_pe ? (+q.trailing_pe).toFixed(1) : 'n/a'}, RSI ${q.rsi14 ? (+q.rsi14).toFixed(0) : 'n/a'}, analyst target ${q.target_mean ? '$' + (+q.target_mean).toFixed(0) : 'n/a'}. Should I add it to my portfolio given my situation? Give me the why, not just a verdict.`)})" class="btn secondary" style="width:100%;margin-bottom:14px;font-size:13px">✨ Ask Cornileus about ${esc(q.ticker)}</button>
