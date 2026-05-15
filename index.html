@@ -1840,7 +1840,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
     <div style="display:flex;align-items:center">
       <button class="tb-btn" id="tb-search" title="Search" onclick="globalSearchSheet()" aria-label="Search">🔍</button>
       <button class="tb-priv" id="tb-priv" title="Privacy mode" onclick="togglePrivacyMode()" aria-label="Privacy mode">👁</button>
-      <button class="tb-btn" id="tb-action" title="Settings" onclick="openSettings()">⚙︎</button>
+      <button class="tb-btn" id="tb-action" title="Settings" onclick="openSettings()" aria-label="Settings">⚙︎</button>
     </div>
   </div>
 
@@ -2922,6 +2922,44 @@ $("#topbar").addEventListener("click", (e) => {
 $("#content").addEventListener("scroll", () => {
   $("#topbar").classList.toggle("scrolled", $("#content").scrollTop > 4);
 });
+
+// ===== Mobile swipe-between-tabs =====
+// Horizontal swipe on the main content area moves to the previous / next
+// tab in the bottom-bar order. Threshold tuned so vertical scrolling and
+// short taps don't accidentally trigger a swipe. Skipped when a sheet is
+// open (so the sheet's own gestures aren't fought).
+(() => {
+  const TAB_ORDER = ["today", "calendar", "goals", "planning", "money", "stocks", "stats"];
+  const minDist = 60;     // px the finger must travel horizontally
+  const maxOff  = 40;     // px max vertical drift before we call it a scroll
+  const maxTime = 600;    // ms — beyond this it's a slow pan, not a swipe
+  let sx = 0, sy = 0, st = 0, active = false;
+  const content = $("#content");
+  if (!content) return;
+  content.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1) { active = false; return; }
+    const sheet = $("#sheet");
+    if (sheet && sheet.classList.contains("show")) { active = false; return; }
+    const t = e.touches[0];
+    sx = t.clientX; sy = t.clientY; st = Date.now(); active = true;
+  }, { passive: true });
+  content.addEventListener("touchend", (e) => {
+    if (!active) return;
+    active = false;
+    const t = (e.changedTouches && e.changedTouches[0]) || null;
+    if (!t) return;
+    const dx = t.clientX - sx, dy = t.clientY - sy, dt = Date.now() - st;
+    if (dt > maxTime) return;
+    if (Math.abs(dy) > maxOff) return;
+    if (Math.abs(dx) < minDist) return;
+    const hiddenTabs = (DB.settings && Array.isArray(DB.settings.hiddenTabs)) ? DB.settings.hiddenTabs : [];
+    const visible = TAB_ORDER.filter(t => !hiddenTabs.includes(t));
+    let i = visible.indexOf(activeTab);
+    if (i < 0) return;
+    if (dx < 0 && i < visible.length - 1) showTab(visible[i + 1]);
+    else if (dx > 0 && i > 0) showTab(visible[i - 1]);
+  }, { passive: true });
+})();
 // Keyboard shortcut: Cmd/Ctrl + K opens global search (when not already in an
 // input). Standard mainstream pattern; no UI hint shown on mobile since most
 // users won't have a physical keyboard, but power-desktop users will discover.
@@ -4147,6 +4185,18 @@ function deleteWin(id) { DB.wins = DB.wins.filter(w => w.id !== id); save(); ren
 function winsToday() { return DB.wins.filter(w => w.date === todayKey()); }
 
 /* ================ RENDER ================ */
+// Add aria-label="Delete" to every .del-x and .x button that lacks one,
+// so screen readers don't announce them as just "X". Runs after every
+// render so dynamically-inserted buttons are covered. Cheap enough — the
+// query is fast and the conditional skips already-labelled nodes.
+function _a11yLabelDeleteButtons() {
+  try {
+    document.querySelectorAll('button.del-x:not([aria-label]), button.x:not([aria-label])').forEach(b => {
+      b.setAttribute('aria-label', 'Delete');
+    });
+  } catch {}
+}
+
 function render() {
   renderHeader();
   const tab = activeTab;
@@ -4162,6 +4212,9 @@ function render() {
   // that just happened (habit checked off, goal completed, etc) has a
   // chance to flip an achievement and celebrate.
   if (typeof _checkNewAchievements === "function") _checkNewAchievements();
+  // Sweep newly-inserted unlabelled close/delete buttons with an aria-label
+  // so screen readers don't read them as just "X".
+  if (typeof _a11yLabelDeleteButtons === "function") _a11yLabelDeleteButtons();
 }
 
 // Calendar month being viewed — defaults to today's month, navigated by calendarPrev/Next.
