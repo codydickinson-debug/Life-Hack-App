@@ -9688,6 +9688,24 @@ function renderStats() {
           insights.push({ icon: "📈", text: `Net worth ${dir} <b style="color:${color}" data-priv="amount">${fmt$0(Math.abs(delta))}</b> over the last 30 days` });
         }
       }
+      // 6. Plan ↔ Savings/Goals linkage. Surfaces when the user has plans set
+      // but few/none are linked — gentle nudge to wire up. Or celebrates if
+      // most are wired. Only emits when there are 3+ plans (below that, the
+      // signal is too noisy to be useful).
+      try {
+        const allPlans = (DB.plans || []).filter(p => !p.completed);
+        if (allPlans.length >= 3) {
+          const linkedAny = allPlans.filter(p =>
+            (Array.isArray(p.linkedSavingsIds) && p.linkedSavingsIds.length) ||
+            (Array.isArray(p.linkedGoalIds)    && p.linkedGoalIds.length)
+          ).length;
+          if (linkedAny === 0) {
+            insights.push({ icon: "🔗", text: `You have <b>${allPlans.length}</b> open plans but none are linked to savings or goals — tap a plan to wire it up` });
+          } else if (linkedAny / allPlans.length >= 0.6) {
+            insights.push({ icon: "🪢", text: `<b>${linkedAny} of ${allPlans.length}</b> plans wired to savings/goals — your systems are connected` });
+          }
+        }
+      } catch {}
       if (!insights.length) return "";
       // Strip HTML tags from insight text for the AI prompt — just the plain
       // sentence so Cornileus gets the meaning without markup.
