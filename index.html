@@ -3714,7 +3714,8 @@ function netWorthGrowthChartHtml() {
   const monthLabels = months.map((m, i) => {
     const showLabel = i === 0 || i === months.length - 1 || i === Math.floor(months.length / 2);
     if (!showLabel) return "";
-    return `<text x="${xAt(i).toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--t3)" font-family="-apple-system,system-ui,sans-serif">${esc(m.label)}</text>`;
+    const anchor = i === 0 ? "start" : i === months.length - 1 ? "end" : "middle";
+    return `<text x="${xAt(i).toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="${anchor}" font-size="9" fill="var(--t3)" font-family="-apple-system,system-ui,sans-serif">${esc(m.label)}</text>`;
   }).join("");
   const start = months[0].value;
   const end = months[months.length - 1].value;
@@ -3767,7 +3768,10 @@ function goalVelocityChartHtml() {
     + " L " + cumByMonth.map((v, i) => xAt(i).toFixed(1) + "," + yAt(v).toFixed(1)).join(" L ")
     + " L " + xAt(cumByMonth.length - 1).toFixed(1) + "," + (padT + innerH).toFixed(1) + " Z";
   const dots = cumByMonth.map((v, i) => `<circle cx="${xAt(i).toFixed(1)}" cy="${yAt(v).toFixed(1)}" r="3" fill="#34C759" stroke="#fff" stroke-width="1.5"/>`).join("");
-  const monthLabels = months.map((m, i) => `<text x="${xAt(i).toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--t3)" font-family="-apple-system,system-ui,sans-serif">${esc(m.label)}</text>`).join("");
+  const monthLabels = months.map((m, i) => {
+    const anchor = i === 0 ? "start" : i === months.length - 1 ? "end" : "middle";
+    return `<text x="${xAt(i).toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="${anchor}" font-size="9" fill="var(--t3)" font-family="-apple-system,system-ui,sans-serif">${esc(m.label)}</text>`;
+  }).join("");
   const last = cumByMonth[cumByMonth.length - 1];
   const first = cumByMonth[0];
   const delta = last - first;
@@ -6018,7 +6022,10 @@ function _roadmapProjectionSvg(rm) {
         ` : ''}
         ${cum.map((p, i) => {
           const period = p.phase.period || ('P' + (i + 1));
-          return `<text x="${xAt(p.i).toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--t3)" font-family="-apple-system,system-ui,sans-serif">${esc(period.slice(0, 10))}</text>`;
+          // Anchor first label to start, last to end, others centered.
+          // Avoids clipping at chart edges.
+          const anchor = i === 0 ? "start" : i === cum.length - 1 ? "end" : "middle";
+          return `<text x="${xAt(p.i).toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="${anchor}" font-size="9" fill="var(--t3)" font-family="-apple-system,system-ui,sans-serif">${esc(period.slice(0, 10))}</text>`;
         }).join("")}
       </svg>
       <div class="rm-chart-legend">
