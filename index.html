@@ -5631,6 +5631,60 @@ function renderToday() {
       </div>`;
     })()}
 
+    <!-- Watchlist spotlight — top mover when there are quotes but no holdings -->
+    ${(() => {
+      const holdings = (DB.stocks && DB.stocks.holdings) || {};
+      const hasHoldings = Object.values(holdings).some(h => +h.shares > 0);
+      if (hasHoldings) return "";
+      const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+      const rows = Object.entries(cache).filter(([_, q]) => q && !q.error && q.change_pct != null);
+      if (rows.length < 2) return "";
+      rows.sort((a, b) => Math.abs(b[1].change_pct) - Math.abs(a[1].change_pct));
+      const [tk, q] = rows[0];
+      const chg = +q.change_pct * 100;
+      const color = chg >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+      return `
+        <div class="row tappable" onclick="showTab('stocks')" role="button" tabindex="0" style="background:var(--card);border-radius:var(--r);margin-bottom:10px;border:none;align-items:center;cursor:pointer">
+          <div class="lead">📊</div>
+          <div class="body">
+            <div class="t1">${esc(tk)} ${chg >= 0 ? "is up" : "dropped"} ${Math.abs(chg).toFixed(2)}%</div>
+            <div class="t2" style="font-size:12px;color:${color};font-weight:600">$${(+q.price).toFixed(2)} · ${q.change >= 0 ? "+" : ""}$${(+q.change || 0).toFixed(2)} today</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      `;
+    })()}
+
+    <!-- Stocks pulse — appears only when user has holdings -->
+    ${(() => {
+      const holdings = (DB.stocks && DB.stocks.holdings) || {};
+      const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+      const tickers = Object.keys(holdings).filter(tk => +holdings[tk].shares > 0);
+      if (!tickers.length) return "";
+      let value = 0, cost = 0, dailyChg = 0, missing = 0;
+      for (const tk of tickers) {
+        const h = holdings[tk]; const q = cache[tk];
+        const price = q && !q.error && q.price != null ? +q.price : null;
+        if (price == null) { missing++; continue; }
+        value += price * h.shares;
+        cost += (+h.cost || 0) * h.shares;
+        dailyChg += (q.change != null ? +q.change * h.shares : 0);
+      }
+      if (value <= 0) return "";
+      const dailyColor = dailyChg >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+      const pct = value - dailyChg > 0 ? (dailyChg / (value - dailyChg)) * 100 : 0;
+      return `
+        <div class="row tappable" onclick="showTab('stocks')" role="button" tabindex="0" style="background:var(--card);border-radius:var(--r);margin-bottom:10px;border:none;align-items:center;cursor:pointer">
+          <div class="lead">📈</div>
+          <div class="body">
+            <div class="t1" data-priv="amount">Portfolio ${fmt$0(value)}</div>
+            <div class="t2" style="font-size:12px;color:${dailyColor};font-weight:600">${dailyChg >= 0 ? "+" : "-"}$${Math.abs(dailyChg).toFixed(2)} today (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%) · ${tickers.length} holding${tickers.length===1?"":"s"}${missing>0?` · ${missing} need refresh`:""}</div>
+          </div>
+          <div class="trail chev"></div>
+        </div>
+      `;
+    })()}
+
     <!-- ===== INSIGHTS: smart plays, dates, bills, wealth, reflection ===== -->
     ${isTodaySectionHidden('smartPlays') ? "" : (() => {
       const plays = computeSmartPlays();
@@ -9996,8 +10050,8 @@ function _stocksRenderPortfolio() {
       ` : ""}
       ${_stocksRenderDiversificationLine()}
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px">
-        <button onclick="portfolioReviewSheet()" class="btn" style="font-size:11.5px;padding:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none">✨ Review</button>
-        <button onclick="cornileusAdvisorSheet()" class="btn" style="font-size:11.5px;padding:8px;background:linear-gradient(135deg,#0ea5e9,#7c3aed);color:#fff;border:none">🎯 Advisor</button>
+        <button onclick="portfolioReviewSheet()" class="btn" aria-label="Open Cornileus portfolio review" style="font-size:11.5px;padding:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none">✨ Review</button>
+        <button onclick="cornileusAdvisorSheet()" class="btn" aria-label="Open Cornileus full financial advisor" style="font-size:11.5px;padding:8px;background:linear-gradient(135deg,#0ea5e9,#7c3aed);color:#fff;border:none">🎯 Advisor</button>
       </div>
       <button onclick="_stocksAddHoldingSheet()" class="btn secondary" style="width:100%;margin-top:6px;font-size:12.5px;padding:7px">+ Add holding</button>
     </div>
@@ -10814,6 +10868,52 @@ const STK_GLOSSARY = {
     evaluate: () => null,
     formula: "P(t) = P(0) × exp((μ − σ²/2)t + σ√t × Z), where Z = standard normal inverse for each percentile.",
   },
+  compound: {
+    title: "Compound interest — the eighth wonder",
+    short: "Earnings on earnings: your gains start generating their own gains.",
+    explain: [
+      "Simple interest grows linearly: $100 at 10% pays $10 every year forever.",
+      "Compound interest grows exponentially: $100 at 10% becomes $110 → $121 → $133 → $146… because each year's gain is earned on a bigger base.",
+      "Time is the secret ingredient. $500/mo for 30 years at 7% is $607K. The same $500/mo for 40 years is $1.31M — a 10-year head start more than doubles your end balance.",
+      "The opposite is true for high-interest debt: credit cards at 24% double their balance in roughly 3 years if you only make minimums.",
+    ],
+    evaluate: () => null,
+    formula: "FV = PV × (1 + r)^n  ·  with periodic contributions: FV = PV(1+r)^n + PMT × [((1+r)^n - 1)/r]",
+  },
+  diversification: {
+    title: "Diversification — don't put all eggs in one basket",
+    short: "Owning unrelated assets reduces overall portfolio volatility without giving up much return.",
+    explain: [
+      "If two assets each return 8% per year but their day-to-day moves are uncorrelated, the combined portfolio returns 8% with less swing.",
+      "A measure of concentration is the Herfindahl index (HHI): sum of squared position weights. Lower HHI = more diversified.",
+      "Diversification across asset classes (stocks, bonds, real estate) beats diversification within a single class (10 different tech stocks).",
+      "Owning the entire S&P 500 via VOO is one decision that gives you exposure to 500 companies across 11 sectors.",
+    ],
+    evaluate: () => null,
+    formula: "HHI = Σ(wᵢ²)  ·  effective N of holdings = 1 / HHI",
+  },
+  rebalancing: {
+    title: "Rebalancing — selling winners, buying losers",
+    short: "Periodically returning your portfolio to its target allocation by selling appreciated assets and buying laggards.",
+    explain: [
+      "Without rebalancing, winners grow to dominate your portfolio. A 60/40 stock/bond mix becomes 80/20 after a bull market — without you choosing more risk.",
+      "Most advisors recommend rebalancing once a year, or when any position drifts more than 5% from its target.",
+      "Rebalancing in taxable accounts triggers capital gains, so do it in tax-advantaged accounts (IRA/401K) first if possible. Or use new contributions to buy the underweight side.",
+      "It feels emotionally wrong (selling what's working, buying what isn't) — but it's the disciplined version of 'buy low, sell high'.",
+    ],
+    evaluate: () => null,
+  },
+  taxloss: {
+    title: "Tax-loss harvesting",
+    short: "Selling at a loss to offset realized gains (and up to $3K of ordinary income), then buying back later.",
+    explain: [
+      "If you sell GOOG for a $2,000 gain and TSLA for a $2,000 loss in the same year, your net realized P&L is $0 — no tax bill.",
+      "After offsetting all gains, an extra $3,000 of net loss can deduct from ordinary income. Anything beyond carries forward to future years indefinitely.",
+      "The wash-sale rule (USA): if you buy the same or 'substantially identical' security within 30 days before or after the sale, the IRS disallows the loss.",
+      "Easiest workaround: sell one ETF (e.g., VOO) at a loss, immediately buy a similar-but-not-identical one (e.g., IVV) to stay invested.",
+    ],
+    evaluate: () => null,
+  },
 };
 
 function teachMeSheet(key, contextValue) {
@@ -10856,6 +10956,7 @@ function teachMeSheet(key, contextValue) {
 // Browse the full glossary — useful entry point from Research Tools
 function learnLibrarySheet() {
   const groups = [
+    { title: "Core money concepts", keys: ["compound", "diversification", "rebalancing", "taxloss"] },
     { title: "Fundamentals", keys: ["pe", "peg", "margin", "de", "yield", "mcap"] },
     { title: "Technical signals", keys: ["rsi", "beta", "sma", "volatility"] },
     { title: "Ownership", keys: ["insiderhold", "inst", "shortpct"] },
