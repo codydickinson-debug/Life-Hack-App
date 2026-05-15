@@ -13242,8 +13242,22 @@ function _stocksSnapshotPortfolio() {
 function _stocksRenderPortfolioChart() {
   const hist = (DB.stocks && DB.stocks.portfolioHistory) || [];
   if (hist.length < 2) return "";
-  // Last 90 days
-  const slice = hist.slice(-90);
+  // Timeframe state — defaults to 90d
+  const tf = (DB.stocks && DB.stocks.portfolioChartTf) || "90d";
+  // Map timeframe to a slice
+  const tfDays = { "7d": 7, "30d": 30, "90d": 90, "ytd": null, "1y": 365, "all": null };
+  let slice;
+  if (tf === "ytd") {
+    const yearStart = new Date(new Date().getFullYear(), 0, 1).toISOString().slice(0, 10);
+    slice = hist.filter(h => h.date >= yearStart);
+    if (!slice.length) slice = hist;
+  } else if (tf === "all") {
+    slice = hist;
+  } else {
+    const n = tfDays[tf] || 90;
+    slice = hist.slice(-n);
+  }
+  if (slice.length < 2) slice = hist.slice(-2);
   const W = 320, H = 80;
   const vals = slice.map(s => +s.value);
   const min = Math.min(...vals), max = Math.max(...vals);
@@ -13256,10 +13270,18 @@ function _stocksRenderPortfolioChart() {
   const pct = vals[0] > 0 ? change / vals[0] : 0;
   const color = change >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
   const gradId = "pp-grad-" + Math.floor(Math.random() * 1e9).toString(36);
+  const tfs = [
+    { id: "7d",  lbl: "7D" },
+    { id: "30d", lbl: "30D" },
+    { id: "90d", lbl: "90D" },
+    { id: "ytd", lbl: "YTD" },
+    { id: "1y",  lbl: "1Y" },
+    { id: "all", lbl: "All" },
+  ];
   return `
     <div style="margin-top:12px;background:var(--bg-elev);border-radius:10px;padding:10px 12px">
-      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
-        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Portfolio (${slice.length}d)</div>
+      <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px;gap:8px;flex-wrap:wrap">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Portfolio · ${slice.length}d shown</div>
         <div style="font-size:11.5px;color:${color};font-weight:700;font-variant-numeric:tabular-nums">${change >= 0 ? "+" : "-"}$${Math.abs(change).toFixed(0)} (${pct >= 0 ? "+" : ""}${(pct * 100).toFixed(1)}%)</div>
       </div>
       <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:60px;display:block">
@@ -13270,8 +13292,18 @@ function _stocksRenderPortfolioChart() {
         <path d="${areaPath}" fill="url(#${gradId})"/>
         <polyline points="${pts}" fill="none" stroke="${color}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
       </svg>
+      <div style="display:flex;gap:3px;margin-top:6px;justify-content:center;flex-wrap:wrap">
+        ${tfs.map(t => `<button onclick="_stocksSetPortfolioChartTf(${jsAttr(t.id)})" style="background:${t.id===tf?'var(--blue,#007AFF)':'transparent'};color:${t.id===tf?'#fff':'var(--t2)'};border:0.5px solid var(--sep);border-radius:6px;padding:2px 7px;font-size:10px;font-weight:600;cursor:pointer">${t.lbl}</button>`).join("")}
+      </div>
     </div>
   `;
+}
+
+function _stocksSetPortfolioChartTf(tf) {
+  if (!DB.stocks) DB.stocks = {};
+  DB.stocks.portfolioChartTf = tf;
+  save();
+  _stocksRenderPortfolio();
 }
 
 /* ---------- Portfolio diversification score ----------
