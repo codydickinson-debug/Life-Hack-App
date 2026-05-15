@@ -565,6 +565,112 @@ def api_ticker_broker(ticker):
         return jsonify({"error": str(e)}), 500
 
 
+@app.route("/api/forecast/<ticker>")
+def api_forecast(ticker):
+    """Price forecast: past + Monte Carlo projection with bear/base/bull
+    scenarios. Uses geometric Brownian motion with historical drift +
+    volatility. Returns monthly checkpoints out to N months.
+
+    Query: ?months=12 (default 24, max 60)
+
+    Returns:
+      ticker
+      history: [{date, price}]            past 2y monthly closes
+      current_price
+      mu_daily, sigma_daily               estimated drift / vol
+      mu_annual, sigma_annual
+      forecast:
+        - bear:  [{months_ahead, price}]  10th percentile
+        - base:  [{months_ahead, price}]  median
+        - bull:  [{months_ahead, price}]  90th percentile
+      cone_5y: same shape, 5y if longer view available
+      drivers: brief notes on what's powering each scenario
+    """
+    import yfinance as yf
+    import math, random
+    try:
+        months = max(3, min(60, int(request.args.get("months", 24))))
+    except ValueError:
+        months = 24
+    try:
+        t = yf.Ticker(ticker)
+        # 5y daily for vol estimate; 2y monthly for history display
+        df = t.history(period="5y", auto_adjust=True)
+        if df is None or df.empty or len(df) < 100:
+            return jsonify({"error": "not enough history"}), 404
+        closes = [float(x) for x in df["Close"].tolist()]
+        # Daily log returns
+        rets = [math.log(closes[i] / closes[i-1]) for i in range(1, len(closes)) if closes[i-1] > 0]
+        if not rets:
+            return jsonify({"error": "no return data"}), 500
+        # Robust stats: trim outliers ±4 sigma
+        mu_d = sum(rets) / len(rets)
+        var_d = sum((r - mu_d) ** 2 for r in rets) / len(rets)
+        sigma_d = math.sqrt(var_d) if var_d > 0 else 0.01
+        # Annualize (252 trading days)
+        mu_annual = mu_d * 252
+        sigma_annual = sigma_d * math.sqrt(252)
+
+        last = closes[-1]
+        # Monthly history (last 24 months, 21 trading days per month)
+        history = []
+        step = 21
+        for i in range(max(0, len(closes) - 24*step), len(closes), step):
+            d = df.index[i].strftime("%Y-%m-%d")
+            history.append({"date": d, "price": closes[i]})
+        history.append({"date": df.index[-1].strftime("%Y-%m-%d"), "price": last})
+
+        # Analytic GBM percentiles per month — no simulation needed.
+        # Under GBM, ln(P_t/P_0) ~ N((mu - sigma²/2) * t, sigma² * t)
+        # We use trading-day t in years for consistency with annualized params.
+        def percentile_at(months_ahead, p):
+            # Standard normal inverse for percentiles 10/50/90
+            inv = {0.10: -1.28155, 0.50: 0.0, 0.90: 1.28155}
+            z = inv.get(p, 0.0)
+            t_yr = months_ahead / 12.0
+            drift = (mu_annual - 0.5 * sigma_annual ** 2) * t_yr
+            vol_t = sigma_annual * math.sqrt(t_yr)
+            return last * math.exp(drift + z * vol_t)
+
+        forecast_bear, forecast_base, forecast_bull = [], [], []
+        for m in range(0, months + 1):
+            forecast_bear.append({"months_ahead": m, "price": round(percentile_at(m, 0.10), 4)})
+            forecast_base.append({"months_ahead": m, "price": round(percentile_at(m, 0.50), 4)})
+            forecast_bull.append({"months_ahead": m, "price": round(percentile_at(m, 0.90), 4)})
+
+        # Plain-English driver hints (consumed by UI when AI is unavailable)
+        annual_drift_pct = (math.exp(mu_annual) - 1) * 100
+        annual_vol_pct = sigma_annual * 100
+        drivers = {
+            "trend": "rising" if mu_annual > 0.02 else "falling" if mu_annual < -0.02 else "sideways",
+            "volatility": "high" if annual_vol_pct > 35 else "moderate" if annual_vol_pct > 20 else "calm",
+            "annual_drift_pct": round(annual_drift_pct, 2),
+            "annual_vol_pct":   round(annual_vol_pct, 2),
+        }
+
+        return jsonify({
+            "ticker": ticker.upper(),
+            "history": history,
+            "current_price": last,
+            "mu_daily": mu_d,
+            "sigma_daily": sigma_d,
+            "mu_annual": mu_annual,
+            "sigma_annual": sigma_annual,
+            "annual_drift_pct": annual_drift_pct,
+            "annual_vol_pct": annual_vol_pct,
+            "forecast": {
+                "bear": forecast_bear,
+                "base": forecast_base,
+                "bull": forecast_bull,
+            },
+            "drivers": drivers,
+            "horizon_months": months,
+            "method": "GBM (geometric Brownian motion) — drift + volatility from 5y daily returns",
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
 @app.route("/api/breadth")
 def api_breadth():
     """Market breadth — composite Fear/Greed-style readout. Computes:

@@ -9693,6 +9693,21 @@ function renderStocks() {
         <div class="body"><div class="t1">Cornileus weekly digest</div><div class="t2">AI commentary on what changed for you this week</div></div>
         <div class="trail chev"></div>
       </div>
+      <div class="row tappable" onclick="cornileusAdvisorSheet()" role="button" tabindex="0" style="background:linear-gradient(135deg,rgba(124,58,237,0.10),rgba(236,72,153,0.06));border-left:3px solid #7c3aed">
+        <div class="lead">✨</div>
+        <div class="body"><div class="t1">Cornileus as your advisor</div><div class="t2">Full financial review · this month / quarter / year action plan</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="planBuilderSheet()" role="button" tabindex="0">
+        <div class="lead">📐</div>
+        <div class="body"><div class="t1">Build a plan</div><div class="t2">$X by age Y → compound math + chart + AI explanation</div></div>
+        <div class="trail chev"></div>
+      </div>
+      <div class="row tappable" onclick="learnLibrarySheet()" role="button" tabindex="0">
+        <div class="lead">🎓</div>
+        <div class="body"><div class="t1">Learn the basics</div><div class="t2">P/E, beta, RSI, dividends — explained plainly</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="window.open('/stockanalyzer','_blank')" role="button" tabindex="0">
         <div class="lead">🏠</div>
         <div class="body"><div class="t1">Housing &amp; mortgages</div><div class="t2">Live mortgage rates, ZIP-level housing data, affordability calc</div></div>
@@ -9945,7 +9960,10 @@ function _stocksRenderPortfolio() {
         </div>
       ` : ""}
       ${_stocksRenderDiversificationLine()}
-      <button onclick="portfolioReviewSheet()" class="btn" style="width:100%;margin-top:10px;font-size:12.5px;padding:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none">✨ Cornileus portfolio review</button>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px">
+        <button onclick="portfolioReviewSheet()" class="btn" style="font-size:11.5px;padding:8px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none">✨ Review</button>
+        <button onclick="cornileusAdvisorSheet()" class="btn" style="font-size:11.5px;padding:8px;background:linear-gradient(135deg,#0ea5e9,#7c3aed);color:#fff;border:none">🎯 Advisor</button>
+      </div>
       <button onclick="_stocksAddHoldingSheet()" class="btn secondary" style="width:100%;margin-top:6px;font-size:12.5px;padding:7px">+ Add holding</button>
     </div>
   `;
@@ -10075,6 +10093,820 @@ async function _stocksRemoveHolding(tk) {
   closeSheet();
   toast(`Removed ${tk} from portfolio`);
   if (typeof renderStocks === "function" && document.getElementById("page-stocks")) renderStocks();
+}
+
+/* ============================================================
+   PHASE 5 — Cornileus as financial advisor
+   Predictions · explanations · plans · visual past/present/future
+   ============================================================ */
+
+/* ---------- Glossary: teach-me explanations for every metric ----------
+   Each entry has: title, short (one-sentence), explain (3-5 sentences),
+   evaluate(value) that returns {tag, color} like 'Good range' / 'Watch'
+   so the lesson always contextualizes the user's actual number. */
+const STK_GLOSSARY = {
+  rsi: {
+    title: "RSI(14) — Relative Strength Index",
+    short: "Momentum gauge. Above 70 = often overbought, below 30 = often oversold.",
+    explain: [
+      "RSI measures the speed and magnitude of recent price changes on a 0-100 scale.",
+      "When prices have been rising fast, RSI climbs toward 70+ — historically a hint of an impending pullback (though strong trends can stay overbought for weeks).",
+      "When prices have been falling fast, RSI drops toward 30- — a contrarian buy hint if the underlying business is solid.",
+      "Use RSI to time entries within a trend you've already validated by other means — never as a standalone buy/sell signal.",
+    ],
+    evaluate: (v) => v == null ? null
+      : v >= 70 ? { tag: "Overbought", color: "var(--red,#FF3B30)" }
+      : v <= 30 ? { tag: "Oversold",   color: "var(--green,#34C759)" }
+      :          { tag: "Neutral",    color: "var(--t2)" },
+    formula: "100 − 100 / (1 + RS), where RS = avg gain / avg loss over 14 periods.",
+  },
+  beta: {
+    title: "Beta — sensitivity to the market",
+    short: "How much this stock moves when the market moves 1%.",
+    explain: [
+      "Beta of 1.0 means the stock tracks the market 1:1. The S&P 500 ETF (SPY) has a beta of 1 by definition.",
+      "A beta of 1.5 means the stock typically moves 1.5% for every 1% market move — both up and down.",
+      "Defensive stocks (utilities, consumer staples) often have betas below 1; growth/tech stocks usually above 1.",
+      "Beta is a measure of relative risk, not absolute risk. A 0.5-beta stock can still drop 50% if its business breaks.",
+    ],
+    evaluate: (v) => v == null ? null
+      : v > 1.5 ? { tag: "Aggressive", color: "var(--red,#FF3B30)" }
+      : v > 1.1 ? { tag: "Volatile",   color: "var(--orange,#FF9500)" }
+      : v < 0.7 ? { tag: "Defensive",  color: "var(--green,#34C759)" }
+      :          { tag: "Market-like", color: "var(--t2)" },
+    formula: "Cov(stock returns, market returns) / Var(market returns).",
+  },
+  pe: {
+    title: "P/E Ratio — Price-to-Earnings",
+    short: "How many dollars of stock price you're paying per dollar of annual earnings.",
+    explain: [
+      "P/E of 20 means: for every $1 the company earns this year, you pay $20 of stock price.",
+      "Lower can be cheaper — but it can also mean the market expects declining earnings.",
+      "Higher is often warranted for fast-growing companies; growth investors pay up for future earnings.",
+      "Compare a stock's P/E to its peers and to its own history, not to a fixed 'good' number.",
+    ],
+    evaluate: (v) => v == null ? null
+      : v < 0 ? { tag: "Unprofitable", color: "var(--red,#FF3B30)" }
+      : v < 15 ? { tag: "Value range",   color: "var(--green,#34C759)" }
+      : v < 25 ? { tag: "Market-typical", color: "var(--t2)" }
+      : v < 40 ? { tag: "Growth premium", color: "var(--orange,#FF9500)" }
+      :          { tag: "Very rich",     color: "var(--red,#FF3B30)" },
+    formula: "Market price per share / Annual earnings per share.",
+  },
+  peg: {
+    title: "PEG — P/E adjusted for growth",
+    short: "P/E divided by earnings growth rate. < 1 = cheap for the growth you're getting.",
+    explain: [
+      "PEG = P/E ÷ expected annual earnings growth %.",
+      "Peter Lynch popularized this: a fair value is roughly when P/E equals the growth rate, so PEG ≈ 1.",
+      "PEG < 1 suggests the stock is cheap given expected growth; > 2 suggests it's pricey relative to growth.",
+      "Caveat: relies on analyst growth forecasts, which are often wrong. Treat PEG as one input, not a verdict.",
+    ],
+    evaluate: (v) => v == null ? null
+      : v < 1 ? { tag: "Cheap-for-growth", color: "var(--green,#34C759)" }
+      : v < 2 ? { tag: "Fair", color: "var(--t2)" }
+      :         { tag: "Expensive-for-growth", color: "var(--red,#FF3B30)" },
+    formula: "P/E ratio / Expected EPS growth rate.",
+  },
+  margin: {
+    title: "Profit margin — pricing power",
+    short: "Of every dollar of revenue, how much actually becomes profit after all costs.",
+    explain: [
+      "Software companies routinely have 25-40% margins. Retailers and grocers sometimes run 1-3%.",
+      "High margins = pricing power, scalability, brand or IP moat.",
+      "Margin trends matter as much as the level — falling margins mean competition or cost pressure.",
+      "Profit margin × revenue = net income, which is what ultimately drives the long-term stock price.",
+    ],
+    evaluate: (v) => v == null ? null
+      : v < 0 ? { tag: "Losing money", color: "var(--red,#FF3B30)" }
+      : v < 0.05 ? { tag: "Thin",     color: "var(--orange,#FF9500)" }
+      : v < 0.15 ? { tag: "Healthy",  color: "var(--t2)" }
+      : v < 0.25 ? { tag: "Strong",   color: "var(--green,#34C759)" }
+      :            { tag: "Exceptional", color: "var(--green,#34C759)" },
+    formula: "Net income / Revenue.",
+  },
+  de: {
+    title: "Debt / Equity — balance-sheet risk",
+    short: "How leveraged the company is. Below 50 = conservative, above 100 = aggressive.",
+    explain: [
+      "D/E = total debt ÷ shareholders' equity. Higher means more borrowed money funding operations.",
+      "Banks and utilities run very high D/E by design; tech companies are often near 0.",
+      "Debt amplifies returns in good times and accelerates damage in downturns. Watch for rising D/E with declining earnings — classic distress signal.",
+      "Best compared to industry peers, not to a universal threshold.",
+    ],
+    evaluate: (v) => v == null ? null
+      : v < 30  ? { tag: "Low leverage", color: "var(--green,#34C759)" }
+      : v < 100 ? { tag: "Moderate", color: "var(--t2)" }
+      : v < 200 ? { tag: "Elevated", color: "var(--orange,#FF9500)" }
+      :           { tag: "High leverage", color: "var(--red,#FF3B30)" },
+    formula: "Total debt / Shareholders' equity × 100.",
+  },
+  yield: {
+    title: "Dividend Yield",
+    short: "The dividend paid each year as a % of the stock price.",
+    explain: [
+      "A 3% yield means $3 of annual dividends for every $100 of stock you own.",
+      "Stable, mature companies (utilities, consumer staples) tend to pay high yields. Growth companies usually pay little or nothing.",
+      "A yield that's much higher than peers can signal stress — the stock price has dropped faster than the dividend (yet).",
+      "Total return = dividend yield + price appreciation. A 2% yielder that grows 8%/year matches a 10% yielder that's flat.",
+    ],
+    evaluate: (v) => v == null ? null
+      : v < 0.01 ? { tag: "Non-dividend", color: "var(--t2)" }
+      : v < 0.025 ? { tag: "Modest", color: "var(--t2)" }
+      : v < 0.05 ? { tag: "Solid", color: "var(--green,#34C759)" }
+      : v < 0.08 ? { tag: "High — verify safety", color: "var(--orange,#FF9500)" }
+      :            { tag: "Very high — check for trap", color: "var(--red,#FF3B30)" },
+    formula: "Annual dividend per share / Current stock price.",
+  },
+  mcap: {
+    title: "Market cap — company size",
+    short: "Total stock price × shares outstanding. A rough measure of the entire business.",
+    explain: [
+      "Mega caps: >$200B (Apple, Microsoft). Large caps: $10B-$200B. Mid: $2B-$10B. Small: $300M-$2B.",
+      "Mega caps tend to be steadier, with global revenue diversification. Small caps swing more but can compound faster.",
+      "Market cap and enterprise value differ: EV adds debt and subtracts cash. Use EV when comparing across capital structures.",
+    ],
+    evaluate: () => null,
+    formula: "Shares outstanding × current stock price.",
+  },
+  shortpct: {
+    title: "Short interest (% of float)",
+    short: "% of the public float currently borrowed and sold short. High = traders betting on a fall.",
+    explain: [
+      "Above 10% is elevated; above 20% is heavy.",
+      "High short interest can foreshadow weakness — or it can fuel an explosive short squeeze if good news hits.",
+      "Pair this with the days-to-cover ratio (short interest / avg daily volume) for context.",
+    ],
+    evaluate: (v) => v == null ? null
+      : v > 0.20 ? { tag: "Squeeze candidate / heavily shorted", color: "var(--orange,#FF9500)" }
+      : v > 0.10 ? { tag: "Elevated", color: "var(--t2)" }
+      :            { tag: "Normal", color: "var(--green,#34C759)" },
+    formula: "Shares sold short / Public float.",
+  },
+  insiderhold: {
+    title: "Insider ownership",
+    short: "% of company owned by executives, directors, and founders.",
+    explain: [
+      "Founder-led companies often have 5-30% insider ownership. Mature mega-caps usually well below 1%.",
+      "Higher insider ownership tends to correlate with longer-term thinking and better alignment with retail investors.",
+      "Watch for sudden insider selling — especially across multiple insiders — as a possible warning sign.",
+    ],
+    evaluate: () => null,
+    formula: "Insider-held shares / Total shares outstanding.",
+  },
+  inst: {
+    title: "Institutional ownership",
+    short: "% owned by pension funds, mutual funds, hedge funds.",
+    explain: [
+      "85%+ is very heavy institutional ownership — moves are driven by big-money rebalancing.",
+      "Heavy institutional ownership can mean liquidity and price stability, but also fast forced selling in stress events.",
+      "Stocks with under 30% institutional ownership often have retail / founder concentration — less efficient pricing, more volatility.",
+    ],
+    evaluate: () => null,
+    formula: "Institution-held shares / Total shares outstanding.",
+  },
+  sma: {
+    title: "Moving averages (SMA50, SMA200)",
+    short: "Average price over the past 50 / 200 trading days.",
+    explain: [
+      "50-day SMA is the medium-term trend. 200-day SMA is the long-term trend.",
+      "When price is above both SMAs, the trend is intact. When the 50 crosses above the 200, it's a 'golden cross' — historically a bullish signal.",
+      "When the 50 crosses below the 200 ('death cross'), it's a bearish signal, often preceding extended weakness.",
+      "Pullbacks to the 200-day in uptrends often act as support.",
+    ],
+    evaluate: () => null,
+    formula: "Average of the last N daily closing prices.",
+  },
+  ytd: {
+    title: "Year-to-date return",
+    short: "% change in price since January 1 of this year.",
+    explain: [
+      "Useful for comparing against the broader market: SPY's YTD is your reference rate.",
+      "Strong YTD with weak fundamentals = momentum risk. Weak YTD with strong fundamentals = potential value.",
+      "Don't confuse with a 1-year return — YTD resets every January.",
+    ],
+    evaluate: () => null,
+    formula: "(Current price − Jan 1 price) / Jan 1 price × 100.",
+  },
+  volatility: {
+    title: "Volatility — how bumpy is the ride",
+    short: "Standard deviation of daily returns, annualized. Higher = bigger swings.",
+    explain: [
+      "Annualized vol of 20% is typical for a large-cap stock. 40%+ is high. Bond ETFs run under 10%.",
+      "Volatility is symmetric — it counts upside swings too — but most investors care about downside specifically.",
+      "Forecasts (and the bear/base/bull cones) get wider as volatility rises.",
+    ],
+    evaluate: (v) => v == null ? null
+      : v > 50 ? { tag: "Very high", color: "var(--red,#FF3B30)" }
+      : v > 30 ? { tag: "High",     color: "var(--orange,#FF9500)" }
+      : v > 15 ? { tag: "Moderate", color: "var(--t2)" }
+      :          { tag: "Calm",     color: "var(--green,#34C759)" },
+    formula: "stddev(daily returns) × √252 × 100.",
+  },
+  forecast: {
+    title: "GBM forecast — bear / base / bull",
+    short: "Probabilistic price path based on the stock's own historical drift and volatility.",
+    explain: [
+      "We compute the average daily return (drift) and the volatility from 5 years of history.",
+      "Then we assume future returns follow the same distribution (Geometric Brownian Motion) and compute where the price lands at each future month.",
+      "The base case is the 50th percentile (median outcome). Bear is 10th percentile, bull is 90th.",
+      "This is a baseline, not a prediction. It doesn't know earnings, news, or regime changes. Use it to size positions and set expectations.",
+    ],
+    evaluate: () => null,
+    formula: "P(t) = P(0) × exp((μ − σ²/2)t + σ√t × Z), where Z = standard normal inverse for each percentile.",
+  },
+};
+
+function teachMeSheet(key, contextValue) {
+  const g = STK_GLOSSARY[key];
+  if (!g) { toast("No lesson for " + key); return; }
+  const ev = g.evaluate ? g.evaluate(contextValue) : null;
+  const valueStr = contextValue != null
+    ? (key === "yield" || key === "margin" || key === "shortpct"
+        ? (contextValue * 100).toFixed(2) + "%"
+        : key === "ytd" || key === "volatility"
+            ? (+contextValue).toFixed(2) + "%"
+            : (+contextValue).toFixed(2))
+    : null;
+  openSheet(`
+    <h2 style="margin-bottom:4px">${esc(g.title)}</h2>
+    <p class="muted" style="font-size:13px;margin-bottom:14px;line-height:1.5">${esc(g.short)}</p>
+    ${contextValue != null ? `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${ev ? ev.color : 'var(--blue,#007AFF)'};border-radius:var(--r);padding:12px 14px;margin-bottom:14px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">For this ticker</div>
+        <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px">
+          <div style="font-size:22px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">${esc(valueStr)}</div>
+          ${ev ? `<div style="font-size:12px;color:${ev.color};font-weight:700">${esc(ev.tag)}</div>` : ""}
+        </div>
+      </div>
+    ` : ""}
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">How to think about it</div>
+      ${g.explain.map(line => `<div style="font-size:13px;color:var(--t1);line-height:1.55;margin-bottom:8px">${esc(line)}</div>`).join("")}
+    </div>
+    ${g.formula ? `
+      <div style="background:var(--bg-elev);border-radius:10px;padding:10px 12px;margin-bottom:10px">
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Formula</div>
+        <div style="font-size:12px;color:var(--t1);font-family:monospace;line-height:1.5">${esc(g.formula)}</div>
+      </div>
+    ` : ""}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Got it</button></div>
+  `);
+}
+
+// Browse the full glossary — useful entry point from Research Tools
+function learnLibrarySheet() {
+  const groups = [
+    { title: "Fundamentals", keys: ["pe", "peg", "margin", "de", "yield", "mcap"] },
+    { title: "Technical signals", keys: ["rsi", "beta", "sma", "volatility"] },
+    { title: "Ownership", keys: ["insiderhold", "inst", "shortpct"] },
+    { title: "Forward-looking", keys: ["forecast", "ytd"] },
+  ];
+  openSheet(`
+    <h2 style="margin-bottom:4px">🎓 Learn the basics</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Tap a topic to learn what it means and how to use it.</p>
+    ${groups.map(g => `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:10px 0 6px">${esc(g.title)}</div>
+      ${g.keys.map(k => {
+        const x = STK_GLOSSARY[k];
+        if (!x) return "";
+        return `
+          <div onclick="teachMeSheet(${jsAttr(k)}, null)" role="button" tabindex="0" style="background:var(--bg-elev);border-radius:10px;padding:10px 12px;margin-bottom:4px;cursor:pointer">
+            <div style="font-size:13px;color:var(--t1);font-weight:700">${esc(x.title)}</div>
+            <div style="font-size:11.5px;color:var(--t3);line-height:1.4;margin-top:2px">${esc(x.short)}</div>
+          </div>
+        `;
+      }).join("")}
+    `).join("")}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+
+// Tiny "?" pill that opens teachMeSheet for a metric. Use inside any
+// rendered card next to a number. The value is passed through to
+// contextualize the explanation.
+function learnPill(key, value) {
+  return `<button onclick="event.stopPropagation();teachMeSheet(${jsAttr(key)},${value != null ? `${value}` : 'null'})" style="background:transparent;border:0.5px solid var(--sep);color:var(--t3);border-radius:10px;width:18px;height:18px;font-size:10px;font-weight:700;cursor:pointer;padding:0;line-height:1;margin-left:4px;display:inline-flex;align-items:center;justify-content:center">?</button>`;
+}
+
+/* ---------- Forecast card ----------
+   The "past · present · future" visualization. Renders a single chart:
+     - Past: history line (~24 months)
+     - Present: vertical marker at "now"
+     - Future: 3 dashed lines (bull/base/bear) with shaded confidence cone
+   Plus a table of monthly checkpoints. */
+async function _stocksLoadForecast(tk, months) {
+  months = months || 24;
+  const btn = document.getElementById("stk-fc-btn");
+  const out = document.getElementById("stk-fc-result");
+  if (btn) { btn.textContent = "Forecasting…"; btn.disabled = true; }
+  if (out) out.innerHTML = `<div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:10px;text-align:center;color:var(--t3);font-size:13px">🔮 Running ${months}-month Monte Carlo using ${tk}'s 5y volatility & drift…</div>`;
+  try {
+    const r = await fetch(`/api/forecast/${encodeURIComponent(tk)}?months=${months}`);
+    const data = await r.json();
+    if (!r.ok || data.error) throw new Error(data.error || "HTTP " + r.status);
+    window._stkForecast = { ticker: tk, data, months };
+    out.innerHTML = _stocksRenderForecast(data);
+  } catch (e) {
+    out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;margin-bottom:10px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  } finally {
+    if (btn) { btn.textContent = "🔮 Forecast 2 years"; btn.disabled = false; }
+  }
+}
+
+function _stocksSwitchForecastHorizon(months) {
+  if (!window._stkForecast) return;
+  _stocksLoadForecast(window._stkForecast.ticker, months);
+}
+
+function _stocksRenderForecast(d) {
+  const history = d.history || [];
+  const bear = (d.forecast && d.forecast.bear) || [];
+  const base = (d.forecast && d.forecast.base) || [];
+  const bull = (d.forecast && d.forecast.bull) || [];
+  if (history.length < 2 || base.length < 2) return "";
+
+  // X axis spans history + forecast. Each point is a month-equivalent.
+  // History has ~25 points (24 months + present); forecast has months+1.
+  const histN = history.length;
+  const fcN = base.length;
+  const total = histN + fcN - 1;  // -1 because present overlaps
+  const W = 320, H = 150;
+  const allPrices = history.map(p => p.price)
+    .concat(bear.map(p => p.price), base.map(p => p.price), bull.map(p => p.price));
+  const min = Math.min(...allPrices), max = Math.max(...allPrices);
+  const range = (max - min) || 1;
+  const xAt = (i) => (i / (total - 1)) * W;
+  const yAt = (v) => H - ((v - min) / range) * H;
+
+  // History polyline
+  const histPts = history.map((p, i) => xAt(i).toFixed(1) + "," + yAt(p.price).toFixed(1)).join(" ");
+
+  // Forecast lines (start at present = last history index)
+  const start = histN - 1;
+  const forecastPts = (arr) => arr.map((p, i) => xAt(start + i).toFixed(1) + "," + yAt(p.price).toFixed(1)).join(" ");
+  const bearPts = forecastPts(bear);
+  const basePts = forecastPts(base);
+  const bullPts = forecastPts(bull);
+
+  // Confidence cone polygon: bull line forward, then bear line backward
+  const conePath = (() => {
+    const forward = bull.map((p, i) => xAt(start + i).toFixed(1) + "," + yAt(p.price).toFixed(1));
+    const backward = bear.slice().reverse().map((p, i) => xAt(start + (bear.length - 1 - i)).toFixed(1) + "," + yAt(p.price).toFixed(1));
+    return `M ${forward.join(" L ")} L ${backward.join(" L ")} Z`;
+  })();
+
+  // Present marker
+  const presentX = xAt(start);
+  const presentY = yAt(d.current_price);
+
+  // Bull/base/bear endpoint values
+  const endBear = bear[bear.length - 1].price;
+  const endBase = base[base.length - 1].price;
+  const endBull = bull[bull.length - 1].price;
+  const cur = +d.current_price;
+  const pct = (v) => cur > 0 ? ((v - cur) / cur * 100) : 0;
+  const annDrift = (+d.annual_drift_pct).toFixed(2);
+  const annVol   = (+d.annual_vol_pct).toFixed(2);
+  const drv = d.drivers || {};
+
+  // Find first chart row date — for X-axis labels
+  const firstDate = history[0] ? history[0].date : "";
+  const lastDate = history[history.length - 1] ? history[history.length - 1].date : "";
+
+  return `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px;flex-wrap:wrap">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Past · Present · Future</div>${learnPill("forecast")}
+        <div style="flex:1"></div>
+        <button onclick="_stocksSwitchForecastHorizon(12)" style="background:${d.horizon_months===12?'var(--blue,#007AFF)':'var(--bg-elev)'};color:${d.horizon_months===12?'#fff':'var(--t2)'};border:0.5px solid var(--sep);border-radius:8px;padding:3px 8px;font-size:10.5px;font-weight:600;cursor:pointer">1Y</button>
+        <button onclick="_stocksSwitchForecastHorizon(24)" style="background:${d.horizon_months===24?'var(--blue,#007AFF)':'var(--bg-elev)'};color:${d.horizon_months===24?'#fff':'var(--t2)'};border:0.5px solid var(--sep);border-radius:8px;padding:3px 8px;font-size:10.5px;font-weight:600;cursor:pointer">2Y</button>
+        <button onclick="_stocksSwitchForecastHorizon(60)" style="background:${d.horizon_months===60?'var(--blue,#007AFF)':'var(--bg-elev)'};color:${d.horizon_months===60?'#fff':'var(--t2)'};border:0.5px solid var(--sep);border-radius:8px;padding:3px 8px;font-size:10.5px;font-weight:600;cursor:pointer">5Y</button>
+      </div>
+      <svg viewBox="0 0 ${W} ${H+20}" preserveAspectRatio="none" style="width:100%;height:auto;display:block">
+        <!-- Confidence cone -->
+        <path d="${conePath}" fill="#34C759" opacity="0.10" stroke="none"/>
+        <!-- History (solid blue) -->
+        <polyline points="${histPts}" fill="none" stroke="var(--blue,#007AFF)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+        <!-- Forecasts (dashed) -->
+        <polyline points="${bearPts}" fill="none" stroke="var(--red,#FF3B30)" stroke-width="1.4" stroke-dasharray="4 3" stroke-linecap="round" opacity="0.9"/>
+        <polyline points="${basePts}" fill="none" stroke="var(--green,#34C759)" stroke-width="1.8" stroke-dasharray="4 3" stroke-linecap="round"/>
+        <polyline points="${bullPts}" fill="none" stroke="#9ACD32" stroke-width="1.4" stroke-dasharray="4 3" stroke-linecap="round" opacity="0.9"/>
+        <!-- Present marker line -->
+        <line x1="${presentX.toFixed(1)}" y1="0" x2="${presentX.toFixed(1)}" y2="${H}" stroke="var(--t3)" stroke-width="1" stroke-dasharray="2 3" opacity="0.5"/>
+        <circle cx="${presentX.toFixed(1)}" cy="${presentY.toFixed(1)}" r="3.5" fill="var(--blue,#007AFF)" stroke="var(--bg)" stroke-width="2"/>
+        <!-- Date labels -->
+        <text x="0" y="${H+14}" font-size="9" fill="var(--t3)" text-anchor="start">${esc(firstDate)}</text>
+        <text x="${presentX.toFixed(0)}" y="${H+14}" font-size="9" fill="var(--blue,#007AFF)" text-anchor="middle" font-weight="700">now</text>
+        <text x="${W}" y="${H+14}" font-size="9" fill="var(--t3)" text-anchor="end">+${d.horizon_months}mo</text>
+      </svg>
+
+      <!-- Bear / Base / Bull endpoints -->
+      <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:14px">
+        <div style="background:rgba(255,59,48,0.08);border:0.5px solid rgba(255,59,48,0.30);border-radius:10px;padding:9px 11px">
+          <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
+            <span style="width:8px;height:8px;border-radius:2px;background:var(--red,#FF3B30)"></span>
+            <span style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:700">Bear (10%)</span>
+          </div>
+          <div style="font-size:15px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">$${endBear.toFixed(2)}</div>
+          <div style="font-size:10.5px;color:var(--red,#FF3B30);font-variant-numeric:tabular-nums">${pct(endBear)>=0?"+":""}${pct(endBear).toFixed(1)}%</div>
+        </div>
+        <div style="background:rgba(52,199,89,0.10);border:0.5px solid rgba(52,199,89,0.35);border-radius:10px;padding:9px 11px">
+          <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
+            <span style="width:8px;height:8px;border-radius:2px;background:var(--green,#34C759)"></span>
+            <span style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:700">Base (50%)</span>
+          </div>
+          <div style="font-size:15px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">$${endBase.toFixed(2)}</div>
+          <div style="font-size:10.5px;color:var(--green,#34C759);font-variant-numeric:tabular-nums">${pct(endBase)>=0?"+":""}${pct(endBase).toFixed(1)}%</div>
+        </div>
+        <div style="background:rgba(154,205,50,0.10);border:0.5px solid rgba(154,205,50,0.35);border-radius:10px;padding:9px 11px">
+          <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
+            <span style="width:8px;height:8px;border-radius:2px;background:#9ACD32"></span>
+            <span style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:700">Bull (90%)</span>
+          </div>
+          <div style="font-size:15px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">$${endBull.toFixed(2)}</div>
+          <div style="font-size:10.5px;color:#9ACD32;font-variant-numeric:tabular-nums">${pct(endBull)>=0?"+":""}${pct(endBull).toFixed(1)}%</div>
+        </div>
+      </div>
+
+      <!-- Drivers -->
+      <div style="margin-top:12px;background:var(--bg-elev);border-radius:10px;padding:10px 12px">
+        <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">What's driving the forecast</div>
+        <div style="font-size:11.5px;color:var(--t2);line-height:1.5">
+          Trend is <b style="color:var(--t1)">${esc(drv.trend || "—")}</b> · Volatility is <b style="color:var(--t1)">${esc(drv.volatility || "—")}</b>. The model assumes the next ${d.horizon_months} months follow a similar drift (${annDrift}%/yr average) and volatility (${annVol}%/yr swings) to the past five years. ${learnPill("forecast")} ${learnPill("volatility", +annVol)}
+        </div>
+      </div>
+
+      <div style="font-size:10px;color:var(--t3);margin-top:10px;line-height:1.4;font-style:italic">${esc(d.method || "GBM projection")}. Doesn't know about earnings, news, or regime changes. Use to size positions and frame expectations, not to time exact entries.</div>
+    </div>
+  `;
+}
+
+/* ---------- Cornileus advisor: full financial picture review ----------
+   The big one. Reads the user's entire financial state and asks Cornileus
+   to be the financial advisor — explaining where they stand and what to
+   do this month, this quarter, this year. */
+async function cornileusAdvisorSheet() {
+  const last = DB.stocks && DB.stocks.lastAdvisorReview;
+  const today = new Date().toISOString().slice(0, 10);
+  const fresh = last && last.date === today && last.parsed;
+  openSheet(`
+    <h2 style="margin-bottom:4px">✨ Cornileus as your advisor</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Reads everything — net worth, income, debts, holdings, goals — and tells you exactly what to do next.</p>
+    <div id="adv-result">${fresh ? _stocksRenderAdvisor(last.parsed) : `<div style="text-align:center;padding:30px 14px;color:var(--t3);font-size:13px">📊 Cornileus is reading your complete financial picture…</div>`}</div>
+    <div class="actions">
+      <button class="btn secondary" onclick="DB.stocks.lastAdvisorReview=null;cornileusAdvisorSheet()">↻ Regenerate</button>
+      <button class="btn" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+  if (fresh) return;
+  await _stocksRunAdvisor();
+}
+
+async function _stocksRunAdvisor() {
+  const out = document.getElementById("adv-result");
+  if (!out) return;
+  try {
+    const comp = (typeof wealthComposition === "function") ? wealthComposition() : { cash: 0, investments: 0, realAssets: 0, debts: 0, total: 0 };
+    const profile = DB.profile || {};
+    const retire = DB.retirement || {};
+    const goals = (DB.goals || []).slice(0, 6).map(g => `${g.name}${g.target?` (target ${g.target})`:""}`).join("; ");
+    // Monthly income & spend from current month
+    const monthKey = (typeof todayKey === "function" ? todayKey() : new Date().toISOString().slice(0,10)).slice(0, 7);
+    const monthTx = (DB.spend || []).filter(t => t.date && t.date.startsWith(monthKey));
+    const income   = monthTx.filter(t => +t.amount < 0).reduce((s, t) => s + Math.abs(+t.amount || 0), 0);
+    const spending = monthTx.filter(t => +t.amount > 0).reduce((s, t) => s + (+t.amount || 0), 0);
+    const netFlow = income - spending;
+    const holdings = Object.entries((DB.stocks && DB.stocks.holdings) || {}).slice(0, 10);
+    const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+    const holdText = holdings.map(([tk, h]) => {
+      const q = cache[tk]; const price = q && !q.error && q.price ? +q.price : (+h.cost || 0);
+      return `${tk}: ${h.shares} sh, cost $${(+h.cost||0).toFixed(0)}, now $${price.toFixed(0)}`;
+    }).join("; ");
+    const age = profile.age || 30;
+    const userMsg = `Be my financial advisor. Read my full picture and tell me where I stand and what to do.
+
+NET WORTH: $${comp.total.toFixed(0)}
+- Cash: $${comp.cash.toFixed(0)}
+- Investments: $${comp.investments.toFixed(0)}
+- Real assets: $${comp.realAssets.toFixed(0)}
+- Debts: $${comp.debts.toFixed(0)}
+
+THIS MONTH:
+- Income: $${income.toFixed(0)}
+- Spending: $${spending.toFixed(0)}
+- Net cashflow: ${netFlow >= 0 ? "+" : ""}$${netFlow.toFixed(0)}
+
+PROFILE:
+- Age: ${age}
+- Target retirement age: ${retire.targetAge || 65}
+- Monthly investing target: $${retire.monthlyContribution || profile.monthlySavingsTarget || 0}
+- Expected return assumption: ${retire.annualReturn || 7}%/yr
+
+GOALS: ${goals || "(none entered)"}
+HOLDINGS (top 10): ${holdText || "(none)"}
+
+Reply with this exact structure (no preamble, no markdown headers):
+WHERE-YOU-STAND: <2-3 sentence honest assessment — strengths and biggest single weakness>
+GRADE: <Excellent | Strong | Solid | OK | Weak | Critical>
+THIS-MONTH: <2-3 specific actions for this calendar month>
+THIS-QUARTER: <1-2 actions for the next 90 days>
+THIS-YEAR: <1-2 actions for the rest of this year>
+LONG-TERM: <1-sentence direction for the next 5+ years>
+BIGGEST-RISK: <single sentence: the most concerning thing you see>
+BIGGEST-OPPORTUNITY: <single sentence: the biggest leverage point you'd recommend pulling>`;
+    const ai = await aiApi({
+      model: DB.settings.anthropicModel || "claude-haiku-4-5-20251001",
+      max_tokens: 900,
+      temperature: 0.4,
+      system: "You are Cornileus, a candid AI financial advisor in the spirit of a CFA-style fiduciary. You read the user's full financial picture and give specific, time-bound action steps. Be direct, no hedging, no jargon, no disclaimers. Use concrete dollar amounts. Don't recommend specific tickers unless already in their portfolio; you may say 'add a broad index fund'. Never invent numbers — only reference what's in the prompt.",
+      messages: [{ role: "user", content: userMsg }],
+    });
+    const text = (ai.content && ai.content[0] && ai.content[0].text) || "";
+    if (!text) throw new Error("Empty AI response");
+    const parse = (key) => {
+      const m = text.match(new RegExp("^" + key + ":\\s*(.*?)$", "im"));
+      return m ? m[1].trim() : "";
+    };
+    const parsed = {
+      stand: parse("WHERE-YOU-STAND"),
+      grade: parse("GRADE") || "Solid",
+      month: parse("THIS-MONTH"),
+      quarter: parse("THIS-QUARTER"),
+      year: parse("THIS-YEAR"),
+      longterm: parse("LONG-TERM"),
+      risk: parse("BIGGEST-RISK"),
+      opp: parse("BIGGEST-OPPORTUNITY"),
+      stats: { comp, income, spending, netFlow, age },
+    };
+    DB.stocks.lastAdvisorReview = { date: new Date().toISOString().slice(0, 10), parsed };
+    save();
+    const out2 = document.getElementById("adv-result");
+    if (out2) out2.innerHTML = _stocksRenderAdvisor(parsed);
+  } catch (e) {
+    const out2 = document.getElementById("adv-result");
+    if (out2) out2.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">Advisor review failed: ${esc(e.message)}</div>`;
+  }
+}
+
+function _stocksRenderAdvisor(p) {
+  if (!p) return "";
+  const g = (p.grade || "Solid").trim();
+  const gradeColor = /excellent|strong/i.test(g) ? "var(--green,#34C759)"
+                   : /solid|ok/i.test(g)         ? "#9ACD32"
+                   : /weak/i.test(g)              ? "var(--orange,#FF9500)"
+                   :                                "var(--red,#FF3B30)";
+  const stats = p.stats || {};
+  const comp = stats.comp || {};
+  return `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${gradeColor};border-radius:var(--r);padding:16px;margin-bottom:10px">
+      <div style="display:flex;align-items:center;gap:12px;margin-bottom:14px">
+        <div style="width:62px;height:62px;border-radius:50%;background:var(--bg-elev);display:flex;align-items:center;justify-content:center;border:2px solid ${gradeColor};flex-shrink:0">
+          <div style="font-size:12px;font-weight:800;color:${gradeColor};text-transform:uppercase;letter-spacing:0.04em;text-align:center;padding:0 4px">${esc(g)}</div>
+        </div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Where you stand</div>
+          <div style="font-size:13.5px;color:var(--t1);line-height:1.45;margin-top:4px">${esc(p.stand || "—")}</div>
+        </div>
+      </div>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-bottom:12px">
+        <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600">Net worth</div><div style="font-size:14px;font-weight:700;color:var(--t1)" data-priv="amount">${typeof fmt$0==='function'?fmt$0(comp.total||0):'$' + (comp.total||0).toFixed(0)}</div></div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px"><div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600">Net flow / mo</div><div style="font-size:14px;font-weight:700;color:${(stats.netFlow||0)>=0?'var(--green,#34C759)':'var(--red,#FF3B30)'}" data-priv="amount">${(stats.netFlow||0)>=0?'+':'-'}$${Math.abs(stats.netFlow||0).toFixed(0)}</div></div>
+      </div>
+
+      ${p.month ? `
+        <div style="background:rgba(0,122,255,0.07);border:0.5px solid rgba(0,122,255,0.30);border-radius:10px;padding:10px 12px;margin-bottom:6px">
+          <div style="font-size:10px;color:var(--blue,#007AFF);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">📅 This month</div>
+          <div style="font-size:12.5px;color:var(--t1);line-height:1.5">${esc(p.month)}</div>
+        </div>
+      ` : ""}
+      ${p.quarter ? `
+        <div style="background:var(--bg-elev);border-radius:10px;padding:10px 12px;margin-bottom:6px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">📊 This quarter (90 days)</div>
+          <div style="font-size:12.5px;color:var(--t1);line-height:1.5">${esc(p.quarter)}</div>
+        </div>
+      ` : ""}
+      ${p.year ? `
+        <div style="background:var(--bg-elev);border-radius:10px;padding:10px 12px;margin-bottom:6px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">🗓️ This year</div>
+          <div style="font-size:12.5px;color:var(--t1);line-height:1.5">${esc(p.year)}</div>
+        </div>
+      ` : ""}
+      ${p.longterm ? `
+        <div style="background:var(--bg-elev);border-radius:10px;padding:10px 12px;margin-bottom:10px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">🌅 Long-term direction</div>
+          <div style="font-size:12.5px;color:var(--t1);line-height:1.5">${esc(p.longterm)}</div>
+        </div>
+      ` : ""}
+      ${p.risk ? `
+        <div style="background:rgba(255,59,48,0.06);border-left:3px solid var(--red,#FF3B30);border-radius:8px;padding:9px 11px;margin-bottom:6px">
+          <div style="font-size:10px;color:var(--red,#FF3B30);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">⚠️ Biggest risk</div>
+          <div style="font-size:12px;color:var(--t1);line-height:1.45">${esc(p.risk)}</div>
+        </div>
+      ` : ""}
+      ${p.opp ? `
+        <div style="background:rgba(52,199,89,0.06);border-left:3px solid var(--green,#34C759);border-radius:8px;padding:9px 11px">
+          <div style="font-size:10px;color:var(--green,#34C759);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">🚀 Biggest opportunity</div>
+          <div style="font-size:12px;color:var(--t1);line-height:1.45">${esc(p.opp)}</div>
+        </div>
+      ` : ""}
+      <div style="font-size:10px;color:var(--t3);margin-top:12px;line-height:1.4;font-style:italic">AI synthesis based on your accounts, holdings, goals, and cashflow. Refreshes once per day. Not professional financial advice.</div>
+    </div>
+  `;
+}
+
+/* ---------- Cornileus plan builder ----------
+   Goal-based: "I want $X by age Y." We project growth with compound
+   interest math and AI explains the path. */
+function planBuilderSheet() {
+  const profile = DB.profile || {};
+  const retire = DB.retirement || {};
+  const currentAge = +profile.age || 30;
+  const investments = (typeof wealthComposition === "function") ? wealthComposition().investments : 0;
+  openSheet(`
+    <h2 style="margin-bottom:4px">📐 Build a plan</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Pick a goal. Cornileus computes the path, shows the chart, explains why.</p>
+    <label>Goal amount ($)</label>
+    <input id="plan-goal" type="number" inputmode="decimal" value="1000000" min="1000" oninput="_stocksPlanRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>By age</label>
+    <input id="plan-age" type="number" value="${retire.targetAge || 65}" min="${currentAge + 1}" max="100" oninput="_stocksPlanRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Currently invested ($)</label>
+    <input id="plan-current" type="number" inputmode="decimal" value="${Math.round(investments)}" min="0" oninput="_stocksPlanRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Monthly contribution ($)</label>
+    <input id="plan-monthly" type="number" inputmode="decimal" value="${retire.monthlyContribution || 1000}" min="0" oninput="_stocksPlanRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Annual return assumption (%)</label>
+    <input id="plan-return" type="number" inputmode="decimal" value="${retire.annualReturn || 7}" min="-10" max="30" oninput="_stocksPlanRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box" />
+    <div id="plan-result"></div>
+    <div class="actions">
+      <button class="btn secondary" onclick="_stocksPlanAiCommentary()">✨ Ask Cornileus to explain it</button>
+      <button class="btn" onclick="closeSheet()">Close</button>
+    </div>
+  `);
+  _stocksPlanRecompute();
+}
+
+function _stocksPlanRecompute() {
+  const goal = parseFloat(document.getElementById("plan-goal").value) || 0;
+  const targetAge = parseInt(document.getElementById("plan-age").value, 10);
+  const startBal = parseFloat(document.getElementById("plan-current").value) || 0;
+  const monthly = parseFloat(document.getElementById("plan-monthly").value) || 0;
+  const annual = parseFloat(document.getElementById("plan-return").value) || 7;
+  const currentAge = (DB.profile && +DB.profile.age) || 30;
+  const out = document.getElementById("plan-result");
+  if (!out) return;
+  const years = targetAge - currentAge;
+  if (years <= 0) { out.innerHTML = `<div style="color:var(--red);font-size:13px;text-align:center;padding:14px">Target age must be greater than your current age.</div>`; return; }
+
+  // Project balance month by month
+  const monthlyR = Math.pow(1 + annual/100, 1/12) - 1;
+  const points = [];
+  let bal = startBal;
+  for (let m = 0; m <= years * 12; m++) {
+    points.push({ month: m, age: currentAge + m/12, balance: bal });
+    bal = bal * (1 + monthlyR) + monthly;
+  }
+  const final = points[points.length - 1].balance;
+  const hitsGoal = final >= goal;
+
+  // What monthly contribution would hit the goal exactly?
+  let neededMonthly = null;
+  if (annual !== 0) {
+    // FV formula: FV = PV*(1+r)^n + PMT*[((1+r)^n - 1)/r]
+    const n = years * 12;
+    const r = monthlyR;
+    const compounded = startBal * Math.pow(1 + r, n);
+    const remaining = goal - compounded;
+    const annuityFactor = (Math.pow(1 + r, n) - 1) / r;
+    neededMonthly = annuityFactor > 0 ? Math.max(0, remaining / annuityFactor) : null;
+  }
+
+  // Find first month where we cross the goal
+  let crossMonth = null;
+  for (const p of points) if (p.balance >= goal) { crossMonth = p.month; break; }
+  const crossAge = crossMonth != null ? currentAge + crossMonth/12 : null;
+
+  // SVG chart: balance line + goal marker
+  const W = 320, H = 160;
+  const max = Math.max(goal, final) * 1.05;
+  const min = 0;
+  const xAt = (m) => (m / (years * 12)) * W;
+  const yAt = (v) => H - ((v - min) / (max - min || 1)) * H;
+  const pts = points.filter((_, i) => i % 6 === 0).map(p => xAt(p.month).toFixed(1) + "," + yAt(p.balance).toFixed(1)).join(" ");
+  const goalY = yAt(goal);
+  // Milestones (10k, 25k, 50k, 100k, 250k, 500k, 1M)
+  const milestones = [10000, 25000, 50000, 100000, 250000, 500000, 1000000].filter(m => m <= max && m >= startBal);
+  const milestoneTicks = milestones.map(m => {
+    const cross = points.find(p => p.balance >= m);
+    if (!cross || cross.balance > max) return "";
+    const x = xAt(cross.month);
+    return `<line x1="${x}" y1="0" x2="${x}" y2="${H}" stroke="var(--t3)" stroke-width="0.5" stroke-dasharray="1 3" opacity="0.5"/><text x="${x}" y="${H - 2}" font-size="9" fill="var(--t3)" text-anchor="middle">${m >= 1e6 ? '$' + (m/1e6) + 'M' : '$' + (m/1000) + 'K'}</text>`;
+  }).join("");
+
+  const formatM = (v) => v >= 1e6 ? '$' + (v/1e6).toFixed(2) + 'M' : v >= 1e3 ? '$' + (v/1e3).toFixed(0) + 'K' : '$' + v.toFixed(0);
+
+  out.innerHTML = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${hitsGoal ? 'var(--green,#34C759)' : 'var(--orange,#FF9500)'};border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">At age ${targetAge}, projected</div>
+      <div style="font-size:28px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-0.02em" data-priv="amount">${formatM(final)}</div>
+      <div style="font-size:13px;color:${hitsGoal?'var(--green,#34C759)':'var(--orange,#FF9500)'};font-weight:700;margin-top:2px">
+        ${hitsGoal ? `🎯 Crosses goal at age ${crossAge ? crossAge.toFixed(1) : "—"} · ${formatM(final - goal)} extra` : `📉 ${formatM(goal - final)} short of goal`}
+      </div>
+
+      <svg viewBox="0 0 ${W} ${H+18}" style="width:100%;height:auto;display:block;margin-top:12px">
+        <defs><linearGradient id="plan-grad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${hitsGoal?'#34C759':'#FF9500'}" stop-opacity="0.30"/>
+          <stop offset="100%" stop-color="${hitsGoal?'#34C759':'#FF9500'}" stop-opacity="0.02"/>
+        </linearGradient></defs>
+        ${milestoneTicks}
+        <path d="M 0,${H} L ${pts.split(' ').join(' L ')} L ${W},${H} Z" fill="url(#plan-grad)"/>
+        <polyline points="${pts}" fill="none" stroke="${hitsGoal?'var(--green,#34C759)':'var(--orange,#FF9500)'}" stroke-width="2.2"/>
+        <line x1="0" y1="${goalY}" x2="${W}" y2="${goalY}" stroke="var(--blue,#007AFF)" stroke-width="1.2" stroke-dasharray="4 3"/>
+        <text x="${W - 4}" y="${goalY - 4}" font-size="10" fill="var(--blue,#007AFF)" text-anchor="end" font-weight="700">goal ${formatM(goal)}</text>
+        <text x="0" y="${H+14}" font-size="9" fill="var(--t3)">age ${currentAge}</text>
+        <text x="${W}" y="${H+14}" font-size="9" fill="var(--t3)" text-anchor="end">age ${targetAge}</text>
+      </svg>
+
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:14px">
+        <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Total contributed</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${formatM(startBal + monthly * 12 * years)}</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Compound growth</div>
+          <div style="font-size:14px;font-weight:700;color:var(--green,#34C759);font-variant-numeric:tabular-nums">${formatM(final - (startBal + monthly * 12 * years))}</div>
+        </div>
+        ${neededMonthly != null && !hitsGoal ? `
+          <div style="grid-column:1/-1;background:rgba(0,122,255,0.08);border:0.5px solid rgba(0,122,255,0.30);border-radius:8px;padding:8px 11px">
+            <div style="font-size:10px;color:var(--blue,#007AFF);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;margin-bottom:2px">To hit the goal exactly</div>
+            <div style="font-size:13px;font-weight:600;color:var(--t1);line-height:1.4">Increase contributions to <b style="color:var(--blue,#007AFF)" data-priv="amount">$${neededMonthly.toFixed(0)}/mo</b> (${neededMonthly > monthly ? "+" : ""}$${(neededMonthly - monthly).toFixed(0)}/mo)</div>
+          </div>
+        ` : ""}
+      </div>
+    </div>
+    <div id="plan-ai" style="margin-top:6px"></div>
+  `;
+}
+
+async function _stocksPlanAiCommentary() {
+  const goal = parseFloat(document.getElementById("plan-goal").value) || 0;
+  const targetAge = parseInt(document.getElementById("plan-age").value, 10);
+  const startBal = parseFloat(document.getElementById("plan-current").value) || 0;
+  const monthly = parseFloat(document.getElementById("plan-monthly").value) || 0;
+  const annual = parseFloat(document.getElementById("plan-return").value) || 7;
+  const currentAge = (DB.profile && +DB.profile.age) || 30;
+  const years = targetAge - currentAge;
+  const ai = document.getElementById("plan-ai");
+  if (!ai) return;
+  ai.innerHTML = `<div style="background:var(--card);border-radius:var(--r);padding:14px;text-align:center;color:var(--t3);font-size:13px">✨ Cornileus is explaining your plan…</div>`;
+  try {
+    const monthlyR = Math.pow(1 + annual/100, 1/12) - 1;
+    let bal = startBal;
+    for (let m = 0; m < years * 12; m++) bal = bal * (1 + monthlyR) + monthly;
+    const projected = bal;
+    const userMsg = `Explain this savings plan to me in plain English.
+
+Current age: ${currentAge}. Target age: ${targetAge} (${years} years from now).
+Currently invested: $${startBal.toFixed(0)}.
+Monthly contribution: $${monthly.toFixed(0)} ($${(monthly*12).toFixed(0)}/yr).
+Annual return assumption: ${annual}%.
+Goal: $${goal.toFixed(0)}.
+Projected at target age: $${projected.toFixed(0)}.
+
+Reply with this exact structure (no preamble, no markdown headers):
+ASSESSMENT: <2 sentences on whether this plan is realistic>
+WHY: <2 sentences explaining how compound returns make the math work>
+ONE-LEVER: <single sentence: the one thing they could change for the biggest impact>
+RISK: <single sentence: what could derail this plan>`;
+    const r = await aiApi({
+      model: DB.settings.anthropicModel || "claude-haiku-4-5-20251001",
+      max_tokens: 400,
+      temperature: 0.4,
+      system: "You are Cornileus, a candid AI financial advisor. Explain savings plans to a retail user in clear, encouraging-but-honest language. No jargon, no disclaimers. Use the actual numbers in the prompt.",
+      messages: [{ role: "user", content: userMsg }],
+    });
+    const text = (r.content && r.content[0] && r.content[0].text) || "";
+    const parse = (key) => {
+      const m = text.match(new RegExp("^" + key + ":\\s*(.*?)$", "im"));
+      return m ? m[1].trim() : "";
+    };
+    ai.innerHTML = `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid #7c3aed;border-radius:var(--r);padding:14px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">✨ Cornileus' take</div>
+        ${parse("ASSESSMENT") ? `<div style="font-size:13px;color:var(--t1);line-height:1.5;margin-bottom:8px"><b>Assessment.</b> ${esc(parse("ASSESSMENT"))}</div>` : ""}
+        ${parse("WHY") ? `<div style="font-size:13px;color:var(--t1);line-height:1.5;margin-bottom:8px"><b>Why this works.</b> ${esc(parse("WHY"))}</div>` : ""}
+        ${parse("ONE-LEVER") ? `<div style="background:var(--bg-elev);border-radius:8px;padding:8px 11px;margin-bottom:6px"><div style="font-size:10px;color:var(--blue,#007AFF);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:2px">🎯 One lever</div><div style="font-size:12px;color:var(--t1);line-height:1.45">${esc(parse("ONE-LEVER"))}</div></div>` : ""}
+        ${parse("RISK") ? `<div style="background:var(--bg-elev);border-radius:8px;padding:8px 11px"><div style="font-size:10px;color:var(--orange,#FF9500);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:2px">⚠️ Risk</div><div style="font-size:12px;color:var(--t1);line-height:1.45">${esc(parse("RISK"))}</div></div>` : ""}
+      </div>
+    `;
+  } catch (e) {
+    ai.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  }
 }
 
 /* ---------- Cornileus weekly digest ----------
@@ -12064,6 +12896,7 @@ function _stocksRenderDetail(q) {
         label: "vs 50-day SMA",
         value: `${above ? "↑" : "↓"} ${above ? "above" : "below"} $${(+q.sma50_last).toFixed(2)}`,
         color: above ? "var(--green,#34C759)" : "var(--red,#FF3B30)",
+        learnKey: "sma", learnVal: null,
       });
     }
     if (q.sma200_last != null) {
@@ -12072,26 +12905,27 @@ function _stocksRenderDetail(q) {
         label: "vs 200-day SMA",
         value: `${above ? "↑" : "↓"} ${above ? "above" : "below"} $${(+q.sma200_last).toFixed(2)}`,
         color: above ? "var(--green,#34C759)" : "var(--red,#FF3B30)",
+        learnKey: "sma", learnVal: null,
       });
     }
     if (q.rsi14 != null) {
       const v = +q.rsi14;
       const lbl = v >= 70 ? "Overbought" : v <= 30 ? "Oversold" : "Neutral";
       const col = v >= 70 ? "var(--red,#FF3B30)" : v <= 30 ? "var(--green,#34C759)" : "var(--t2)";
-      signals.push({ label: "RSI(14)", value: `${v.toFixed(1)} · ${lbl}`, color: col });
+      signals.push({ label: "RSI(14)", value: `${v.toFixed(1)} · ${lbl}`, color: col, learnKey: "rsi", learnVal: v });
     }
     if (q.beta != null) {
       const v = +q.beta;
       const lbl = v > 1.2 ? "More volatile than market" : v < 0.8 ? "Less volatile than market" : "Market-like";
-      signals.push({ label: "Beta", value: `${v.toFixed(2)} · ${lbl}`, color: "var(--t2)" });
+      signals.push({ label: "Beta", value: `${v.toFixed(2)} · ${lbl}`, color: "var(--t2)", learnKey: "beta", learnVal: v });
     }
     if (!signals.length) return "";
     return `
       <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
         <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Technical signals</div>
         ${signals.map(s => `
-          <div style="display:flex;justify-content:space-between;padding:5px 0;font-size:12.5px;border-bottom:0.5px solid var(--sep)">
-            <span style="color:var(--t3)">${esc(s.label)}</span>
+          <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 0;font-size:12.5px;border-bottom:0.5px solid var(--sep)">
+            <span style="color:var(--t3)">${esc(s.label)} ${s.learnKey ? learnPill(s.learnKey, s.learnVal) : ''}</span>
             <span style="color:${s.color};font-weight:600">${esc(s.value)}</span>
           </div>
         `).join("")}
@@ -12135,30 +12969,30 @@ function _stocksRenderDetail(q) {
 
   // ----- Fundamentals expanded -----
   const fundStats = [
-    { label: "Market cap",      value: _stkFmtNum(q.market_cap) },
-    { label: "Trailing P/E",    value: q.trailing_pe != null ? (+q.trailing_pe).toFixed(2) : "—" },
-    { label: "Forward P/E",     value: q.forward_pe != null ? (+q.forward_pe).toFixed(2) : "—" },
-    { label: "PEG ratio",       value: q.peg_ratio != null ? (+q.peg_ratio).toFixed(2) : "—" },
+    { label: "Market cap",      value: _stkFmtNum(q.market_cap), key: "mcap",         val: q.market_cap },
+    { label: "Trailing P/E",    value: q.trailing_pe != null ? (+q.trailing_pe).toFixed(2) : "—", key: "pe", val: q.trailing_pe },
+    { label: "Forward P/E",     value: q.forward_pe != null ? (+q.forward_pe).toFixed(2) : "—",   key: "pe", val: q.forward_pe },
+    { label: "PEG ratio",       value: q.peg_ratio != null ? (+q.peg_ratio).toFixed(2) : "—",     key: "peg", val: q.peg_ratio },
     { label: "EPS (trailing)",  value: q.eps_trailing != null ? "$" + (+q.eps_trailing).toFixed(2) : "—" },
     { label: "EPS (forward)",   value: q.eps_forward != null ? "$" + (+q.eps_forward).toFixed(2) : "—" },
     { label: "Revenue growth",  value: _stkFmtPct(q.revenue_growth) },
     { label: "Earnings growth", value: _stkFmtPct(q.earnings_growth) },
-    { label: "Profit margin",   value: _stkFmtPct(q.profit_margin) },
-    { label: "Debt / equity",   value: q.debt_to_equity != null ? (+q.debt_to_equity).toFixed(2) : "—" },
-    { label: "Dividend yield",  value: _stkFmtPct(q.dividend_yield) },
+    { label: "Profit margin",   value: _stkFmtPct(q.profit_margin), key: "margin",    val: q.profit_margin },
+    { label: "Debt / equity",   value: q.debt_to_equity != null ? (+q.debt_to_equity).toFixed(2) : "—", key: "de", val: q.debt_to_equity },
+    { label: "Dividend yield",  value: _stkFmtPct(q.dividend_yield), key: "yield",    val: q.dividend_yield },
     { label: "Avg volume",      value: _stkFmtNum(q.average_volume) },
-    { label: "Held by inst.",   value: _stkFmtPct(q.held_institutions) },
-    { label: "Held insiders",   value: _stkFmtPct(q.held_insiders) },
-    { label: "Short % float",   value: _stkFmtPct(q.short_pct_float) },
+    { label: "Held by inst.",   value: _stkFmtPct(q.held_institutions), key: "inst", val: q.held_institutions },
+    { label: "Held insiders",   value: _stkFmtPct(q.held_insiders),   key: "insiderhold", val: q.held_insiders },
+    { label: "Short % float",   value: _stkFmtPct(q.short_pct_float), key: "shortpct", val: q.short_pct_float },
     { label: "5-year return",   value: _stkFmtPct(q.return_5y) },
   ];
   const fundGrid = `
     <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
-      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:10px">Fundamentals</div>
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:10px">Fundamentals <span style="font-weight:400;text-transform:none;letter-spacing:0;color:var(--t3);font-size:10px">— tap ? to learn</span></div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
         ${fundStats.map(s => `
-          <div style="background:var(--bg-elev);border-radius:8px;padding:7px 10px">
-            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;margin-bottom:1px">${esc(s.label)}</div>
+          <div style="background:var(--bg-elev);border-radius:8px;padding:7px 10px;${s.key?'cursor:pointer':''}" ${s.key?`onclick="teachMeSheet(${jsAttr(s.key)}, ${s.val != null ? s.val : 'null'})" role="button" tabindex="0"`:""}>
+            <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600;margin-bottom:1px;display:flex;align-items:center;gap:3px">${esc(s.label)}${s.key?`<span style="display:inline-flex;align-items:center;justify-content:center;background:transparent;color:var(--t3);font-size:9px;font-weight:700;width:14px;height:14px;border-radius:50%;border:0.5px solid var(--sep)">?</span>`:""}</div>
             <div style="font-size:13.5px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${esc(s.value)}</div>
           </div>
         `).join("")}
@@ -12255,6 +13089,8 @@ function _stocksRenderDetail(q) {
       <button onclick="_stocksRunAnalyze(${jsAttr(q.ticker)})" id="stk-analyze-btn" class="btn" style="width:100%;margin-bottom:6px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none">✨ Run full analysis (buy/hold/sell)</button>
       <button onclick="_stocksWhatIfSheet(${jsAttr(q.ticker)})" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">💸 What if I'd invested $1k…</button>
       <button onclick="_stocksDcaSheet(${jsAttr(q.ticker)})" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">📆 DCA simulator</button>
+      <button onclick="_stocksLoadForecast(${jsAttr(q.ticker)}, 24)" id="stk-fc-btn" class="btn" style="width:100%;margin-bottom:6px;font-size:13px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none">🔮 Forecast 2 years</button>
+      <div id="stk-fc-result"></div>
       <button onclick="_stocksAddHoldingSheet(${jsAttr(q.ticker)})" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">💼 I own this — track P&amp;L</button>
       <button onclick="_stocksLoadHolders(${jsAttr(q.ticker)})" id="stk-holders-btn" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">🏛️ Show holders + insiders</button>
       <div id="stk-holders-result"></div>
