@@ -17760,7 +17760,51 @@ function _cornileusObservations() {
       });
     }
   } catch {}
-  return out.slice(0, 4);
+  // 6) Portfolio movement — big up/down day across holdings
+  try {
+    const holdings = (DB.stocks && DB.stocks.holdings) || {};
+    const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+    let mkt = 0, dailyChg = 0;
+    for (const [tk, h] of Object.entries(holdings)) {
+      const q = cache[tk];
+      if (!q || q.error || q.price == null || +h.shares <= 0) continue;
+      mkt += (+q.price) * (+h.shares);
+      if (q.change != null) dailyChg += (+q.change) * (+h.shares);
+    }
+    if (mkt > 0 && Math.abs(dailyChg) > 50) {
+      const prevMkt = mkt - dailyChg;
+      const dayPct = prevMkt > 0 ? (dailyChg / prevMkt) * 100 : 0;
+      const dir = dailyChg >= 0 ? "up" : "down";
+      out.push({
+        icon: dailyChg >= 0 ? "📈" : "📉",
+        label: `Portfolio ${dir} $${Math.abs(dailyChg).toFixed(0)} today (${dayPct >= 0 ? "+" : ""}${dayPct.toFixed(1)}%)`,
+        seedPrompt: `My portfolio is ${dir} $${Math.abs(dailyChg).toFixed(0)} (${dayPct.toFixed(1)}%) today. What's likely driving this and what should I do — if anything?`,
+      });
+    }
+  } catch {}
+  // 7) Year-end tax-loss window with actual losses
+  try {
+    const month = new Date().getMonth();
+    if (month >= 10) {  // Nov-Dec
+      const holdings = (DB.stocks && DB.stocks.holdings) || {};
+      const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+      let totalLoss = 0; let count = 0;
+      for (const [tk, h] of Object.entries(holdings)) {
+        const q = cache[tk];
+        const price = q && !q.error && q.price != null ? +q.price : (+h.cost || 0);
+        const pl = (price - (+h.cost || 0)) * (+h.shares || 0);
+        if (pl < -50) { totalLoss += pl; count++; }
+      }
+      if (count >= 1 && Math.abs(totalLoss) > 100) {
+        out.push({
+          icon: "📉",
+          label: `Year-end: $${Math.abs(totalLoss).toFixed(0)} of harvestable losses across ${count} position${count===1?"":"s"}`,
+          seedPrompt: `I have about $${Math.abs(totalLoss).toFixed(0)} of unrealized losses across ${count} of my positions, and it's near year-end. Should I tax-loss harvest? Walk me through what to sell and what the trade-offs are.`,
+        });
+      }
+    }
+  } catch {}
+  return out.slice(0, 5);
 }
 
 // Refresh the small numbered badge on the Cornileus FAB based on current
