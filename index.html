@@ -12745,6 +12745,92 @@ function debtSettingsSheet() { showTab("settings"); }
 function yearReviewSheet() {
   const r = yearReview();
   const list = (arr) => arr.length ? arr.slice(0,8).map(x => `<div style="display:flex;justify-content:space-between;font-size:13px;margin:4px 0"><span>${x.emoji||""} ${esc(x.name||x.title||"")}</span><span class="muted" style="font-weight:600">${x.count||x.streak||""}</span></div>`).join("") : `<div class="muted" style="font-size:13px">—</div>`;
+
+  // Build month-by-month aggregates for the visualizations below.
+  const monthBuckets = Array.from({ length: 12 }, (_, m) => ({
+    label: new Date(r.year, m, 1).toLocaleDateString("en-US", { month: "short" }),
+    habits: 0, possible: 0, wins: 0, spend: 0,
+  }));
+  const yearStr = String(r.year);
+  for (const h of (DB.habits || [])) {
+    for (const [k, v] of Object.entries(h.log || {})) {
+      if (!k.startsWith(yearStr + "-")) continue;
+      const m = parseInt(k.slice(5, 7), 10) - 1;
+      if (m < 0 || m > 11) continue;
+      monthBuckets[m].possible++;
+      const did = h.type === "count" ? (+v || 0) >= (+h.target || 1) : !!v;
+      if (did) monthBuckets[m].habits++;
+    }
+  }
+  for (const w of (DB.wins || [])) {
+    if (!w.date || !w.date.startsWith(yearStr + "-")) continue;
+    const m = parseInt(w.date.slice(5, 7), 10) - 1;
+    if (m >= 0 && m < 12) monthBuckets[m].wins++;
+  }
+  for (const t of (DB.spend || [])) {
+    if (!t.date || !t.date.startsWith(yearStr + "-")) continue;
+    const amt = +t.amount || 0;
+    if (amt <= 0) continue;
+    const m = parseInt(t.date.slice(5, 7), 10) - 1;
+    if (m >= 0 && m < 12) monthBuckets[m].spend += amt;
+  }
+
+  // Habit heatmap row — 12 month cells, color intensity = habit %
+  const maxSpend = Math.max(...monthBuckets.map(b => b.spend), 1);
+  const maxWins = Math.max(...monthBuckets.map(b => b.wins), 1);
+  const heatmapHtml = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:12px;margin-bottom:12px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Habit consistency by month</div>
+      <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:3px">
+        ${monthBuckets.map(b => {
+          const pct = b.possible ? b.habits / b.possible : 0;
+          let bg = "var(--bg-elev2)";
+          if (pct >= 0.8) bg = "rgba(46,184,117,0.85)";
+          else if (pct >= 0.6) bg = "rgba(46,184,117,0.55)";
+          else if (pct >= 0.4) bg = "rgba(46,184,117,0.35)";
+          else if (pct > 0)    bg = "rgba(46,184,117,0.15)";
+          return `<div style="aspect-ratio:1/1;background:${bg};border-radius:4px" title="${esc(b.label)} · ${Math.round(pct*100)}%"></div>`;
+        }).join("")}
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:3px;margin-top:4px;font-size:9px;color:var(--t3);text-align:center">
+        ${monthBuckets.map(b => `<span>${esc(b.label[0])}</span>`).join("")}
+      </div>
+    </div>
+  `;
+  const spendBarsHtml = (() => {
+    if (!monthBuckets.some(b => b.spend > 0)) return "";
+    return `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:12px;margin-bottom:12px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Spending by month</div>
+        <div style="display:flex;gap:3px;align-items:end;height:48px">
+          ${monthBuckets.map(b => {
+            const h = b.spend > 0 ? Math.max(3, (b.spend / maxSpend) * 44) : 1;
+            return `<div style="flex:1;height:${h}px;background:linear-gradient(180deg,#7c3aed,#ec4899);border-radius:2px;opacity:${b.spend > 0 ? '1' : '0.18'}" title="${esc(b.label)} · ${fmt$0(b.spend)}"></div>`;
+          }).join("")}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:3px;margin-top:4px;font-size:9px;color:var(--t3);text-align:center">
+          ${monthBuckets.map(b => `<span>${esc(b.label[0])}</span>`).join("")}
+        </div>
+      </div>
+    `;
+  })();
+  const winsBarsHtml = (() => {
+    if (!monthBuckets.some(b => b.wins > 0)) return "";
+    return `
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:12px;margin-bottom:12px">
+        <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Wins by month</div>
+        <div style="display:flex;gap:3px;align-items:end;height:42px">
+          ${monthBuckets.map(b => {
+            const h = b.wins > 0 ? Math.max(3, (b.wins / maxWins) * 38) : 1;
+            return `<div style="flex:1;height:${h}px;background:var(--orange,#FF9500);border-radius:2px;opacity:${b.wins > 0 ? '1' : '0.18'}" title="${esc(b.label)} · ${b.wins} win${b.wins===1?'':'s'}"></div>`;
+          }).join("")}
+        </div>
+        <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:3px;margin-top:4px;font-size:9px;color:var(--t3);text-align:center">
+          ${monthBuckets.map(b => `<span>${esc(b.label[0])}</span>`).join("")}
+        </div>
+      </div>
+    `;
+  })();
   openSheet(`
     <h2>${r.year} in review</h2>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:14px">
@@ -12753,6 +12839,9 @@ function yearReviewSheet() {
       <div class="kpi"><div class="v">${fmt$0(r.yearOut)}</div><div class="l">Spent</div></div>
       <div class="kpi"><div class="v">${fmt$0(r.yearIn)}</div><div class="l">Income</div></div>
     </div>
+    ${heatmapHtml}
+    ${spendBarsHtml}
+    ${winsBarsHtml}
     <label>Most consistent habits</label>
     ${list(r.perHabit)}
     <hr class="sep">
