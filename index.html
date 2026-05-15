@@ -11103,15 +11103,30 @@ function renderStocks() {
   if (!DB.stocks) DB.stocks = {};
   if (!Array.isArray(DB.stocks.watchlist)) {
     // Seed with a sensible starter set so a brand-new user has something
-    // to look at. They can remove any of these.
+    // to look at. They can remove any of these. Flag the seed so we can
+    // show a one-time banner explaining where these came from.
     DB.stocks.watchlist = ["AAPL", "MSFT", "VOO", "GOOGL", "NVDA"];
+    DB.stocks._watchlistSeeded = true;
     save();
   }
   const watchlist = DB.stocks.watchlist;
+  // One-time banner explaining the seed. Auto-dismisses when the user
+  // either explicitly dismisses or first adds/removes a watchlist item.
+  const seedBannerHtml = (DB.stocks._watchlistSeeded && !DB.stocks._watchlistSeedDismissed) ? `
+    <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.30);border-radius:10px;padding:10px 12px;margin-bottom:10px;display:flex;align-items:flex-start;gap:10px;font-size:12.5px;line-height:1.5">
+      <div style="font-size:18px;flex-shrink:0">👀</div>
+      <div style="flex:1;min-width:0;color:var(--t2)">
+        <b style="color:var(--purple,#7c3aed)">Starter watchlist</b> · We picked 5 popular tickers (AAPL, MSFT, VOO, GOOGL, NVDA) so the tab isn't empty. Remove or replace any of them — your watchlist is yours.
+      </div>
+      <button class="del-x" onclick="DB.stocks._watchlistSeedDismissed=true;save();renderStocks();" title="Got it" style="margin:-6px -6px 0 0">×</button>
+    </div>
+  ` : "";
 
   page.innerHTML = `
     <div class="lg-title">Stocks</div>
     <div class="muted" style="margin:-12px 0 18px;font-size:14px">Live quotes, sparklines, and AI analysis on your watchlist.</div>
+
+    ${seedBannerHtml}
 
     <!-- Ask Cornileus card -->
     <div class="row tappable" onclick="openCounselor(null, 'stocks')" role="button" tabindex="0"
@@ -18703,6 +18718,8 @@ async function _stocksAddTicker(raw) {
   if (!Array.isArray(DB.stocks.watchlist)) DB.stocks.watchlist = [];
   if (DB.stocks.watchlist.includes(tk)) { toast(`${tk} already on watchlist`); return; }
   DB.stocks.watchlist.push(tk);
+  // User has engaged — the starter-watchlist banner has served its purpose.
+  DB.stocks._watchlistSeedDismissed = true;
   await save();
   const inp = document.getElementById("stk-add-input");
   if (inp) inp.value = "";
@@ -26315,8 +26332,20 @@ function manageEncryption() {
     <p class="muted" style="margin-bottom:14px;font-size:13px">Local data is encrypted with your passphrase. You can disable it (data goes back to plain) or change the passphrase.</p>
     <div class="actions" style="flex-direction:column">
       <button class="btn" onclick="closeSheet();changePassphraseSheet()">Change passphrase</button>
-      <button class="btn danger" onclick="if(confirm('Disable encryption? Data will be stored plaintext.')){disablePassphrase();closeSheet();render();toast('Encryption off');}">Disable encryption</button>
+      <button class="btn danger" onclick="closeSheet();setTimeout(()=>disableEncryptionSheet(),120)">Disable encryption</button>
       <button class="btn secondary" onclick="closeSheet()">Cancel</button>
+    </div>
+  `);
+}
+
+function disableEncryptionSheet() {
+  openSheet(`
+    <h2 style="margin-bottom:4px">⚠ Disable encryption?</h2>
+    <p class="muted" style="font-size:13px;margin-bottom:14px;line-height:1.55">Your data will be stored as plain text in this browser. Anyone with access to this device or a malicious browser extension can read everything — bank balances, transactions, all of it.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.55"><b style="color:var(--t1)">Only do this if you understand the trade-off.</b> You can re-enable encryption any time from Settings.</p>
+    <div class="actions">
+      <button class="btn secondary" onclick="closeSheet()">Cancel — keep encrypted</button>
+      <button class="btn danger" onclick="disablePassphrase();closeSheet();render();toast('Encryption disabled — data is now plain text')">Disable encryption</button>
     </div>
   `);
 }
@@ -27285,8 +27314,8 @@ function onboardingStep1() {
     <label style="font-size:12px;color:var(--t3);font-weight:600;margin-bottom:6px;display:block">What should we call you?</label>
     <input id="onb-name" placeholder="Your first name" autofocus value="${esc(_onbState.name)}" />
   `, `
-    <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="(()=>{const n=$('#onb-name').value.trim();_onbState.name=n;closeSheet();aiOnboardingStart({name:n,fromOnboarding:true});})()">✨ Set up with Cornileus (~3 min)</button>
-    <button class="btn secondary" style="width:100%;margin-top:8px" onclick="(()=>{_onbState.name=$('#onb-name').value.trim();onboardingStep2();})()">Quick setup instead</button>
+    <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="(()=>{const n=$('#onb-name').value.trim();_onbState.name=n;closeSheet();aiOnboardingStart({name:n,fromOnboarding:true});})()">✨ Set up with Cornileus (chat)</button>
+    <button class="btn secondary" style="width:100%;margin-top:8px" onclick="(()=>{_onbState.name=$('#onb-name').value.trim();onboardingStep2();})()">Pick from a list (faster)</button>
   `);
 }
 
@@ -35668,7 +35697,7 @@ function init() {
     monteCarloRetirement, monteCarloFanChart,
     setupHealthSheet,
     _exportEncrypted, _exportPlaintext, _doExportEncrypted, _friendlyApiError,
-    setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
+    setupPassphraseSheet, manageEncryption, changePassphraseSheet, disableEncryptionSheet, showLockScreen,
     setPassphrase, unlockWithPassphrase, disablePassphrase, encryptObject, decryptObject, deriveKey,
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,
     applyRules, applyRulesToAll, addCategoryRule, deleteCategoryRule, ruleSheet, quickRuleFromTx,
