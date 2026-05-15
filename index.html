@@ -5430,16 +5430,49 @@ function renderToday() {
             letter-spacing="0.6">/ 100</text>
         </svg>
       `;
+      // 30-day score history sparkline. Pulls from the same rolling
+      // wealthScoreHistory we already maintain. Only shown when ≥3 days
+      // of data exist; otherwise the chart would be a single dot.
+      const recent = hist.slice(-30);
+      const sparkSvg = (recent.length >= 3) ? (() => {
+        const sw = 280, sh = 36, padL = 2, padR = 2, padT = 4, padB = 4;
+        const innerW = sw - padL - padR, innerH = sh - padT - padB;
+        const min = Math.min(...recent.map(h => h.score), 0);
+        const max = Math.max(...recent.map(h => h.score), 100);
+        const range = (max - min) || 1;
+        const xAt = (i) => padL + (i * innerW) / (recent.length - 1);
+        const yAt = (v) => padT + innerH - ((v - min) / range) * innerH;
+        const pts = recent.map((h, i) => xAt(i).toFixed(1) + "," + yAt(h.score).toFixed(1)).join(" ");
+        const areaPath = `M ${xAt(0).toFixed(1)},${(padT + innerH).toFixed(1)} L ${pts.split(' ').join(' L ')} L ${xAt(recent.length - 1).toFixed(1)},${(padT + innerH).toFixed(1)} Z`;
+        const last = recent[recent.length - 1];
+        return `
+          <svg viewBox="0 0 ${sw} ${sh}" preserveAspectRatio="none" style="width:100%;height:36px;display:block;margin-top:10px">
+            <defs>
+              <linearGradient id="ws-grad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="${lbl.color}" stop-opacity="0.32"/>
+                <stop offset="100%" stop-color="${lbl.color}" stop-opacity="0.02"/>
+              </linearGradient>
+            </defs>
+            <path d="${areaPath}" fill="url(#ws-grad)"/>
+            <polyline points="${pts}" fill="none" stroke="${lbl.color}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            <circle cx="${xAt(recent.length - 1).toFixed(1)}" cy="${yAt(last.score).toFixed(1)}" r="3" fill="${lbl.color}" stroke="var(--card)" stroke-width="2"/>
+          </svg>
+        `;
+      })() : "";
       return `
-        <button onclick="wealthHealthSheet()" style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${lbl.color};border-radius:var(--r);padding:16px 18px;margin-bottom:14px;display:flex;align-items:center;gap:16px;width:100%;cursor:pointer;color:inherit;font:inherit;text-align:left;transition:transform .12s ease">
-          <div style="flex-shrink:0">${ringSvg}</div>
-          <div style="flex:1;min-width:0">
-            <div style="font-size:10.5px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:2px">Wealth Score</div>
-            <div style="font-size:18px;font-weight:800;color:${lbl.color};line-height:1.1;letter-spacing:-0.02em;margin-bottom:6px">${lbl.word}${deltaStr ? ` <span style="font-size:13px;font-weight:600;color:${deltaColor};margin-left:6px">${esc(deltaStr)} wk</span>` : ''}</div>
-            <div style="font-size:12.5px;color:var(--t2);line-height:1.4">${r.topGap ? esc(r.topGap.suggest) : "Strong across the board — keep compounding."}</div>
-            <div style="display:inline-flex;align-items:center;gap:4px;color:var(--purple,#8957d9);font-size:11.5px;font-weight:600;margin-top:8px">See breakdown <span style="font-size:13px">→</span></div>
+        <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${lbl.color};border-radius:var(--r);padding:16px 18px;margin-bottom:14px;position:relative">
+          <div onclick="wealthHealthSheet()" role="button" tabindex="0" style="display:flex;align-items:center;gap:16px;width:100%;cursor:pointer;color:inherit;font:inherit;text-align:left;padding:0">
+            <div style="flex-shrink:0">${ringSvg}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-size:10.5px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:2px">Wealth Score</div>
+              <div style="font-size:18px;font-weight:800;color:${lbl.color};line-height:1.1;letter-spacing:-0.02em;margin-bottom:6px">${lbl.word}${deltaStr ? ` <span style="font-size:13px;font-weight:600;color:${deltaColor};margin-left:6px">${esc(deltaStr)} wk</span>` : ''}</div>
+              <div style="font-size:12.5px;color:var(--t2);line-height:1.4">${r.topGap ? esc(r.topGap.suggest) : "Strong across the board — keep compounding."}</div>
+              <div style="display:inline-flex;align-items:center;gap:4px;color:var(--purple,#8957d9);font-size:11.5px;font-weight:600;margin-top:8px">See breakdown <span style="font-size:13px">→</span></div>
+            </div>
           </div>
-        </button>
+          <button onclick="event.stopPropagation();shareWealthScoreCard()" title="Share" aria-label="Share Wealth Score" style="position:absolute;top:12px;right:12px;background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t3);font-size:11px;padding:4px 10px;border-radius:999px;cursor:pointer;font-weight:600">Share ↗</button>
+          ${sparkSvg}
+        </div>
       `;
     })()}
 
@@ -13330,6 +13363,68 @@ function downloadShareCard() {
   URL.revokeObjectURL(url);
   toast("Share card downloaded");
 }
+// Build a square (1080x1080) share card SVG for the user's current Wealth
+// Score. Big circular gauge + score + word + the one suggestion. Designed
+// for posting to Twitter/Instagram/iMessage. Inline gradients so it
+// renders without external assets when downloaded as SVG.
+function wealthScoreShareSvg() {
+  const r = computeWealthHealth();
+  const lbl = wealthHealthLabel(r.total);
+  const w = 1080, h = 1080;
+  const cx = w / 2, cy = 520;
+  const R = 260, C = 2 * Math.PI * R;
+  const arcLen = (r.total / 100) * C;
+  const userName = (DB.user && DB.user.name) ? DB.user.name : "";
+  const suggest = r.topGap ? r.topGap.suggest : "Strong across the board — keep compounding.";
+  // Stick to the color band's hex so the share card is brand-consistent.
+  // wealthHealthLabel returns "#34C759" etc — use directly.
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${w}" height="${h}" viewBox="0 0 ${w} ${h}">
+    <defs>
+      <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+        <stop offset="0%" stop-color="#0a0a0c"/>
+        <stop offset="100%" stop-color="#1a1a22"/>
+      </linearGradient>
+      <linearGradient id="brand" x1="0" y1="0" x2="1" y2="0">
+        <stop offset="0%" stop-color="#7c3aed"/>
+        <stop offset="100%" stop-color="#ec4899"/>
+      </linearGradient>
+    </defs>
+    <rect width="${w}" height="${h}" fill="url(#bg)"/>
+    <text x="${w/2}" y="160" text-anchor="middle" font-family="-apple-system,system-ui,sans-serif" font-weight="700" font-size="32" fill="#7e8189" letter-spacing="6">WEALTH SCORE</text>
+    ${userName ? `<text x="${w/2}" y="210" text-anchor="middle" font-family="-apple-system,system-ui,sans-serif" font-weight="500" font-size="26" fill="#c2c4ca">${esc(userName)}</text>` : ''}
+    <circle cx="${cx}" cy="${cy}" r="${R}" stroke="#26262e" stroke-width="32" fill="none"/>
+    <circle cx="${cx}" cy="${cy}" r="${R}" stroke="${lbl.color}" stroke-width="32" fill="none"
+      stroke-dasharray="${arcLen} ${C}" stroke-linecap="round"
+      transform="rotate(-90 ${cx} ${cy})"/>
+    <text x="${cx}" y="${cy + 40}" text-anchor="middle" font-family="-apple-system,system-ui,sans-serif" font-weight="900" font-size="280" fill="#f6f7f9" letter-spacing="-12">${r.total}</text>
+    <text x="${cx}" y="${cy + 100}" text-anchor="middle" font-family="-apple-system,system-ui,sans-serif" font-weight="600" font-size="28" fill="#7e8189" letter-spacing="2">/ 100</text>
+    <text x="${cx}" y="880" text-anchor="middle" font-family="-apple-system,system-ui,sans-serif" font-weight="800" font-size="64" fill="${lbl.color}" letter-spacing="-1.5">${esc(lbl.word)}</text>
+    <text x="${cx}" y="950" text-anchor="middle" font-family="-apple-system,system-ui,sans-serif" font-weight="500" font-size="28" fill="#c2c4ca">${esc(suggest.length > 60 ? suggest.slice(0, 57) + "…" : suggest)}</text>
+    <text x="${cx}" y="1020" text-anchor="middle" font-family="-apple-system,system-ui,sans-serif" font-weight="700" font-size="22" fill="url(#brand)" letter-spacing="2">ASCEND</text>
+  </svg>`;
+}
+
+// Download or system-share the Wealth Score card. Tries Web Share API
+// first (mobile-friendly), falls back to a plain download.
+async function shareWealthScoreCard() {
+  const svg = wealthScoreShareSvg();
+  const blob = new Blob([svg], { type: "image/svg+xml" });
+  const file = new File([blob], `ascend-wealth-score-${todayKey()}.svg`, { type: "image/svg+xml" });
+  if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: "My Wealth Score", text: "Tracking my Wealth Score on Ascend." });
+      return;
+    } catch {}
+  }
+  // Fall through to download
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = `ascend-wealth-score-${todayKey()}.svg`;
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  toast("Share card downloaded");
+}
+
 async function shareStreakCard() {
   const svg = shareCardSvg();
   const blob = new Blob([svg], { type: "image/svg+xml" });
