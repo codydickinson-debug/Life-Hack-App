@@ -1098,6 +1098,17 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 #counselor-fab:active { transform: scale(.9); }
 #counselor-fab:hover { box-shadow: 0 6px 24px rgba(124,58,237,.45); }
 #counselor-fab.hidden { display: none; }
+.cornileus-badge {
+  position: absolute; top: -2px; right: -2px;
+  min-width: 18px; height: 18px;
+  background: var(--orange, #FF9500); color: #fff;
+  border: 2px solid var(--bg, #0a0a0c);
+  border-radius: 999px;
+  font-size: 10px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0 4px; line-height: 1;
+  box-sizing: border-box;
+}
 
 /* Desktop polish: the app is intentionally a phone-width column. On wide
    screens that leaves a lot of empty viewport, which felt broken — like
@@ -1845,7 +1856,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
     <button class="tab" data-tab="stats"><span class="ic">▦</span><span>Stats</span></button>
   </nav>
 
-  <button id="counselor-fab" aria-label="Talk to financial counselor" title="Financial counselor" onclick="openCounselor()">✨</button>
+  <button id="counselor-fab" aria-label="Talk to financial counselor" title="Financial counselor" onclick="openCornileusObservations()">✨<span id="cornileus-badge" class="cornileus-badge" style="display:none"></span></button>
   <button id="fab" aria-label="Quick add" onclick="quickAddMenu()">+</button>
 </div>
 
@@ -4195,6 +4206,8 @@ function render() {
   // Sweep newly-inserted unlabelled close/delete buttons with an aria-label
   // so screen readers don't read them as just "X".
   if (typeof _a11yLabelDeleteButtons === "function") _a11yLabelDeleteButtons();
+  // Refresh the Cornileus FAB badge to reflect current observations.
+  if (typeof _updateCornileusBadge === "function") _updateCornileusBadge();
 }
 
 // Calendar month being viewed — defaults to today's month, navigated by calendarPrev/Next.
@@ -11785,6 +11798,139 @@ function toggleCounselorLauncher(show) {
   DB.counselor.hideLauncher = !show;
   try { save(); } catch {}
   if (typeof renderHeader === "function") renderHeader();
+}
+
+// Computes the list of "Cornileus has noticed X" observations — surfaces
+// auto-detected patterns that the user might want to ask about. Each item:
+//   { icon, label, seedPrompt }
+// Things that show up:
+//   - spending leaks (categories surging MoM)
+//   - untracked recurring charges
+//   - habits that were active but slipping this past week
+//   - savings buckets near their target
+function _cornileusObservations() {
+  const out = [];
+  // 1) Spending leaks
+  try {
+    const leaks = (typeof detectSpendingLeaks === "function") ? detectSpendingLeaks() : [];
+    for (const l of leaks.slice(0, 2)) {
+      out.push({
+        icon: "⚠️",
+        label: `${l.category} up ${l.deltaPct === 999 ? "(all new)" : l.deltaPct + "%"} this month`,
+        seedPrompt: `My ${l.category} spend jumped from $${Math.round(l.previous)} last month to $${Math.round(l.current)} so far this month — that's +${l.deltaPct === 999 ? "all new" : l.deltaPct + "%"}. What happened and what should I do about it?`,
+      });
+    }
+  } catch {}
+  // 2) Untracked recurring
+  try {
+    const dismissed = ((DB.settings || {}).dismissedRecurring || []);
+    const sugs = (typeof detectRecurringSuggestions === "function") ? detectRecurringSuggestions().filter(s => !dismissed.includes(s.key)) : [];
+    if (sugs.length >= 2) {
+      const total = sugs.reduce((s, x) => s + x.monthlyEstimate, 0);
+      out.push({
+        icon: "🔁",
+        label: `${sugs.length} untracked recurring charges (~$${Math.round(total)}/mo)`,
+        seedPrompt: `I have ${sugs.length} untracked recurring charges totalling about $${Math.round(total)}/mo: ${sugs.slice(0, 5).map(s => `${s.name} $${Math.round(s.amount)}/${s.cadence}`).join(", ")}. Audit them — which should I cancel first?`,
+      });
+    }
+  } catch {}
+  // 3) Slipping habits — active last month, struggling this past week
+  try {
+    const habits = DB.habits || [];
+    for (const h of habits) {
+      if (!h || !h.log || isHabitPaused(h)) continue;
+      const past7 = (() => {
+        let n = 0; const d = new Date();
+        for (let i = 0; i < 7; i++) {
+          const k = todayKey(d);
+          const v = h.log[k];
+          if ((h.type === "count" ? +v >= (h.target || 1) : !!v)) n++;
+          d.setDate(d.getDate() - 1);
+        }
+        return n;
+      })();
+      const past30 = (() => {
+        let n = 0; const d = new Date();
+        for (let i = 0; i < 30; i++) {
+          const k = todayKey(d);
+          const v = h.log[k];
+          if ((h.type === "count" ? +v >= (h.target || 1) : !!v)) n++;
+          d.setDate(d.getDate() - 1);
+        }
+        return n;
+      })();
+      if (past30 >= 12 && past7 <= 2) {
+        out.push({
+          icon: "🔥",
+          label: `"${h.name}" slipping (was ${past30}/30, now ${past7}/7)`,
+          seedPrompt: `I was doing my "${h.name}" habit ${past30} times over the last 30 days but only ${past7} this past week. What's getting in the way and how do I get back on it?`,
+        });
+        break; // only one slipping habit at a time
+      }
+    }
+  } catch {}
+  // 4) Closest savings goal almost done
+  try {
+    const savings = DB.savings || [];
+    const close = savings
+      .filter(s => +s.target > 0 && +s.current < +s.target)
+      .map(s => ({ s, pct: (+s.current) / (+s.target) }))
+      .filter(x => x.pct >= 0.7)
+      .sort((a, b) => b.pct - a.pct)[0];
+    if (close) {
+      const rem = Math.max(0, (+close.s.target) - (+close.s.current));
+      out.push({
+        icon: "🎯",
+        label: `${close.s.name} ${Math.round(close.pct * 100)}% there ($${Math.round(rem)} to go)`,
+        seedPrompt: `My ${close.s.name} fund is ${Math.round(close.pct * 100)}% there — $${Math.round(rem)} to go. How do I close the gap fast without wrecking the rest of my budget?`,
+      });
+    }
+  } catch {}
+  return out.slice(0, 4);
+}
+
+// Refresh the small numbered badge on the Cornileus FAB based on current
+// observation count. Called from render() so it stays in sync.
+function _updateCornileusBadge() {
+  try {
+    const badge = document.getElementById("cornileus-badge");
+    if (!badge) return;
+    const n = _cornileusObservations().length;
+    if (n > 0) {
+      badge.textContent = String(n);
+      badge.style.display = "flex";
+    } else {
+      badge.style.display = "none";
+    }
+  } catch {}
+}
+
+// Tap on the Cornileus FAB. When there are observations, show a small
+// sheet listing them — each row pre-seeds the chat with a specific
+// question. When there are none, fall through to plain openCounselor().
+function openCornileusObservations() {
+  const obs = _cornileusObservations();
+  if (!obs.length) { openCounselor(); return; }
+  openSheet(`
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:6px">
+      <div style="width:36px;height:36px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">✨</div>
+      <div style="flex:1">
+        <div style="font-weight:700;font-size:15px">Cornileus noticed ${obs.length} thing${obs.length === 1 ? "" : "s"}</div>
+        <div style="font-size:11.5px;color:var(--t3)">Tap any to dig in, or open a fresh chat</div>
+      </div>
+    </div>
+    <div style="display:flex;flex-direction:column;gap:6px;margin:10px 0">
+      ${obs.map(o => `
+        <button onclick="closeSheet();setTimeout(()=>openCounselor(${jsAttr(o.seedPrompt)}),100)" style="background:var(--card);border:0.5px solid rgba(124,58,237,0.35);border-radius:var(--r);padding:12px 14px;display:flex;align-items:center;gap:10px;text-align:left;cursor:pointer;color:inherit;font:inherit;transition:transform .12s ease">
+          <span style="font-size:18px;flex-shrink:0">${o.icon}</span>
+          <span style="flex:1;font-size:13px;color:var(--t1);line-height:1.35">${esc(o.label)}</span>
+          <span style="color:var(--purple,#8957d9);font-size:16px;flex-shrink:0">→</span>
+        </button>
+      `).join("")}
+    </div>
+    <button class="btn secondary" style="width:100%;font-size:13px" onclick="closeSheet();setTimeout(()=>openCounselor(),100)">Open Cornileus fresh →</button>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
 }
 
 function openCounselor(seedPrompt, context) {
