@@ -2084,6 +2084,7 @@ const DEFAULT_DB = {
   plaidRecurringSuggestions: { inflows: [], outflows: [], lastSyncAt: null },
   investmentTransactions: [], // [{investment_transaction_id, account_id, ticker, date, type, subtype, quantity, price, amount, fees}]
   netWorthHistory: [],        // [{date: 'YYYY-MM-DD', total, by_type:{...}}] — daily snapshot ring (~730 entries max)
+  nwAnnotations: [],          // [{id, date, label, emoji, note, createdAt}] — life-event markers on the net-worth chart
   dismissedPlays: {},        // { playId: true } — smart-play recommendations user has dismissed
   calendarNotes: {},         // { 'YYYY-MM-DD': 'note text' } — per-day reminders/journal entries shown on Calendar
   moods: {},                 // { 'YYYY-MM-DD': '😄' } — daily mood rating, set from Calendar day sheet
@@ -9003,6 +9004,7 @@ function renderMoney() {
             ${ranges.map(r => `<button class="btn sm ${wealthRange===r.id?"":"secondary"}" style="flex:1;font-size:11px;padding:6px 0" onclick="setWealthRange(${jsAttr(r.id)})">${r.label}</button>`).join("")}
           </div>
           ${stale ? `<button class="btn secondary" style="width:100%;font-size:12px;margin-top:10px" onclick="snapshotNetWorth();render();toast('Snapshot saved')">${nwAge === null ? "Take first snapshot" : `Snapshot now (last ${nwAge}d ago)`}</button>` : ""}
+          <button class="btn secondary" style="width:100%;font-size:11.5px;margin-top:8px;color:var(--t2)" onclick="nwAnnotationsSheet()">📍 ${(DB.nwAnnotations || []).length ? `${(DB.nwAnnotations || []).length} life event${(DB.nwAnnotations || []).length===1?'':'s'} marked` : "Mark a life event on the chart"}</button>
         </div>
       `;
     })();
@@ -20122,6 +20124,9 @@ function calendarToday() {
   renderCalendar();
 }
 function calendarSetView(v) {
+  // Whitelist supported views so a stale link or external onclick can't
+  // jam an unknown string in and break the renderer.
+  if (v !== "month" && v !== "year" && v !== "agenda") return;
   calendarView = v;
   renderCalendar();
 }
@@ -20648,25 +20653,29 @@ function renderCalendar() {
     `;
   })();
 
-  const headerLabel = calendarView === "year" ? String(y) : monthLabel;
+  const headerLabel = calendarView === "year" ? String(y)
+                    : calendarView === "agenda" ? "Upcoming"
+                    : monthLabel;
   const prevAria = calendarView === "year" ? "Previous year" : "Previous month";
   const nextAria = calendarView === "year" ? "Next year" : "Next month";
+  const showNav = calendarView !== "agenda"; // agenda is forward-only
 
   $("#page-calendar").innerHTML = `
     <div class="lg-title">Calendar</div>
 
     <div style="display:flex;align-items:center;justify-content:space-between;margin:-4px 0 6px">
-      <button class="tb-btn" onclick="calendarPrevMonth()" aria-label="${prevAria}" style="background:var(--bg-elev);width:44px;height:44px;border-radius:50%;font-size:20px;color:var(--t1)">‹</button>
+      ${showNav ? `<button class="tb-btn" onclick="calendarPrevMonth()" aria-label="${prevAria}" style="background:var(--bg-elev);width:44px;height:44px;border-radius:50%;font-size:20px;color:var(--t1)">‹</button>` : `<div style="width:44px"></div>`}
       <div style="text-align:center">
         <div style="font-size:17px;font-weight:700;color:var(--t1);line-height:1.1">${headerLabel}</div>
-        ${!isCurrentMonth ? `<button class="act" style="font-size:11.5px;margin-top:2px;padding:4px 8px" onclick="calendarToday()">Jump to today</button>` : ""}
+        ${showNav && !isCurrentMonth ? `<button class="act" style="font-size:11.5px;margin-top:2px;padding:4px 8px" onclick="calendarToday()">Jump to today</button>` : ""}
       </div>
-      <button class="tb-btn" onclick="calendarNextMonth()" aria-label="${nextAria}" style="background:var(--bg-elev);width:44px;height:44px;border-radius:50%;font-size:20px;color:var(--t1)">›</button>
+      ${showNav ? `<button class="tb-btn" onclick="calendarNextMonth()" aria-label="${nextAria}" style="background:var(--bg-elev);width:44px;height:44px;border-radius:50%;font-size:20px;color:var(--t1)">›</button>` : `<div style="width:44px"></div>`}
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 14px">
       <div style="display:inline-flex;background:var(--bg-elev);border-radius:var(--r-pill,999px);padding:3px;gap:2px">
         <button onclick="calendarSetView('month')" style="background:${calendarView==='month'?'var(--card)':'transparent'};color:var(--t1);border:none;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;${calendarView==='month'?'box-shadow:var(--sh-1);':''}">Month</button>
         <button onclick="calendarSetView('year')" style="background:${calendarView==='year'?'var(--card)':'transparent'};color:var(--t1);border:none;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;${calendarView==='year'?'box-shadow:var(--sh-1);':''}">Year</button>
+        <button onclick="calendarSetView('agenda')" style="background:${calendarView==='agenda'?'var(--card)':'transparent'};color:var(--t1);border:none;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;${calendarView==='agenda'?'box-shadow:var(--sh-1);':''}">Agenda</button>
       </div>
       ${Object.keys(DB.calendarNotes || {}).length ? `<button class="act" style="font-size:12px" onclick="allNotesSheet()">📓 All notes</button>` : ""}
     </div>
@@ -20694,7 +20703,9 @@ function renderCalendar() {
       `;
     })() : ""}
 
-    ${calendarView === "year" ? yearGridHtml : `
+    ${calendarView === "year" ? yearGridHtml
+      : calendarView === "agenda" ? _agendaViewHtml()
+      : `
       <div class="cal-grid-head">
         ${["M","T","W","T","F","S","S"].map(d => `<div>${d}</div>`).join("")}
       </div>
@@ -20711,6 +20722,122 @@ function renderCalendar() {
         <div style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:#22d3ee"></span>ex-div</div>
       </div>
     `}
+  `;
+}
+
+// Agenda view — chronological list of everything scheduled in the next 60
+// days: bills, plan deadlines, important calendar dates, paychecks (from
+// recurring), earnings calendar (if any). Designed for list-thinkers who
+// don't get a feel for "what's coming up" from the heatmap.
+function _agendaViewHtml() {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const horizon = 60; // days ahead
+  const items = [];
+  // 1) Upcoming bills (Plaid-detected or user-managed recurring)
+  try {
+    const bills = (typeof upcomingBills === "function") ? upcomingBills(horizon) : [];
+    for (const b of bills) {
+      if (!b || !b.next_predicted) continue;
+      items.push({
+        date: b.next_predicted,
+        emoji: "📆",
+        title: b.name || b.merchant || "Bill",
+        sub: `${fmt$0(b.amount || b.avg_amount || 0)} · ${b.source === "plaid" ? "detected" : "recurring"}`,
+        color: "var(--orange,#FF9500)",
+        onclick: `showTab('money')`,
+      });
+    }
+  } catch {}
+  // 2) Plan target dates
+  for (const p of (DB.plans || [])) {
+    if (p.completed || !p.target_date) continue;
+    const daysOut = Math.round((new Date(p.target_date + "T00:00:00") - today) / 86400000);
+    if (daysOut < 0 || daysOut > horizon) continue;
+    items.push({
+      date: p.target_date,
+      emoji: p.emoji || "🎯",
+      title: p.title,
+      sub: p.target_amount > 0 ? `Target: ${fmt$0(p.target_amount)}` : "Plan deadline",
+      color: "var(--purple,#8957d9)",
+      onclick: `showTab('planning')`,
+    });
+  }
+  // 3) User-added important dates (DB.calendarDates is an array)
+  for (const d of (DB.calendarDates || [])) {
+    if (!d || !d.date) continue;
+    const daysOut = Math.round((new Date(d.date + "T00:00:00") - today) / 86400000);
+    if (daysOut < 0 || daysOut > horizon) continue;
+    items.push({
+      date: d.date,
+      emoji: d.icon || "📌",
+      title: d.title || "Event",
+      sub: d.note || "Important date",
+      color: "var(--blue,#007AFF)",
+      onclick: `calendarDaySheet(${jsAttr(d.date)})`,
+    });
+  }
+  // 4) Annotated net-worth life events that haven't happened yet (future-dated)
+  for (const a of (DB.nwAnnotations || [])) {
+    if (!a || !a.date) continue;
+    const daysOut = Math.round((new Date(a.date + "T00:00:00") - today) / 86400000);
+    if (daysOut < 0 || daysOut > horizon) continue;
+    items.push({
+      date: a.date,
+      emoji: a.emoji || "📍",
+      title: a.label || "Life event",
+      sub: "Net-worth annotation",
+      color: "var(--green,#34C759)",
+      onclick: `showTab('money')`,
+    });
+  }
+  // Sort by date ascending
+  items.sort((a, b) => a.date.localeCompare(b.date));
+  if (!items.length) {
+    return `
+      <div class="empty" style="padding:36px 14px">
+        <div class="e-emoji">📅</div>
+        <div class="e-title">Nothing scheduled in the next ${horizon} days</div>
+        <div class="e-sub">Bills, plan deadlines, and important dates will appear here as they're added.</div>
+      </div>
+    `;
+  }
+  // Group by date for readability
+  const byDate = new Map();
+  for (const it of items) {
+    if (!byDate.has(it.date)) byDate.set(it.date, []);
+    byDate.get(it.date).push(it);
+  }
+  const dayLabel = (k) => {
+    const d = new Date(k + "T00:00:00");
+    const daysOut = Math.round((d - today) / 86400000);
+    if (daysOut === 0) return "Today";
+    if (daysOut === 1) return "Tomorrow";
+    if (daysOut <= 7) return d.toLocaleDateString("en-US", { weekday: "long" });
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", weekday: "short" });
+  };
+  return `
+    <div style="margin-bottom:6px">
+      <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:10px">Next ${horizon} days · ${items.length} item${items.length===1?'':'s'}</div>
+      ${Array.from(byDate.entries()).map(([dk, dayItems]) => `
+        <div style="display:flex;gap:12px;margin-bottom:16px">
+          <div style="flex:0 0 78px;font-size:11.5px;color:var(--t3);font-weight:600;line-height:1.4;padding-top:2px">
+            ${esc(dayLabel(dk))}
+          </div>
+          <div style="flex:1;min-width:0">
+            ${dayItems.map(it => `
+              <div onclick="${it.onclick}" role="button" tabindex="0"
+                style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${it.color};border-radius:10px;padding:10px 12px;margin-bottom:6px;cursor:pointer;display:flex;align-items:flex-start;gap:10px">
+                <div style="font-size:18px;line-height:1;flex-shrink:0;margin-top:1px">${esc(it.emoji)}</div>
+                <div style="flex:1;min-width:0">
+                  <div style="font-size:13.5px;font-weight:600;color:var(--t1);line-height:1.3">${esc(it.title)}</div>
+                  <div style="font-size:11.5px;color:var(--t3);margin-top:2px">${esc(it.sub)}</div>
+                </div>
+              </div>
+            `).join("")}
+          </div>
+        </div>
+      `).join("")}
+    </div>
   `;
 }
 
@@ -25777,6 +25904,21 @@ function netWorthSparkline(history, w=300, h=60) {
   const lastY = h - ((last - min) / range) * h;
   const trendUp = vals.length >= 2 && vals[vals.length-1] >= vals[0];
   const color = trendUp ? "#34C759" : "#FF3B30";
+  // Life-event annotations: vertical markers + emoji at the matching X
+  // position. Only renders annotations whose date is within the history
+  // window. Click target lives in the parent card; the SVG marks are
+  // visual breadcrumbs.
+  const annotations = Array.isArray(DB.nwAnnotations) ? DB.nwAnnotations : [];
+  const dateToIdx = new Map(history.map((s, i) => [s.date, i]));
+  const annHtml = annotations.map(a => {
+    if (!a || !a.date || !dateToIdx.has(a.date)) return "";
+    const idx = dateToIdx.get(a.date);
+    const x = (idx * stepX);
+    return `
+      <line x1="${x.toFixed(1)}" y1="0" x2="${x.toFixed(1)}" y2="${h}" stroke="${color}" stroke-opacity="0.35" stroke-width="1" stroke-dasharray="2 3"/>
+      <circle cx="${x.toFixed(1)}" cy="6" r="4" fill="var(--bg,#0a0a0c)" stroke="${color}" stroke-width="1.5"/>
+    `;
+  }).join("");
   return `
     <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:${h}px;display:block">
       <defs>
@@ -25787,9 +25929,68 @@ function netWorthSparkline(history, w=300, h=60) {
       </defs>
       <polygon fill="url(#nw-fill)" points="0,${h} ${pts} ${w},${h}"/>
       <polyline fill="none" stroke="${color}" stroke-width="2" points="${pts}"/>
+      ${annHtml}
       <circle cx="${lastX.toFixed(1)}" cy="${lastY.toFixed(1)}" r="3" fill="${color}"/>
     </svg>
   `;
+}
+
+// Net-worth annotations: let the user mark a life event ("got married",
+// "bought house", "started new job") on a specific date so it shows up
+// as a visual marker on the chart + appears in the agenda view if future.
+// Tiny feature, real emotional resonance — context for the numbers.
+function nwAnnotationsSheet() {
+  const list = (DB.nwAnnotations || []).slice().sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+  const rows = list.length ? list.map(a => `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:10px 12px;margin-bottom:6px;display:flex;align-items:center;gap:10px">
+      <div style="font-size:20px;flex-shrink:0">${esc(a.emoji || "📍")}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600">${esc(a.label || "Event")}</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:2px">${esc(a.date)}${a.note ? " · " + esc(a.note) : ""}</div>
+      </div>
+      <button class="del-x" onclick="deleteNwAnnotation(${jsAttr(a.id)})">×</button>
+    </div>
+  `).join("") : `
+    <div class="empty" style="padding:24px 14px">
+      <div class="e-emoji">📍</div>
+      <div class="e-title">Mark life events on your chart</div>
+      <div class="e-sub">Got a raise? Bought a car? Had a kid? Add it to your net-worth chart so the line has context.</div>
+    </div>
+  `;
+  openSheet(`
+    <h2 style="margin-bottom:4px">📍 Life events</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">These show up as markers on your net-worth chart and in the Calendar agenda view (future dates).</p>
+    <label>Date</label>
+    <input id="ann-date" type="date" value="${esc(todayKey())}" />
+    <label>What happened</label>
+    <input id="ann-label" placeholder="e.g. Got married, Bought house, New job" maxlength="80" />
+    <label style="margin-top:8px">Emoji (optional)</label>
+    <input id="ann-emoji" placeholder="📍" maxlength="4" style="max-width:80px;text-align:center;font-size:20px" />
+    <label style="margin-top:8px">Note (optional)</label>
+    <input id="ann-note" placeholder="Free-form context" maxlength="200" />
+    <div class="actions" style="margin-bottom:18px">
+      <button class="btn secondary" onclick="closeSheet()">Cancel</button>
+      <button class="btn" onclick="(()=>{
+        const date=document.getElementById('ann-date').value;
+        const label=document.getElementById('ann-label').value.trim();
+        if(!date||!label){toast('Date + label required');return;}
+        const emoji=document.getElementById('ann-emoji').value.trim()||'📍';
+        const note=document.getElementById('ann-note').value.trim();
+        if(!Array.isArray(DB.nwAnnotations))DB.nwAnnotations=[];
+        DB.nwAnnotations.push({id:uid(),date,label,emoji,note,createdAt:Date.now()});
+        save();
+        toast('Added');
+        nwAnnotationsSheet();
+      })()">Add</button>
+    </div>
+    ${list.length ? `<div class="section-h" style="margin-top:24px"><span class="lbl">Existing</span><span class="muted" style="font-size:12px">${list.length}</span></div>` : ""}
+    ${rows}
+  `);
+}
+
+function deleteNwAnnotation(id) {
+  DB.nwAnnotations = (DB.nwAnnotations || []).filter(a => a.id !== id);
+  save(); nwAnnotationsSheet();
 }
 
 /* ================ ENCRYPTION UI ================ */
@@ -28401,6 +28602,97 @@ function projectRetirement({ currentAge, targetAge, currentBalance, monthlyContr
   return points;
 }
 
+// Monte Carlo retirement projection: runs N simulations, each with monthly
+// returns drawn from a normal distribution around (annualReturn, annualVol).
+// Returns p10 / p50 / p90 series so the caller can render a fan chart
+// instead of a single deterministic line. Honest about uncertainty —
+// markets don't deliver 7% smoothly every year.
+//
+// Defaults: 1000 simulations, 16% annual volatility (long-run S&P 500 stdev),
+// truncated to ±99.7% per month to avoid pathological tail outcomes
+// breaking the chart. Skews to monthly-return convention so contributions
+// land cleanly between draws.
+function monteCarloRetirement({
+  currentAge, targetAge, currentBalance, monthlyContribution,
+  annualReturn = 7, annualVol = 16, sims = 500,
+}) {
+  const span = Math.min(50, Math.max(0, targetAge - currentAge));
+  if (span <= 0) return { p10: [], p50: [], p90: [], years: [] };
+  const monthlyR = (annualReturn / 100) / 12;
+  const monthlyVol = (annualVol / 100) / Math.sqrt(12);
+  // Box-Muller transform for normal random draws — built-in Math.random
+  // is uniform, this gives us a Gaussian.
+  const randn = () => {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+  };
+  // For each year horizon, collect all sim balances, then percentile.
+  const balancesByYear = Array.from({ length: span + 1 }, () => []);
+  for (let s = 0; s < sims; s++) {
+    let bal = currentBalance;
+    balancesByYear[0].push(bal);
+    for (let y = 1; y <= span; y++) {
+      for (let m = 0; m < 12; m++) {
+        // Truncate extreme draws (avoid -99% one-month returns which would
+        // tank one sim entirely). ±3σ is enough range.
+        let z = randn();
+        if (z > 3) z = 3; if (z < -3) z = -3;
+        const r = monthlyR + z * monthlyVol;
+        bal = bal * (1 + r) + monthlyContribution;
+      }
+      balancesByYear[y].push(bal);
+    }
+  }
+  const pct = (arr, p) => {
+    const sorted = arr.slice().sort((a, b) => a - b);
+    const i = Math.min(sorted.length - 1, Math.max(0, Math.floor((p / 100) * sorted.length)));
+    return Math.round(sorted[i]);
+  };
+  const years = [], p10 = [], p50 = [], p90 = [];
+  for (let y = 0; y <= span; y++) {
+    years.push(currentAge + y);
+    p10.push(pct(balancesByYear[y], 10));
+    p50.push(pct(balancesByYear[y], 50));
+    p90.push(pct(balancesByYear[y], 90));
+  }
+  return { years, p10, p50, p90, sims };
+}
+
+// Render a fan chart from Monte Carlo output: filled band between p10/p90,
+// solid median line at p50, plus a deterministic comparison line if given.
+function monteCarloFanChart(mc, deterministic = null, w = 320, h = 160) {
+  if (!mc || !mc.years || !mc.years.length) return "";
+  const all = mc.p10.concat(mc.p50).concat(mc.p90).concat(deterministic || []);
+  const max = Math.max(1, ...all);
+  const n = mc.years.length;
+  const stepX = n > 1 ? w / (n - 1) : 0;
+  const toY = (v) => (h - (v / max) * h).toFixed(1);
+  const pts10 = mc.p10.map((v, i) => `${(i*stepX).toFixed(1)},${toY(v)}`).join(" ");
+  const pts50 = mc.p50.map((v, i) => `${(i*stepX).toFixed(1)},${toY(v)}`).join(" ");
+  const pts90 = mc.p90.map((v, i) => `${(i*stepX).toFixed(1)},${toY(v)}`).join(" ");
+  // Filled band polygon: walk p90 forward, then p10 backward.
+  const bandPts = mc.p90.map((v, i) => `${(i*stepX).toFixed(1)},${toY(v)}`).concat(
+    mc.p10.slice().reverse().map((v, i) => `${((n-1-i)*stepX).toFixed(1)},${toY(v)}`)
+  ).join(" ");
+  const grid = [0.25, 0.5, 0.75].map(f => `<line x1="0" y1="${(h*f).toFixed(1)}" x2="${w}" y2="${(h*f).toFixed(1)}" stroke="var(--sep-2)" stroke-dasharray="2 4" stroke-width="0.5"/>`).join("");
+  const detLine = deterministic ? (() => {
+    const pts = deterministic.map((v, i) => `${(i*stepX).toFixed(1)},${toY(v)}`).join(" ");
+    return `<polyline fill="none" stroke="var(--orange,#FF9500)" stroke-width="1.5" stroke-dasharray="4 3" points="${pts}"/>`;
+  })() : "";
+  return `
+    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" style="width:100%;height:${h}px;display:block">
+      ${grid}
+      <polygon points="${bandPts}" fill="var(--blue,#007AFF)" fill-opacity="0.18" stroke="none"/>
+      <polyline points="${pts10}" fill="none" stroke="var(--blue,#007AFF)" stroke-opacity="0.55" stroke-width="1"/>
+      <polyline points="${pts90}" fill="none" stroke="var(--blue,#007AFF)" stroke-opacity="0.55" stroke-width="1"/>
+      <polyline points="${pts50}" fill="none" stroke="var(--blue,#007AFF)" stroke-width="2.5"/>
+      ${detLine}
+    </svg>
+  `;
+}
+
 // Multi-line comparison chart. Draws N polylines on one SVG, shared y-scale,
 // so different what-if scenarios are visually comparable. Y-floor is absolute 0,
 // matching retirementChart so the visual stays honest at low balances.
@@ -28584,23 +28876,51 @@ function retirementSheet() {
 
   const renderProjection = (t, m, r, w) => {
     const safeT = Math.max(currentAge + 1, Math.min(100, +t || 65));
+    const monthly = Math.max(0, +m || 0);
+    const ret = Math.max(0, +r || 0);
     const points = projectRetirement({
       currentAge, targetAge: safeT,
       currentBalance: invested,
-      monthlyContribution: Math.max(0, +m || 0),
-      annualReturn: Math.max(0, +r || 0),
+      monthlyContribution: monthly,
+      annualReturn: ret,
     });
     const final = points[points.length-1].balance;
     const annualWd = final * ((+w || 4) / 100);
+    // Monte Carlo around the same parameters — 500 sims with 16% vol.
+    // Renders a fan chart so the user sees uncertainty, not a single
+    // suspiciously-precise line. The deterministic projection becomes
+    // a dashed orange overlay for comparison.
+    let mc = null;
+    try {
+      mc = monteCarloRetirement({
+        currentAge, targetAge: safeT,
+        currentBalance: invested, monthlyContribution: monthly,
+        annualReturn: ret, annualVol: 16, sims: 500,
+      });
+    } catch {}
+    const detSeries = points.map(p => p.balance);
     return `
       <div style="background:var(--card);border-radius:var(--r);padding:16px;border:1px solid var(--sep)">
         <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Projected at age ${safeT}</div>
         <div style="font-size:30px;font-weight:700;letter-spacing:-.5px;margin:6px 0" data-priv="amount">${fmt$0(final)}</div>
         <div style="font-size:13px;color:var(--t2)" data-priv="amount">${fmt$0(annualWd / 12)}/mo safe withdrawal · ${fmt$0(annualWd)}/yr</div>
-        ${retirementChart(points, 300, 110)}
-        <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-top:6px">
-          <span>Age ${currentAge}</span><span>Age ${safeT}</span>
-        </div>
+        ${mc ? `
+          ${monteCarloFanChart(mc, detSeries, 300, 130)}
+          <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--t3);margin-top:6px;line-height:1.5">
+            <span><span style="display:inline-block;width:8px;height:2px;background:var(--blue);vertical-align:middle"></span> Monte Carlo median</span>
+            <span><span style="display:inline-block;width:8px;height:2px;background:var(--orange);border-top:1px dashed;vertical-align:middle"></span> Steady-7% line</span>
+          </div>
+          <div style="display:flex;justify-content:space-between;font-size:10.5px;color:var(--t3);margin-top:4px">
+            <span>10th %ile: <b data-priv="amount" style="color:var(--t2)">${fmt$0(mc.p10[mc.p10.length-1])}</b></span>
+            <span>90th %ile: <b data-priv="amount" style="color:var(--t2)">${fmt$0(mc.p90[mc.p90.length-1])}</b></span>
+          </div>
+          <div style="font-size:10.5px;color:var(--t3);margin-top:4px;line-height:1.45">${mc.sims} simulations · 16% volatility (long-run S&amp;P stdev). Real markets aren't smooth — the band shows roughly where you might land.</div>
+        ` : `
+          ${retirementChart(points, 300, 110)}
+          <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-top:6px">
+            <span>Age ${currentAge}</span><span>Age ${safeT}</span>
+          </div>
+        `}
       </div>
     `;
   };
@@ -34954,6 +35274,8 @@ function init() {
     detectAnomalies, dismissAnomaly, markAnomalyNormal, processNewAnomalies, anomaliesSheet,
     shareWithPartnerSheet, pairWithPartnerSheet, unpairFromHouseholdSheet,
     _pairingTokenString, _decodePairingToken,
+    nwAnnotationsSheet, deleteNwAnnotation, _agendaViewHtml,
+    monteCarloRetirement, monteCarloFanChart,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, showLockScreen,
     setPassphrase, unlockWithPassphrase, disablePassphrase, encryptObject, decryptObject, deriveKey,
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,
