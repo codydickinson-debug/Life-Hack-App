@@ -1992,6 +1992,14 @@ const DEFAULT_DB = {
   stocks: { recentTickers: [], account: 10000, watchlist: [], holdings: {}, quoteCache: {}, alerts: [], realizedPL: [], watchlistSort: "default", portfolioHistory: [] },
   insurance: {}, // { health: {have, note, ts}, life: {...}, ... } — see insuranceAuditSheet
   cornileusFollowups: [], // [{id, ts, suggestion, status: 'pending'|'done'|'skipped'}]
+  // Phase 14 — "things no one else does" feature data
+  moneyIdentity: null,          // {text, addedAt} — user's chosen money identity
+  moneyRules: [],               // [{id, rule, addedAt}] — user-defined principles
+  precommitContracts: [],       // [{id, label, deadline, stake, status, addedAt}]
+  moneyBiasProfile: null,       // {scores: {loss, anchor, sunk, recency}, takenAt}
+  lifestyleScenarios: [],       // [{id, name, params, savedAt}]
+  futureLetters: [],            // [{id, prompt, reply, addedAt}]
+  hoursOfLifeRate: null,        // hourly wage for the "hours of life" view
   // Timestamp (ms) of the user's last successful exportData() — drives the
   // backup-reminder Pulse on Today. 0 = never exported.
   lastExportAt: 0,
@@ -3565,14 +3573,12 @@ function addHabitSheet(existing) {
         <input id="h-unit"   placeholder="oz, $, min" value="${esc(h.unit||"")}" />
       </div>
     </div>
-<<<<<<< Updated upstream
     <label>Reminder (optional)</label>
     <p class="muted" style="font-size:12px;margin:-4px 0 6px">Fires only on days you haven't done this habit yet. Needs notifications enabled in Settings.</p>
-    <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center">
+    <div style="display:grid;grid-template-columns:1fr auto;gap:10px;align-items:center;margin-bottom:8px">
       <input id="h-reminder" type="time" value="${esc(h.reminderTime || "")}" />
       <button type="button" class="btn secondary" style="font-size:12px;padding:8px 12px" onclick="document.getElementById('h-reminder').value=''">Clear</button>
     </div>
-=======
     <label style="margin-top:14px;display:block">💰 Auto-save to bucket when completed <span style="color:var(--t3);font-weight:400;font-size:11px">(optional)</span></label>
     <div style="display:grid;grid-template-columns:1.4fr 1fr;gap:10px;margin-bottom:10px">
       <select id="h-bucket">
@@ -3582,7 +3588,6 @@ function addHabitSheet(existing) {
       <input id="h-amt" type="number" min="0" step="0.5" placeholder="$ each day" value="${esc(h.savingsAmount || "")}" />
     </div>
     <div style="font-size:11px;color:var(--t3);line-height:1.4;margin-bottom:12px">Every time this habit transitions from not-done to done, $X gets logged to the chosen bucket automatically.</div>
->>>>>>> Stashed changes
     <div class="actions">
       ${isEdit ? `<button class="btn danger" onclick="if(confirm('Delete habit?')){deleteHabit('${h.id}');closeSheet();}">Delete</button>` : ""}
       <button class="btn secondary" onclick="closeSheet()">Cancel</button>
@@ -3603,20 +3608,13 @@ function addHabitSheet(existing) {
     const target = Number($("#h-target")?.value || 1);
     const unit = $("#h-unit")?.value.trim() || "";
     const group = $("#h-group")?.value || "other";
-<<<<<<< Updated upstream
     const reminderTime = $("#h-reminder")?.value || "";
-    if (isEdit) {
-      Object.assign(h, { name, emoji, type, target, unit, group, reminderTime });
-    } else {
-      DB.habits.push({ id: uid(), name, emoji, type, target, unit, group, reminderTime, color: COLORS[DB.habits.length % COLORS.length], createdAt: Date.now(), log: {} });
-=======
     const savingsBucketId = $("#h-bucket")?.value || "";
     const savingsAmount = Math.max(0, Number($("#h-amt")?.value || 0));
     if (isEdit) {
-      Object.assign(h, { name, emoji, type, target, unit, group, savingsBucketId: savingsBucketId || null, savingsAmount: savingsAmount || null });
+      Object.assign(h, { name, emoji, type, target, unit, group, reminderTime, savingsBucketId: savingsBucketId || null, savingsAmount: savingsAmount || null });
     } else {
-      DB.habits.push({ id: uid(), name, emoji, type, target, unit, group, savingsBucketId: savingsBucketId || null, savingsAmount: savingsAmount || null, color: COLORS[DB.habits.length % COLORS.length], createdAt: Date.now(), log: {} });
->>>>>>> Stashed changes
+      DB.habits.push({ id: uid(), name, emoji, type, target, unit, group, reminderTime, savingsBucketId: savingsBucketId || null, savingsAmount: savingsAmount || null, color: COLORS[DB.habits.length % COLORS.length], createdAt: Date.now(), log: {} });
     }
     await save(); closeSheet();
     // Refresh per-habit reminder timers — the new/edited habit may now have
@@ -4941,7 +4939,17 @@ function exploreAscendSheet() {
       { emoji: "🔍", title: "Subscription audit",  desc: "Keep / negotiate / cancel each recurring",  onclick: "closeSheet();setTimeout(()=>subscriptionAuditSheet(),100)" },
       { emoji: "🔎", title: "Detected recurring",  desc: "Charges that look periodic but untracked",  onclick: "closeSheet();setTimeout(()=>detectedRecurringSheet(),100)" },
       { emoji: "☂️", title: "Insurance audit",     desc: "Health · auto · home · life · disability · umbrella", onclick: "closeSheet();setTimeout(()=>insuranceAuditSheet(),100)" },
+      { emoji: "🔮", title: "Lifestyle simulator", desc: "What-if sliders: income, expenses, retire age → live projection", onclick: "closeSheet();setTimeout(()=>lifestyleSimulatorSheet(),100)" },
+      { emoji: "🎯", title: "Reverse life math",   desc: "Pick the life you want — backsolve required savings + waypoints", onclick: "closeSheet();setTimeout(()=>reverseLifeMathSheet(),100)" },
+      { emoji: "🔐", title: "Pre-commitment",      desc: "Lock in a financial commitment with optional consequence", onclick: "closeSheet();setTimeout(()=>precommitContractsSheet(),100)" },
+      { emoji: "⏳", title: "Hours of life",       desc: "Show every $ amount as hours of your life worked", onclick: "closeSheet();setTimeout(()=>hoursOfLifeSetupSheet(),100)" },
       { emoji: "💡", title: "Smart Plays",         desc: "Personalized money next-steps",             onclick: "closeSheet();setTimeout(()=>smartPlaysSheet(),100)" },
+    ]},
+    { group: "Behavioral", items: [
+      { emoji: "🧬", title: "Money identity",      desc: "Who are you with money? Frames every decision", onclick: "closeSheet();setTimeout(()=>moneyIdentitySheet(),100)" },
+      { emoji: "📜", title: "Money rules",         desc: "Your own financial principles — Cornileus enforces them", onclick: "closeSheet();setTimeout(()=>cornileusRulesSheet(),100)" },
+      { emoji: "🧠", title: "Bias diagnostic",     desc: "10 questions → bias profile + real-time interruptions", onclick: "closeSheet();setTimeout(()=>biasQuizSheet(),100)" },
+      { emoji: "📨", title: "Letter from age 80",  desc: "Write a decision → letter back from your future self", onclick: "closeSheet();setTimeout(()=>futureSelfLetterSheet(),100)" },
     ]},
     { group: "Cornileus", items: [
       { emoji: "✨", title: "Open Cornileus",      desc: "AI counselor that knows your numbers",       onclick: "closeSheet();setTimeout(()=>openCounselor(),100)" },
@@ -14132,6 +14140,11 @@ async function _stocksConfirmClose(tk) {
   const cost = +h.cost || 0;
   const pl = (price - cost) * shares;
   const plPct = cost > 0 ? (price - cost) / cost : 0;
+  // Bias interruption: selling at a loss + high loss-aversion profile
+  if (pl < 0 && typeof biasWarning === "function") {
+    const warning = biasWarning("sell_at_loss");
+    if (warning && !confirm("⚠️ " + warning + "\n\nProceed anyway?")) return;
+  }
   if (!Array.isArray(DB.stocks.realizedPL)) DB.stocks.realizedPL = [];
   DB.stocks.realizedPL.push({
     date: new Date().toISOString().slice(0, 10),
@@ -14682,6 +14695,658 @@ const INSURANCE_ITEMS = [
     ],
   },
 ];
+
+/* ============================================================
+   PHASE 14 — features nobody else does
+   Lifestyle simulator · Hours-of-life · Bias diagnostic · Rules
+   Reverse life math · Pre-commitment · Identity · Future-self letter
+   ============================================================ */
+
+/* ---------- 1. Lifestyle simulator ----------
+   Interactive sliders for income change, expense change, retirement age,
+   monthly savings. Re-runs net worth + retirement projection on every
+   change. Shows the impact of "what if I went part-time" or "moved to
+   a cheaper city" in real numbers. */
+function lifestyleSimulatorSheet() {
+  const profile = DB.profile || {};
+  const retire = DB.retirement || {};
+  const currentAge = +profile.age || 30;
+  const currentNW = (DB.netWorthHistory || []).slice(-1)[0]?.total || 0;
+  const baselineMonthly = +retire.monthlyContribution || 1000;
+  // Baseline income + expense — from recurring totals
+  const incomeM = (typeof recurringMonthlyTotal === "function") ? recurringMonthlyTotal("income") : 5000;
+  const expenseM = (typeof recurringMonthlyTotal === "function") ? recurringMonthlyTotal("expense") : 3000;
+  openSheet(`
+    <h2 style="margin-bottom:4px">🔮 Lifestyle simulator</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">What happens to your future if you change something today? Drag the sliders.</p>
+    <label>Income change (%)
+      <span id="ls-income-lbl" style="color:var(--t3);font-weight:400;font-size:11px;float:right"></span>
+    </label>
+    <input type="range" id="ls-income" min="-50" max="100" step="5" value="0" oninput="_lsRecompute()" style="width:100%;margin-bottom:10px" />
+    <label>Expense change (%)
+      <span id="ls-expense-lbl" style="color:var(--t3);font-weight:400;font-size:11px;float:right"></span>
+    </label>
+    <input type="range" id="ls-expense" min="-50" max="100" step="5" value="0" oninput="_lsRecompute()" style="width:100%;margin-bottom:10px" />
+    <label>Retire at age
+      <span id="ls-age-lbl" style="color:var(--t3);font-weight:400;font-size:11px;float:right"></span>
+    </label>
+    <input type="range" id="ls-age" min="${currentAge + 1}" max="80" step="1" value="${retire.targetAge || 65}" oninput="_lsRecompute()" style="width:100%;margin-bottom:10px" />
+    <label>Annual return assumption (%)
+      <span id="ls-ret-lbl" style="color:var(--t3);font-weight:400;font-size:11px;float:right"></span>
+    </label>
+    <input type="range" id="ls-ret" min="0" max="15" step="0.5" value="${retire.annualReturn || 7}" oninput="_lsRecompute()" style="width:100%;margin-bottom:14px" />
+    <div id="ls-result"></div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  window._lsBaseline = { currentAge, currentNW, baselineMonthly, incomeM, expenseM };
+  _lsRecompute();
+}
+
+function _lsRecompute() {
+  const b = window._lsBaseline; if (!b) return;
+  const incomeChg = parseFloat(document.getElementById("ls-income").value) || 0;
+  const expenseChg = parseFloat(document.getElementById("ls-expense").value) || 0;
+  const targetAge = parseInt(document.getElementById("ls-age").value, 10);
+  const retPct = parseFloat(document.getElementById("ls-ret").value) || 7;
+  document.getElementById("ls-income-lbl").textContent = (incomeChg >= 0 ? "+" : "") + incomeChg + "%";
+  document.getElementById("ls-expense-lbl").textContent = (expenseChg >= 0 ? "+" : "") + expenseChg + "%";
+  document.getElementById("ls-age-lbl").textContent = "age " + targetAge;
+  document.getElementById("ls-ret-lbl").textContent = retPct + "%/yr";
+  const newIncome = b.incomeM * (1 + incomeChg/100);
+  const newExpense = b.expenseM * (1 + expenseChg/100);
+  const newSavings = Math.max(0, newIncome - newExpense);
+  const years = targetAge - b.currentAge;
+  // Compound projection
+  const r = Math.pow(1 + retPct/100, 1/12) - 1;
+  let bal = b.currentNW;
+  for (let m = 0; m < years * 12; m++) bal = bal * (1 + r) + newSavings;
+  // Baseline projection for comparison
+  let baseBal = b.currentNW;
+  for (let m = 0; m < years * 12; m++) baseBal = baseBal * (1 + r) + b.baselineMonthly;
+  const delta = bal - baseBal;
+  const fmt = (v) => v >= 1e6 ? "$" + (v/1e6).toFixed(2) + "M" : v >= 1e3 ? "$" + (v/1e3).toFixed(0) + "K" : "$" + v.toFixed(0);
+  const out = document.getElementById("ls-result");
+  const deltaColor = delta >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+  out.innerHTML = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${delta >= 0 ? 'var(--green,#34C759)' : 'var(--red,#FF3B30)'};border-radius:var(--r);padding:16px;margin-bottom:10px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">At age ${targetAge}, this scenario</div>
+      <div style="font-size:28px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt(bal)}</div>
+      <div style="font-size:12.5px;color:${deltaColor};font-weight:700;margin-top:2px">${delta >= 0 ? "+" : "-"}${fmt(Math.abs(delta))} vs your current trajectory</div>
+      <div style="margin-top:12px;display:grid;grid-template-columns:1fr 1fr;gap:6px">
+        <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600">New monthly savings</div>
+          <div style="font-size:14px;font-weight:700;color:${newSavings >= 0 ? 'var(--green,#34C759)' : 'var(--red,#FF3B30)'};font-variant-numeric:tabular-nums">$${newSavings.toFixed(0)}/mo</div>
+        </div>
+        <div style="background:var(--bg-elev);border-radius:8px;padding:8px 10px">
+          <div style="font-size:10px;color:var(--t3);text-transform:uppercase;font-weight:600">Total saved over ${years}y</div>
+          <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${fmt(newSavings * 12 * years)}</div>
+        </div>
+      </div>
+      <div style="font-size:11.5px;color:var(--t3);margin-top:10px;line-height:1.5;font-style:italic">Income ${incomeChg >= 0 ? "+" : ""}${incomeChg}% → $${newIncome.toFixed(0)}/mo · Expense ${expenseChg >= 0 ? "+" : ""}${expenseChg}% → $${newExpense.toFixed(0)}/mo · ${retPct}%/yr return · ${years} years to age ${targetAge}.</div>
+    </div>
+  `;
+}
+
+/* ---------- 2. Hours of your life view ----------
+   Helper that, given an hourly wage, converts dollar amounts into hours.
+   Surface as $XX = Y.Y hrs in transaction details and portfolio. */
+function hoursOfLifeSetupSheet() {
+  const cur = DB.hoursOfLifeRate || null;
+  openSheet(`
+    <h2 style="margin-bottom:4px">⏳ Hours of your life</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Set your effective hourly wage (after-tax). Every dollar amount in the app will optionally show "= X hours of your life" — your time priced honestly.</p>
+    <label>Effective hourly wage ($/hr after-tax)</label>
+    <input id="hol-rate" type="number" inputmode="decimal" min="0" step="0.5" value="${esc(cur || "")}" placeholder="e.g. 35 (annual ÷ 2080)"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box" />
+    <div style="background:var(--bg-elev);border-radius:10px;padding:11px 13px;margin-bottom:14px;font-size:12px;color:var(--t2);line-height:1.5">
+      Quick math: annual post-tax salary ÷ 2,080 work hours.
+      <br>$60k → ~$29/hr · $100k → ~$48/hr · $150k → ~$72/hr.
+    </div>
+    <div class="actions">
+      <button class="btn secondary" onclick="DB.hoursOfLifeRate=null;save();closeSheet();toast('Hours-of-life view disabled')">Turn off</button>
+      <button class="btn" onclick="_hourSave()">Save</button>
+    </div>
+  `);
+}
+
+async function _hourSave() {
+  const v = parseFloat((document.getElementById("hol-rate") || {}).value);
+  if (!isFinite(v) || v <= 0) { toast("Enter a positive number"); return; }
+  DB.hoursOfLifeRate = v;
+  await save();
+  closeSheet();
+  toast(`Hours-of-life set: $${v}/hr`);
+  if (typeof render === "function") render();
+}
+
+function hoursOf(amount) {
+  const rate = +DB.hoursOfLifeRate || 0;
+  if (!rate || !amount) return null;
+  return Math.abs(amount) / rate;
+}
+
+function fmtHours(amount) {
+  const h = hoursOf(amount);
+  if (h == null) return null;
+  if (h < 1) return Math.round(h * 60) + "min";
+  if (h < 40) return h.toFixed(1) + "h";
+  // Convert to workdays (8h) and workweeks (40h)
+  if (h < 200) return Math.round(h / 8) + " workday" + (Math.round(h/8) === 1 ? "" : "s");
+  if (h < 2080) return Math.round(h / 40) + " workweek" + (Math.round(h/40) === 1 ? "" : "s");
+  return (h / 2080).toFixed(1) + " years of work";
+}
+
+/* ---------- 3. Behavioral bias diagnostic + real-time interruption ----------
+   10-question intake scores user on Loss Aversion / Anchoring / Sunk Cost /
+   Recency Bias. Result is stored. UI checks the highest-scoring bias before
+   risky actions (selling at a loss, doubling down, etc.). */
+const BIAS_QUESTIONS = [
+  { q: "Your stock drops 25% in a week. Most likely you…", opts: [
+    { t: "Sell to avoid more loss", b: "loss", w: 3 },
+    { t: "Hold but check the price 5x a day", b: "loss", w: 2 },
+    { t: "Hold and look away", b: "loss", w: 0 },
+    { t: "Buy more — it's on sale", b: "loss", w: -1 },
+  ]},
+  { q: "You bought a stock at $100. It's now $80. You decide whether to sell based on…", opts: [
+    { t: "Whether it'll come back to $100", b: "anchor", w: 3 },
+    { t: "Whether it's a good stock at $80", b: "anchor", w: 0 },
+    { t: "What the analysts say now", b: "recency", w: 2 },
+    { t: "How long I've held it (sunk time)", b: "sunk", w: 2 },
+  ]},
+  { q: "You're paying for an unused gym membership. Why haven't you cancelled?", opts: [
+    { t: "I'll start going again, I paid for it", b: "sunk", w: 3 },
+    { t: "Cancellation feels like admitting failure", b: "sunk", w: 2 },
+    { t: "Forgot it existed", b: "recency", w: 1 },
+    { t: "I cancelled it last month already", b: "sunk", w: -1 },
+  ]},
+  { q: "Best time to invest in stocks is when…", opts: [
+    { t: "Markets just hit new highs", b: "recency", w: 3 },
+    { t: "Everyone is bullish — momentum is real", b: "recency", w: 2 },
+    { t: "You have money — timing doesn't matter much long-term", b: "recency", w: -1 },
+    { t: "Markets just had a bad week", b: "recency", w: 0 },
+  ]},
+  { q: "A friend made 80% on a meme stock. You…", opts: [
+    { t: "Buy some — I'm clearly missing out", b: "recency", w: 3 },
+    { t: "Feel anxious but resist", b: "loss", w: 1 },
+    { t: "Ask how they got in and copy", b: "anchor", w: 2 },
+    { t: "Ignore — that's a one-off", b: "recency", w: -1 },
+  ]},
+  { q: "You'd rather…", opts: [
+    { t: "Guaranteed $500 now", b: "loss", w: 2 },
+    { t: "50% chance of $1,200", b: "loss", w: -1 },
+    { t: "Need more info before deciding", b: "anchor", w: 1 },
+    { t: "Pick based on mood that day", b: "recency", w: 1 },
+  ]},
+  { q: "You spent $800 on a course you never finished. Now you…", opts: [
+    { t: "Force yourself to finish it — money's spent", b: "sunk", w: 3 },
+    { t: "Feel guilty every time you see the bookmark", b: "sunk", w: 2 },
+    { t: "Accept it, delete the bookmark, move on", b: "sunk", w: -1 },
+    { t: "Sign up for another one", b: "sunk", w: 1 },
+  ]},
+  { q: "Markets dropped 5% today. Tomorrow you…", opts: [
+    { t: "Check 10 times before noon", b: "recency", w: 3 },
+    { t: "Sell something defensively", b: "loss", w: 2 },
+    { t: "Buy something on the dip", b: "recency", w: 0 },
+    { t: "Don't change my plan", b: "recency", w: -1 },
+  ]},
+  { q: "You set a 'fair' price for your old car. A buyer offers 15% less. You…", opts: [
+    { t: "Refuse — they're insulting my anchor", b: "anchor", w: 3 },
+    { t: "Counter at 7% less", b: "anchor", w: 1 },
+    { t: "Accept if the buyer is solid", b: "anchor", w: 0 },
+    { t: "Re-research market value before deciding", b: "anchor", w: -1 },
+  ]},
+  { q: "Looking back at your worst money decision, the bias you fell into was…", opts: [
+    { t: "Couldn't accept the loss → held too long", b: "loss", w: 2 },
+    { t: "Anchored to original purchase price", b: "anchor", w: 2 },
+    { t: "Already invested too much to walk away", b: "sunk", w: 2 },
+    { t: "Got swept up in recent hype", b: "recency", w: 2 },
+  ]},
+];
+
+function biasQuizSheet() {
+  window._biasAnswers = { loss: 0, anchor: 0, sunk: 0, recency: 0 };
+  _biasShowQuestion(0);
+}
+function _biasShowQuestion(idx) {
+  if (idx >= BIAS_QUESTIONS.length) { _biasShowResult(); return; }
+  const q = BIAS_QUESTIONS[idx];
+  openSheet(`
+    <h2 style="margin-bottom:4px">🧠 Behavioral biases · Q${idx + 1} of ${BIAS_QUESTIONS.length}</h2>
+    <p class="muted" style="font-size:13px;margin-bottom:14px;line-height:1.5">${esc(q.q)}</p>
+    ${q.opts.map((o, i) => `
+      <button onclick="_biasAnswer(${idx}, ${jsAttr(o.b)}, ${o.w})" style="width:100%;text-align:left;background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:13px 16px;margin-bottom:7px;color:var(--t1);font-size:13.5px;line-height:1.4;cursor:pointer">
+        ${esc(o.t)}
+      </button>
+    `).join("")}
+    <div style="display:flex;gap:4px;margin-top:14px;justify-content:center">
+      ${BIAS_QUESTIONS.map((_, i) => `<span style="width:7px;height:7px;border-radius:50%;background:${i <= idx ? 'var(--blue,#007AFF)' : 'var(--sep)'}"></span>`).join("")}
+    </div>
+    <div class="actions"><button class="btn secondary" onclick="closeSheet()">Cancel</button></div>
+  `);
+}
+function _biasAnswer(idx, bias, weight) {
+  window._biasAnswers[bias] = (window._biasAnswers[bias] || 0) + weight;
+  _biasShowQuestion(idx + 1);
+}
+function _biasShowResult() {
+  const scores = window._biasAnswers || {};
+  // Normalize to 0-10
+  const maxRaw = Math.max(...Object.values(scores), 1);
+  const normalized = {
+    loss:    Math.max(0, Math.min(10, Math.round((scores.loss + 2) * 1.5))),
+    anchor:  Math.max(0, Math.min(10, Math.round((scores.anchor + 2) * 1.5))),
+    sunk:    Math.max(0, Math.min(10, Math.round((scores.sunk + 2) * 1.5))),
+    recency: Math.max(0, Math.min(10, Math.round((scores.recency + 2) * 1.5))),
+  };
+  DB.moneyBiasProfile = { scores: normalized, takenAt: Date.now() };
+  save();
+  const labels = {
+    loss:    { name: "Loss aversion",    desc: "You feel losses ~2x as strongly as equivalent gains. Watch for: panic-selling drawdowns, refusing to realize a loss." },
+    anchor:  { name: "Anchoring",        desc: "You weight the first number you see too heavily. Watch for: holding to original purchase price as a 'fair' target." },
+    sunk:    { name: "Sunk cost",        desc: "You let past spending dictate future choices. Watch for: forcing yourself to use what you've already paid for, even when it no longer fits." },
+    recency: { name: "Recency bias",     desc: "You overweight recent events. Watch for: buying after a rally or selling after a drop because 'this is the new normal'." },
+  };
+  const sorted = Object.entries(normalized).sort((a, b) => b[1] - a[1]);
+  const top = sorted[0];
+  openSheet(`
+    <h2 style="margin-bottom:4px">Your bias profile</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Cornileus uses these to interrupt you before you act on a bias in real time.</p>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--orange,#FF9500);border-radius:var(--r);padding:14px;margin-bottom:10px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Your dominant bias</div>
+      <div style="font-size:22px;font-weight:800;color:var(--orange,#FF9500);margin-bottom:6px">${esc(labels[top[0]].name)} (${top[1]}/10)</div>
+      <div style="font-size:13px;color:var(--t1);line-height:1.5">${esc(labels[top[0]].desc)}</div>
+    </div>
+    <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Full profile</div>
+    ${sorted.map(([k, v]) => `
+      <div style="background:var(--bg-elev);border-radius:8px;padding:9px 11px;margin-bottom:4px">
+        <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
+          <span style="font-size:12.5px;font-weight:600;color:var(--t1)">${esc(labels[k].name)}</span>
+          <span style="font-size:13px;color:var(--t2);font-weight:700;font-variant-numeric:tabular-nums">${v} / 10</span>
+        </div>
+        <div style="height:5px;background:var(--card);border-radius:3px;overflow:hidden">
+          <div style="height:100%;width:${v*10}%;background:${v >= 7 ? 'var(--red,#FF3B30)' : v >= 4 ? 'var(--orange,#FF9500)' : 'var(--green,#34C759)'}"></div>
+        </div>
+      </div>
+    `).join("")}
+    <div style="background:var(--bg-elev);border-radius:10px;padding:11px 13px;margin-top:14px;font-size:12px;color:var(--t2);line-height:1.5">
+      Cornileus now factors your profile into every chat. He'll flag actions that match your top bias ("This looks like loss aversion — your profile shows you're 8/10 on that").
+    </div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Got it</button></div>
+  `);
+}
+
+// Check if an action looks like it's a bias-triggered move. Returns a
+// warning string or null. Called from places like _stocksClosePositionSheet
+// when selling at a loss, or from confirm-spend on big discretionary items.
+function biasWarning(actionType, context) {
+  const profile = DB.moneyBiasProfile;
+  if (!profile || !profile.scores) return null;
+  const s = profile.scores;
+  if (actionType === "sell_at_loss" && s.loss >= 6) {
+    return `Your loss-aversion score is ${s.loss}/10. Selling losers feels protective but locks in the loss. Sleep on it — has the underlying business changed, or just the price?`;
+  }
+  if (actionType === "buy_after_rally" && s.recency >= 6) {
+    return `Your recency-bias score is ${s.recency}/10. Buying after a rally extrapolates from the recent past. Ask: would I buy this if the chart didn't exist?`;
+  }
+  if (actionType === "hold_for_purchase_price" && s.anchor >= 6) {
+    return `Your anchoring score is ${s.anchor}/10. The purchase price doesn't predict the future price. Decide based on whether you'd buy it again today.`;
+  }
+  if (actionType === "force_use_paid_for" && s.sunk >= 6) {
+    return `Your sunk-cost score is ${s.sunk}/10. Past spending is already gone — it shouldn't influence future use. Would you sign up for this today knowing what you know now?`;
+  }
+  return null;
+}
+
+/* ---------- 4. Cornileus rules engine ----------
+   User-defined principles that get injected into every Cornileus system
+   prompt. The user writes their own financial dogma; Cornileus enforces
+   it. */
+function cornileusRulesSheet() {
+  if (!Array.isArray(DB.moneyRules)) DB.moneyRules = [];
+  const rules = DB.moneyRules.slice().reverse();
+  openSheet(`
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px">
+      ${cornAvatarHtml(44, false, "neutral")}
+      <div style="flex:1;min-width:0">
+        <h2 style="margin:0">📜 Your money rules</h2>
+        <div class="muted" style="font-size:12.5px;margin-top:2px">Principles Cornileus enforces in every chat.</div>
+      </div>
+    </div>
+    <p style="font-size:12.5px;color:var(--t2);line-height:1.5;margin-bottom:12px">Write your own financial commandments. Cornileus checks every reply against them and flags violations.</p>
+    <label style="font-size:11px">Add a rule</label>
+    <div style="display:flex;gap:6px;margin-bottom:14px">
+      <input id="rule-input" placeholder="e.g. Never finance depreciating assets"
+        style="flex:1;background:var(--bg-elev);padding:10px 12px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;box-sizing:border-box"
+        onkeydown="if(event.key==='Enter'){event.preventDefault();_rulesAdd(this.value);this.value='';}" />
+      <button class="btn" style="font-size:13px;padding:9px 14px" onclick="_rulesAdd(document.getElementById('rule-input').value);document.getElementById('rule-input').value=''">+ Add</button>
+    </div>
+    ${rules.length ? rules.map((r, i) => `
+      <div style="display:flex;align-items:flex-start;gap:8px;padding:10px 12px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px">
+        <div style="width:22px;height:22px;border-radius:50%;background:var(--card);border:0.5px solid var(--sep);display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:var(--t1);flex-shrink:0">${rules.length - i}</div>
+        <div style="flex:1;font-size:12.5px;color:var(--t1);line-height:1.45">${esc(r.rule)}</div>
+        <button onclick="_rulesRemove(${jsAttr(r.id)})" style="background:transparent;border:0;color:var(--red,#FF3B30);font-size:14px;padding:0 2px;cursor:pointer;flex-shrink:0" aria-label="Remove">×</button>
+      </div>
+    `).join("") : `<div style="text-align:center;padding:18px 14px;color:var(--t3);font-size:12.5px;font-style:italic">No rules yet. Add your own financial commandments — Cornileus checks every reply against them.</div>`}
+    <div style="background:var(--bg-elev);border-radius:10px;padding:10px 12px;margin-top:14px;font-size:11px;color:var(--t2);line-height:1.5">
+      <b style="color:var(--t1)">Examples:</b> "Never finance depreciating assets" · "Always negotiate annual contracts" · "Sell when P/E &gt; 35" · "Cash position never below 3 months expenses" · "Max retirement accounts before taxable investing" · "Donate 10% of income annually".
+    </div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  setTimeout(() => { const el = document.getElementById("rule-input"); if (el) el.focus(); }, 60);
+}
+async function _rulesAdd(text) {
+  const t = (text || "").trim();
+  if (!t) return;
+  if (!Array.isArray(DB.moneyRules)) DB.moneyRules = [];
+  if (DB.moneyRules.length >= 20) { toast("Rule limit reached (20 max)"); return; }
+  DB.moneyRules.push({ id: "r_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6), rule: t.slice(0, 200), addedAt: Date.now() });
+  await save();
+  cornileusRulesSheet();
+}
+async function _rulesRemove(id) {
+  if (!Array.isArray(DB.moneyRules)) return;
+  DB.moneyRules = DB.moneyRules.filter(r => r.id !== id);
+  await save();
+  cornileusRulesSheet();
+}
+
+/* ---------- 5. Reverse life math ----------
+   User picks the life they want; we backsolve required savings rate +
+   net-worth-at-age waypoints. */
+function reverseLifeMathSheet() {
+  const profile = DB.profile || {};
+  const currentAge = +profile.age || 30;
+  const currentNW = (DB.netWorthHistory || []).slice(-1)[0]?.total || 0;
+  openSheet(`
+    <h2 style="margin-bottom:4px">🎯 Reverse life math</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Most calculators go forward (income → projection). This goes backward (desired life → required path). Pick the future you want; we'll solve for what it takes.</p>
+    <label>I want to retire at age</label>
+    <input id="rlm-age" type="number" min="${currentAge + 1}" max="80" value="60" oninput="_rlmRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Living on $ per month (today's dollars)</label>
+    <input id="rlm-monthly" type="number" min="0" value="6000" oninput="_rlmRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Safe withdrawal rate (%)</label>
+    <input id="rlm-swr" type="number" min="2" max="6" step="0.1" value="4" oninput="_rlmRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>Expected annual return (%)</label>
+    <input id="rlm-ret" type="number" min="2" max="12" step="0.5" value="7" oninput="_rlmRecompute()"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box" />
+    <div id="rlm-result"></div>
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+  window._rlmBaseline = { currentAge, currentNW };
+  _rlmRecompute();
+}
+function _rlmRecompute() {
+  const b = window._rlmBaseline; if (!b) return;
+  const targetAge = parseInt(document.getElementById("rlm-age").value, 10);
+  const monthlyNeed = parseFloat(document.getElementById("rlm-monthly").value) || 0;
+  const swr = parseFloat(document.getElementById("rlm-swr").value) || 4;
+  const ret = parseFloat(document.getElementById("rlm-ret").value) || 7;
+  const years = Math.max(1, targetAge - b.currentAge);
+  // Target net worth = annual need × (100/swr)
+  const targetNW = (monthlyNeed * 12) * (100 / swr);
+  const r = Math.pow(1 + ret/100, 1/12) - 1;
+  const n = years * 12;
+  // Required monthly contribution: FV = PV*(1+r)^n + PMT * ((1+r)^n - 1)/r
+  const fvOfCurrent = b.currentNW * Math.pow(1 + r, n);
+  const remaining = targetNW - fvOfCurrent;
+  const annuityFactor = (Math.pow(1 + r, n) - 1) / r;
+  const requiredMonthly = annuityFactor > 0 ? Math.max(0, remaining / annuityFactor) : 0;
+  // Waypoints at every 5y
+  const waypoints = [];
+  let bal = b.currentNW;
+  for (let m = 0; m <= n; m++) {
+    if (m > 0) bal = bal * (1 + r) + requiredMonthly;
+    if (m % 60 === 0) waypoints.push({ age: b.currentAge + m/12, bal });
+  }
+  const fmt = (v) => v >= 1e6 ? "$" + (v/1e6).toFixed(2) + "M" : v >= 1e3 ? "$" + (v/1e3).toFixed(0) + "K" : "$" + v.toFixed(0);
+  const out = document.getElementById("rlm-result");
+  out.innerHTML = `
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--blue,#007AFF);border-radius:var(--r);padding:16px;margin-bottom:10px">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Required nest egg at age ${targetAge}</div>
+      <div style="font-size:30px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt(targetNW)}</div>
+      <div style="font-size:12.5px;color:var(--t3);margin-top:2px">$${monthlyNeed.toLocaleString()}/mo × 12 × (1/${swr/100}) using the ${swr}% safe-withdrawal rule</div>
+      <div style="margin-top:14px;background:var(--bg-elev);border-radius:10px;padding:11px 13px">
+        <div style="font-size:10.5px;color:var(--blue,#007AFF);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:3px">What it takes</div>
+        <div style="font-size:18px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt(requiredMonthly)}/mo</div>
+        <div style="font-size:11.5px;color:var(--t3);margin-top:2px">starting from <b data-priv="amount">${fmt(b.currentNW)}</b> at age ${b.currentAge}, growing at ${ret}%/yr for ${years} years</div>
+      </div>
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:14px 0 8px">Net-worth waypoints</div>
+      ${waypoints.map(w => `
+        <div style="display:flex;justify-content:space-between;align-items:baseline;padding:6px 11px;background:var(--bg-elev);border-radius:6px;margin-bottom:3px;font-size:12px">
+          <span style="color:var(--t3)">Age ${w.age.toFixed(0)}</span>
+          <span style="color:var(--t1);font-weight:700;font-variant-numeric:tabular-nums" data-priv="amount">${fmt(w.bal)}</span>
+        </div>
+      `).join("")}
+    </div>
+  `;
+}
+
+/* ---------- 6. Pre-commitment contracts ----------
+   User locks in a future commitment with optional consequence. Tracks
+   status; surfaces as Smart Play when deadline approaches. */
+function precommitContractsSheet() {
+  if (!Array.isArray(DB.precommitContracts)) DB.precommitContracts = [];
+  const all = DB.precommitContracts.slice().reverse();
+  const active = all.filter(c => c.status === "pending");
+  const past = all.filter(c => c.status !== "pending");
+  openSheet(`
+    <h2 style="margin-bottom:4px">🔐 Pre-commitment contracts</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Lock yourself into a financial commitment with an optional consequence. Real friction against future-you's procrastination.</p>
+    <label>What will you do?</label>
+    <input id="pc-label" placeholder="e.g. Open a Roth IRA and deposit $1,000"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;margin-bottom:10px;box-sizing:border-box" />
+    <label>By what date?</label>
+    <input id="pc-date" type="date"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
+    <label>If you don't follow through, what happens? (optional)</label>
+    <input id="pc-stake" placeholder="e.g. Donate $100 to a charity I dislike"
+      style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;margin-bottom:14px;box-sizing:border-box" />
+    <button class="btn" style="width:100%;margin-bottom:14px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="_pcAdd()">🔐 Lock it in</button>
+    ${active.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Active commitments (${active.length})</div>
+      ${active.map(c => {
+        const days = Math.ceil((new Date(c.deadline) - new Date()) / 86400000);
+        const urgent = days <= 7;
+        return `
+          <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${urgent ? 'var(--orange,#FF9500)' : 'var(--blue,#007AFF)'};border-radius:10px;padding:11px 13px;margin-bottom:6px">
+            <div style="font-size:13px;color:var(--t1);font-weight:600;line-height:1.4">${esc(c.label)}</div>
+            <div style="font-size:11px;color:${urgent ? 'var(--orange,#FF9500)' : 'var(--t3)'};margin-top:3px">📅 ${esc(c.deadline)} · ${days > 0 ? days + " day" + (days===1?"":"s") + " left" : days === 0 ? "Today" : Math.abs(days) + " day" + (Math.abs(days)===1?"":"s") + " overdue"}</div>
+            ${c.stake ? `<div style="font-size:11px;color:var(--t3);margin-top:3px;font-style:italic">↳ Stake: ${esc(c.stake)}</div>` : ""}
+            <div style="display:flex;gap:6px;margin-top:8px">
+              <button onclick="_pcMark(${jsAttr(c.id)}, 'done')" style="flex:1;background:var(--green,#34C759);color:#fff;border:0;border-radius:6px;padding:6px 10px;font-size:11.5px;font-weight:700;cursor:pointer">✓ Did it</button>
+              <button onclick="_pcMark(${jsAttr(c.id)}, 'broken')" style="background:transparent;color:var(--red,#FF3B30);border:0.5px solid var(--red,#FF3B30);border-radius:6px;padding:6px 10px;font-size:11.5px;font-weight:600;cursor:pointer">Broken</button>
+              <button onclick="_pcRemove(${jsAttr(c.id)})" style="background:transparent;color:var(--t3);border:0;font-size:14px;padding:0 6px;cursor:pointer">×</button>
+            </div>
+          </div>
+        `;
+      }).join("")}
+    ` : `<div style="text-align:center;padding:18px 14px;color:var(--t3);font-size:12.5px;font-style:italic">No active commitments. Lock one in above.</div>`}
+    ${past.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:14px 0 6px">History</div>
+      ${past.slice(0, 10).map(c => `
+        <div style="background:var(--bg-elev);border-radius:6px;padding:8px 11px;margin-bottom:3px;opacity:0.7;font-size:11.5px;color:var(--t2)">${c.status === "done" ? "✓" : "✗"} ${esc(c.label)}</div>
+      `).join("")}
+    ` : ""}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+async function _pcAdd() {
+  const label = (document.getElementById("pc-label").value || "").trim();
+  const deadline = (document.getElementById("pc-date").value || "").trim();
+  const stake = (document.getElementById("pc-stake").value || "").trim();
+  if (!label) { toast("Label required"); return; }
+  if (!deadline || !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) { toast("Pick a deadline date"); return; }
+  if (!Array.isArray(DB.precommitContracts)) DB.precommitContracts = [];
+  DB.precommitContracts.push({
+    id: "pc_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6),
+    label: label.slice(0, 240), deadline, stake: stake.slice(0, 240),
+    status: "pending", addedAt: Date.now(),
+  });
+  await save();
+  toast("🔐 Locked in");
+  precommitContractsSheet();
+}
+async function _pcMark(id, status) {
+  const c = (DB.precommitContracts || []).find(x => x.id === id);
+  if (!c) return;
+  c.status = status;
+  c.resolvedAt = Date.now();
+  await save();
+  if (status === "done") toast("✓ Followed through");
+  precommitContractsSheet();
+}
+async function _pcRemove(id) {
+  DB.precommitContracts = (DB.precommitContracts || []).filter(c => c.id !== id);
+  await save();
+  precommitContractsSheet();
+}
+
+/* ---------- 7. Identity-based money ----------
+   User picks a money identity. Cornileus references it in every chat
+   ("Does this match 'someone who saves first'?"). */
+function moneyIdentitySheet() {
+  const cur = DB.moneyIdentity && DB.moneyIdentity.text ? DB.moneyIdentity.text : "";
+  openSheet(`
+    <h2 style="margin-bottom:4px">🧬 Who are you with money?</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">"Goals" focus on what you want. "Identity" focuses on who you are. Pick a money identity. Every decision goes through this lens.</p>
+    <label>Your money identity</label>
+    <textarea id="mid-input" rows="2" placeholder="e.g. I'm someone who saves before spending."
+      style="width:100%;background:var(--bg-elev);padding:11px 14px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box;resize:vertical;font-family:inherit">${esc(cur)}</textarea>
+    <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Inspiration</div>
+    ${[
+      "I'm someone who saves before I spend.",
+      "I'm someone who only buys appreciating assets.",
+      "I'm someone who maxes tax-advantaged accounts first.",
+      "I'm someone who negotiates every annual contract.",
+      "I'm someone who values time over things.",
+      "I'm someone who invests on autopilot.",
+      "I'm someone who never carries credit-card debt.",
+    ].map(s => `<button onclick="document.getElementById('mid-input').value=${jsAttr(s)}" style="display:block;width:100%;text-align:left;background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t2);border-radius:8px;padding:8px 11px;margin-bottom:3px;font-size:12px;cursor:pointer">${esc(s)}</button>`).join("")}
+    <div class="actions">
+      <button class="btn secondary" onclick="DB.moneyIdentity=null;save();closeSheet();toast('Identity cleared')">Clear</button>
+      <button class="btn" onclick="_midSave()">Save</button>
+    </div>
+  `);
+}
+async function _midSave() {
+  const t = ((document.getElementById("mid-input") || {}).value || "").trim();
+  if (!t) { toast("Write your identity"); return; }
+  DB.moneyIdentity = { text: t.slice(0, 240), addedAt: Date.now() };
+  await save();
+  closeSheet();
+  toast("🧬 Identity saved");
+}
+
+/* ---------- 8. Letter from your 80-year-old self ----------
+   User writes a money decision they're considering. AI generates a reply
+   from the user's 80-year-old self. Saved to DB.futureLetters. */
+async function futureSelfLetterSheet() {
+  if (!Array.isArray(DB.futureLetters)) DB.futureLetters = [];
+  const past = DB.futureLetters.slice().reverse();
+  openSheet(`
+    <h2 style="margin-bottom:4px">📨 Letter from your 80-year-old self</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Write a decision you're considering. Get a letter back from your future self.</p>
+    <label>What's on your mind?</label>
+    <textarea id="fsl-prompt" rows="3" placeholder="e.g. Should I buy a new $50k car or keep my old one and invest the difference?"
+      style="width:100%;background:var(--bg-elev);padding:11px 14px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;margin-bottom:14px;box-sizing:border-box;resize:vertical;font-family:inherit"></textarea>
+    <button class="btn" style="width:100%;margin-bottom:14px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="_fslGenerate()">📨 Get the letter</button>
+    <div id="fsl-result"></div>
+    ${past.length ? `
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:14px 0 6px">Past letters (${past.length})</div>
+      ${past.slice(0, 5).map(l => `
+        <div style="background:var(--bg-elev);border-radius:8px;padding:10px 12px;margin-bottom:4px;cursor:pointer" onclick="document.getElementById('fsl-result').innerHTML=_fslRender(${jsAttr(JSON.stringify(l))})">
+          <div style="font-size:11.5px;color:var(--t1);font-weight:600;line-height:1.4">${esc(l.prompt.slice(0, 80))}${l.prompt.length > 80 ? "…" : ""}</div>
+          <div style="font-size:10.5px;color:var(--t3);margin-top:2px">${new Date(l.addedAt).toLocaleDateString()}</div>
+        </div>
+      `).join("")}
+    ` : ""}
+    <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
+  `);
+}
+async function _fslGenerate() {
+  const prompt = ((document.getElementById("fsl-prompt") || {}).value || "").trim();
+  if (!prompt) { toast("Write a decision first"); return; }
+  const out = document.getElementById("fsl-result");
+  if (out) out.innerHTML = `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:13px">📜 Reaching across the years…</div>`;
+  try {
+    const profile = DB.profile || {};
+    const age = +profile.age || 30;
+    const name = profile.name || "friend";
+    const userMsg = `Write a letter from my 80-year-old self to my present self about this decision: "${prompt}". I'm currently ${age} years old. Reply with this exact structure (no preamble, no headers, no salutations):
+
+OPENER: <one warm sentence, like an old letter ("I'm writing this from..." or "Looking back from..." )>
+PERSPECTIVE: <2-3 sentences from the 80-year-old's vantage — what mattered, what didn't, what they wish they'd known>
+ON-THIS-DECISION: <2-3 sentences specifically addressing the decision being asked about — direct, candid>
+ONE-REGRET: <one thing the 80-year-old would have done differently around money or life>
+ONE-NOT-REGRET: <one thing the 80-year-old is glad they did or didn't worry about>
+CLOSING: <one short sentence, signing off naturally>`;
+    const ai = await aiApi({
+      model: DB.settings.anthropicModel || "claude-haiku-4-5-20251001",
+      max_tokens: 600,
+      temperature: 0.7,
+      system: "You are writing as the user's 80-year-old future self — looking back from the end of life with warmth, regret, perspective, and clarity. Reference their actual decision specifically. The voice is older, wiser, kind but unsentimental. No clichés. No advice industry speak. Write like a real letter from an old person who has loved this person for 50+ years.",
+      messages: [{ role: "user", content: userMsg }],
+    });
+    const text = (ai.content && ai.content[0] && ai.content[0].text) || "";
+    if (!text) throw new Error("Empty reply");
+    const letter = { id: "fsl_" + Date.now().toString(36), prompt, reply: text, addedAt: Date.now() };
+    if (!Array.isArray(DB.futureLetters)) DB.futureLetters = [];
+    DB.futureLetters.push(letter);
+    if (DB.futureLetters.length > 50) DB.futureLetters.splice(0, DB.futureLetters.length - 50);
+    save();
+    if (out) out.innerHTML = _fslRender(letter);
+  } catch (e) {
+    if (out) out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--red);border-radius:var(--r);padding:14px;color:var(--red);font-size:13px">${esc(e.message)}</div>`;
+  }
+}
+function _fslRender(letter) {
+  const obj = typeof letter === "string" ? JSON.parse(letter) : letter;
+  const text = obj.reply || "";
+  const parse = (key) => {
+    const m = text.match(new RegExp("^" + key + ":\\s*(.*?)$", "im"));
+    return m ? m[1].trim() : "";
+  };
+  const sections = [
+    { key: "OPENER", label: "" },
+    { key: "PERSPECTIVE", label: "Looking back" },
+    { key: "ON-THIS-DECISION", label: "On your question" },
+    { key: "ONE-REGRET", label: "One regret" },
+    { key: "ONE-NOT-REGRET", label: "One thing I wouldn't change" },
+    { key: "CLOSING", label: "" },
+  ];
+  const parts = sections.map(s => ({ ...s, text: parse(s.key) })).filter(s => s.text);
+  return `
+    <div style="background:linear-gradient(135deg,rgba(139,92,246,0.06),rgba(236,72,153,0.04));border:0.5px solid rgba(139,92,246,0.30);border-radius:var(--r);padding:18px;margin-bottom:10px;font-family:Georgia,'Times New Roman',serif">
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:10px;font-family:-apple-system,system-ui,sans-serif">From your 80-year-old self</div>
+      ${parts.map(s => `
+        ${s.label ? `<div style="font-size:11px;color:var(--purple,#8957d9);font-weight:700;letter-spacing:0.04em;text-transform:uppercase;margin-top:14px;margin-bottom:4px;font-family:-apple-system,system-ui,sans-serif">${esc(s.label)}</div>` : ""}
+        <div style="font-size:14px;color:var(--t1);line-height:1.65;font-style:italic">${esc(s.text)}</div>
+      `).join("")}
+    </div>
+  `;
+}
+
+/* ---------- Inject identity + rules into Cornileus system prompt ----------
+   Called from counselorSend when building the system message. */
+function _cornileusExtraContext() {
+  const out = [];
+  if (DB.moneyIdentity && DB.moneyIdentity.text) {
+    out.push("MONEY IDENTITY (how this user has chosen to relate to money — frame every reply through this lens):\n" + DB.moneyIdentity.text);
+  }
+  if (Array.isArray(DB.moneyRules) && DB.moneyRules.length) {
+    out.push("MONEY RULES (principles this user has set — flag any action that violates these):\n" + DB.moneyRules.map((r, i) => (i + 1) + ". " + r.rule).join("\n"));
+  }
+  if (DB.moneyBiasProfile && DB.moneyBiasProfile.scores) {
+    const s = DB.moneyBiasProfile.scores;
+    const top = Object.entries(s).sort((a, b) => b[1] - a[1]).slice(0, 2);
+    const names = { loss: "loss aversion", anchor: "anchoring", sunk: "sunk cost", recency: "recency bias" };
+    out.push("BIAS PROFILE (this user scored highest on these — flag in real time when an action looks like one of these biases):\n" + top.map(([k, v]) => "- " + names[k] + ": " + v + "/10").join("\n"));
+  }
+  return out.length ? "\n\n" + out.join("\n\n") : "";
+}
 
 function insuranceAuditSheet() {
   if (!DB.insurance || typeof DB.insurance !== "object") DB.insurance = {};
@@ -21623,7 +22288,9 @@ async function counselorSend(text) {
     const memBlock = mems.length
       ? "\n\nLONG-TERM MEMORIES (the user has pinned these as always-true context):\n" + mems.map(m => "- " + m.text).join("\n")
       : "";
-    const system = COUNSELOR_SYSTEM + ctxHint + toneHint + memBlock + "\n\nUSER SNAPSHOT (current right now):\n```json\n" + snapshotJson + "\n```";
+    // Phase 14 — identity/rules/bias profile injection
+    const extraCtx = (typeof _cornileusExtraContext === "function") ? _cornileusExtraContext() : "";
+    const system = COUNSELOR_SYSTEM + ctxHint + toneHint + memBlock + extraCtx + "\n\nUSER SNAPSHOT (current right now):\n```json\n" + snapshotJson + "\n```";
 
     // Send the last 24 turns — enough for continuity, bounded for cost.
     const recent = DB.counselor.thread.slice(-24);
