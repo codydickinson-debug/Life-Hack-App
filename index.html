@@ -3316,6 +3316,67 @@ function spendCategories() {
   return Array.from(cats);
 }
 
+// 12-month wins-per-month bar chart. Shows the user's year of wins at a
+// glance so they can spot momentum vs droughts. Returns "" when the user
+// has logged fewer than 2 distinct months of wins.
+function winsByMonthChartHtml() {
+  const wins = DB.wins || [];
+  if (wins.length < 1) return "";
+  const now = new Date();
+  const months = [];
+  for (let i = 11; i >= 0; i--) {
+    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+    const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+    months.push({ key, label: d.toLocaleDateString("en-US", { month: "short" }), count: 0 });
+  }
+  const idx = new Map(months.map((m, i) => [m.key, i]));
+  for (const w of wins) {
+    if (!w.date) continue;
+    const k = w.date.slice(0, 7);
+    if (idx.has(k)) months[idx.get(k)].count++;
+  }
+  const monthsWithData = months.filter(m => m.count > 0).length;
+  if (monthsWithData < 2) return "";
+  const W = 320, H = 110;
+  const padL = 12, padR = 10, padT = 14, padB = 22;
+  const innerW = W - padL - padR;
+  const innerH = H - padT - padB;
+  const maxC = Math.max(...months.map(m => m.count), 1);
+  const barW = innerW / months.length * 0.65;
+  const gap = innerW / months.length * 0.35;
+  const total = months.reduce((s, m) => s + m.count, 0);
+  const bestMonth = months.reduce((best, m) => m.count > best.count ? m : best, months[0]);
+  const bars = months.map((m, i) => {
+    const x = padL + i * (barW + gap) + gap / 2;
+    const h = (m.count / maxC) * innerH;
+    const y = padT + innerH - h;
+    const isBest = m.count === bestMonth.count && m.count > 0;
+    const isCurrent = i === months.length - 1;
+    const fill = m.count === 0
+      ? "var(--bg-elev)"
+      : (isBest ? "url(#wins-grad)" : "var(--orange,#FF9500)");
+    const opacity = isCurrent ? "1" : "0.85";
+    const segs = `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(h, 1.5).toFixed(1)}" fill="${fill}" opacity="${opacity}" rx="1.5"/>`;
+    const lbl = m.count > 0 ? `<text x="${(x + barW/2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--t2)" font-weight="600" font-family="-apple-system,system-ui,sans-serif">${m.count}</text>` : "";
+    const monthLbl = `<text x="${(x + barW/2).toFixed(1)}" y="${(H - 6).toFixed(1)}" text-anchor="middle" font-size="9" fill="${isCurrent ? 'var(--t1)' : 'var(--t3)'}" font-weight="${isCurrent ? '700' : '400'}" font-family="-apple-system,system-ui,sans-serif">${esc(m.label)}</text>`;
+    return segs + lbl + monthLbl;
+  }).join("");
+  return `
+    <div class="section-h" style="margin-top:14px"><span class="lbl">Wins by month</span><span class="muted" style="font-size:12px">${total} this year · best ${bestMonth.label} (${bestMonth.count})</span></div>
+    <div style="background:var(--card);border-radius:var(--r);padding:10px 6px 4px;border:0.5px solid var(--sep);margin-bottom:14px">
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" style="width:100%;height:auto;display:block">
+        <defs>
+          <linearGradient id="wins-grad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#FF9500"/>
+            <stop offset="100%" stop-color="#FF6B35"/>
+          </linearGradient>
+        </defs>
+        ${bars}
+      </svg>
+    </div>
+  `;
+}
+
 // 6-month spend trend — stacked bar by top 5 categories so the user sees
 // where their money has been going over time at a glance. Returns "" when
 // there's nothing meaningful to show (<2 months of outflow data).
@@ -8294,6 +8355,8 @@ function renderStats() {
         </div>
       `;
     })()}
+
+    ${winsByMonthChartHtml()}
 
     <div class="section-h"><span class="lbl">This month</span></div>
     <div class="list">
