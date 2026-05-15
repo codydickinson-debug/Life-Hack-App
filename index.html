@@ -3639,11 +3639,13 @@ function toggleHabit(id) {
   const wasDone = h.type === "count" ? (h.log[k]||0) >= (h.target||1) : !!h.log[k];
   if (h.type === "count") {
     h.log[k] = (h.log[k]||0) + 1;
-    if (h.log[k] >= (h.target||1) && !h._wasDone) toast(`✓ ${h.name}`);
+    if (h.log[k] >= (h.target||1) && !h._wasDone) { toast(`✓ ${h.name}`); try { haptic("success"); } catch {} }
+    else try { haptic("tap"); } catch {}
     h._wasDone = h.log[k] >= (h.target||1);
   } else {
     h.log[k] = !h.log[k];
-    if (h.log[k]) toast(`✓ ${h.name}`);
+    if (h.log[k]) { toast(`✓ ${h.name}`); try { haptic("success"); } catch {} }
+    else try { haptic("tap"); } catch {}
   }
   // Habit → savings auto-credit: if this habit is linked to a savings
   // bucket AND completing it transitioned from not-done to done, log a
@@ -4298,6 +4300,7 @@ function processNewAnomalies() {
       key: top.key,
       summary: `${top.category}: ${fmt$0(top.amount)} (~${top.ratio.toFixed(1)}× usual)`,
     };
+    try { haptic("warning"); } catch {}
     // Fire a server-side push so it lands when the app is closed.
     if ((DB.settings.notifyCategories || {}).bills !== false &&
         typeof sendPushNow === "function" &&
@@ -4710,6 +4713,7 @@ function addWin(text) {
   // Cap at 200 chars to match addWinForDate so the same field has the same
   // limit no matter which entry path the user takes.
   DB.wins.unshift({ id: uid(), date: todayKey(), text: t.slice(0, 200) });
+  try { haptic("success"); } catch {}
   save(); render();
 }
 
@@ -7222,6 +7226,7 @@ function togglePlan(id) {
   p.completedAt = p.completed ? Date.now() : 0;
   if (p.completed) {
     celebrate && celebrate();
+    try { haptic("success"); } catch {}
     const flippedGoals = _completeLinkedGoals(p);
     if (flippedGoals > 0) toast(`Plan complete · ${flippedGoals} linked goal${flippedGoals===1?"":"s"} finished 🎯`);
   }
@@ -24790,7 +24795,48 @@ function counselorRender() {
       </div>`;
   }).join("");
 
-  const suggestions = COUNSELOR_SUGGESTIONS[ctx] || COUNSELOR_SUGGESTIONS.default;
+  // Build a contextual prompt list that reacts to the user's current
+  // state. If there's an active anomaly, a pending milestone, or a
+  // pending paycheck, surface a specific prompt about it ahead of the
+  // generic context-tab suggestions. The AI replies feel much smarter
+  // when the seed prompts already know what's happening.
+  const contextualSeeds = (() => {
+    const out = [];
+    try {
+      // Anomaly — most recent flagged transaction
+      const anomalies = (typeof detectAnomalies === "function") ? detectAnomalies() : [];
+      if (anomalies.length) {
+        const a = anomalies[0];
+        out.push({ icon: "⚠️", text: `Why was that ${a.category} charge ${fmt$0(a.amount)} so high? Should I be worried?` });
+      }
+      // Just hit a milestone
+      if (DB._pendingMilestone) {
+        out.push({ icon: "🎉", text: `I just hit ${DB._pendingMilestone.title}. What's the smart next move?` });
+      }
+      // Pending paychecks to allocate
+      const pending = (DB.pendingDeposits || []).length;
+      if (pending > 0) {
+        out.push({ icon: "💵", text: `I have ${pending} paycheck${pending===1?"":"s"} waiting to allocate. Help me split them across my savings buckets.` });
+      }
+      // Runway low
+      if (typeof _playsTotalSavings === "function" && typeof _playsMonthlyFixed === "function") {
+        const total = _playsTotalSavings();
+        const fixed = _playsMonthlyFixed();
+        if (fixed >= 500 && total / fixed < 1) {
+          out.push({ icon: "⚠️", text: `My runway is under a month. Walk me through what to cut and how to rebuild it.` });
+        }
+      }
+      // Bills due in next 3 days
+      if (typeof upcomingBills === "function") {
+        const soon = (upcomingBills(3) || []).filter(b => b && b.next_predicted);
+        if (soon.length) {
+          out.push({ icon: "📆", text: `I have ${soon.length} bill${soon.length===1?"":"s"} due in the next 3 days. What's my plan?` });
+        }
+      }
+    } catch {}
+    return out.slice(0, 3); // cap so they don't crowd out the generic ones
+  })();
+  const suggestions = [...contextualSeeds, ...(COUNSELOR_SUGGESTIONS[ctx] || COUNSELOR_SUGGESTIONS.default)];
   // Speech-bubble greeting that animates in alongside Cornileus on first
   // open. Replaces the old plain-text intro paragraph with something that
   // feels like he's actually talking to you.
@@ -33392,6 +33438,7 @@ function checkNetWorthMilestones() {
   save();
   toast(`🎉 ${m.title} — ${m.quote.split(".")[0]}!`);
   try { celebrate(1.2); } catch {}
+  try { haptic("success"); } catch {}
   // Fire a server-side push too so the user gets it even when the app's
   // closed — these are the moments worth being interrupted for.
   try {
@@ -35857,6 +35904,7 @@ function init() {
     monteCarloRetirement, monteCarloFanChart,
     setupHealthSheet,
     _exportEncrypted, _exportPlaintext, _doExportEncrypted, _friendlyApiError,
+    haptic,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, disableEncryptionSheet, showLockScreen,
     setPassphrase, unlockWithPassphrase, disablePassphrase, encryptObject, decryptObject, deriveKey,
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,
@@ -36004,7 +36052,115 @@ function surfacePendingDeposits() {
   const next = (DB.pendingDeposits || [])[0];
   if (next) reviewIncomeSheet(next);
 }
+
+// ============================================================================
+// HAPTIC FEEDBACK — short vibrations on key actions where supported.
+// `navigator.vibrate` works on Android Chrome + most Android browsers; iOS
+// Safari ignores it silently (no error), so no need to feature-detect
+// before calling. Patterns kept short (10-25ms) so it's a tap, not a buzz.
+// ============================================================================
+function haptic(kind) {
+  try {
+    if (!navigator.vibrate) return;
+    if (DB.settings && DB.settings.hapticsDisabled) return;
+    const patterns = {
+      tap:        [10],         // light confirmation (habit check, win log)
+      success:    [15, 20, 15], // double-tap (goal/plan complete, milestone)
+      warning:    [25, 30, 25], // anomaly, runway alert
+      error:      [40],          // failed action
+    };
+    navigator.vibrate(patterns[kind] || patterns.tap);
+  } catch {}
+}
+
+// ============================================================================
+// PULL-TO-REFRESH — native-feeling gesture on Today + Money tabs that
+// triggers a sync (if a backend is connected) or just a render refresh.
+// Implementation: passive touchstart/move/end on the page, only active when
+// the scroll container is at the top. Visual is a small indicator that
+// translates with the drag and snaps back on release.
+// ============================================================================
+function _initPullToRefresh() {
+  let startY = 0, currentY = 0, dragging = false, indicator = null;
+  const TRIGGER = 70;     // px of drag needed to fire refresh
+  const MAX     = 100;    // px max visible drag distance
+
+  function getIndicator() {
+    if (indicator && document.body.contains(indicator)) return indicator;
+    indicator = document.createElement("div");
+    indicator.style.cssText = "position:fixed;top:-40px;left:50%;transform:translateX(-50%) translateY(0);width:32px;height:32px;background:var(--card);border:1px solid var(--sep);border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:16px;color:var(--t1);z-index:9999;pointer-events:none;transition:opacity .2s;opacity:0;box-shadow:0 2px 10px rgba(0,0,0,0.2)";
+    indicator.textContent = "↻";
+    document.body.appendChild(indicator);
+    return indicator;
+  }
+
+  function isPTReligible() {
+    // Only on Today / Money / Stats. Skip when a sheet is open (would
+    // interfere with sheet scroll), or when not at scrollTop=0.
+    if (document.querySelector(".sheet-bg")) return false;
+    if (!["today", "money", "stats"].includes(activeTab)) return false;
+    return (window.scrollY || document.documentElement.scrollTop || 0) <= 0;
+  }
+
+  window.addEventListener("touchstart", (e) => {
+    if (!isPTReligible()) return;
+    startY = e.touches[0].clientY;
+    dragging = true;
+  }, { passive: true });
+
+  window.addEventListener("touchmove", (e) => {
+    if (!dragging) return;
+    currentY = e.touches[0].clientY;
+    const dy = currentY - startY;
+    if (dy < 0) { dragging = false; return; }
+    if (dy > 6) {
+      const ind = getIndicator();
+      const offset = Math.min(MAX, dy * 0.6);
+      ind.style.opacity = String(Math.min(1, dy / TRIGGER));
+      ind.style.transform = `translateX(-50%) translateY(${50 + offset}px) rotate(${dy * 2}deg)`;
+    }
+  }, { passive: true });
+
+  window.addEventListener("touchend", async () => {
+    if (!dragging) return;
+    dragging = false;
+    const dy = currentY - startY;
+    const ind = indicator;
+    if (!ind) return;
+    if (dy >= TRIGGER) {
+      // Fire refresh. If backend connected, sync. Otherwise just re-render.
+      ind.textContent = "↻";
+      ind.style.transform = `translateX(-50%) translateY(60px)`;
+      ind.style.opacity = "1";
+      ind.style.animation = "ptrSpin 0.6s linear infinite";
+      try { haptic("tap"); } catch {}
+      try {
+        if (typeof _backendReady === "function" && _backendReady()) {
+          await syncNow();
+        } else {
+          render();
+        }
+      } catch {}
+      ind.style.animation = "";
+      ind.style.opacity = "0";
+      ind.style.transform = "translateX(-50%) translateY(0)";
+    } else {
+      // Snap back
+      ind.style.opacity = "0";
+      ind.style.transform = "translateX(-50%) translateY(0)";
+    }
+  }, { passive: true });
+
+  // Inject the spinner keyframes once
+  if (!document.getElementById("ptr-style")) {
+    const s = document.createElement("style");
+    s.id = "ptr-style";
+    s.textContent = "@keyframes ptrSpin{from{transform:translateX(-50%) translateY(60px) rotate(0)}to{transform:translateX(-50%) translateY(60px) rotate(360deg)}}";
+    document.head.appendChild(s);
+  }
+}
 init();
+setTimeout(() => { try { _initPullToRefresh(); } catch {} }, 200);
 </script>
 </body>
 </html>
