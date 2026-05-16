@@ -1431,9 +1431,15 @@ def _ai_today_key() -> str:
 
 
 def _ai_client_ip() -> str:
-    # Vercel sets x-forwarded-for; trust the first hop (the Vercel edge).
-    fwd = request.headers.get("x-forwarded-for", "")
-    return (fwd.split(",")[0] or request.remote_addr or "0.0.0.0").strip()
+    # Vercel sets X-Real-IP to the edge-observed client IP; this is the only
+    # header value we trust. X-Forwarded-For's left-most entry is whatever the
+    # client sent and is trivially spoofable to defeat the per-IP cap. We
+    # intentionally avoid X-Forwarded-For for that reason. Fall back to
+    # remote_addr for local dev.
+    real = request.headers.get("x-real-ip", "").strip()
+    if real:
+        return real
+    return (request.remote_addr or "0.0.0.0").strip()
 
 
 def _ai_check_quota(ip: str):

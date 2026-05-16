@@ -68,10 +68,13 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // /api/* → never cache. Stock quotes go stale, SSE streams would break,
-  // and caching dynamic responses by URL bloats storage. Let the browser
-  // talk to the Python backend natively.
+  // /api/* and /stockanalyzer* → never cache. Both are served by the Python
+  // backend (api/index.py): /api/* is the JSON/SSE surface (stock quotes go
+  // stale, SSE streams would break under caching), /stockanalyzer{,-static}/*
+  // is the standalone Flask page (dynamic HTML, would otherwise be pinned to
+  // the hashed cache name). Let the browser talk to the backend natively.
   if (url.pathname.startsWith("/api/")) return;
+  if (url.pathname === "/stockanalyzer" || url.pathname.startsWith("/stockanalyzer/") || url.pathname.startsWith("/stockanalyzer-static/")) return;
 
   if (ICON_RE.test(url.pathname)) {
     e.respondWith(cacheFirst(req));

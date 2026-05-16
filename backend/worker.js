@@ -224,14 +224,19 @@ async function sha256hex(s) {
 async function handleEnroll(request, env, origin) {
   const body = await request.json().catch(() => ({}));
   const userId = String(body.userId || "").trim();
-  const clientSecret = String(body.clientSecret || "").trim();
   if (!/^u_[A-Za-z0-9_-]+$/.test(userId)) return json({ error: "invalid userId" }, 400, origin);
-  if (clientSecret.length < 32) return json({ error: "clientSecret too short (min 32 chars)" }, 400, origin);
+
+  // Mint the per-device secret server-side so the worker (not the client)
+  // controls the entropy of every issued credential. 32 bytes = 256 bits,
+  // hex-encoded = 64 chars. Any clientSecret in the request body is ignored.
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  let clientSecret = "";
+  for (let i = 0; i < bytes.length; i++) clientSecret += bytes[i].toString(16).padStart(2, "0");
 
   const hash = await sha256hex(clientSecret);
   await env.ASCEND_KV.put(`u:${userId}:auth`, hash);
   await appendAudit(env, userId, "enroll");
-  return json({ ok: true, userId }, 200, origin);
+  return json({ ok: true, userId, clientSecret }, 200, origin);
 }
 
 async function handleLinkToken(env, userId, origin) {

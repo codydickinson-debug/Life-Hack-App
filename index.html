@@ -3,15 +3,15 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
-<meta name="theme-color" content="#FFFFFF" media="(prefers-color-scheme: light)" />
-<meta name="theme-color" content="#000000" media="(prefers-color-scheme: dark)" />
+<meta name="theme-color" content="#F7F7F5" media="(prefers-color-scheme: light)" />
+<meta name="theme-color" content="#0A0A0C" media="(prefers-color-scheme: dark)" />
 
 <!-- iOS PWA meta -->
 <meta name="apple-mobile-web-app-capable" content="yes" />
 <meta name="mobile-web-app-capable" content="yes" />
 <meta name="apple-mobile-web-app-status-bar-style" content="default" />
 <meta name="apple-mobile-web-app-title" content="Ascend" />
-<link rel="apple-touch-icon" href="icon-180.png" />
+<link rel="apple-touch-icon" sizes="180x180" href="icon-180.png" />
 <link rel="manifest" href="manifest.json" />
 
 <!--
@@ -95,6 +95,16 @@
   --pink:      #E64178;
   --indigo:    #4F4ED1;
   --teal:      #36B0CC;
+
+  /* Cornileus brand gradient — used for AI/counselor surfaces, FAB,
+     whatif card, plan rails. Defined as endpoints so the gradient direction
+     can vary (135deg / 90deg / 180deg) without duplicating colors. */
+  --corn-from: #7c3aed;
+  --corn-to:   #ec4899;
+  /* User-customizable accent (set via Settings → accentColor); falls back
+     to the brand purple so existing var(--accent) lookups resolve
+     consistently. */
+  --accent:    var(--corn-from);
 
   /* Elevation — for the App-Store-grade card feel */
   --sh-1:      0 1px 2px rgba(15,17,21,0.04), 0 1px 3px rgba(15,17,21,0.04);
@@ -284,7 +294,7 @@ input::placeholder, textarea::placeholder { color: var(--t4); }
   border: 0.5px solid var(--sep);
   transition: transform .15s ease, background .15s ease, color .15s ease;
 }
-.tb-btn:hover { color: var(--t1); }
+.tb-btn:hover { color: var(--t1); background: var(--bg-elev2); }
 .tb-btn:active { transform: scale(.92); background: var(--bg-elev2); }
 .tb-greet { display: flex; flex-direction: column; gap: 2px; }
 .tb-hello { font-size: 11px; color: var(--t3); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
@@ -380,7 +390,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .section-h {
   display: flex; align-items: baseline; justify-content: space-between;
-  margin: 36px 2px 14px;
+  margin: 28px 0 12px;
 }
 .section-h .lbl {
   font-size: 13px;
@@ -394,9 +404,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: var(--blue);
   font-weight: 600;
   letter-spacing: -0.005em;
-  transition: opacity .15s;
+  transition: opacity .15s ease;
 }
-.section-h .act:active { opacity: .6; }
+.section-h .act:hover { opacity: .82; }
+.section-h .act:active { opacity: .55; }
 
 /* ================ LISTS / CARDS (iOS grouped) ================ */
 .list {
@@ -438,8 +449,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .row .trail { color: var(--t3); font-size: 14px; display: flex; align-items: center; gap: 8px; }
 .row .chev::after { content: "›"; font-size: 22px; color: var(--t4); margin-left: 4px; line-height: .8; transform: translateY(-1px); font-weight: 300; }
 
-.row.tappable { cursor: pointer; }
-.row.tappable:active { background: var(--bg-elev); }
+.row.tappable { cursor: pointer; transition: background .15s ease, transform .12s ease; }
+.row.tappable:active { background: var(--bg-elev); transform: scale(.995); }
 
 /* ================ BUTTONS ================ */
 .btn {
@@ -646,7 +657,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   font-weight: 600;
   white-space: nowrap;
   letter-spacing: -0.005em;
-  transition: all .18s ease;
+  transition: background .18s ease, color .18s ease, border-color .18s ease, transform .12s ease;
 }
 .tier-pill:active { transform: scale(.96); }
 .tier-pill.active { background: var(--t1); border-color: var(--t1); color: var(--bg); }
@@ -709,10 +720,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   text-align: center;
   border-bottom: 2px solid transparent;
   margin-bottom: -1px;
-  transition: color .2s ease, border-color .2s ease;
+  transition: color .2s ease, border-color .2s ease, transform .12s ease;
   letter-spacing: -0.005em;
 }
+.sub-tab:active { transform: scale(.97); }
 .sub-tab.active { color: var(--t1); border-bottom-color: var(--t1); font-weight: 700; }
+
+/* Sub-tab body fade — re-triggers on every renderMoney() (and any other
+   render that wraps its body in .sub-pane) because innerHTML is rebuilt. */
+.sub-pane { animation: paneIn .22s cubic-bezier(.32,.72,.34,1) both; }
+@keyframes paneIn {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) { .sub-pane { animation: none; } }
 
 /* Budget */
 .budget-hero {
@@ -787,9 +808,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .heatmap::-webkit-scrollbar { display: none; }
 .hm-col { display: flex; flex-direction: column; gap: 4px; }
 .hm-cell { width: 13px; height: 13px; border-radius: 3px; background: var(--bg-elev); transition: transform .15s ease; }
-.hm-cell.l1 { background: rgba(52,199,89,.25); }
-.hm-cell.l2 { background: rgba(52,199,89,.5); }
-.hm-cell.l3 { background: rgba(52,199,89,.75); }
+.hm-cell.l1 { background: color-mix(in srgb, var(--green) 22%, var(--bg-elev)); }
+.hm-cell.l2 { background: color-mix(in srgb, var(--green) 45%, var(--bg-elev)); }
+.hm-cell.l3 { background: color-mix(in srgb, var(--green) 70%, var(--bg-elev)); }
 .hm-cell.l4 { background: var(--green); }
 
 /* ================ MODALS / SHEETS ================ */
@@ -812,7 +833,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-radius: 22px 22px 0 0;
   z-index: 51;
   transform: translateY(100%);
-  transition: transform .35s cubic-bezier(.32,.72,.34,1);
+  /* Asymmetric motion: open is a slower spring (.38s) so the sheet "lands"
+     with weight; close is a quicker ease-in (.26s) so dismissals feel snappy. */
+  transition: transform .26s cubic-bezier(.4,0,1,1);
   max-width: 480px;
   margin: 0 auto;
   max-height: 92vh;
@@ -821,7 +844,23 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   box-shadow: var(--sh-pop);
   border-top: 0.5px solid var(--sep);
 }
-.sheet.show { transform: translateY(0); }
+.sheet.show {
+  transform: translateY(0);
+  transition: transform .38s cubic-bezier(.32,.72,.34,1);
+}
+/* Sheet content fades in slightly behind the slide-up so the sheet "lands"
+   with content instead of arriving fully-formed mid-air. Skips the grabber
+   so the pull-handle stays present throughout the motion. */
+.sheet.show > *:not(.grabber) {
+  animation: sheet-content-in .26s cubic-bezier(.32,.72,.34,1) .08s both;
+}
+@keyframes sheet-content-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .sheet.show > *:not(.grabber) { animation: none; }
+}
 .sheet .grabber {
   width: 40px; height: 5px;
   background: var(--bg-elev2);
@@ -890,7 +929,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border: 0.5px solid var(--sep);
   box-shadow: var(--sh-1);
 }
-.empty .e-emoji { font-size: 42px; margin-bottom: 12px; opacity: .9; }
+.empty .e-emoji { font-size: 36px; margin-bottom: 14px; opacity: .85; }
 .empty .e-title { font-size: 17px; font-weight: 700; color: var(--t1); margin-bottom: 6px; letter-spacing: -0.015em; }
 .empty .e-sub { font-size: 14px; line-height: 1.45; max-width: 280px; margin: 0 auto; }
 
@@ -902,9 +941,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   transform: translateX(-50%) translateY(20px);
   background: rgba(20,20,22,.94);
   color: #fff;
-  padding: 12px 20px;
+  padding: 11px 18px;
   border-radius: var(--r-pill);
-  font-size: 14px;
+  font-size: 13.5px;
   font-weight: 600;
   z-index: 100;
   opacity: 0;
@@ -913,6 +952,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   white-space: nowrap;
   letter-spacing: -0.005em;
   box-shadow: var(--sh-pop);
+  border: 0.5px solid rgba(255,255,255,.08);
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
 }
@@ -1162,7 +1202,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   bottom: calc(var(--tab-h) + 14px + 56px + 10px);
   width: 48px; height: 48px;
   border-radius: 50%;
-  background: linear-gradient(135deg, #7c3aed, #ec4899);
+  background: linear-gradient(135deg, var(--corn-from), var(--corn-to));
   color: #fff;
   font-size: 22px; line-height: 1;
   box-shadow: var(--sh-pop);
@@ -1172,7 +1212,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   transition: transform .12s ease, box-shadow .15s ease;
 }
 #counselor-fab:active { transform: scale(.9); }
-#counselor-fab:hover { box-shadow: 0 6px 24px rgba(124,58,237,.45); }
+#counselor-fab:hover { box-shadow: 0 6px 24px color-mix(in srgb, var(--corn-from) 45%, transparent); }
 #counselor-fab.hidden { display: none; }
 .cornileus-badge {
   position: absolute; top: -2px; right: -2px;
@@ -1304,7 +1344,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   flex-shrink: 0; line-height: 1;
 }
 .corn-avatar.gradient {
-  background: linear-gradient(135deg,#7c3aed,#ec4899);
+  background: linear-gradient(135deg, var(--corn-from), var(--corn-to));
   border-radius: 50%; overflow: hidden;
 }
 .corn-avatar svg {
@@ -1373,14 +1413,14 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 .cns-action-chip {
   display: flex; align-items: center; justify-content: space-between;
   gap: 8px; padding: 8px 12px;
-  background: rgba(52,199,89,0.12); color: var(--green, #34c759);
-  border: 1px solid rgba(52,199,89,0.32); border-radius: 12px;
+  background: color-mix(in srgb, var(--green) 12%, transparent); color: var(--green, #2EB875);
+  border: 1px solid color-mix(in srgb, var(--green) 32%, transparent); border-radius: 12px;
   font-size: 12.5px; font-weight: 600;
   cursor: pointer; width: 100%;
   text-align: left; line-height: 1.35;
   transition: background .15s ease, transform .1s ease;
 }
-.cns-action-chip:hover { background: rgba(52,199,89,0.20); }
+.cns-action-chip:hover { background: color-mix(in srgb, var(--green) 20%, transparent); }
 .cns-action-chip:active { transform: scale(0.985); }
 .cns-action-chip:disabled { cursor: default; opacity: 0.7; }
 .cns-action-chip .cns-action-arrow {
@@ -1388,23 +1428,23 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 }
 .cns-action-chip:disabled .cns-action-arrow { display: none; }
 .cns-action-chip.err {
-  background: rgba(239,68,68,0.10); color: var(--red, #ef4444);
-  border-color: rgba(239,68,68,0.28);
+  background: color-mix(in srgb, var(--red) 10%, transparent); color: var(--red, var(--red));
+  border-color: color-mix(in srgb, var(--red) 28%, transparent);
 }
 
 /* Counselor mic button — pulses red while listening */
 #cns-mic.listening {
-  background: #ef4444 !important; color: #fff !important;
+  background: var(--red) !important; color: #fff !important;
   animation: mic-pulse 1.2s ease-in-out infinite;
 }
 @keyframes mic-pulse {
-  0%,100% { box-shadow: 0 0 0 0 rgba(239,68,68,0.6); }
-  50%     { box-shadow: 0 0 0 8px rgba(239,68,68,0); }
+  0%,100% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--red) 60%, transparent); }
+  50%     { box-shadow: 0 0 0 8px transparent; }
 }
 
 /* What-if simulator on Plan tab */
 .whatif-card {
-  background: linear-gradient(135deg, rgba(124,58,237,0.10), rgba(236,72,153,0.08));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--corn-from) 10%, transparent), color-mix(in srgb, var(--corn-to) 8%, transparent));
   border: 1px solid var(--sep);
   border-radius: var(--r);
   padding: 16px;
@@ -1423,13 +1463,13 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 .whatif-card input[type=range]::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
   width: 22px; height: 22px; border-radius: 50%;
-  background: linear-gradient(135deg,#7c3aed,#ec4899);
+  background: linear-gradient(135deg, var(--corn-from), var(--corn-to));
   cursor: pointer; border: 3px solid var(--card);
-  box-shadow: 0 2px 8px rgba(124,58,237,0.4);
+  box-shadow: 0 2px 8px color-mix(in srgb, var(--corn-from) 40%, transparent);
 }
 .whatif-card input[type=range]::-moz-range-thumb {
   width: 22px; height: 22px; border-radius: 50%;
-  background: linear-gradient(135deg,#7c3aed,#ec4899);
+  background: linear-gradient(135deg, var(--corn-from), var(--corn-to));
   cursor: pointer; border: 3px solid var(--card);
 }
 .whatif-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 12px; }
@@ -1438,8 +1478,8 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   border-radius: var(--r2, 10px); padding: 10px 8px; text-align: center;
 }
 .whatif-cell.highlight {
-  background: linear-gradient(135deg, rgba(52,199,89,0.14), rgba(52,199,89,0.05));
-  border-color: rgba(52,199,89,0.4);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--green) 14%, transparent), color-mix(in srgb, var(--green) 5%, transparent));
+  border-color: color-mix(in srgb, var(--green) 40%, transparent);
 }
 .whatif-cell-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.04em; font-weight: 700; color: var(--t3); }
 .whatif-cell-val   { font-size: 16px; font-weight: 800; color: var(--t1); margin-top: 4px; letter-spacing: -0.01em; }
@@ -1461,7 +1501,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 .whatif-blended-pill {
   font-size: 11.5px; font-weight: 700; color: #fff;
   padding: 4px 10px; border-radius: 999px;
-  background: linear-gradient(135deg,#7c3aed,#ec4899);
+  background: linear-gradient(135deg, var(--corn-from), var(--corn-to));
 }
 .whatif-blended-pill span { font-size: 13px; font-weight: 800; }
 .whatif-presets { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
@@ -1471,9 +1511,9 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   padding: 6px 10px; font-size: 11.5px; font-weight: 600;
   cursor: pointer; transition: all .12s ease;
 }
-.wi-preset-chip:hover { color: var(--t1); border-color: var(--accent, #7c3aed); }
+.wi-preset-chip:hover { color: var(--t1); border-color: var(--accent); }
 .wi-preset-chip.active {
-  background: var(--accent, #7c3aed); color: #fff; border-color: var(--accent, #7c3aed);
+  background: var(--accent); color: #fff; border-color: var(--accent);
 }
 .whatif-port-rows { display: flex; flex-direction: column; gap: 4px; }
 .whatif-port-row {
@@ -1492,7 +1532,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   color: var(--t1); text-align: right;
   font-family: ui-monospace, "SF Mono", Menlo, monospace;
 }
-.whatif-port-fields input:focus { outline: 2px solid var(--accent, #7c3aed); border-color: transparent; }
+.whatif-port-fields input:focus { outline: 2px solid var(--accent); border-color: transparent; }
 .whatif-port-fields .muted { font-size: 11px; color: var(--t3); }
 .whatif-port-at { font-size: 11px; color: var(--t3); margin: 0 2px; }
 .whatif-port-totalrow {
@@ -1544,12 +1584,12 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 .savings-total { font-size: 13px; color: var(--t2); }
 .savings-total strong { color: var(--green); font-size: 14px; }
 .savings-ai-btn {
-  background: linear-gradient(135deg,#7c3aed,#ec4899); color: #fff;
+  background: linear-gradient(135deg, var(--corn-from), var(--corn-to)); color: #fff;
   border: none; border-radius: 999px;
   padding: 8px 14px; font-size: 12.5px; font-weight: 700;
   cursor: pointer; white-space: nowrap;
 }
-.savings-ai-btn:hover { box-shadow: 0 4px 14px rgba(124,58,237,0.4); }
+.savings-ai-btn:hover { box-shadow: 0 4px 14px color-mix(in srgb, var(--corn-from) 40%, transparent); }
 .whatif-math {
   margin-top: 12px;
   border-top: 1px dashed var(--sep);
@@ -1581,7 +1621,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 }
 .whatif-inline-btn {
   background: transparent; border: none; padding: 0;
-  color: var(--accent, #7c3aed); cursor: pointer;
+  color: var(--accent); cursor: pointer;
   text-decoration: underline; font-size: inherit; font-weight: 600;
 }
 .whatif-math-disclaim {
@@ -1627,7 +1667,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 }
 .rm-card::before {
   content: ""; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-  background: linear-gradient(90deg, #7c3aed, #ec4899);
+  background: linear-gradient(90deg, var(--corn-from), var(--corn-to));
 }
 .rm-head { display: flex; align-items: flex-start; gap: 10px; cursor: pointer; }
 .rm-emoji { font-size: 26px; width: 36px; flex-shrink: 0; text-align: center; }
@@ -1642,7 +1682,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   overflow: hidden; margin: 12px 0 4px;
 }
 .rm-overall-fill {
-  height: 100%; background: linear-gradient(90deg, #7c3aed, #ec4899);
+  height: 100%; background: linear-gradient(90deg, var(--corn-from), var(--corn-to));
   border-radius: 3px; transition: width 0.4s ease;
 }
 .rm-phases { margin-top: 8px; }
@@ -1659,11 +1699,11 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   flex-shrink: 0; transition: all 0.2s ease;
 }
 .rm-dot.active {
-  background: var(--card); border-color: var(--purple, #8957d9);
-  color: var(--purple, #8957d9); box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.18);
+  background: var(--card); border-color: var(--purple);
+  color: var(--purple); box-shadow: 0 0 0 3px color-mix(in srgb, var(--corn-from) 18%, transparent);
 }
 .rm-dot.done {
-  background: linear-gradient(135deg, #7c3aed, #ec4899);
+  background: linear-gradient(135deg, var(--corn-from), var(--corn-to));
   border-color: transparent; color: #fff;
 }
 .rm-line {
@@ -1680,7 +1720,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   margin-bottom: 4px;
 }
 .rm-phase-period {
-  font-size: 10.5px; font-weight: 700; color: var(--purple, #8957d9);
+  font-size: 10.5px; font-weight: 700; color: var(--purple);
   text-transform: uppercase; letter-spacing: 0.05em;
 }
 .rm-phase-amt, .rm-phase-date {
@@ -1688,23 +1728,23 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   background: var(--bg-elev); padding: 1px 8px;
   border-radius: 999px; font-variant-numeric: tabular-nums;
 }
-.rm-phase-amt { color: var(--green, #34C759); background: rgba(52, 199, 89, 0.12); }
+.rm-phase-amt { color: var(--green, #2EB875); background: color-mix(in srgb, var(--green) 12%, transparent); }
 .rm-pace-chip {
   font-size: 10.5px; font-weight: 600;
   padding: 1px 8px; border-radius: 999px;
   font-variant-numeric: tabular-nums;
 }
 .rm-pace-chip.ontrack {
-  color: var(--green, #34C759); background: rgba(52, 199, 89, 0.12);
+  color: var(--green, #2EB875); background: color-mix(in srgb, var(--green) 12%, transparent);
 }
 .rm-pace-chip.ahead {
-  color: var(--green, #34C759); background: rgba(52, 199, 89, 0.16);
+  color: var(--green, #2EB875); background: color-mix(in srgb, var(--green) 16%, transparent);
 }
 .rm-pace-chip.behind {
-  color: var(--red, #FF3B30); background: rgba(255, 59, 48, 0.12);
+  color: var(--red, #E04545); background: color-mix(in srgb, var(--red) 12%, transparent);
 }
 .rm-pace-chip.overdue {
-  color: #fff; background: var(--red, #FF3B30);
+  color: #fff; background: var(--red, #E04545);
 }
 .rm-phase-title {
   font-size: 14px; font-weight: 600; color: var(--t1);
@@ -1715,7 +1755,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   overflow: hidden; margin-bottom: 6px;
 }
 .rm-phase-fill {
-  height: 100%; background: linear-gradient(90deg, #7c3aed, #ec4899);
+  height: 100%; background: linear-gradient(90deg, var(--corn-from), var(--corn-to));
   border-radius: 2px; transition: width 0.4s ease;
 }
 .rm-phase-detail {
@@ -1745,12 +1785,12 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 .rm-ms-row .check.sm {
   width: 18px; height: 18px; border-radius: 50%;
   border: 1.5px solid var(--sep); background: transparent;
-  color: var(--green, #34C759); font-size: 10px; font-weight: 700;
+  color: var(--green, #2EB875); font-size: 10px; font-weight: 700;
   display: flex; align-items: center; justify-content: center;
   flex-shrink: 0; padding: 0;
 }
 .rm-ms-row .check.sm.done {
-  background: var(--green, #34C759); border-color: var(--green, #34C759);
+  background: var(--green, #2EB875); border-color: var(--green, #2EB875);
   color: #fff;
 }
 .rm-ms-text { font-size: 13px; color: var(--t1); line-height: 1.4; }
@@ -1773,24 +1813,24 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   width: 6px; height: 6px; border-radius: 50%;
   display: inline-block; transition: transform 0.15s ease;
 }
-.hb-dot.done   { background: var(--green, #34C759); }
+.hb-dot.done   { background: var(--green, #2EB875); }
 .hb-dot.miss   { background: var(--bg-elev2, #2c2c34); }
 .hb-dot.paused { background: var(--bg-elev2, #2c2c34); border: 1px solid var(--sep); width: 4px; height: 4px; }
 .hb-dot.today  {
-  outline: 1.5px solid var(--blue, #007AFF);
+  outline: 1.5px solid var(--blue, #2F6FEB);
   outline-offset: 1.5px; transform: scale(1.15);
 }
 .hb-dot.today.miss { background: var(--card); }
 
 .rm-endstate {
   display: flex; align-items: baseline; gap: 8px;
-  background: linear-gradient(135deg, rgba(124,58,237,0.10), rgba(236,72,153,0.06));
-  border: 0.5px solid rgba(124,58,237,0.35);
+  background: linear-gradient(135deg, color-mix(in srgb, var(--corn-from) 10%, transparent), color-mix(in srgb, var(--corn-to) 6%, transparent));
+  border: 0.5px solid color-mix(in srgb, var(--corn-from) 35%, transparent);
   border-radius: 8px; padding: 8px 12px;
   margin: 10px 0 6px; flex-wrap: wrap;
 }
 .rm-endstate-lbl {
-  font-size: 10.5px; font-weight: 700; color: var(--purple, #8957d9);
+  font-size: 10.5px; font-weight: 700; color: var(--purple);
   text-transform: uppercase; letter-spacing: 0.06em;
 }
 .rm-endstate-amt {
@@ -1825,7 +1865,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   display: inline-block; width: 8px; height: 8px; border-radius: 50%;
   margin-right: 4px; vertical-align: middle;
 }
-.rm-chart-legend .dot.here { background: #34C759; }
+.rm-chart-legend .dot.here { background: var(--green); }
 .rm-chart-legend .dot.future {
   background: var(--card); border: 1.5px solid #7c3aed;
 }
@@ -1884,8 +1924,10 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   border: none; border-radius: var(--r-pill, 999px);
   padding: 6px 12px; font-size: 12px; font-weight: 600;
   cursor: pointer;
+  transition: background .15s ease, color .15s ease, transform .12s ease;
 }
 .plan-log:hover { background: var(--blue); color: #fff; }
+.plan-log:active { transform: scale(.96); }
 .plan-empty {
   background: var(--card); border-radius: var(--r);
   border: 1px dashed var(--sep);
@@ -2135,6 +2177,10 @@ const DEFAULT_DB = {
     celebrationsEnabled: true, // confetti on streak milestones / goal completion
     accentColor: "",          // hex string — overrides the default blue accent across the app. Empty = use default.
     recentSearches: [],       // [string] last 6 queries from global search, newest first
+    _achievementsSeen: [],    // [string] — achievement ids the user has been shown the unlock toast for, to suppress re-firing
+    _todayDefaultsApplied: false, // one-shot flag: when false, Today's first render hides advanced sections via Customize-Today defaults
+    dismissedLeaks: {},       // { 'YYYY-MM': [category, ...] } — spend-leak suggestions the user has dismissed for that month
+    dismissedRecurring: [],   // [string] — detected-recurring suggestion keys the user has dismissed
   },
   categoryRules: [],
   allocations: [],
@@ -2220,6 +2266,9 @@ const DEFAULT_DB = {
   reflections: [],           // [{id, date, text, createdAt}]
   // Goal hierarchy: existing `goals` items can carry an optional `parentId` linking child → parent.
   // Convention: life > short > daily; a daily goal's parentId may point to a short or life goal.
+  subscriptionsMeta: {},      // { recurringKey: { status:'active'|'cancelled'|'paused' } } — per-subscription override from the Subscriptions audit
+  dismissedWeeklyReview: {},  // { 'YYYY-Www': true } — week keys the user has dismissed the weekly-review prompt for
+  lastSeenWhatsNew: "",       // WHATS_NEW_KEY the user last saw; bumping the constant re-surfaces the sheet
 };
 
 const clone = (o) => (typeof structuredClone === "function") ? structuredClone(o) : JSON.parse(JSON.stringify(o));
@@ -2472,7 +2521,7 @@ const ARRAY_MAX = { habits: 500, goals: 1000, plans: 500, savings: 200, spend: 5
                     assets: 500, liabilities: 500, reflections: 5000,
                     pendingDeposits: 500, holdings: 5000, accounts: 200,
                     items: 50, sinkingFunds: 200, categoryRules: 500,
-                    allocationRules: 100, dismissedPlays: 500 };
+                    allocations: 100, dismissedPlays: 500 };
 function sanitizeText(s, maxLen) {
   if (s == null) return "";
   let out = String(s);
@@ -2571,7 +2620,7 @@ function sanitizeDb() {
     cleanNamed(DB.calendarDates, ["title", "note", "icon"]);
     cleanNamed(DB.sinkingFunds, ["name", "emoji", "notes"]);
     cleanNamed(DB.categoryRules, ["pattern", "category"]);
-    cleanNamed(DB.allocationRules, ["label"]);
+    cleanNamed(DB.allocations, ["label"]);
     if (Array.isArray(DB.budget?.expenses)) {
       if (DB.budget.expenses.length > 200) DB.budget.expenses.length = 200;
       for (const e of DB.budget.expenses) if (e && typeof e.name === "string") e.name = sanitizeText(e.name, TEXT_MAX);
@@ -2816,21 +2865,16 @@ async function disablePassphrase() {
 
 /* ================ BACKEND CLIENT ================
    Auth model:
-   - On first call, the device enrolls with the worker by sending the user's apiKey (an
-     "enrollment key" they pasted from setup) along with a freshly generated per-device
-     clientSecret. The worker stores SHA-256(clientSecret) keyed by userId.
+   - On first call, the device enrolls with the worker by sending the user's apiKey
+     (an "enrollment key" they pasted from setup) and its userId. The worker mints
+     a per-device clientSecret (32 random bytes, hex), stores SHA-256(clientSecret)
+     keyed by userId, and returns the secret in the response. The client persists it.
    - All subsequent calls authenticate as `Bearer <userId>:<clientSecret>`. The shared
      enrollment key is never sent again unless the secret is rejected (forced re-enroll).
    - This means a stolen apiKey alone can't impersonate this device; an attacker would
      also need the local clientSecret (which is encrypted along with the rest of DB
      when a passphrase is set).
 */
-function newClientSecret() {
-  const bytes = crypto.getRandomValues(new Uint8Array(32));
-  let hex = ""; for (let i = 0; i < bytes.length; i++) hex += bytes[i].toString(16).padStart(2, "0");
-  return hex;
-}
-
 function ensureUserId() {
   if (!DB.user.userId) { DB.user.userId = "u_" + uid() + uid(); _origSave(); }
   return DB.user.userId;
@@ -2864,15 +2908,20 @@ async function _apiRaw(path, opts = {}) {
 async function _enrollDevice() {
   if (!DB.settings.apiKey) throw new Error("Backend API key not configured (paste your enrollment key in Settings)");
   const userId = ensureUserId();
-  const secret = newClientSecret();
-  await _apiRaw("/enroll", {
+  // Worker mints the per-device secret server-side and returns it — the
+  // client no longer chooses its own credential. If the response is missing
+  // a usable secret, the client can't authenticate going forward, so surface
+  // a clear error rather than silently picking one the worker won't know.
+  const resp = await _apiRaw("/enroll", {
     method: "POST",
     headers: {
       "Authorization": "Bearer " + DB.settings.apiKey,
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ userId, clientSecret: secret }),
+    body: JSON.stringify({ userId }),
   });
+  const secret = resp && typeof resp.clientSecret === "string" ? resp.clientSecret.trim() : "";
+  if (secret.length < 32) throw new Error("Enrollment failed — backend did not return a device secret. Make sure your Worker is up to date.");
   DB.user.clientSecret = secret;
   // Enrollment succeeded — clear the operator's long-lived enrollment key from
   // local storage. From here on, this device authenticates with its own
@@ -3645,7 +3694,7 @@ function habitDetailSheet(id) {
         const x = padL + i * (barW + gap) + gap/2;
         const fullH = (c.pct) * innerH;
         const y = padT + innerH - fullH;
-        const col = c.pct >= 0.8 ? "var(--green,#34C759)" : c.pct >= 0.5 ? "var(--orange,#FF9500)" : c.possible === 0 ? "var(--bg-elev2)" : "var(--bg-elev2,#3a3a44)";
+        const col = c.pct >= 0.8 ? "var(--green, #2EB875)" : c.pct >= 0.5 ? "var(--orange, #ED8B22)" : c.possible === 0 ? "var(--bg-elev2)" : "var(--bg-elev2,#3a3a44)";
         return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(fullH, 1.5).toFixed(1)}" fill="${col}" rx="1.5"/>`;
       }).join("");
       return `
@@ -3671,7 +3720,7 @@ function habitDetailSheet(id) {
           ? `until ${new Date(active.to + "T00:00:00").toLocaleDateString("en-US", { month: "short", day: "numeric" })}`
           : "indefinitely";
         return `
-          <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--blue,#007AFF);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">
+          <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--blue, #2F6FEB);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">
             <div style="display:flex;align-items:center;gap:10px">
               <div style="font-size:20px">⏸</div>
               <div style="flex:1;min-width:0">
@@ -3965,7 +4014,7 @@ function goalCelebrationSheet(goalId) {
       <div style="font-size:15px;color:var(--t2);margin-bottom:4px;font-weight:600;line-height:1.35">${esc(g.title)}</div>
       <div style="font-size:12px;color:var(--t3);margin-bottom:18px">${esc(tierLabel)} tier${days ? ` · ${days} day${days===1?'':'s'} from start to finish` : ''}</div>
       <div style="display:flex;flex-direction:column;gap:8px">
-        <button class="btn" style="background:linear-gradient(135deg,#34C759,#30B956);color:#fff;border:none" onclick="_captureGoalAsWin(${jsAttr(g.id)})">⭐ Capture as a win</button>
+        <button class="btn" style="background:linear-gradient(135deg, var(--green), color-mix(in srgb, var(--green) 85%, #000));color:#fff;border:none" onclick="_captureGoalAsWin(${jsAttr(g.id)})">⭐ Capture as a win</button>
         <button class="btn secondary" style="font-size:13px" onclick="closeSheet();setTimeout(()=>openCounselor(${jsAttr(`I just completed my goal: "${g.title}". What should I focus on next given where I am?`)}),100)">✨ Ask Cornileus what's next</button>
         <button class="btn secondary" style="font-size:13px;color:var(--t3)" onclick="closeSheet()">Close</button>
       </div>
@@ -4485,7 +4534,7 @@ function topMerchantsHtml() {
               <span style="color:var(--t2);font-variant-numeric:tabular-nums;font-weight:600" data-priv="amount">${fmt$0(m.amount)} <span style="color:var(--t3);font-weight:400">· ${m.count}×</span></span>
             </div>
             <div style="height:5px;background:var(--bg-elev);border-radius:3px;overflow:hidden">
-              <div style="height:100%;width:${pct}%;background:linear-gradient(90deg,#7c3aed,#ec4899);border-radius:3px;transition:width 0.4s ease"></div>
+              <div style="height:100%;width:${pct}%;background:linear-gradient(90deg, var(--corn-from), var(--corn-to));border-radius:3px;transition:width 0.4s ease"></div>
             </div>
           </div>
         `;
@@ -4557,7 +4606,7 @@ function netWorthGrowthChartHtml() {
   const delta = end - start;
   const pct = start !== 0 ? Math.round((delta / Math.abs(start)) * 100) : 0;
   const isUp = delta >= 0;
-  const color = isUp ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+  const color = isUp ? "var(--green, #2EB875)" : "var(--red, #E04545)";
   return `
     <div class="section-h" style="margin-top:14px"><span class="lbl">Net worth · 12 months</span><span class="muted" style="font-size:12px;color:${color}" data-priv="amount">${isUp ? '+' : ''}${fmt$0(delta)} (${isUp ? '+' : ''}${pct}%)</span></div>
     <div style="background:var(--card);border-radius:var(--r);padding:8px 6px 4px;border:0.5px solid var(--sep);margin-bottom:14px">
@@ -4668,7 +4717,7 @@ function winsByMonthChartHtml() {
     const isCurrent = i === months.length - 1;
     const fill = m.count === 0
       ? "var(--bg-elev)"
-      : (isBest ? "url(#wins-grad)" : "var(--orange,#FF9500)");
+      : (isBest ? "url(#wins-grad)" : "var(--orange, #ED8B22)");
     const opacity = isCurrent ? "1" : "0.85";
     const segs = `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${Math.max(h, 1.5).toFixed(1)}" fill="${fill}" opacity="${opacity}" rx="1.5"/>`;
     const lbl = m.count > 0 ? `<text x="${(x + barW/2).toFixed(1)}" y="${(y - 4).toFixed(1)}" text-anchor="middle" font-size="9" fill="var(--t2)" font-weight="600" font-family="-apple-system,system-ui,sans-serif">${m.count}</text>` : "";
@@ -5242,13 +5291,13 @@ function _computeSearchResults(query) {
   const askCornileusPrompt = `Tell me about "${q}" — based on my actual data and situation, what should I know or do about this?`;
   const askCornileusRow = `
     <div class="row tappable" onclick="closeSheet();setTimeout(()=>openCounselor(${jsAttr(askCornileusPrompt)}),120)"
-      style="background:linear-gradient(135deg,rgba(124,58,237,0.10),rgba(236,72,153,0.10));border:0.5px solid rgba(124,58,237,0.35);border-radius:var(--r2,14px);margin-bottom:10px">
-      <div class="lead" style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:14px">✨</div>
+      style="background:linear-gradient(135deg,color-mix(in srgb, var(--corn-from) 10%, transparent),color-mix(in srgb, var(--corn-to) 10%, transparent));border:0.5px solid color-mix(in srgb, var(--corn-from) 35%, transparent);border-radius:var(--r2,14px);margin-bottom:10px">
+      <div class="lead" style="background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;border-radius:50%;width:32px;height:32px;display:flex;align-items:center;justify-content:center;font-size:14px">✨</div>
       <div class="body">
-        <div class="t1" style="color:var(--purple,#8957d9);font-weight:700">Ask Cornileus about "${esc(q.slice(0, 40))}${q.length > 40 ? '…' : ''}"</div>
+        <div class="t1" style="color:var(--purple);font-weight:700">Ask Cornileus about "${esc(q.slice(0, 40))}${q.length > 40 ? '…' : ''}"</div>
         <div class="t2" style="font-size:12px">Get a candid answer that knows your numbers</div>
       </div>
-      <div class="trail" style="color:var(--purple,#8957d9);font-size:18px">→</div>
+      <div class="trail" style="color:var(--purple);font-size:18px">→</div>
     </div>
   `;
   if (!total) return `${askCornileusRow}<div class="muted" style="font-size:13px;padding:14px 4px;text-align:center">No matches for "${esc(q)}" in your records.</div>`;
@@ -5750,8 +5799,13 @@ function sendFeedbackSheet() {
 
 function applyAccent() {
   const c = (DB.settings && DB.settings.accentColor) || "";
-  if (c) document.documentElement.style.setProperty("--blue", c);
-  else document.documentElement.style.removeProperty("--blue");
+  if (c) {
+    document.documentElement.style.setProperty("--blue", c);
+    document.documentElement.style.setProperty("--accent", c);
+  } else {
+    document.documentElement.style.removeProperty("--blue");
+    document.documentElement.style.removeProperty("--accent");
+  }
 }
 async function setAccentColor(hex) {
   if (!DB.settings) DB.settings = {};
@@ -6235,8 +6289,8 @@ function renderToday() {
           ${paused ? '' : dailyActionContextHtml(h.name)}
         </div>
         <div class="trail">
-          ${streak ? `<span class="streak-pill" style="cursor:pointer${paused ? ';opacity:0.65' : ''}" onclick="event.stopPropagation();habitDetailSheet('${h.id}')">🔥 ${streak}</span>` : ""}
-          <button class="del-x" onclick="event.stopPropagation();addHabitSheet(DB.habits.find(x=>x.id==='${h.id}'))" title="Edit">⋯</button>
+          ${streak ? `<span class="streak-pill" style="cursor:pointer${paused ? ';opacity:0.65' : ''}" role="button" tabindex="0" aria-label="${streak}-day streak details" onclick="event.stopPropagation();habitDetailSheet('${h.id}')">🔥 ${streak}</span>` : ""}
+          <button class="del-x" onclick="event.stopPropagation();addHabitSheet(DB.habits.find(x=>x.id==='${h.id}'))" title="Edit habit" aria-label="Edit habit">⋯</button>
         </div>
       </div>
     `;
@@ -6338,9 +6392,9 @@ function renderToday() {
       const dayHabits = (DB.habits || []).filter(h => !isHabitPaused(h));
       const dayDone = dayHabits.filter(h => h.type === "count" ? (+h.log[tk0] || 0) >= (+h.target || 1) : !!h.log[tk0]).length;
       const dayHabitColor = dayHabits.length && dayDone === dayHabits.length
-        ? "var(--green,#34C759)"
+        ? "var(--green, #2EB875)"
         : dayHabits.length && dayDone > 0
-          ? "var(--orange,#FF9500)"
+          ? "var(--orange, #ED8B22)"
           : "var(--t1)";
       const todaySpent = (DB.spend || []).filter(t => t.date === tk0 && (+t.amount || 0) > 0).reduce((a,t) => a + (+t.amount || 0), 0);
       // Unified pictograph set — all geometric/symbolic, not mixed emoji
@@ -6358,7 +6412,7 @@ function renderToday() {
       });
       cells.push({
         icon: "★", value: String(weekSummary.winsW), label: `win${weekSummary.winsW === 1 ? '' : 's'} this wk`,
-        color: weekSummary.winsW > 0 ? "var(--orange,#FF9500)" : "var(--t1)",
+        color: weekSummary.winsW > 0 ? "var(--orange, #ED8B22)" : "var(--t1)",
         onclick: "allWinsSheet()"
       });
       if (todaySpent > 0 || weekSummary.spendW > 0) cells.push({
@@ -6381,7 +6435,7 @@ function renderToday() {
               icon: delta >= 0 ? "↗" : "↘",
               value: `${delta >= 0 ? '+' : ''}${fmt$0(Math.round(delta))}`,
               label: "net 30d",
-              color: delta >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)",
+              color: delta >= 0 ? "var(--green, #2EB875)" : "var(--red, #E04545)",
               priv: true,
               onclick: "showTab('money')",
             });
@@ -6596,7 +6650,8 @@ function renderToday() {
           const done = pct === 100 && DB.habits.length;
           const wd = d.toLocaleDateString("en-US",{weekday:"short"})[0];
           const k = todayKey(d);
-          return `<div class="daychip ${isToday?'today':''} ${done?'done':''}" onclick="calendarDaySheet('${k}')" role="button" tabindex="0"><div>${wd}</div><div class="n">${d.getDate()}</div></div>`;
+          const aria = d.toLocaleDateString("en-US",{weekday:"long",month:"short",day:"numeric"}) + (isToday?", today":"") + (done?", complete":"");
+          return `<div class="daychip ${isToday?'today':''} ${done?'done':''}" onclick="calendarDaySheet('${k}')" role="button" tabindex="0" aria-label="${aria}"><div>${wd}</div><div class="n">${d.getDate()}</div></div>`;
         }).join("")}
       </div>
     </div>
@@ -6610,7 +6665,7 @@ function renderToday() {
         `).join("")}
       </div>
     ` : ""}
-    <div class="list">${habitsHtmlFiltered}</div>
+    <div class="sub-pane" data-pane="${activeHabitGroup}"><div class="list">${habitsHtmlFiltered}</div></div>
 
     <div class="section-h"><span class="lbl">Wins today${winsStreak >= 2 ? ` <span style="color:var(--orange);font-weight:700;margin-left:6px">🔥 ${winsStreak}d streak</span>` : ''}</span><span style="display:flex;gap:14px"><button class="act" onclick="allWinsSheet()" style="${(DB.wins || []).length ? '' : 'display:none'}">All</button><button class="act" onclick="addWinSheet()">+ Add</button></span></div>
     <div class="list">${winsHtml}</div>
@@ -6758,7 +6813,7 @@ function renderToday() {
               ${buckets.map((b, i) => {
                 const h = b.amt > 0 ? Math.max(3, Math.round((b.amt / maxAmt) * 32)) : 1;
                 const isToday = i === 0;
-                const color = isToday ? "var(--red,#FF3B30)" : i <= 2 ? "var(--orange,#FF9500)" : "var(--blue,#007AFF)";
+                const color = isToday ? "var(--red, #E04545)" : i <= 2 ? "var(--orange, #ED8B22)" : "var(--blue, #2F6FEB)";
                 const opacity = b.n > 0 ? "1" : "0.18";
                 return `<div style="flex:1;height:${h}px;background:${color};opacity:${opacity};border-radius:2px 2px 0 0" title="${b.n ? fmt$0(b.amt) + ' due' : ''}"></div>`;
               }).join("")}
@@ -6842,7 +6897,7 @@ function renderToday() {
         <div style="background:var(--card);border:1px solid var(--sep);border-left:4px solid #ec4899;border-radius:var(--r);padding:14px 16px;margin-bottom:14px">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <div style="display:flex;align-items:center;gap:8px">
-              <div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px">✨</div>
+              <div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px">✨</div>
               <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Today's insight</div>
             </div>
             <button class="btn sm secondary" style="font-size:11px;padding:4px 10px" ${DB._aiInsightLoading ? 'disabled' : ''} onclick="runAiInsight()">${DB._aiInsightLoading ? "Thinking…" : "Refresh"}</button>
@@ -6865,7 +6920,7 @@ function renderToday() {
       const leaks = detectSpendingLeaks();
       if (!leaks.length) return "";
       return `
-        <div style="background:linear-gradient(135deg,rgba(255,149,0,0.10),rgba(255,59,48,0.05));border:0.5px solid rgba(255,149,0,0.45);border-left:3px solid var(--orange,#FF9500);border-radius:var(--r);padding:14px;margin-bottom:14px">
+        <div style="background:linear-gradient(135deg,color-mix(in srgb, var(--orange) 10%, transparent),color-mix(in srgb, var(--red) 5%, transparent));border:0.5px solid color-mix(in srgb, var(--orange) 45%, transparent);border-left:3px solid var(--orange, #ED8B22);border-radius:var(--r);padding:14px;margin-bottom:14px">
           <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">
             <div style="font-size:20px">⚠️</div>
             <div style="flex:1;min-width:0">
@@ -6884,12 +6939,12 @@ function renderToday() {
                     </div>
                   </div>
                   <div style="text-align:right;flex-shrink:0">
-                    <div style="font-weight:700;color:var(--orange,#FF9500);font-size:14px">+${l.deltaPct === 999 ? "new" : l.deltaPct + "%"}</div>
+                    <div style="font-weight:700;color:var(--orange, #ED8B22);font-size:14px">+${l.deltaPct === 999 ? "new" : l.deltaPct + "%"}</div>
                     <div style="font-size:11px;color:var(--t3)" data-priv="amount">+${fmt$0(l.deltaAmt)}</div>
                   </div>
                 </div>
                 <div style="display:flex;gap:6px;margin-top:6px">
-                  <button class="btn sm" style="flex:1;font-size:11.5px;padding:7px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="openCounselor(${jsAttr(`My ${l.category} spend jumped from $${Math.round(l.previous)} last month to $${Math.round(l.current)} so far this month — that's +${l.deltaPct === 999 ? "all new" : l.deltaPct + "%"}. What happened and what should I do about it?`)})">✨ Ask Cornileus</button>
+                  <button class="btn sm" style="flex:1;font-size:11.5px;padding:7px;background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;border:none" onclick="openCounselor(${jsAttr(`My ${l.category} spend jumped from $${Math.round(l.previous)} last month to $${Math.round(l.current)} so far this month — that's +${l.deltaPct === 999 ? "all new" : l.deltaPct + "%"}. What happened and what should I do about it?`)})">✨ Ask Cornileus</button>
                   <button class="btn secondary sm" style="flex:0 0 auto;font-size:11.5px;padding:7px 12px;color:var(--t3)" onclick="dismissSpendingLeak(${jsAttr(l.category)})">Dismiss</button>
                 </div>
               </div>
@@ -6911,10 +6966,10 @@ function renderToday() {
         // Use full personalized starter text (compact-styled). One-line truncated.
         chipsHtml = personalized.slice(0, 3).map(p => `
           <button onclick="event.stopPropagation();openCounselor(${jsAttr(p.text)})"
-            style="background:linear-gradient(135deg,rgba(124,58,237,0.10),rgba(236,72,153,0.06));border:0.5px solid rgba(124,58,237,0.35);color:var(--t1);padding:10px 12px;border-radius:var(--r);font-size:12.5px;cursor:pointer;display:flex;align-items:flex-start;gap:8px;text-align:left;line-height:1.4;font-weight:500;width:100%;margin-bottom:6px">
+            style="background:linear-gradient(135deg,color-mix(in srgb, var(--corn-from) 10%, transparent),color-mix(in srgb, var(--corn-to) 6%, transparent));border:0.5px solid color-mix(in srgb, var(--corn-from) 35%, transparent);color:var(--t1);padding:10px 12px;border-radius:var(--r);font-size:12.5px;cursor:pointer;display:flex;align-items:flex-start;gap:8px;text-align:left;line-height:1.4;font-weight:500;width:100%;margin-bottom:6px">
             <span style="font-size:14px;flex-shrink:0">${p.icon}</span>
             <span style="flex:1">${esc(p.text)}</span>
-            <span style="color:var(--purple,#8957d9);font-size:16px;flex-shrink:0">→</span>
+            <span style="color:var(--purple);font-size:16px;flex-shrink:0">→</span>
           </button>
         `).join("");
         subtitle = "Picked just for you — based on what's in your data right now";
@@ -7018,7 +7073,7 @@ function renderGoals() {
               </div>
             ` : ""}
           </div>
-          <button class="del-x" onclick="addGoalSheet(DB.goals.find(x=>x.id==='${g.id}'))">⋯</button>
+          <button class="del-x" onclick="addGoalSheet(DB.goals.find(x=>x.id==='${g.id}'))" title="Edit goal" aria-label="Edit goal">⋯</button>
         </div>
         <div class="goal-steps">
           ${stepsHtml}
@@ -7078,6 +7133,7 @@ function renderGoals() {
       </div>
       <div class="trail chev"></div>
     </div>
+    <div class="sub-pane" data-pane="${activeTier}">
     ${goalsHtml}
     ${(() => {
       // Recently completed goals — surface accomplishments separately from
@@ -7106,6 +7162,7 @@ function renderGoals() {
         </div>
       `;
     })()}
+    </div>
   `;
 }
 
@@ -7491,7 +7548,7 @@ function _planDateChip(p) {
   if (isNaN(d.getTime())) return "";
   const now = new Date();
   const days = Math.round((d.getTime() - now.getTime()) / 86400000);
-  if (days < 0) return `<span class="plan-chip" style="background:rgba(239,68,68,.15);color:#ef4444">⏰ ${-days}d overdue</span>`;
+  if (days < 0) return `<span class="plan-chip" style="background:rgba(239,68,68,.15);color:var(--red)">⏰ ${-days}d overdue</span>`;
   if (days === 0) return `<span class="plan-chip" style="background:rgba(245,158,11,.15);color:#f59e0b">📅 Today</span>`;
   if (days < 30) return `<span class="plan-chip">📅 ${days} day${days===1?"":"s"} left</span>`;
   const months = Math.round(days / 30);
@@ -7569,7 +7626,7 @@ function planHealthCardHtml() {
       <div style="font-size:13px;color:var(--t3)" data-priv="amount">of ${fmt$0(h.totalTarget)}</div>
     </div>
     <div style="height:8px;background:var(--bg-elev);border-radius:999px;overflow:hidden">
-      <div style="height:100%;width:${h.pct}%;background:linear-gradient(90deg,#7c3aed,#ec4899);border-radius:999px;transition:width .35s cubic-bezier(.4,0,.2,1)"></div>
+      <div style="height:100%;width:${h.pct}%;background:linear-gradient(90deg, var(--corn-from), var(--corn-to));border-radius:999px;transition:width .35s cubic-bezier(.4,0,.2,1)"></div>
     </div>
     <div style="margin-top:6px;font-size:12px;color:var(--t3)">${h.pct}% across your money plans</div>
   ` : `
@@ -7815,7 +7872,7 @@ function renderRoadmapsSection() {
         <div style="font-size:30px;margin-bottom:6px">🗺️</div>
         <div style="font-weight:700;margin-bottom:4px">No roadmaps yet</div>
         <div style="font-size:12.5px;color:var(--t3);margin-bottom:14px;line-height:1.5">Roadmaps are multi-phase plans with milestones &amp; monthly actions per phase.</div>
-        <button class="btn" style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-size:13px;max-width:280px;margin:0 auto 8px;display:block"
+        <button class="btn" style="background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;border:none;font-size:13px;max-width:280px;margin:0 auto 8px;display:block"
           onclick="openCounselor(${jsAttr(`Build me a complete multi-phase roadmap based on my actual situation in the snapshot. Use the add_roadmap action with at least 4 phases. Each phase should have: title, period (e.g. "Months 1-3", "Year 2"), targetAmount if money-related, optional targetDate (YYYY-MM-DD), short note, 3-5 milestones, and 2-4 monthly actions. Make it practical and specific to MY numbers — not generic. Tell me what plan you built and why before emitting the action.`)})">✨ Ask Cornileus to build me one</button>
         <button class="btn secondary" style="font-size:12.5px;max-width:280px;margin:0 auto;display:block"
           onclick="createBlankRoadmap()">Start with a blank roadmap</button>
@@ -8307,19 +8364,19 @@ function whatIfCardHtml() {
       ${portfolioBlock}
       ${hasInvestSignal ? `
         <div class="whatif-row">
-          <div class="whatif-label">Save an extra <strong id="wi-saving-label">${fmt$0(extraS)}</strong> / month</div>
+          <div class="whatif-label">Save an extra <strong id="wi-saving-label" data-priv="amount">${fmt$0(extraS)}</strong> / month</div>
           <input type="range" id="wi-saving-slider" min="0" max="2000" step="10" value="${extraS}"
             oninput="_whatIfUpdate('saving', +this.value)" />
         </div>
         <div class="whatif-grid">
-          <div class="whatif-cell"><div class="whatif-cell-label">In 5 yrs</div><div class="whatif-cell-val" id="wi-5yr">…</div></div>
-          <div class="whatif-cell"><div class="whatif-cell-label">In 10 yrs</div><div class="whatif-cell-val" id="wi-10yr">…</div></div>
-          <div class="whatif-cell highlight"><div class="whatif-cell-label">In 20 yrs</div><div class="whatif-cell-val" id="wi-20yr">…</div><div class="whatif-cell-lift" id="wi-lift">…</div></div>
+          <div class="whatif-cell"><div class="whatif-cell-label">In 5 yrs</div><div class="whatif-cell-val" data-priv="amount" id="wi-5yr">…</div></div>
+          <div class="whatif-cell"><div class="whatif-cell-label">In 10 yrs</div><div class="whatif-cell-val" data-priv="amount" id="wi-10yr">…</div></div>
+          <div class="whatif-cell highlight"><div class="whatif-cell-label">In 20 yrs</div><div class="whatif-cell-val" data-priv="amount" id="wi-20yr">…</div><div class="whatif-cell-lift" data-priv="amount" id="wi-lift">…</div></div>
         </div>
       ` : ""}
       ${hasDebt ? `
         <div class="whatif-row" style="margin-top:14px">
-          <div class="whatif-label">Throw extra <strong id="wi-debt-label">${fmt$0(extraD)}</strong> / month at debt</div>
+          <div class="whatif-label">Throw extra <strong id="wi-debt-label" data-priv="amount">${fmt$0(extraD)}</strong> / month at debt</div>
           <input type="range" id="wi-debt-slider" min="0" max="1000" step="10" value="${extraD}"
             oninput="_whatIfUpdate('debt', +this.value)" />
         </div>
@@ -8600,17 +8657,17 @@ function savingsOpportunitiesCardHtml() {
             <div class="savings-emoji">${op.icon}</div>
             <div class="savings-body" ${op.action ? `onclick="_opportunityAction(${jsAttr(op.action.type)})"` : ""}>
               <div class="savings-op-title">${esc(op.title)}</div>
-              <div class="savings-op-sub">${esc(op.sub)}</div>
+              <div class="savings-op-sub" data-priv="amount">${esc(op.sub)}</div>
             </div>
             <div class="savings-cta">
-              <div class="savings-amount">+${fmt$0(op.monthlySaving)}/mo</div>
+              <div class="savings-amount" data-priv="amount">+${fmt$0(op.monthlySaving)}/mo</div>
               <button class="savings-add" onclick="_applySavingToPlan(${op.monthlySaving})">Add to plan</button>
             </div>
           </div>
         `).join("")}
       </div>
       <div class="savings-foot">
-        <div class="savings-total">Potential: <strong>+${fmt$0(totalPotential)}/mo</strong></div>
+        <div class="savings-total">Potential: <strong data-priv="amount">+${fmt$0(totalPotential)}/mo</strong></div>
         <button class="savings-ai-btn" onclick="openCounselor('Look at my spending and recurring charges in my snapshot. Give me 3 specific savings ideas BEYOND what the heuristic list already shows, with real monthly dollar impact and what to do this week. Be candid.', 'planning')">
           ✨ Find more with AI
         </button>
@@ -8969,7 +9026,7 @@ function renderMoney() {
     const totalC = totalSaved(), totalT = totalTarget();
     const pct = totalT ? Math.round(100*totalC/totalT) : 0;
     body = `
-      <div class="hero" style="background:linear-gradient(180deg, #18181C 0%, #232329 100%)">
+      <div class="hero">
         <div class="h-eyebrow">Total saved</div>
         <div class="h-big" data-priv="amount">${fmt$0(totalC)}</div>
         <div class="h-sub">of ${fmt$0(totalT)} across ${DB.savings.length} goal${DB.savings.length===1?'':'s'} • ${pct}%</div>
@@ -9013,7 +9070,7 @@ function renderMoney() {
             <div class="sav-top">
               <div class="sav-icon" style="background:${s.color}22;color:${s.color}">${s.emoji}</div>
               <div class="sav-name">${esc(s.name)}</div>
-              <button class="del-x" onclick="addSavingSheet(DB.savings.find(x=>x.id==='${s.id}'))">⋯</button>
+              <button class="del-x" onclick="addSavingSheet(DB.savings.find(x=>x.id==='${s.id}'))" title="Edit savings goal" aria-label="Edit savings goal">⋯</button>
             </div>
             <div class="sav-amount">
               <div class="sav-cur" data-priv="amount">${fmt$0(s.current)}</div>
@@ -9408,15 +9465,15 @@ function renderMoney() {
           <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Where your wealth lives</div>
           ${positive > 0 ? `
             <div style="display:flex;height:22px;border-radius:6px;overflow:hidden;background:var(--bg-elev)">
-              ${cashPct > 0 ? `<div style="width:${cashPct}%;background:#34C759"></div>` : ""}
-              ${invPct  > 0 ? `<div style="width:${invPct}%;background:#007AFF"></div>`  : ""}
-              ${realPct > 0 ? `<div style="width:${realPct}%;background:#AF52DE"></div>` : ""}
+              ${cashPct > 0 ? `<div style="width:${cashPct}%;background:var(--green)"></div>` : ""}
+              ${invPct  > 0 ? `<div style="width:${invPct}%;background:var(--blue)"></div>`  : ""}
+              ${realPct > 0 ? `<div style="width:${realPct}%;background:var(--purple)"></div>` : ""}
             </div>
           ` : ""}
           <div style="display:flex;flex-direction:column;gap:6px;margin-top:12px;font-size:13px">
-            <div style="display:flex;justify-content:space-between"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:#34C759;border-radius:2px"></span>Cash</span><span data-priv="amount">${fmt$0(comp.cash)}${positive?` <span class="muted" style="font-weight:400">${Math.round(cashPct)}%</span>`:""}</span></div>
-            <div style="display:flex;justify-content:space-between"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:#007AFF;border-radius:2px"></span>Investments</span><span data-priv="amount">${fmt$0(comp.investments)}${positive?` <span class="muted" style="font-weight:400">${Math.round(invPct)}%</span>`:""}</span></div>
-            <div style="display:flex;justify-content:space-between"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:#AF52DE;border-radius:2px"></span>Real assets</span><span data-priv="amount">${fmt$0(comp.realAssets)}${positive?` <span class="muted" style="font-weight:400">${Math.round(realPct)}%</span>`:""}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:var(--green);border-radius:2px"></span>Cash</span><span data-priv="amount">${fmt$0(comp.cash)}${positive?` <span class="muted" style="font-weight:400">${Math.round(cashPct)}%</span>`:""}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:var(--blue);border-radius:2px"></span>Investments</span><span data-priv="amount">${fmt$0(comp.investments)}${positive?` <span class="muted" style="font-weight:400">${Math.round(invPct)}%</span>`:""}</span></div>
+            <div style="display:flex;justify-content:space-between"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:var(--purple);border-radius:2px"></span>Real assets</span><span data-priv="amount">${fmt$0(comp.realAssets)}${positive?` <span class="muted" style="font-weight:400">${Math.round(realPct)}%</span>`:""}</span></div>
             ${comp.debts > 0 ? `<div style="display:flex;justify-content:space-between;color:var(--red);border-top:1px solid var(--sep);padding-top:6px;margin-top:2px"><span style="display:inline-flex;align-items:center;gap:6px"><span style="width:10px;height:10px;background:var(--red);border-radius:2px"></span>Debts</span><span data-priv="amount">-${fmt$0(comp.debts)}</span></div>` : ""}
           </div>
         </div>
@@ -9445,7 +9502,7 @@ function renderMoney() {
           <div class="lead">🏖️</div>
           <div class="body">
             <div class="t1" data-priv="amount">${fmt$0(retFinal)} at age ${targetAge}</div>
-            <div class="t2">${fmt$0(retMonthlyWd)}/mo safe withdrawal · ${profile.age ? `age ${currentAge}` : "default age 30"} · ${fmt$0(monthly)}/mo · ${annualReturn}% return</div>
+            <div class="t2" data-priv="amount">${fmt$0(retMonthlyWd)}/mo safe withdrawal · ${profile.age ? `age ${currentAge}` : "default age 30"} · ${fmt$0(monthly)}/mo · ${annualReturn}% return</div>
           </div>
           <div class="trail chev"></div>
         </div>
@@ -9474,7 +9531,7 @@ function renderMoney() {
             <div class="lead">🔥</div>
             <div class="body">
               <div class="t1">${r.monthsToFi === 0 ? "Financially independent!" : "Financial Independence (FIRE)"}</div>
-              <div class="t2">${esc(subtitle)}</div>
+              <div class="t2" data-priv="amount">${esc(subtitle)}</div>
             </div>
             <div class="trail chev"></div>
           </div>
@@ -9815,7 +9872,7 @@ function renderMoney() {
               <div class="row tappable" onclick="detectedRecurringSheet()" role="button" tabindex="0">
                 <div class="lead">🔎</div>
                 <div class="body">
-                  <div class="t1">Detected recurring <span style="background:var(--purple,#8957d9);color:#fff;border-radius:999px;padding:2px 8px;font-size:10px;margin-left:6px;font-weight:700">${nSuggested}</span></div>
+                  <div class="t1">Detected recurring <span style="background:var(--purple);color:#fff;border-radius:999px;padding:2px 8px;font-size:10px;margin-left:6px;font-weight:700">${nSuggested}</span></div>
                   <div class="t2">Charges that look periodic but aren't tracked yet · tap to review</div>
                 </div>
                 <div class="trail chev"></div>
@@ -10031,7 +10088,7 @@ function renderMoney() {
                 <div class="lead">📅</div>
                 <div class="body">
                   <div class="t1">${(DB.settings.debtPayoffStrategy||"avalanche")==="avalanche"?"Avalanche":"Snowball"} payoff</div>
-                  <div class="t2">${plan.years} years · ${fmt$0(plan.totalInterest)} interest paid${(+DB.settings.debtExtraPayment||0)?` · +${fmt$0(DB.settings.debtExtraPayment)}/mo extra`:""}</div>
+                  <div class="t2" data-priv="amount">${plan.years} years · ${fmt$0(plan.totalInterest)} interest paid${(+DB.settings.debtExtraPayment||0)?` · +${fmt$0(DB.settings.debtExtraPayment)}/mo extra`:""}</div>
                 </div>
                 <button class="btn sm secondary" style="font-size:11px;padding:4px 8px" onclick="showTab('settings')">Setup</button>
               </div>
@@ -10135,7 +10192,7 @@ function renderMoney() {
               <div class="lead">📅</div>
               <div class="body">
                 <div class="t1">${(DB.settings.debtPayoffStrategy||"avalanche")==="avalanche"?"Avalanche":"Snowball"} payoff plan</div>
-                <div class="t2">${plan.years} years · ${fmt$0(plan.totalInterest)} interest paid${(+DB.settings.debtExtraPayment||0)?` · +${fmt$0(DB.settings.debtExtraPayment)}/mo extra`:""}</div>
+                <div class="t2" data-priv="amount">${plan.years} years · ${fmt$0(plan.totalInterest)} interest paid${(+DB.settings.debtExtraPayment||0)?` · +${fmt$0(DB.settings.debtExtraPayment)}/mo extra`:""}</div>
               </div>
               <button class="btn sm secondary" style="font-size:11px;padding:4px 8px" onclick="debtSettingsSheet()">Setup</button>
             </div>
@@ -10339,8 +10396,8 @@ function renderMoney() {
     body = `
       <div class="budget-hero">
         <div class="bh-lbl">This month spent</div>
-        <div class="bh-val">${fmt$0(ms)}</div>
-        <div class="bh-sub">${DB.spend.filter(t=>t.date.startsWith(todayKey().slice(0,7))).length} transactions${totalAvail ? ` · ${fmt$0(totalAvail)} available across accounts` : ""}</div>
+        <div class="bh-val" data-priv="amount">${fmt$0(ms)}</div>
+        <div class="bh-sub" data-priv="amount">${DB.spend.filter(t=>t.date.startsWith(todayKey().slice(0,7))).length} transactions${totalAvail ? ` · ${fmt$0(totalAvail)} available across accounts` : ""}</div>
       </div>
       ${trendHtml}
       ${spendDowHtml}
@@ -10475,7 +10532,7 @@ function renderMoney() {
             <div class="row">
               <div class="lead">${t.source === "plaid" ? (+t.amount < 0 ? "💵" : "🔗") : "💳"}</div>
               <div class="body">
-                <div class="t1">${esc(t.category)} <span class="amt" style="${(+t.amount)<0?'color:var(--green)':''}">${(+t.amount)<0?'+':''}${fmt$0(Math.abs(+t.amount||0))}</span>${t.pending ? ` <span class="muted" style="font-size:11px">pending</span>` : ""}${t._ruleId ? ` <span class="muted" style="font-size:10px;background:var(--bg-elev);padding:2px 6px;border-radius:6px">rule</span>` : ""}</div>
+                <div class="t1">${esc(t.category)} <span class="amt" data-priv="amount" style="${(+t.amount)<0?'color:var(--green)':''}">${(+t.amount)<0?'+':''}${fmt$0(Math.abs(+t.amount||0))}</span>${t.pending ? ` <span class="muted" style="font-size:11px">pending</span>` : ""}${t._ruleId ? ` <span class="muted" style="font-size:10px;background:var(--bg-elev);padding:2px 6px;border-radius:6px">rule</span>` : ""}</div>
                 <div class="t2">${t.date}${t.note?' · '+esc(t.note):''}</div>
               </div>
               ${t.source === "plaid" ? `<button class="del-x" style="font-size:14px" onclick="quickRuleFromTx(${jsAttr(t.id)})" title="Recategorize">↻</button>` : `<button class="del-x" onclick="deleteSpend(${jsAttr(t.id)})">×</button>`}
@@ -10491,7 +10548,7 @@ function renderMoney() {
       </div>
     `;
   }
-  $("#page-money").innerHTML = hdr + body;
+  $("#page-money").innerHTML = hdr + `<div class="sub-pane" data-pane="${moneySub}">${body}</div>`;
 }
 
 /* ===== STATS ===== */
@@ -10587,7 +10644,7 @@ function renderStats() {
   const achList = _achievementsList();
   const achEarned = achList.filter(a => a.earned).length;
   const achChip = achList.length ? `
-    <button onclick="achievementsSheet()" style="background:var(--card);border:0.5px solid rgba(255,149,0,0.35);border-radius:var(--r-pill,999px);padding:5px 12px;font-size:11px;color:var(--t1);cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-weight:600;margin-left:10px;vertical-align:middle">
+    <button onclick="achievementsSheet()" style="background:var(--card);border:0.5px solid color-mix(in srgb, var(--orange) 35%, transparent);border-radius:var(--r-pill,999px);padding:5px 12px;font-size:11px;color:var(--t1);cursor:pointer;display:inline-flex;align-items:center;gap:6px;font-weight:600;margin-left:10px;vertical-align:middle">
       <span>🏆</span><span>${achEarned}/${achList.length}</span><span style="color:var(--t3);font-weight:500">unlocked</span>
     </button>
   ` : "";
@@ -10876,9 +10933,9 @@ function renderStats() {
         <div class="card" style="background:var(--card);border-radius:var(--r);padding:18px;margin-bottom:14px">
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
             <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Net worth</div>
-            <div style="font-size:12px;color:${color};font-weight:600">${delta>=0?"+":""}${fmt$0(delta)} (${pct>=0?"+":""}${pct.toFixed(1)}%)</div>
+            <div style="font-size:12px;color:${color};font-weight:600" data-priv="amount">${delta>=0?"+":""}${fmt$0(delta)} (${pct>=0?"+":""}${pct.toFixed(1)}%)</div>
           </div>
-          <div style="font-size:30px;font-weight:700;letter-spacing:-.5px;margin-bottom:8px">${fmt$0(cur)}</div>
+          <div style="font-size:30px;font-weight:700;letter-spacing:-.5px;margin-bottom:8px" data-priv="amount">${fmt$0(cur)}</div>
           ${netWorthSparkline(hist)}
           <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-top:6px">
             <span>${hist[0].date}</span><span>${hist[hist.length-1].date}</span>
@@ -10933,8 +10990,8 @@ function renderStats() {
             <div class="row">
               <div class="lead">${s.emoji||"💰"}</div>
               <div class="body">
-                <div class="t1">${esc(s.name)} · <span class="muted" style="font-weight:400">${fmt$0(s.target - s.current)} to go</span></div>
-                <div class="t2">~${p.monthsToGo}mo at ${fmt$0(p.monthlyRate)}/mo · ${esc(p.reachDate)}</div>
+                <div class="t1">${esc(s.name)} · <span class="muted" style="font-weight:400" data-priv="amount">${fmt$0(s.target - s.current)} to go</span></div>
+                <div class="t2" data-priv="amount">~${p.monthsToGo}mo at ${fmt$0(p.monthlyRate)}/mo · ${esc(p.reachDate)}</div>
               </div>
             </div>
           `).join("")}
@@ -10950,7 +11007,7 @@ function renderStats() {
         <div class="card" style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:14px;border:1px solid var(--sep)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
             <div style="display:flex;align-items:center;gap:8px">
-              <div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px">✨</div>
+              <div style="width:22px;height:22px;border-radius:50%;background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px">✨</div>
               <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Cornileus</div>
             </div>
             <button class="btn sm secondary" style="font-size:11px;padding:4px 10px" onclick="runAiInsight()">${last?'Refresh':'Monthly review'}</button>
@@ -10958,10 +11015,10 @@ function renderStats() {
           ${last ? `
             <div style="font-size:13.5px;line-height:1.55;color:var(--t1);white-space:pre-wrap">${esc(last.response)}</div>
             <div style="font-size:11px;color:var(--t4);margin-top:8px">${last.date} · ${esc(last.model||"")}</div>
-            <button class="btn" style="width:100%;margin-top:12px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;font-size:13px" onclick="openCounselor()">✨ Talk to Cornileus</button>
+            <button class="btn" style="width:100%;margin-top:12px;background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;border:none;font-size:13px" onclick="openCounselor()">✨ Talk to Cornileus</button>
           ` : `
             <div style="font-size:13.5px;color:var(--t1);line-height:1.5;margin-bottom:10px">Get a candid review of your spending, goals, and next moves — like a fee-only planner who knows your numbers.</div>
-            <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="openCounselor()">✨ Talk to Cornileus</button>
+            <button class="btn" style="width:100%;background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;border:none" onclick="openCounselor()">✨ Talk to Cornileus</button>
             <div style="font-size:11px;color:var(--t4);margin-top:8px;text-align:center">Educational guidance — not licensed advice</div>
           `}
         </div>
@@ -20422,6 +20479,7 @@ async function financialNewsSheet() {
   }
 }
 
+
 // Removed: native sub-tab helpers (_stocksTickersBody, _stocksHousingBody,
 // _stocksMortgagesBody, _stocksNewsBody, _housingSnapshotCard,
 // _housingMetroRow, _loadHousingNational, _loadHousingMetros,
@@ -20819,10 +20877,10 @@ function calendarDaySheet(dateKey) {
   // so a quiet day doesn't get crowded with zeros.
   const dayHabitsDone = eligibleHabits.filter(h => h.type === "count" ? (+h.log[dateKey] || 0) >= (+h.target || 1) : !!h.log[dateKey]).length;
   const dayStatCells = [];
-  if (eligibleHabits.length) dayStatCells.push({ icon: "✓", value: `${dayHabitsDone}/${eligibleHabits.length}`, label: "habits", color: dayHabitsDone === eligibleHabits.length ? "var(--green,#34C759)" : "var(--t1)" });
-  if (wins.length) dayStatCells.push({ icon: "⭐", value: `${wins.length}`, label: `win${wins.length === 1 ? '' : 's'}`, color: "var(--orange,#FF9500)" });
+  if (eligibleHabits.length) dayStatCells.push({ icon: "✓", value: `${dayHabitsDone}/${eligibleHabits.length}`, label: "habits", color: dayHabitsDone === eligibleHabits.length ? "var(--green, #2EB875)" : "var(--t1)" });
+  if (wins.length) dayStatCells.push({ icon: "⭐", value: `${wins.length}`, label: `win${wins.length === 1 ? '' : 's'}`, color: "var(--orange, #ED8B22)" });
   if (spendDay.length) dayStatCells.push({ icon: "💸", value: fmt$0(Math.round(spendTotal)), label: `${spendDay.length} tx`, color: "var(--t1)", priv: true });
-  if (savingsLogs.length) dayStatCells.push({ icon: "💰", value: `${savingsLogs.length}`, label: "savings", color: "var(--green,#34C759)" });
+  if (savingsLogs.length) dayStatCells.push({ icon: "💰", value: `${savingsLogs.length}`, label: "savings", color: "var(--green, #2EB875)" });
   const dayStripHtml = dayStatCells.length ? `
     <div style="display:grid;grid-template-columns:repeat(${dayStatCells.length},1fr);gap:6px;margin-bottom:14px">
       ${dayStatCells.map(c => `
@@ -21117,12 +21175,12 @@ function renderCalendar() {
     ${(monthHabitPossible > 0 || monthWins > 0 || monthSpend > 0 || monthSavings > 0) ? (() => {
       const cells = [];
       if (monthHabitPossible > 0) {
-        const color = monthHabitPct >= 80 ? "var(--green,#34C759)" : monthHabitPct >= 50 ? "var(--orange,#FF9500)" : "var(--t1)";
+        const color = monthHabitPct >= 80 ? "var(--green, #2EB875)" : monthHabitPct >= 50 ? "var(--orange, #ED8B22)" : "var(--t1)";
         cells.push({ icon: "✓", value: `${monthHabitPct}%`, label: "habits", color });
       }
-      if (monthWins > 0) cells.push({ icon: "★", value: `${monthWins}`, label: `win${monthWins===1?'':'s'}`, color: "var(--orange,#FF9500)" });
+      if (monthWins > 0) cells.push({ icon: "★", value: `${monthWins}`, label: `win${monthWins===1?'':'s'}`, color: "var(--orange, #ED8B22)" });
       if (monthSpend > 0) cells.push({ icon: "$", value: fmt$0(monthSpend), label: "spent", color: "var(--t1)", priv: true });
-      if (monthSavings > 0) cells.push({ icon: "+$", value: fmt$0(monthSavings), label: "saved", color: "var(--green,#34C759)", priv: true });
+      if (monthSavings > 0) cells.push({ icon: "+$", value: fmt$0(monthSavings), label: "saved", color: "var(--green, #2EB875)", priv: true });
       const cols = cells.length;
       return `
         <div style="display:grid;grid-template-columns:repeat(${cols},1fr);gap:8px;margin-bottom:14px">
@@ -24847,7 +24905,7 @@ function counselorRender() {
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
           ${followups.map(t => `
             <button onclick="counselorSend(${jsAttr(t)})"
-              style="background:rgba(124,58,237,0.08);border:0.5px solid rgba(124,58,237,0.35);color:var(--purple,#8957d9);padding:6px 11px;border-radius:var(--r-pill,999px);font-size:12px;cursor:pointer;font-weight:600;line-height:1.2">${esc(t)}</button>
+              style="background:color-mix(in srgb, var(--corn-from) 8%, transparent);border:0.5px solid color-mix(in srgb, var(--corn-from) 35%, transparent);color:var(--purple);padding:6px 11px;border-radius:var(--r-pill,999px);font-size:12px;cursor:pointer;font-weight:600;line-height:1.2">${esc(t)}</button>
           `).join("")}
         </div>
       ` : "";
@@ -24856,7 +24914,7 @@ function counselorRender() {
       const isSaved = _isInsightSaved(m.content || "");
       const saveBtn = `
         <button onclick="saveCornileusInsight(${jsAttr(m.content || "")}, ${jsAttr(ctx)})" title="${isSaved ? 'Remove from insights' : 'Save to insights'}"
-          style="background:none;border:none;cursor:pointer;font-size:12px;color:${isSaved ? 'var(--purple,#8957d9)' : 'var(--t3)'};padding:4px 6px;margin-top:4px;display:inline-flex;align-items:center;gap:4px;line-height:1.2">
+          style="background:none;border:none;cursor:pointer;font-size:12px;color:${isSaved ? 'var(--purple)' : 'var(--t3)'};padding:4px 6px;margin-top:4px;display:inline-flex;align-items:center;gap:4px;line-height:1.2">
           <span>${isSaved ? '📌' : '📍'}</span>
           <span style="font-weight:600">${isSaved ? 'Saved' : 'Save'}</span>
         </button>`;
@@ -24873,7 +24931,7 @@ function counselorRender() {
     }
     return `
       <div style="display:flex;justify-content:flex-end;margin-bottom:12px">
-        <div style="background:var(--blue,#007AFF);color:#fff;padding:10px 14px;border-radius:16px;border-top-right-radius:4px;max-width:84%;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:break-word">${esc(m.content || "")}</div>
+        <div style="background:var(--blue, #2F6FEB);color:#fff;padding:10px 14px;border-radius:16px;border-top-right-radius:4px;max-width:84%;font-size:14px;line-height:1.5;white-space:pre-wrap;overflow-wrap:break-word">${esc(m.content || "")}</div>
       </div>`;
   }).join("");
 
@@ -24957,14 +25015,14 @@ function counselorRender() {
         const personalized = _personalizedStarters(ctx);
         if (!personalized.length) return "";
         return `
-          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--purple,#8957d9);font-weight:700;margin:6px 0 8px">For you, right now</div>
+          <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--purple);font-weight:700;margin:6px 0 8px">For you, right now</div>
           <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
             ${personalized.map(s => `
               <button onclick="counselorSend(${jsAttr(s.text)})"
-                style="text-align:left;padding:11px 13px;background:linear-gradient(135deg,rgba(124,58,237,0.10),rgba(236,72,153,0.08));border:0.5px solid rgba(124,58,237,0.35);border-radius:12px;color:var(--t1);font-size:13.5px;cursor:pointer;display:flex;gap:10px;align-items:flex-start;line-height:1.4;font-weight:500">
+                style="text-align:left;padding:11px 13px;background:linear-gradient(135deg,color-mix(in srgb, var(--corn-from) 10%, transparent),color-mix(in srgb, var(--corn-to) 8%, transparent));border:0.5px solid color-mix(in srgb, var(--corn-from) 35%, transparent);border-radius:12px;color:var(--t1);font-size:13.5px;cursor:pointer;display:flex;gap:10px;align-items:flex-start;line-height:1.4;font-weight:500">
                 <span style="font-size:16px;flex-shrink:0;margin-top:1px">${s.icon}</span>
                 <span style="flex:1">${esc(s.text)}</span>
-                <span style="color:var(--purple,#8957d9);font-size:18px;flex-shrink:0">→</span>
+                <span style="color:var(--purple);font-size:18px;flex-shrink:0">→</span>
               </button>
             `).join("")}
           </div>
@@ -25109,7 +25167,7 @@ function cornileusInsightsSheet() {
   const rows = list.length ? list.map(i => `
     <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r2,14px);padding:14px;margin-bottom:10px;position:relative">
       <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px">
-        <div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">✨</div>
+        <div style="width:24px;height:24px;border-radius:50%;background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;display:flex;align-items:center;justify-content:center;font-size:11px;flex-shrink:0">✨</div>
         <div style="font-size:11px;color:var(--t3);font-weight:600">${esc(_relTime(i.savedAt))}${i.context && i.context !== 'default' ? ' · ' + esc(i.context) : ''}</div>
         <div style="flex:1"></div>
         <button onclick="_copyInsightText(${jsAttr(i.id)})" title="Copy" style="background:none;border:none;color:var(--t3);cursor:pointer;font-size:14px;padding:4px 6px">📋</button>
@@ -26971,8 +27029,8 @@ function achievementsSheet() {
     .filter(a => !a.earned && typeof a.progress === "number" && a.progress > 0)
     .sort((a, b) => (b.progress || 0) - (a.progress || 0))[0] || null;
   const nextHtml = nextUp ? `
-    <div style="background:var(--card);border:0.5px solid rgba(124,58,237,0.32);border-left:3px solid var(--purple,#8957d9);border-radius:var(--r2,12px);padding:12px 14px;margin:10px 0 4px">
-      <div style="font-size:10.5px;color:var(--purple,#8957d9);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Next up</div>
+    <div style="background:var(--card);border:0.5px solid color-mix(in srgb, var(--corn-from) 32%, transparent);border-left:3px solid var(--purple);border-radius:var(--r2,12px);padding:12px 14px;margin:10px 0 4px">
+      <div style="font-size:10.5px;color:var(--purple);font-weight:700;text-transform:uppercase;letter-spacing:0.06em;margin-bottom:6px">Next up</div>
       <div style="display:flex;align-items:center;gap:10px">
         <div style="font-size:22px;flex-shrink:0">${nextUp.emoji}</div>
         <div style="flex:1;min-width:0">
@@ -26984,7 +27042,7 @@ function achievementsSheet() {
         </div>
       </div>
       <div style="height:5px;background:var(--bg-elev);border-radius:3px;overflow:hidden;margin-top:8px">
-        <div style="height:100%;width:${Math.round(nextUp.progress * 100)}%;background:linear-gradient(90deg,#7c3aed,#ec4899);border-radius:3px;transition:width 0.4s ease"></div>
+        <div style="height:100%;width:${Math.round(nextUp.progress * 100)}%;background:linear-gradient(90deg, var(--corn-from), var(--corn-to));border-radius:3px;transition:width 0.4s ease"></div>
       </div>
     </div>
   ` : "";
@@ -26999,7 +27057,7 @@ function achievementsSheet() {
       <div style="font-size:11px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">${esc(g)}</div>
       <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:8px">
         ${items.map(a => `
-          <div style="background:var(--card);border:0.5px solid ${a.earned ? 'rgba(255,149,0,0.45)' : 'var(--sep)'};border-radius:var(--r2,12px);padding:12px;display:flex;flex-direction:column;align-items:flex-start;gap:4px;position:relative;${a.earned ? '' : 'opacity:0.5'}">
+          <div style="background:var(--card);border:0.5px solid ${a.earned ? 'color-mix(in srgb, var(--orange) 45%, transparent)' : 'var(--sep)'};border-radius:var(--r2,12px);padding:12px;display:flex;flex-direction:column;align-items:flex-start;gap:4px;position:relative;${a.earned ? '' : 'opacity:0.5'}">
             <div style="font-size:24px;line-height:1">${a.earned ? a.emoji : '🔒'}</div>
             <div style="font-size:13px;font-weight:700;color:var(--t1);line-height:1.25">${esc(a.title)}</div>
             <div style="font-size:11px;color:var(--t3);line-height:1.4">${esc(a.desc)}</div>
@@ -27011,7 +27069,7 @@ function achievementsSheet() {
   openSheet(`
     <h2 style="margin-bottom:4px">Achievements</h2>
     <p class="muted" style="font-size:12.5px;margin-bottom:6px">Milestones unlocked as you use the app. They light up retroactively when you hit each one.</p>
-    <div style="background:linear-gradient(135deg,rgba(255,149,0,0.10),rgba(124,58,237,0.06));border:0.5px solid rgba(255,149,0,0.32);border-radius:var(--r);padding:12px 14px;margin:10px 0 6px">
+    <div style="background:linear-gradient(135deg,color-mix(in srgb, var(--orange) 10%, transparent),color-mix(in srgb, var(--corn-from) 6%, transparent));border:0.5px solid color-mix(in srgb, var(--orange) 32%, transparent);border-radius:var(--r);padding:12px 14px;margin:10px 0 6px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
         <div style="font-size:11px;color:var(--t3);font-weight:700;text-transform:uppercase;letter-spacing:0.06em">Unlocked</div>
         <div style="font-size:22px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">${earned.length}/${list.length} <span style="font-size:13px;font-weight:500;color:var(--t3)">${pct}%</span></div>
@@ -27089,7 +27147,7 @@ function yearReviewSheet() {
         <div style="display:flex;gap:3px;align-items:end;height:48px">
           ${monthBuckets.map(b => {
             const h = b.spend > 0 ? Math.max(3, (b.spend / maxSpend) * 44) : 1;
-            return `<div style="flex:1;height:${h}px;background:linear-gradient(180deg,#7c3aed,#ec4899);border-radius:2px;opacity:${b.spend > 0 ? '1' : '0.18'}" title="${esc(b.label)} · ${fmt$0(b.spend)}"></div>`;
+            return `<div style="flex:1;height:${h}px;background:linear-gradient(180deg, var(--corn-from), var(--corn-to));border-radius:2px;opacity:${b.spend > 0 ? '1' : '0.18'}" title="${esc(b.label)} · ${fmt$0(b.spend)}"></div>`;
           }).join("")}
         </div>
         <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:3px;margin-top:4px;font-size:9px;color:var(--t3);text-align:center">
@@ -27106,7 +27164,7 @@ function yearReviewSheet() {
         <div style="display:flex;gap:3px;align-items:end;height:42px">
           ${monthBuckets.map(b => {
             const h = b.wins > 0 ? Math.max(3, (b.wins / maxWins) * 38) : 1;
-            return `<div style="flex:1;height:${h}px;background:var(--orange,#FF9500);border-radius:2px;opacity:${b.wins > 0 ? '1' : '0.18'}" title="${esc(b.label)} · ${b.wins} win${b.wins===1?'':'s'}"></div>`;
+            return `<div style="flex:1;height:${h}px;background:var(--orange, #ED8B22);border-radius:2px;opacity:${b.wins > 0 ? '1' : '0.18'}" title="${esc(b.label)} · ${b.wins} win${b.wins===1?'':'s'}"></div>`;
           }).join("")}
         </div>
         <div style="display:grid;grid-template-columns:repeat(12,1fr);gap:3px;margin-top:4px;font-size:9px;color:var(--t3);text-align:center">
@@ -27569,7 +27627,7 @@ function onboardingStep1() {
     <label style="font-size:12px;color:var(--t3);font-weight:600;margin-bottom:6px;display:block">What should we call you?</label>
     <input id="onb-name" placeholder="Your first name" autofocus value="${esc(_onbState.name)}" />
   `, `
-    <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="(()=>{const n=$('#onb-name').value.trim();_onbState.name=n;closeSheet();aiOnboardingStart({name:n,fromOnboarding:true});})()">✨ Set up with Cornileus (chat)</button>
+    <button class="btn" style="width:100%;background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;border:none" onclick="(()=>{const n=$('#onb-name').value.trim();_onbState.name=n;closeSheet();aiOnboardingStart({name:n,fromOnboarding:true});})()">✨ Set up with Cornileus (chat)</button>
     <button class="btn secondary" style="width:100%;margin-top:8px" onclick="(()=>{_onbState.name=$('#onb-name').value.trim();onboardingStep2();})()">Pick from a list (faster)</button>
   `);
 }
@@ -27767,8 +27825,8 @@ function _tourEnsureChrome() {
       border-radius: 14px; z-index: 9998; pointer-events: none;
       box-shadow:
         0 0 0 9999px rgba(0,0,0,0.62),
-        0 0 0 4px rgba(124,58,237,0.85),
-        0 0 28px rgba(124,58,237,0.45);
+        0 0 0 4px color-mix(in srgb, var(--corn-from) 85%, transparent),
+        0 0 28px color-mix(in srgb, var(--corn-from) 45%, transparent);
       transition: left .32s cubic-bezier(.4,0,.2,1),
                   top .32s cubic-bezier(.4,0,.2,1),
                   width .32s cubic-bezier(.4,0,.2,1),
@@ -27782,14 +27840,14 @@ function _tourEnsureChrome() {
       0%, 100% {
         box-shadow:
           0 0 0 9999px rgba(0,0,0,0.62),
-          0 0 0 4px rgba(124,58,237,0.85),
-          0 0 28px rgba(124,58,237,0.45);
+          0 0 0 4px color-mix(in srgb, var(--corn-from) 85%, transparent),
+          0 0 28px color-mix(in srgb, var(--corn-from) 45%, transparent);
       }
       50% {
         box-shadow:
           0 0 0 9999px rgba(0,0,0,0.62),
-          0 0 0 6px rgba(124,58,237,1),
-          0 0 42px rgba(124,58,237,0.7);
+          0 0 0 6px var(--corn-from),
+          0 0 42px color-mix(in srgb, var(--corn-from) 70%, transparent);
       }
     }
     @media (prefers-reduced-motion: reduce) {
@@ -27832,7 +27890,7 @@ function _tourEnsureChrome() {
     #tour-tooltip .b { font-size: 13px; line-height: 1.5; color: var(--t2, #555); }
     #tour-tooltip .hint {
       margin-top: 12px; padding: 7px 11px;
-      background: rgba(124,58,237,0.10); color: #7c3aed;
+      background: color-mix(in srgb, var(--corn-from) 10%, transparent); color: #7c3aed;
       border-radius: 9px; font-size: 11px; font-weight: 600;
       text-align: center; letter-spacing: 0.01em;
     }
@@ -27842,7 +27900,7 @@ function _tourEnsureChrome() {
     :root.theme-dark #tour-tooltip .progress { background: rgba(255,255,255,0.08); }
     #tour-tooltip .progress-fill {
       height: 100%; border-radius: 999px;
-      background: linear-gradient(90deg, #7c3aed, #ec4899);
+      background: linear-gradient(90deg, var(--corn-from), var(--corn-to));
       transition: width .4s cubic-bezier(.4,0,.2,1);
     }
     #tour-tooltip .row { display: flex; gap: 8px; align-items: stretch; }
@@ -27862,11 +27920,11 @@ function _tourEnsureChrome() {
        remainder — impossible to miss. */
     #tour-tooltip .row .next {
       flex: 1 1 auto; padding: 14px 18px; font-size: 15px; font-weight: 700;
-      background: linear-gradient(135deg, #7c3aed 0%, #ec4899 100%);
+      background: linear-gradient(135deg, var(--corn-from), var(--corn-to));
       color: #fff;
-      box-shadow: 0 6px 18px -4px rgba(124,58,237,0.5);
+      box-shadow: 0 6px 18px -4px color-mix(in srgb, var(--corn-from) 50%, transparent);
     }
-    #tour-tooltip .row .next:hover { box-shadow: 0 8px 22px -4px rgba(124,58,237,0.7); }
+    #tour-tooltip .row .next:hover { box-shadow: 0 8px 22px -4px color-mix(in srgb, var(--corn-from) 70%, transparent); }
   `;
   document.head.appendChild(style);
   const overlay = document.createElement("div");
@@ -28320,7 +28378,7 @@ function aiOnboardingRender() {
     }
     return `
       <div style="display:flex;justify-content:flex-end;margin-bottom:10px">
-        <div style="background:var(--blue,#007AFF);color:#fff;padding:10px 14px;border-radius:16px;border-top-right-radius:4px;max-width:80%;font-size:14px;line-height:1.45">${esc(m.content)}</div>
+        <div style="background:var(--blue, #2F6FEB);color:#fff;padding:10px 14px;border-radius:16px;border-top-right-radius:4px;max-width:80%;font-size:14px;line-height:1.45">${esc(m.content)}</div>
       </div>`;
   }).join("");
 
@@ -28460,7 +28518,7 @@ function aiOnbPlanReviewHtml(plan) {
     const on = sel.habits.includes(i);
     return `
       <div onclick="aiOnbToggleHabit(${i})" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-elev);border-radius:10px;margin-bottom:6px;cursor:pointer;opacity:${on?1:0.45};transition:opacity .15s">
-        <div style="width:20px;height:20px;border:2px solid ${on?'var(--blue,#007AFF)':'var(--sep,#444)'};border-radius:5px;background:${on?'var(--blue,#007AFF)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">${on?'✓':''}</div>
+        <div style="width:20px;height:20px;border:2px solid ${on?'var(--blue, #2F6FEB)':'var(--sep,#444)'};border-radius:5px;background:${on?'var(--blue, #2F6FEB)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">${on?'✓':''}</div>
         <div style="font-size:20px">${esc(h.emoji || '•')}</div>
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:600">${esc(h.name || 'Habit')}</div>
@@ -28474,7 +28532,7 @@ function aiOnbPlanReviewHtml(plan) {
     const on = sel.shortGoal;
     goalsHtml += `
       <div onclick="aiOnbToggleGoal('shortGoal')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-elev);border-radius:10px;margin-bottom:6px;cursor:pointer;opacity:${on?1:0.45}">
-        <div style="width:20px;height:20px;border:2px solid ${on?'var(--blue,#007AFF)':'var(--sep,#444)'};border-radius:5px;background:${on?'var(--blue,#007AFF)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">${on?'✓':''}</div>
+        <div style="width:20px;height:20px;border:2px solid ${on?'var(--blue, #2F6FEB)':'var(--sep,#444)'};border-radius:5px;background:${on?'var(--blue, #2F6FEB)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">${on?'✓':''}</div>
         <div style="font-size:20px">🎯</div>
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:600">${esc(plan.shortGoal.title || 'Short-term goal')}</div>
@@ -28486,7 +28544,7 @@ function aiOnbPlanReviewHtml(plan) {
     const on = sel.longGoal;
     goalsHtml += `
       <div onclick="aiOnbToggleGoal('longGoal')" style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--bg-elev);border-radius:10px;margin-bottom:6px;cursor:pointer;opacity:${on?1:0.45}">
-        <div style="width:20px;height:20px;border:2px solid ${on?'var(--blue,#007AFF)':'var(--sep,#444)'};border-radius:5px;background:${on?'var(--blue,#007AFF)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">${on?'✓':''}</div>
+        <div style="width:20px;height:20px;border:2px solid ${on?'var(--blue, #2F6FEB)':'var(--sep,#444)'};border-radius:5px;background:${on?'var(--blue, #2F6FEB)':'transparent'};color:#fff;display:flex;align-items:center;justify-content:center;font-size:12px;flex-shrink:0">${on?'✓':''}</div>
         <div style="font-size:20px">🌟</div>
         <div style="flex:1;min-width:0">
           <div style="font-size:14px;font-weight:600">${esc(plan.longGoal.title || 'Long-term goal')}</div>
@@ -31153,13 +31211,13 @@ function subscriptionAuditSheet() {
   const dismissed = ((DB.settings || {}).dismissedRecurring || []);
   const suggestions = detectRecurringSuggestions().filter(s => !dismissed.includes(s.key));
   const detectedBanner = suggestions.length ? `
-    <div style="background:linear-gradient(135deg,rgba(124,58,237,0.10),rgba(236,72,153,0.06));border:0.5px solid rgba(124,58,237,0.35);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;cursor:pointer" onclick="closeSheet();setTimeout(()=>detectedRecurringSheet(),120)">
+    <div style="background:linear-gradient(135deg,color-mix(in srgb, var(--corn-from) 10%, transparent),color-mix(in srgb, var(--corn-to) 6%, transparent));border:0.5px solid color-mix(in srgb, var(--corn-from) 35%, transparent);border-radius:var(--r);padding:12px 14px;margin-bottom:14px;display:flex;align-items:center;gap:10px;cursor:pointer" onclick="closeSheet();setTimeout(()=>detectedRecurringSheet(),120)">
       <div style="font-size:20px;flex-shrink:0">🔎</div>
       <div style="flex:1;min-width:0">
         <div style="font-weight:600;font-size:13px;color:var(--t1)">${suggestions.length} potential recurring ${suggestions.length === 1 ? 'charge' : 'charges'} detected</div>
         <div style="font-size:11.5px;color:var(--t3);margin-top:2px">~${fmt$0(suggestions.reduce((a, s) => a + s.monthlyEstimate, 0))}/mo · tap to review</div>
       </div>
-      <div style="color:var(--purple,#8957d9);font-size:18px;flex-shrink:0">→</div>
+      <div style="color:var(--purple);font-size:18px;flex-shrink:0">→</div>
     </div>
   ` : "";
 
@@ -32349,7 +32407,7 @@ function negotiationToolkitSheet() {
     <h2>🗣️ Bill negotiation toolkit</h2>
     <p class="muted" style="font-size:12px;margin-bottom:14px">Scripts and tips for negotiating common bills. The single highest-ROI hour most people skip. Tap any to see the full script.</p>
     <div class="list">${html}</div>
-    <button class="btn" style="width:100%;margin-top:14px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none"
+    <button class="btn" style="width:100%;margin-top:14px;background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;border:none"
       onclick="closeSheet();negotiateBillWithAI()">✨ Coach me through one with AI</button>
     <p class="muted" style="font-size:11px;margin-top:14px;line-height:1.5">
       <b>The framework:</b> 1) Know the competing alternative. 2) Be polite but specific. 3) Ask for retention/loyalty department. 4) Don't accept the first offer. 5) Be ready to actually leave. Most savings come from companies that would rather discount than lose you.
@@ -33421,7 +33479,7 @@ function investingPlanSheet() {
     <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
       <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Risk tolerance</div>
       ${["conservative","moderate","aggressive"].map(r => `
-        <div class="row tappable" style="border:1px solid ${risk===r?"var(--blue)":"var(--sep)"};border-radius:var(--r);padding:10px 12px;margin-bottom:6px;background:${risk===r?"rgba(0,122,255,0.08)":"transparent"}" onclick="window.__setAllocRisk(${jsAttr(r)})">
+        <div class="row tappable" style="border:1px solid ${risk===r?"var(--blue)":"var(--sep)"};border-radius:var(--r);padding:10px 12px;margin-bottom:6px;background:${risk===r?"color-mix(in srgb, var(--blue) 8%, transparent)":"transparent"}" onclick="window.__setAllocRisk(${jsAttr(r)})">
           <div style="font-size:18px;width:24px">${r==="conservative"?"🛟":r==="moderate"?"⚖️":"🚀"}</div>
           <div class="body">
             <div class="t1">${esc(RISK_LEVELS[r].label)}</div>
@@ -34034,7 +34092,7 @@ function cashFlowCardHtml() {
       ${cf.savingsTarget > 0 ? ROW("Savings target", cf.savingsTarget, cf.savingsPct, "#34C759") : ""}
       ${ROW("Discretionary", cf.discretionary, cf.discretionaryPct, "#007AFF")}
       ${cf.deficit > 0 ? `
-        <div style="margin-top:10px;padding:8px 10px;background:rgba(255,59,48,0.1);border-radius:8px;font-size:12px;color:var(--red);line-height:1.4">
+        <div style="margin-top:10px;padding:8px 10px;background:color-mix(in srgb, var(--red) 10%, transparent);border-radius:8px;font-size:12px;color:var(--red);line-height:1.4">
           ⚠️ Fixed expenses + savings target exceed income by ${fmt$0(cf.deficit)}/mo. Reduce one or grow income to close the gap.
         </div>
       ` : ""}
@@ -35114,7 +35172,7 @@ function quickAddSpendSheet(prefilled) {
   const pre = prefilled || {};
   openSheet(
     '<h2>Quick add spend</h2>' +
-    '<button id="qs-scan" type="button" style="width:100%;padding:12px 14px;margin-bottom:14px;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;border-radius:var(--r);font-size:13.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:10px">' +
+    '<button id="qs-scan" type="button" style="width:100%;padding:12px 14px;margin-bottom:14px;background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;border:none;border-radius:var(--r);font-size:13.5px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:10px">' +
       '<span style="font-size:20px">📷</span>' +
       '<span style="flex:1;text-align:left">' +
         '<div style="font-weight:700">Scan a receipt</div>' +
@@ -35240,7 +35298,7 @@ function scanHoldingsSheet() {
       Snap a screenshot of any brokerage / 401(k) / crypto app showing positions and totals.
       Cornileus will read the tickers, names, and balances, then ask you to confirm each before adding.
     </p>
-    <button class="btn" id="scan-port-pick" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none;display:flex;gap:10px;align-items:center;justify-content:center">
+    <button class="btn" id="scan-port-pick" style="width:100%;background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;border:none;display:flex;gap:10px;align-items:center;justify-content:center">
       <span style="font-size:18px">📷</span> Pick a screenshot
     </button>
     <input type="file" id="scan-port-file" accept="image/*" capture="environment" style="display:none" />
