@@ -37787,7 +37787,7 @@ function weeklyReviewSheet() {
 }
 
 /* --- "What's new" sheet (one-time on upgrade) ------------------- */
-const WHATS_NEW_KEY = "v3.7-everything";
+const WHATS_NEW_KEY = "v3.8-polish";
 function maybeShowWhatsNew() {
   if (window._suppressWhatsNew) return;
   if ((DB.user || {}).onboardedAt && DB.lastSeenWhatsNew !== WHATS_NEW_KEY) {
@@ -37795,6 +37795,32 @@ function maybeShowWhatsNew() {
   }
 }
 function whatsNewSheet() {
+  openSheet(
+    '<h2>What\'s new — Ascend v3.8</h2>' +
+    '<p class="muted" style="font-size:13px;margin-bottom:14px">Polish round: 18 quality-of-life features. Cornileus learned to speak, your portfolio learned to compare to the market, your settings learned to collapse, and the rest of the app learned to feel more alive.</p>' +
+    '<div class="list">' +
+      '<div class="row"><div class="lead">\u{1F509}</div><div class="body"><div class="t1">Cornileus voice mode</div><div class="t2">Tap the speaker chip in chat — Cornileus reads replies aloud with the best system voice.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{2702}\u{FE0F}</div><div class="body"><div class="t1">Split transactions</div><div class="t2">One Walmart charge → groceries + home + gift. Children inherit categories without double-counting the parent.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4C8}</div><div class="body"><div class="t1">Portfolio vs S&P 500</div><div class="t2">"Are you beating the market?" line on the Stocks portfolio hero — YTD comparison with a delta badge.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F1FA}\u{1F1F8}</div><div class="body"><div class="t1">US federal holidays on Calendar</div><div class="t2">All 10 federal holidays marked (with weekend-observed shifts). Toggle off in Settings if non-US.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4F8}</div><div class="body"><div class="t1">Year-in-review shareable image</div><div class="t2">Year Review → "Share year" → 1080×1920 PNG with your stats, ready for Stories/Reels.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{2744}\u{FE0F}</div><div class="body"><div class="t1">Streak freeze</div><div class="t2">1 free skip per habit per month. Sick day, travel day, life day — streak intact.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4B5}</div><div class="body"><div class="t1">30-day cash flow forecast</div><div class="t2">Projects your bank balance forward from recurring bills + paychecks. Flags overdraft risk.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4CA}</div><div class="body"><div class="t1">Spending heatmap (day × hour)</div><div class="t2">Find your peak spend windows — Friday night, Saturday 2pm. 7×24 grid on Stats.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F3AF}</div><div class="body"><div class="t1">Next milestone projection</div><div class="t2">"At this rate, $100k in 14 months." Uses your net-worth trend to project when you hit the next round number.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F6D1}</div><div class="body"><div class="t1">Daily spend cap</div><div class="t2">Set a daily limit in Settings → Safe-to-spend. Today shows a progress bar, push fires at 90%.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F517}</div><div class="body"><div class="t1">Plaid reconnect + bills-today push</div><div class="t2">Bank stops syncing → red banner + push. Bill due today → 9am notification.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F39B}\u{FE0F}</div><div class="body"><div class="t1">Settings compact mode + swipe tabs</div><div class="t2">Collapse every Settings section into a chip. Swipe horizontally between tabs.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{267F}</div><div class="body"><div class="t1">Reduced-motion accessibility</div><div class="t2">Respects your OS reduce-motion setting. Skeleton shimmers + transitions disabled.</div></div></div>' +
+    '</div>' +
+    '<div class="actions"><button class="btn secondary" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet()">Got it</button>' +
+    '<button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet();setTimeout(()=>setupHealthSheet(),120)">\u{2728} Setup health check</button></div>'
+  );
+}
+
+// Legacy v3.7 entry — kept callable for users who type whatsNewSheetV37()
+// from a deep link or debug console. Not surfaced anywhere in the UI.
+function whatsNewSheetV37() {
   openSheet(
     '<h2>What\'s new — Ascend v3.7</h2>' +
     '<p class="muted" style="font-size:13px;margin-bottom:14px">The biggest update ever. Two parallel tracks merged: full account sync + the largest set of behavioral-science features ever in a personal-finance app.</p>' +
