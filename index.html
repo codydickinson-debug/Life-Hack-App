@@ -6190,10 +6190,15 @@ function renderToday() {
       (DB.wins   || []).length >= 5 ||
       (DB.spend  || []).length >= 10;
     if (onboardedDays >= 30 && daysSinceExport >= 60 && hasMeaningfulData) {
+      // Specific day count = more compelling than 'a while'. For never-exported
+      // users we fall back to onboarded-days as the implicit reference point.
+      const days = Number.isFinite(daysSinceExport)
+        ? Math.round(daysSinceExport)
+        : Math.round(onboardedDays);
       return { emoji: "💾",
         text: lastExp
-          ? `It's been a while — back up your data`
-          : `Back up your data — keep what you've built safe`,
+          ? `It's been ${days} days — back up your data`
+          : `Back up your data — keep ${days} days of habits + finances safe`,
         onclick: `exportData()` };
     }
     // 7) Passphrase nudge — user has been around 30+ days with data but
@@ -21410,7 +21415,8 @@ function renderSettings() {
   const encryptionWarning = !DB.settings.encrypted ? `
     <div style="background:#FEEBEB;color:#7A1F1F;border:1px solid #F4B8B8;border-radius:12px;padding:14px 16px;margin:8px 0 14px;font-size:13px;line-height:1.5">
       <div style="font-weight:700;margin-bottom:4px">⚠ Your data is unencrypted</div>
-      Habits, goals, transactions and the device's backend secret are stored as plaintext in this browser. Anyone with access to this device or a malicious browser extension can read all of it. Set a passphrase below to encrypt the data at rest.
+      <div style="margin-bottom:10px">Habits, goals, transactions and the device's backend secret are stored as plaintext in this browser. Anyone with access to this device or a malicious browser extension can read all of it.</div>
+      <button onclick="setupPassphraseSheet()" style="background:#7A1F1F;color:#fff;border:none;padding:9px 16px;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;letter-spacing:-0.005em">🔒 Set up encryption</button>
     </div>
   ` : "";
 
