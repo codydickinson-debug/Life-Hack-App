@@ -1,5 +1,98 @@
 # Ascend — Releases
 
+## v3.8 — 2026-05-17
+
+Polish + security-hardening round. 23 frontend QoL features plus a
+comprehensive audit pass across the whole stack.
+
+### Frontend features
+
+- **Cornileus voice mode** — tap the speaker chip in chat to have replies
+  read aloud (Web Speech API, best system voice picker, stops on close).
+- **Split transactions** — one Walmart charge → groceries + home + gift;
+  parent gets `_split:true`, children get `_splitParentId`, filters skip
+  the parent to avoid double-counting.
+- **Portfolio vs S&P 500** — YTD comparison line on the Stocks portfolio
+  hero with a "Beating/Trailing by Xpp" verdict. SPY YTD fetched from
+  /api/quote/SPY/full, cached 12h.
+- **US federal holidays on Calendar** — all 10 holidays marked, with
+  weekend-observed shifts. Toggle off in Settings for non-US users.
+- **Year-in-review shareable PNG** — 1080×1920 portrait image via Canvas,
+  Web Share API on mobile / download fallback on desktop.
+- **Streak freeze** — 1 free skip per habit per calendar month. Frozen
+  days are treated like paused days in streak math.
+- **30-day cash flow forecast** — projects bank balance forward from
+  recurring bills + paychecks. Flags overdraft risk.
+- **Spending heatmap** — 7×24 day-of-week × hour-of-day grid on Stats.
+- **Next milestone projection** — least-squares regression on net-worth
+  history → "At this rate, $100k in 14 months".
+- **Daily spend cap** — Today progress bar + push at 90% usage.
+- **Plaid reconnect** — red banner on Money + push when a bank stops syncing.
+- **Bills-due-today push** — 9am notification for the day's bills.
+- **Onboarding celebration** — confetti + recap at end of setup.
+- **Compact Settings** — collapsible sections with persisted open state.
+- **Swipe-between-tabs** — horizontal swipe gesture (disabled on Stocks
+  to avoid conflict with carousels).
+- **Skeleton loaders** — pulsing shimmer for AI replies-in-flight + sync.
+- **prefers-reduced-motion** — animations honored OS-level setting.
+- **Receipt scanning** — Anthropic Vision API extracts transactions from
+  receipt photos.
+
+### Code quality + correctness
+
+- **Memoize hot helpers** — detectSubscriptions + upcomingBills now cache
+  per render pass (Money tab called them 11+ times each). Biggest single
+  render-cost win.
+- **Memory caps on unbounded DB arrays** — spend (10k), realizedPL (500),
+  wishlist/lifeEvents/careerHistory/paperTrades/purchaseRegrets (200),
+  dismissedRecurring (500), pendingDeposits (200), stocks.alerts prune
+  triggered >30d old.
+- **Stocks cache invalidation** — removing a watchlist ticker now also
+  purges dividend/earnings/exDiv/ytd caches (when ticker isn't still
+  held). Heavy-churn users had these growing forever.
+- **9 audit-found bug fixes** — null deref on missing t.date, div-by-zero
+  in inheritance + skill tree + tutorial progress, NaN from blank
+  parseInt at 5 calc sites, heatmap mood empty rows, AI confidence parse.
+- **Stale memo prevention** — _renderActive flag stops cached values from
+  leaking into out-of-render contexts (push scheduler, snapshotNetWorth).
+- **TZ-safe date diffs** at the user-visible sites.
+- **pinQuoteToToday** rolls back in-memory mutation on save failure.
+
+### Security hardening
+
+- **Frontend** — `_decodePairingToken` + Cornileus action dispatcher both
+  switched from raw JSON.parse to safeJsonParse (proto-pollution gap).
+  Encryption lockout counter mirrored to sessionStorage so a quota-failed
+  write doesn't reset the brute-force rate limit.
+- **Cloudflare Worker** — Anthropic upstream response whitelisted to
+  {id, type, content, stop_reason, usage, error.type, error.message}
+  before forwarding (no more leaked Anthropic error metadata).
+  decryptString validates packed format before atob. handleSync has a
+  40-call per-invocation Plaid budget with `truncated:true` continuation.
+  handleRemoveItem hardened with regex validation + try/catch on
+  decodeURIComponent. Reverse `item-owner:<itemId>` index added so
+  webhooks refuse events for unowned items. _safePushUrl + sw.js
+  notificationclick now path-allowlist nav targets.
+- **Python backend** — strict ticker regex (`^[A-Z0-9.\-^=]{1,10}$`)
+  validates every yfinance-routed path param (SSRF defense). `_err()`
+  helper replaces 15+ `str(e)` error responses (info-leakage). RSS image
+  URLs now require https + an allowlisted news-CDN host. defusedxml
+  replaces stdlib ElementTree for RSS parsing (billion-laughs defense).
+- **Vercel headers** — Strict-Transport-Security preload, COOP, CORP,
+  Permissions-Policy `interest-cohort=()`, per-route cache headers for
+  cacheable Python endpoints (quote/full, news, housing, mortgage).
+- **Frontend dead code removed** — 3 unreferenced helpers (_memoize,
+  fmtHours, saveNow) + 5 unused CSS classes deleted.
+
+### Infra polish
+
+- .gitignore: __pycache__, .venv, dist/build/logs, iOS Pods.
+- pyproject.toml: Python ~=3.13 → >=3.12 (matches Vercel runtime),
+  added defusedxml.
+- README + CLAUDE.md line counts updated.
+
+---
+
 ## v3.2 — 2026-05-15
 
 Major round between v3.1 and a future App Store submission. New tabs, new AI persona, new visual hero, App Store paperwork.
