@@ -213,6 +213,118 @@ function timingSafeEqStr(a, b) {
   return diff === 0;
 }
 
+// ----- base64url helpers (used by JWT verification) -----
+function b64urlToBytes(s) {
+  const padded = s.replace(/-/g, "+").replace(/_/g, "/") + "===".slice((s.length + 3) % 4);
+  const bin = atob(padded);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+function b64urlToText(s) {
+  return new TextDecoder().decode(b64urlToBytes(s));
+}
+
+// ----- Plaid webhook JWT verification -----
+// Validates the Plaid-Verification JWT against Plaid's webhook signing key
+// set. Returns the decoded payload on success; throws on any failure (bad
+// alg, missing kid, signature mismatch, body hash mismatch, stale iat).
+// JWK cache lives in KV under `plaid:verify_key:<kid>` with 24h TTL so
+// most webhooks don't pay the /webhook_verification_key/get roundtrip.
+async function verifyPlaidWebhookJWT(env, rawBody, jwt) {
+  const parts = jwt.split(".");
+  if (parts.length !== 3) throw new Error("malformed JWT");
+  const [headerB64, payloadB64, sigB64] = parts;
+
+  let header;
+  try { header = JSON.parse(b64urlToText(headerB64)); }
+  catch { throw new Error("invalid JWT header"); }
+  if (header.alg !== "ES256") throw new Error("alg must be ES256, got " + header.alg);
+  if (!header.kid || typeof header.kid !== "string") throw new Error("missing kid");
+  // kid is used as a KV key suffix and a Plaid API parameter; sanitize defensively.
+  if (!/^[A-Za-z0-9_-]{1,128}$/.test(header.kid)) throw new Error("invalid kid format");
+
+  const jwk = await getPlaidVerificationKey(env, header.kid);
+  if (jwk.expired_at) throw new Error("key is expired");
+
+  // Import the EC public key (P-256) and verify the ES256 signature over
+  // `<header_b64>.<payload_b64>`. JWT ES256 sig is raw r||s (64 bytes),
+  // which is exactly what crypto.subtle.verify(ECDSA, SHA-256) expects.
+  const key = await crypto.subtle.importKey(
+    "jwk",
+    { kty: "EC", crv: "P-256", x: jwk.x, y: jwk.y, alg: "ES256", use: "sig", ext: true },
+    { name: "ECDSA", namedCurve: "P-256" },
+    false,
+    ["verify"]
+  );
+  const sig = b64urlToBytes(sigB64);
+  if (sig.length !== 64) throw new Error("signature wrong length");
+  const signedData = new TextEncoder().encode(headerB64 + "." + payloadB64);
+  const ok = await crypto.subtle.verify(
+    { name: "ECDSA", hash: "SHA-256" },
+    key,
+    sig,
+    signedData
+  );
+  if (!ok) throw new Error("signature did not verify");
+
+  let payload;
+  try { payload = JSON.parse(b64urlToText(payloadB64)); }
+  catch { throw new Error("invalid JWT payload"); }
+
+  // Replay protection: reject anything signed more than 5 minutes ago (or
+  // more than 5 minutes in the future, which would mean clock skew).
+  const now = Math.floor(Date.now() / 1000);
+  if (typeof payload.iat !== "number" || Math.abs(now - payload.iat) > 5 * 60) {
+    throw new Error("iat outside freshness window");
+  }
+  // Body integrity: payload.request_body_sha256 must match the SHA-256 hex
+  // of the raw request body we just received.
+  const bodyHash = await sha256hex(rawBody);
+  if (payload.request_body_sha256 !== bodyHash) {
+    throw new Error("body hash mismatch");
+  }
+  return payload;
+}
+
+// Fetches a JWK from Plaid by key_id, caching the result in KV for 24h.
+// Plaid rotates these keys infrequently; once a kid has been seen we avoid
+// a network roundtrip on every webhook. Expired keys are never cached.
+async function getPlaidVerificationKey(env, kid) {
+  const cacheKey = `plaid:verify_key:${kid}`;
+  try {
+    const cached = await env.ASCEND_KV.get(cacheKey);
+    if (cached) {
+      const jwk = JSON.parse(cached);
+      if (jwk && jwk.alg === "ES256" && jwk.x && jwk.y) return jwk;
+    }
+  } catch {}
+
+  const host = PLAID_HOSTS[env.PLAID_ENV] || PLAID_HOSTS.sandbox;
+  const r = await fetch(host + "/webhook_verification_key/get", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      client_id: env.PLAID_CLIENT_ID,
+      secret: env.PLAID_SECRET,
+      key_id: kid,
+    }),
+  });
+  if (!r.ok) throw new Error("key lookup failed: HTTP " + r.status);
+  const data = await r.json();
+  const jwk = data && data.key;
+  if (!jwk || jwk.alg !== "ES256" || !jwk.x || !jwk.y) {
+    throw new Error("malformed key response");
+  }
+  // Only cache when Plaid hasn't already marked the key as expired.
+  if (!jwk.expired_at) {
+    try {
+      await env.ASCEND_KV.put(cacheKey, JSON.stringify(jwk), { expirationTtl: 60 * 60 * 24 });
+    } catch {}
+  }
+  return jwk;
+}
+
 async function sha256hex(s) {
   const data = new TextEncoder().encode(s);
   const buf = await crypto.subtle.digest("SHA-256", data);
@@ -782,15 +894,35 @@ async function handleAuditList(env, userId, origin) {
 // 30-day TTL; /items surfaces it so the client can show a "reconnect bank"
 // prompt without us needing a push channel.
 //
-// Security note: this endpoint is unauthenticated by design — Plaid won't
-// have our enrollment key. For production, verify the Plaid-Verification JWT
-// header against Plaid's JWK set (https://plaid.com/docs/api/webhooks/webhook-verification/).
-// v1 takes a lighter approach: we always return 200 (so Plaid doesn't retry
-// floods), but we only persist events that structurally look like Plaid
-// webhooks and reference an actionable webhook_code.
+// Security: every webhook is signed by Plaid (Plaid-Verification: <JWT>).
+// We verify the ES256 signature, that the body SHA-256 matches the signed
+// `request_body_sha256` claim, and that `iat` is within a 5-minute window
+// (anti-replay). Spec: https://plaid.com/docs/api/webhooks/webhook-verification/
+// We fail closed — a forged "reconnect bank X" event would phish users into
+// believing their connection broke. Plaid's retry strategy on 401 is to back
+// off and ultimately drop, which is the correct outcome for an unverified
+// payload. JWKs are cached in KV by `kid` for 24h to amortize the
+// /webhook_verification_key/get lookup.
 async function handlePlaidWebhook(request, env) {
+  const rawBody = await request.text();
+
+  // Verify the Plaid-Verification JWT before touching the payload. If we
+  // can't verify (missing creds, network failure, bad signature, stale iat,
+  // body hash mismatch), reject — never persist unverified events.
+  if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET) {
+    return new Response("plaid creds unset", { status: 503 });
+  }
+  const jwt = request.headers.get("Plaid-Verification") || "";
+  if (!jwt) return new Response("missing Plaid-Verification", { status: 401 });
+  try {
+    await verifyPlaidWebhookJWT(env, rawBody, jwt);
+  } catch (e) {
+    console.error("plaid webhook verification failed:", e && e.message);
+    return new Response("invalid signature", { status: 401 });
+  }
+
   let body;
-  try { body = await request.json(); } catch { return new Response("", { status: 200 }); }
+  try { body = JSON.parse(rawBody); } catch { return new Response("", { status: 200 }); }
 
   const itemId = String(body.item_id || "").slice(0, 100);
   const type = String(body.webhook_type || "").toUpperCase().slice(0, 40);

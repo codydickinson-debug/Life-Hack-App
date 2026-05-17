@@ -94,6 +94,7 @@
     <li><strong>Synced to your device:</strong> account balances, transactions, and account metadata.</li>
   </ul>
   <p>You can disconnect a bank at any time from Settings → Bank sync, which removes the encrypted token from your backend.</p>
+  <p><strong>Webhook signature verification.</strong> When Plaid notifies your backend of an item event (re-auth needed, permission revoked, etc.), every webhook is signed by Plaid with an ES256 JWT. The backend verifies the signature against Plaid's published key set, checks that the body hash matches the signed claim, and enforces a 5-minute replay window before accepting the event. Unverified or replayed events are rejected — no in-app "reconnect your bank" prompt can be spoofed.</p>
 
   <h3>2.2 Cornileus AI counselor</h3>
   <p>When you send a message to Cornileus, Ascend forwards your message plus a snapshot of your financial situation (recent transactions, savings balances, debts, goals — capped at ~18KB) to a backend AI proxy. The proxy attaches an Anthropic API key (which lives only on the backend, never on your device) and forwards the request to <a href="https://www.anthropic.com" target="_blank" rel="noopener noreferrer">Anthropic</a>.</p>
