@@ -3522,6 +3522,9 @@ function closeSheet() {
     if (typeof _counselorState !== "undefined" && _counselorState) {
       _counselorState.busy = false;
     }
+    // Stop any in-flight TTS so closing the chat truly stops Cornileus
+    // from speaking (don't have him talking to an empty room).
+    try { if (typeof _cornileusStopSpeaking === "function") _cornileusStopSpeaking(); } catch {}
   }
   sheet.classList.remove("show");
   $("#scrim").classList.remove("show");
@@ -4348,16 +4351,107 @@ function deleteSpend(id) {
   DB.spend = DB.spend.filter(t => t.id !== id);
   save(); render();
 }
+
+// Split transactions: turn a single $200 Costco charge into multiple
+// category-specific child rows that sum to the original amount. Useful for
+// big merchant runs where one line item misrepresents what was bought.
+//
+// Data model: the parent tx gets `_split: true` and is hidden from spend
+// totals. Each child becomes its own DB.spend row with `_splitParentId`
+// pointing back so we can find / unwind / re-edit later. Filtering pipes
+// (monthSpend, lastMonthSpend, filteredSpend, anomaly detection) all skip
+// `_split: true` parents so totals don't double-count.
+function splitTransactionSheet(id) {
+  const tx = (DB.spend || []).find(t => t.id === id);
+  if (!tx) { toast("Transaction not found"); return; }
+  if (tx._split) { toast("Already split"); return; }
+  if (tx._splitParentId) { toast("Can't split a split child"); return; }
+  const total = Math.abs(+tx.amount || 0);
+  if (total <= 0.01) { toast("Nothing to split"); return; }
+  const cats = spendCategories();
+  // Render split-row state in memory so adding/removing rows doesn't lose
+  // user edits to existing rows.
+  if (!window._splitRows) window._splitRows = [];
+  window._splitRows = [
+    { id: uid(), amount: (total/2).toFixed(2), category: tx.category || "Other", note: "" },
+    { id: uid(), amount: (total/2).toFixed(2), category: "Other", note: "" },
+  ];
+  _renderSplitSheet(tx, total, cats);
+}
+
+function _renderSplitSheet(tx, total, cats) {
+  const rows = window._splitRows;
+  const sum = rows.reduce((s, r) => s + (Math.abs(+r.amount) || 0), 0);
+  const diff = total - sum;
+  const balanced = Math.abs(diff) < 0.01;
+  openSheet(`
+    <h2 style="margin-bottom:4px">✂️ Split transaction</h2>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">${esc(tx.note || tx.category)} · ${esc(tx.date)} · <b data-priv="amount" style="color:var(--t1)">${fmt$0(total)}</b> total. Break it into category-specific rows that sum to the same amount.</p>
+    <div id="split-rows" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
+      ${rows.map((r, i) => `
+        <div data-split-row="${esc(r.id)}" style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:90px 1fr 32px;gap:8px;align-items:center">
+          <input type="number" inputmode="decimal" step="0.01" min="0" value="${esc(r.amount)}"
+            onchange="(()=>{const r=window._splitRows.find(x=>x.id===${jsAttr(r.id)});if(r)r.amount=this.value;_renderSplitSheet(${jsAttr({id:tx.id,note:tx.note,category:tx.category,date:tx.date,amount:tx.amount})}, ${total}, ${jsAttr(cats)});})()"
+            style="background:var(--bg-elev);padding:8px 10px;border-radius:8px;font-size:13px;border:0;color:var(--t1);text-align:right" />
+          <select onchange="(()=>{const r=window._splitRows.find(x=>x.id===${jsAttr(r.id)});if(r)r.category=this.value;})()"
+            style="background:var(--bg-elev);padding:8px 10px;border-radius:8px;font-size:13px;border:0;color:var(--t1)">
+            ${cats.map(c => `<option value="${esc(c)}" ${c===r.category?"selected":""}>${esc(c)}</option>`).join("")}
+          </select>
+          ${rows.length > 2 ? `<button class="del-x" onclick="(()=>{window._splitRows=window._splitRows.filter(x=>x.id!==${jsAttr(r.id)});_renderSplitSheet(${jsAttr({id:tx.id,note:tx.note,category:tx.category,date:tx.date,amount:tx.amount})}, ${total}, ${jsAttr(cats)});})()" style="min-width:0">×</button>` : '<div></div>'}
+        </div>
+      `).join("")}
+    </div>
+    <button class="btn secondary" style="width:100%;margin-bottom:10px;font-size:12.5px" onclick="(()=>{window._splitRows.push({id:uid(),amount:(${diff>0?diff.toFixed(2):'0'}),category:'Other',note:''});_renderSplitSheet(${jsAttr({id:tx.id,note:tx.note,category:tx.category,date:tx.date,amount:tx.amount})}, ${total}, ${jsAttr(cats)});})()">+ Add another row</button>
+    <div style="background:${balanced ? "rgba(46,184,117,0.10)" : "rgba(255,149,0,0.10)"};border:1px solid ${balanced ? "rgba(46,184,117,0.30)" : "rgba(255,149,0,0.30)"};border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:12.5px;line-height:1.5;color:var(--t2)">
+      <div>Sum of splits: <b data-priv="amount" style="color:var(--t1)">${fmt$0(sum)}</b> of <b data-priv="amount">${fmt$0(total)}</b></div>
+      ${balanced ? `<div style="color:var(--green,#34C759);font-weight:600;margin-top:3px">✓ Balanced</div>` : `<div style="color:var(--orange,#FF9500);font-weight:600;margin-top:3px">⚠ ${diff > 0 ? `${fmt$0(diff)} unallocated` : `${fmt$0(-diff)} over`}</div>`}
+    </div>
+    <div class="actions">
+      <button class="btn secondary" onclick="closeSheet();window._splitRows=null">Cancel</button>
+      <button class="btn" ${balanced ? "" : "disabled style=\"opacity:0.5;cursor:not-allowed\""} onclick="_commitSplit(${jsAttr(tx.id)})">Save split</button>
+    </div>
+  `);
+}
+
+function _commitSplit(parentId) {
+  const parent = (DB.spend || []).find(t => t.id === parentId);
+  if (!parent) { toast("Parent transaction missing"); return; }
+  const rows = (window._splitRows || []).filter(r => +r.amount > 0);
+  if (!rows.length) { toast("No splits to save"); return; }
+  // Mark parent as a split — it stays in DB for traceability but every
+  // total-computing path ignores it.
+  parent._split = true;
+  // Create child rows. Each carries _splitParentId so we can unwind later.
+  const sign = (+parent.amount || 0) >= 0 ? 1 : -1; // preserve income vs outflow
+  for (const r of rows) {
+    DB.spend.push({
+      id: uid(),
+      date: parent.date,
+      category: r.category,
+      amount: sign * (+r.amount || 0),
+      note: parent.note ? `${parent.note} — ${r.category}` : r.category,
+      source: parent.source || "manual",
+      _splitParentId: parent.id,
+    });
+  }
+  window._splitRows = null;
+  save();
+  closeSheet();
+  render();
+  toast(`Split into ${rows.length} categories`);
+}
 function monthSpend() {
   // Sum positive amounts only — by the app's convention (CLAUDE.md) positive
   // = outflow, negative = income. The "This month spent" label everywhere
   // implies outflows; summing both would return a confusing "$-1,641" net.
+  // Skip split parents (the children sum to the same total, double-count risk).
   const now = new Date(), y = now.getFullYear(), m = now.getMonth();
   return DB.spend.filter(t => {
     // Defensive: a tx with no date or non-YYYY-MM-DD shape would NaN out
     // and silently get excluded; explicit check makes the failure mode
     // obvious if upstream code ever stores a different format.
     if (!t || !t.date || !/^\d{4}-\d{2}-\d{2}/.test(t.date)) return false;
+    if (t._split) return false; // split parents are placeholders; children carry the totals
     const d = new Date(t.date+"T00:00:00");
     return d.getFullYear() === y && d.getMonth() === m && (+t.amount || 0) > 0;
   }).reduce((a,t)=>a+(+t.amount||0), 0);
@@ -6038,6 +6132,21 @@ function renderToday() {
     // wraps it in <span data-priv="amount"> so privacy mode blurs it
     // the same way every other $ on the page is blurred.
 
+    // 0-pre-pre) Bank needs reconnect — even higher priority than runway,
+    //   because a broken bank invalidates every other money number in the
+    //   app. Surfaces only when the backend webhook actually reported one.
+    try {
+      const broken = (typeof _brokenBankItems === "function") ? _brokenBankItems() : [];
+      if (broken.length) {
+        const b = broken[0];
+        return { emoji: "⚠️",
+          text: broken.length === 1
+            ? `${b.institution_name} needs to reconnect`
+            : `${broken.length} banks need to reconnect`,
+          suffix: "tap to fix",
+          onclick: `connectBank()` };
+      }
+    } catch {}
     // 0-pre) Runway < 1 month — the most urgent financial signal. Surfaces
     //   only when the user has both savings AND a fixed-expense estimate so
     //   the math is real. Uses the canonical _playsTotalSavings() helper
@@ -8827,6 +8936,24 @@ function wealthComposition() {
   return result;
 }
 
+// Detect Plaid items whose most recent webhook reports an actionable error
+// (login required, permission revoked, etc). The backend's /items endpoint
+// attaches the webhook payload; we surface it as a top-of-Money banner +
+// a Daily Pulse signal. Returns [{ item_id, institution_name, webhook }].
+const _PLAID_BROKEN_CODES = new Set([
+  "ERROR",                     // generic item error
+  "ITEM_LOGIN_REQUIRED",       // user changed password etc
+  "PENDING_EXPIRATION",        // about to expire (7d notice)
+  "USER_PERMISSION_REVOKED",
+  "USER_ACCOUNT_REVOKED",
+]);
+function _brokenBankItems() {
+  const items = DB.items || [];
+  return items.filter(it =>
+    it && it.webhook && _PLAID_BROKEN_CODES.has(String(it.webhook.code || "").toUpperCase())
+  );
+}
+
 // Detect tickers tracked in BOTH Plaid-synced holdings AND manual Stocks-tab
 // holdings. Returns the array of overlapping uppercase tickers (or empty).
 // Used to surface a small banner so the user can clean up the duplicate.
@@ -9021,6 +9148,22 @@ function renderMoney() {
   const hasMoneyData = (+DB.budget?.income || 0) > 0 || (DB.recurring || []).length > 0 || (DB.spend || []).length > 0;
   const cashflowBlock = hasMoneyData ? cashflowCardHtml() : "";
   const healthSnapshot = moneyHealthCardHtml();
+  // Bank-reconnect banner: highest-priority because a broken bank means
+  // every other Money number is potentially stale. Lists every item whose
+  // most recent Plaid webhook reported an actionable error
+  // (ITEM_LOGIN_REQUIRED / USER_PERMISSION_REVOKED / etc) and gives a
+  // one-tap reconnect path.
+  const brokenItems = (typeof _brokenBankItems === "function") ? _brokenBankItems() : [];
+  const reconnectBanner = brokenItems.length ? `
+    <div style="background:rgba(239,68,68,0.10);border:1px solid rgba(239,68,68,0.40);border-radius:12px;padding:14px 16px;margin-bottom:12px;display:flex;align-items:flex-start;gap:12px">
+      <div style="font-size:22px;flex-shrink:0;line-height:1">⚠️</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13.5px;font-weight:700;color:var(--red,#FF3B30);margin-bottom:3px">${brokenItems.length === 1 ? `${esc(brokenItems[0].institution_name)} needs you to reconnect` : `${brokenItems.length} banks need you to reconnect`}</div>
+        <div style="font-size:11.5px;color:var(--t2);line-height:1.5">${brokenItems.length === 1 ? "Until you do, transactions and balances stop syncing." : "Until you do, those banks stop syncing transactions and balances."}</div>
+      </div>
+      <button class="btn" style="font-size:12px;padding:8px 14px;flex-shrink:0;background:var(--red,#FF3B30);color:#fff;border:none" onclick="connectBank()">Reconnect</button>
+    </div>
+  ` : "";
   // Holdings-overlap banner: if the same ticker is in BOTH Plaid-synced
   // holdings AND manual Stocks-tab entries, wealthComposition() skips the
   // manual one to avoid double-counting. Tell the user so they can either
@@ -9087,6 +9230,7 @@ function renderMoney() {
   ` : "";
   const hdr = `
     <div class="lg-title">Money</div>
+    ${reconnectBanner}
     ${overlapBanner}
     ${accountOverlapBanner}
     ${bankSyncCTABanner}
@@ -10628,16 +10772,25 @@ function renderMoney() {
           const limit = (window._spendVisibleLimit || 40);
           const visible = all.slice(0, limit);
           const more = all.length - visible.length;
-          const rows = visible.map(t => `
+          const rows = visible.map(t => {
+            // Detect children of a split parent so we can mark them visually.
+            const isSplitChild = !!t._splitParentId;
+            // Detect outflows ≥ $40 that could plausibly be split (small ones
+            // aren't worth the friction).
+            const canSplit = !isSplitChild && (+t.amount || 0) >= 40 && !t.pending;
+            return `
             <div class="row">
-              <div class="lead">${t.source === "plaid" ? (+t.amount < 0 ? "💵" : "🔗") : "💳"}</div>
+              <div class="lead">${isSplitChild ? "✂️" : t.source === "plaid" ? (+t.amount < 0 ? "💵" : "🔗") : "💳"}</div>
               <div class="body">
-                <div class="t1">${esc(t.category)} <span class="amt" data-priv="amount" style="${(+t.amount)<0?'color:var(--green)':''}">${(+t.amount)<0?'+':''}${fmt$0(Math.abs(+t.amount||0))}</span>${t.pending ? ` <span class="muted" style="font-size:11px">pending</span>` : ""}${t._ruleId ? ` <span class="muted" style="font-size:10px;background:var(--bg-elev);padding:2px 6px;border-radius:6px">rule</span>` : ""}</div>
+                <div class="t1">${esc(t.category)} <span class="amt" data-priv="amount" style="${(+t.amount)<0?'color:var(--green)':''}">${(+t.amount)<0?'+':''}${fmt$0(Math.abs(+t.amount||0))}</span>${t.pending ? ` <span class="muted" style="font-size:11px">pending</span>` : ""}${t._ruleId ? ` <span class="muted" style="font-size:10px;background:var(--bg-elev);padding:2px 6px;border-radius:6px">rule</span>` : ""}${isSplitChild ? ` <span class="muted" style="font-size:10px;background:rgba(124,58,237,0.18);color:var(--purple,#8957d9);padding:2px 6px;border-radius:6px">split</span>` : ""}</div>
                 <div class="t2">${t.date}${t.note?' · '+esc(t.note):''}</div>
               </div>
-              ${t.source === "plaid" ? `<button class="del-x" style="font-size:14px" onclick="quickRuleFromTx(${jsAttr(t.id)})" title="Recategorize">↻</button>` : `<button class="del-x" onclick="deleteSpend(${jsAttr(t.id)})">×</button>`}
+              <div style="display:flex;gap:2px">
+                ${canSplit ? `<button class="del-x" style="font-size:14px" onclick="splitTransactionSheet(${jsAttr(t.id)})" title="Split into categories">✂️</button>` : ""}
+                ${t.source === "plaid" ? `<button class="del-x" style="font-size:14px" onclick="quickRuleFromTx(${jsAttr(t.id)})" title="Recategorize">↻</button>` : `<button class="del-x" onclick="deleteSpend(${jsAttr(t.id)})">×</button>`}
+              </div>
             </div>
-          `).join("");
+          `;}).join("");
           const loadMore = more > 0 ? `
             <div class="row tappable" onclick="window._spendVisibleLimit=(window._spendVisibleLimit||40)+40;renderMoney()" style="text-align:center;justify-content:center">
               <div class="body" style="text-align:center"><div class="t2" style="color:var(--purple,#7c3aed);font-weight:600">Show ${Math.min(more, 40)} more · ${more} hidden</div></div>
@@ -23036,7 +23189,32 @@ async function syncNow() {
   toast("Syncing…");
   try {
     const r = await backendSync();
+    // Capture broken items BEFORE the refresh so we can detect newly-broken
+    // ones and fire a push notification + haptic. Existing broken items
+    // don't re-fire (avoid spamming on every sync).
+    const previouslyBroken = new Set(
+      (DB.items || [])
+        .filter(it => it && it.webhook && _PLAID_BROKEN_CODES.has(String(it.webhook.code || "").toUpperCase()))
+        .map(it => it.item_id)
+    );
     try { const lst = await backendListItems(); DB.items = lst.items || []; await save(); } catch {}
+    // After the refresh, detect any item that's newly broken and surface
+    // a push immediately + warning haptic so the user doesn't have to
+    // wait for the next Daily Pulse.
+    try {
+      const nowBroken = _brokenBankItems().filter(it => !previouslyBroken.has(it.item_id));
+      if (nowBroken.length > 0) {
+        try { haptic("warning"); } catch {}
+        if (typeof sendPushNow === "function" && DB.settings.pushSubscription) {
+          const b = nowBroken[0];
+          sendPushNow(
+            "⚠️ Bank needs to reconnect",
+            `${b.institution_name} stopped syncing. Tap to fix.`,
+            "/?tab=money"
+          );
+        }
+      }
+    } catch {}
     // Fan out the secondary pulls in parallel. Each is wrapped in its own
     // try/catch so a single failing endpoint (e.g. an institution that
     // doesn't expose liabilities) doesn't block the others.
@@ -23419,8 +23597,11 @@ function allocationSheet() {
 /* ================ SEARCH / MTD ================ */
 function filteredSpend() {
   const q = (DB.spendSearch || "").toLowerCase().trim();
-  if (!q) return DB.spend || [];
-  return (DB.spend || []).filter(t =>
+  // Hide split parents — they're internal placeholders the user splits
+  // INTO categorized child rows. Children show normally.
+  const base = (DB.spend || []).filter(t => !t._split);
+  if (!q) return base;
+  return base.filter(t =>
     (t.note||"").toLowerCase().includes(q) ||
     (t.category||"").toLowerCase().includes(q) ||
     String(t.amount).includes(q)
@@ -23429,12 +23610,14 @@ function filteredSpend() {
 function lastMonthSpend() {
   // Outflows only (positive amounts) per app convention. Mirrors monthSpend.
   // Without this filter, Plaid users would see paychecks (negative amounts)
-  // dragging "last month spent" toward 0 or even negative.
+  // dragging "last month spent" toward 0 or even negative. Skip split
+  // parents (children carry the actual amounts).
   const now = new Date();
   const lm = new Date(now.getFullYear(), now.getMonth() - 1, 1);
   const lmKey = `${lm.getFullYear()}-${String(lm.getMonth()+1).padStart(2,"0")}`;
   return (DB.spend||[]).filter(t => {
     if (!t || !t.date || !t.date.startsWith(lmKey)) return false;
+    if (t._split) return false;
     return (+t.amount || 0) > 0;
   }).reduce((a,t)=>a+(+t.amount||0), 0);
 }
@@ -25261,7 +25444,10 @@ function counselorRender() {
     ? (keep ? "📌 Saved — won't be cleared" : "Closes private — tap 📌 to keep")
     : (keep ? "Your financial counselor · 📌 Saving conversations"
             : "Your financial counselor · conversations are private (cleared on close — tap 📌 to keep)");
+  const speakOn = _cornileusVoiceEnabled();
   const headerControls = `
+    <button onclick="counselorSpeakToggle()" title="${speakOn ? 'Stop reading replies aloud' : 'Read replies aloud'}"
+      style="background:${speakOn ? 'rgba(46,184,117,0.18)' : 'var(--bg-elev)'};border:0.5px solid ${speakOn ? 'var(--green,#34C759)' : 'var(--sep)'};color:${speakOn ? 'var(--green,#34C759)' : 'var(--t2)'};padding:6px 10px;border-radius:var(--r-pill,999px);font-size:11.5px;cursor:pointer;font-weight:600;flex-shrink:0">${speakOn ? '🔊 Speaking' : '🔈 Read aloud'}</button>
     <button onclick="closeSheet();setTimeout(()=>cornileusKnowsSheet(),120);" title="What does Cornileus know about me?"
       style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t2);padding:6px 10px;border-radius:var(--r-pill,999px);font-size:11.5px;cursor:pointer;font-weight:600;flex-shrink:0">🔍 Knows</button>
     ${thread.length ? `
@@ -25437,6 +25623,9 @@ async function counselorSend(text) {
   if (!_counselorState) _counselorState = { busy: false };
   if (_counselorState.busy) return;
   if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false };
+  // Stop any in-flight TTS so a new question silences the previous answer
+  // mid-sentence (matches what users expect from voice assistants).
+  try { _cornileusStopSpeaking(); } catch {}
 
   // Mark busy synchronously so a rapid double-tap can't queue two requests
   // through the (await save()) tick.
@@ -25543,6 +25732,8 @@ async function counselorSend(text) {
     // Capture any concrete action-verb suggestions into the followup
     // tracker so we can ask "did you do that?" a day or two later.
     try { _cornileusQueueFollowups(parsed.cleanedText); } catch {}
+    // Speak the reply via browser TTS if voice replies are enabled.
+    try { _cornileusSpeak(parsed.cleanedText); } catch {}
     // React to his own reply with the matching mood (happy for wins,
     // concerned for tough-love advice, etc). Settles back to neutral after
     // a couple of seconds so the avatar doesn't lock into one expression.
@@ -25837,6 +26028,72 @@ function counselorClear() {
 // modern Chrome/Safari. Tap mic to start, tap again (or speak silence) to stop.
 let _voiceRecognizer = null;
 let _voiceListening = false;
+
+// ============================================================================
+// CORNILEUS VOICE OUTPUT — speak replies via the browser's SpeechSynthesis.
+// Off by default; users toggle on via the 🔊 button in the chat header.
+// Strips markdown / action-tag artifacts before speaking so the AI doesn't
+// say "asterisk asterisk emphasis asterisk asterisk." Uses the best available
+// English voice on the device with a small bias toward natural-sounding
+// neural voices when offered.
+// ============================================================================
+
+function _cornileusVoiceEnabled() {
+  return !!(DB.settings && DB.settings.cornileusSpeak);
+}
+
+function _cornileusSpeak(text) {
+  if (!_cornileusVoiceEnabled()) return;
+  if (typeof speechSynthesis === "undefined") return;
+  // Stop anything already speaking (typing a new question should silence
+  // the previous answer mid-sentence).
+  try { speechSynthesis.cancel(); } catch {}
+  // Strip markdown punctuation, emoji block braces, and excess whitespace
+  // so the TTS engine reads naturally.
+  const clean = String(text || "")
+    .replace(/```[\s\S]*?```/g, "")            // code blocks
+    .replace(/`([^`]+)`/g, "$1")                // inline code
+    .replace(/\*\*([^*]+)\*\*/g, "$1")          // bold
+    .replace(/\*([^*]+)\*/g, "$1")              // italics
+    .replace(/^#{1,6}\s+/gm, "")                // markdown headers
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, "$1")    // markdown links → keep label
+    .replace(/<[^>]+>/g, "")                    // any stray HTML
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!clean) return;
+  const u = new SpeechSynthesisUtterance(clean);
+  u.rate = 1.02;
+  u.pitch = 1.0;
+  u.volume = 1.0;
+  // Pick a voice — prefer Apple/Google neural voices when available.
+  try {
+    const voices = speechSynthesis.getVoices() || [];
+    const englishVoices = voices.filter(v => /^en[-_]/i.test(v.lang || ""));
+    const pick = englishVoices.find(v => /samantha|enhanced|premium|natural|wavenet|neural/i.test(v.name))
+              || englishVoices.find(v => /^en[-_]US/i.test(v.lang))
+              || englishVoices[0];
+    if (pick) u.voice = pick;
+  } catch {}
+  try { speechSynthesis.speak(u); } catch {}
+}
+
+function _cornileusStopSpeaking() {
+  try { if (typeof speechSynthesis !== "undefined") speechSynthesis.cancel(); } catch {}
+}
+
+function counselorSpeakToggle() {
+  if (typeof speechSynthesis === "undefined") {
+    toast("Voice output not supported in this browser");
+    return;
+  }
+  if (!DB.settings) DB.settings = {};
+  DB.settings.cornileusSpeak = !DB.settings.cornileusSpeak;
+  if (!DB.settings.cornileusSpeak) _cornileusStopSpeaking();
+  save();
+  counselorRender();
+  toast(DB.settings.cornileusSpeak ? "Voice replies on — Cornileus will speak" : "Voice replies off");
+}
+
 function counselorVoiceToggle() {
   const Rec = window.SpeechRecognition || window.webkitSpeechRecognition;
   const input = document.getElementById("cns-input");
@@ -27919,23 +28176,73 @@ function onboardingStep5() {
 function finishOnboarding() {
   const s = _onbState;
   if (s.name) DB.user.name = s.name;
+  const addedHabits = [];
   for (const i of s.selectedHabits) {
     const p = STARTER_HABITS[i];
     DB.habits.push({ id: uid(), name: p.name, emoji: p.emoji, type: p.type, target: p.target || null, unit: p.unit || "", color: p.color, group: p.group, createdAt: Date.now(), log: {} });
+    addedHabits.push(p);
   }
+  let addedGoal = null;
   if (s.selectedGoal != null) {
     const g = STARTER_GOALS[s.selectedGoal];
     DB.goals.push({ id: uid(), title: g.title, note: g.note, tier: g.tier, steps: [], done: false, createdAt: Date.now() });
+    addedGoal = g;
   }
   DB.settings.advancedFeaturesEnabled = (s.useChoice === "bank");
   DB.user.onboardedAt = Date.now();
   save();
   _lockSheet = false;
+  const snapshot = {
+    name: s.name || "you",
+    habits: addedHabits,
+    goal: addedGoal,
+    notifications: !!DB.settings.notifications,
+    bankPath: s.useChoice === "bank",
+  };
   _onbState = null;
   closeSheet();
   applyTheme();
   render();
-  maybeStartTutorial();
+  // Open the celebration sheet immediately after the main onboarding sheet
+  // closes — proper handoff, no jarring jump straight to Today.
+  setTimeout(() => _onboardingCelebrationSheet(snapshot), 220);
+}
+
+// Celebration after onboarding finishes — confetti + a short recap card
+// showing what they configured. Beats dumping the user straight into Today
+// without any sense of completion.
+function _onboardingCelebrationSheet(snap) {
+  try { celebrate && celebrate(1.6); } catch {}
+  try { haptic && haptic("success"); } catch {}
+  const greeting = `Welcome, ${esc(snap.name || "you")}!`;
+  const bullets = [];
+  if (snap.habits && snap.habits.length) {
+    bullets.push(`✓ <b>${snap.habits.length} habit${snap.habits.length===1?"":"s"}</b> ready to check off — ${snap.habits.slice(0,3).map(h => esc(h.emoji + " " + h.name)).join(", ")}${snap.habits.length>3?`, +${snap.habits.length-3} more`:""}`);
+  }
+  if (snap.goal) {
+    bullets.push(`🎯 First goal set — <b>${esc(snap.goal.title)}</b>`);
+  }
+  if (snap.notifications) {
+    bullets.push(`🔔 Reminders on — Cornileus will nudge you when it matters`);
+  }
+  if (snap.bankPath) {
+    bullets.push(`🏦 Bank sync ready to set up — head to Settings → Bank sync when you're ready`);
+  }
+  bullets.push(`✨ Cornileus is waiting — tap the floating button anytime`);
+  openSheet(`
+    <div style="text-align:center;padding:8px 4px 14px">
+      <div style="font-size:48px;margin-bottom:6px;line-height:1">🎉</div>
+      <h2 style="margin:0 0 4px;font-size:22px">${greeting}</h2>
+      <div style="color:var(--t3);font-size:13px">You're all set — here's what's ready to go</div>
+    </div>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px 16px;margin-bottom:14px;font-size:13.5px;line-height:1.7;color:var(--t2)">
+      ${bullets.map(b => `<div style="margin:6px 0">${b}</div>`).join("")}
+    </div>
+    <div class="actions" style="flex-direction:column">
+      <button class="btn" style="width:100%;background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none" onclick="closeSheet();setTimeout(()=>{if(typeof maybeStartTutorial==='function')maybeStartTutorial();},120)">Take the 12-step tour</button>
+      <button class="btn secondary" style="width:100%" onclick="closeSheet()">Just explore</button>
+    </div>
+  `);
 }
 
 /* ================ POST-ONBOARDING TOUR ================
@@ -36356,6 +36663,7 @@ function init() {
     setupHealthSheet,
     _exportEncrypted, _exportPlaintext, _doExportEncrypted, _friendlyApiError,
     haptic,
+    splitTransactionSheet, _renderSplitSheet, _commitSplit,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, disableEncryptionSheet, showLockScreen,
     setPassphrase, unlockWithPassphrase, disablePassphrase, encryptObject, decryptObject, deriveKey,
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,
@@ -36416,7 +36724,7 @@ function init() {
     counselorToggleKeep, counselorNewChat,
     saveCornileusInsight, cornileusInsightsSheet, _copyInsightText, _removeInsight,
     _parseAndRunActions, _runCornileusAction, _renderActionChips,
-    counselorVoiceToggle, negotiateBillWithAI, negotiateBillWithAISeed,
+    counselorVoiceToggle, counselorSpeakToggle, _cornileusSpeak, _cornileusStopSpeaking, negotiateBillWithAI, negotiateBillWithAISeed,
     _whatIfState, whatIfCardHtml, _whatIfUpdate, renderPlanningWhatIfOnly,
     _whatIfBlendedReturn, _whatIfApplyPreset, _whatIfSetCell,
     PORTFOLIO_PRESETS, ASSET_DEFAULTS,
