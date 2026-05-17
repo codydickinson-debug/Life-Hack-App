@@ -12,6 +12,19 @@
 # Node
 node_modules/
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.python-version
+.venv/
+venv/
+env/
+
 # Claude Code local settings
 .claude/
 
@@ -21,7 +34,28 @@ Thumbs.db
 desktop.ini
 .vscode/
 .idea/
+*.swp
+*~
+
+# Build artifacts
+dist/
+build/
+
+# Logs
+*.log
+logs/
 
 # Local user-data exports
 ascend-backup-*.json
 .vercel
+
+# iOS / Xcode (if anyone runs Capacitor locally)
+ios/App/Pods/
+ios/App/build/
+ios/App/App.xcworkspace/xcuserdata/
+android/app/build/
+android/build/
+android/.gradle/
+
+# OS thumbnails / cache
+._*

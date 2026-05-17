@@ -100,18 +100,51 @@ def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1] if "}" in tag else tag
 
 
+# Allowlist of hostnames whose news-feed image URLs we'll forward to the
+# client. Anything else is dropped — defends against a compromised RSS feed
+# planting tracker/pixel URLs into the JSON response, which would
+# weaponize our news endpoint as a third-party-tracker amplifier for any
+# domain the attacker controls. Each entry is matched as a suffix on the
+# resolved hostname (lowercased), so subdomains work without listing each.
+_NEWS_IMAGE_HOST_ALLOW = (
+    "yimg.com",        # Yahoo Finance CDN
+    "wsj.net", "wsj.com",
+    "cnbc.com", "cnbcfm.com",
+    "nyt.com", "nytimes.com", "nyt.net",
+    "bloomberg.com", "bwbx.io",
+    "marketwatch.com", "mktw.net",
+    "investing.com",
+    "akamaized.net",   # major news CDN
+    "fastly.net",      # major news CDN
+)
+def _allowed_image_host(url: str) -> bool:
+    from urllib.parse import urlparse
+    try:
+        host = (urlparse(url).hostname or "").lower()
+    except Exception:
+        return False
+    if not host:
+        return False
+    return any(host == h or host.endswith("." + h) for h in _NEWS_IMAGE_HOST_ALLOW)
+
+
 def _find_image(item: ET.Element) -> str | None:
-    """Best-effort image extraction. Tries media:thumbnail, media:content, enclosure."""
+    """Best-effort image extraction. Tries media:thumbnail, media:content, enclosure.
+    Only returns URLs whose host is on the news-CDN allowlist — rejects
+    arbitrary attacker-controlled image hosts that a compromised feed
+    could plant for tracking/fingerprinting.
+    Also requires https:// — RSS images delivered over plain http would
+    leak the user's IP + Referer to a 3rd party in plaintext."""
     for el in item:
         ln = _local_name(el.tag)
         if ln in ("thumbnail", "content"):
             url = el.attrib.get("url")
-            if url and url.startswith(("http://", "https://")):
+            if url and url.startswith("https://") and _allowed_image_host(url):
                 return url
         if ln == "enclosure":
             url = el.attrib.get("url")
             t = el.attrib.get("type", "")
-            if url and t.startswith("image/"):
+            if url and url.startswith("https://") and t.startswith("image/") and _allowed_image_host(url):
                 return url
     return None
 

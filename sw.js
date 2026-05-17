@@ -137,20 +137,29 @@ self.addEventListener("push", (event) => {
 
 // Clicking a notification opens (or focuses) the app to the URL the push
 // included. Falls back to the root if the push didn't specify. The target
-// URL is sanitized to same-origin or a safe relative path to prevent a
-// crafted push payload from navigating an existing tab to evil.com.
+// URL is sanitized to same-origin AND an allowlisted path prefix to
+// prevent a crafted push payload from (a) navigating an existing tab to
+// evil.com, or (b) deep-linking to a same-origin route that triggers a
+// destructive client-side action.
+const ALLOWED_NAV_PATHS = [
+  "/", "/?", "/?tab=today", "/?tab=money", "/?tab=stocks", "/?tab=goals",
+  "/?tab=stats", "/?tab=calendar", "/?tab=planning", "/?tab=settings",
+];
+function _safeNavTarget(rawTarget) {
+  try {
+    const parsed = new URL(rawTarget, self.location.origin);
+    if (parsed.origin !== self.location.origin) return "/";
+    const pathPlusQuery = parsed.pathname + parsed.search;
+    for (const ok of ALLOWED_NAV_PATHS) {
+      if (pathPlusQuery === ok || pathPlusQuery.startsWith(ok)) return pathPlusQuery + parsed.hash;
+    }
+  } catch {}
+  return "/";
+}
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
   const rawTarget = (event.notification.data && event.notification.data.url) || "/";
-  // Resolve to a same-origin path. If the URL escapes our origin or uses
-  // a non-https scheme, fall back to the root.
-  let target = "/";
-  try {
-    const parsed = new URL(rawTarget, self.location.origin);
-    if (parsed.origin === self.location.origin) {
-      target = parsed.pathname + parsed.search + parsed.hash;
-    }
-  } catch {}
+  const target = _safeNavTarget(rawTarget);
   event.waitUntil((async () => {
     const all = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
     for (const c of all) {
