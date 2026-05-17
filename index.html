@@ -3604,6 +3604,77 @@ function openSheet(html) {
   // Reset scroll position — a long previous sheet shouldn't leave the next
   // one opened halfway down.
   try { sheet.scrollTop = 0; } catch {}
+  _ensureSheetSwipeToClose();
+}
+
+// Wires swipe-down-to-close on the sheet. Attached once globally so reused
+// #sheet always has it after the first openSheet call. Rules:
+//   - Gesture only initiates if the touch starts on the .grabber OR with
+//     the sheet already scrolled to top (so a normal downward swipe inside
+//     a long sheet scrolls content, doesn't dismiss).
+//   - While dragging, translate the sheet down by the delta with no
+//     transition — feels physical.
+//   - On release: if dragged > 80px OR last-frame velocity > 0.5 px/ms,
+//     close. Otherwise snap back to position with the standard transition.
+//   - Sheet's own Close button still works (this is purely additive).
+let _sheetSwipeWired = false;
+function _ensureSheetSwipeToClose() {
+  if (_sheetSwipeWired) return;
+  const sheet = document.getElementById("sheet");
+  if (!sheet) return;
+  let startY = 0, lastY = 0, lastT = 0, dy = 0, dragging = false, startedAtTop = false;
+  const ALLOW_FROM = 50; // px from top — touch must start within this region OR on the grabber
+  sheet.addEventListener("touchstart", (e) => {
+    if (!sheet.classList.contains("show")) return;
+    const t = e.touches[0]; if (!t) return;
+    const r = sheet.getBoundingClientRect();
+    const yInSheet = t.clientY - r.top;
+    const onGrabber = !!(e.target && e.target.closest && e.target.closest(".grabber"));
+    startedAtTop = onGrabber || (sheet.scrollTop <= 0 && yInSheet <= ALLOW_FROM);
+    if (!startedAtTop) { dragging = false; return; }
+    startY = lastY = t.clientY;
+    lastT = e.timeStamp || Date.now();
+    dy = 0;
+    dragging = true;
+    sheet.style.transition = "none";
+  }, { passive: true });
+  sheet.addEventListener("touchmove", (e) => {
+    if (!dragging) return;
+    const t = e.touches[0]; if (!t) return;
+    dy = t.clientY - startY;
+    lastY = t.clientY;
+    lastT = e.timeStamp || Date.now();
+    if (dy <= 0) {
+      // Dragging up — restore identity transform so the sheet doesn't drift.
+      sheet.style.transform = "";
+      return;
+    }
+    // Resist a bit at the top — easier to dismiss the more they pull.
+    sheet.style.transform = `translateY(${dy.toFixed(1)}px)`;
+    if (e.cancelable) e.preventDefault(); // block ambient scroll while we own the gesture
+  }, { passive: false });
+  const release = (e) => {
+    if (!dragging) return;
+    dragging = false;
+    sheet.style.transition = ""; // restore the CSS-defined transition
+    // Compute closing velocity from the last move sample.
+    const now = e && (e.timeStamp || Date.now()) || Date.now();
+    const dt = Math.max(1, now - lastT);
+    const v = dy / dt; // px per ms; ~0.5 = a flick
+    if (dy > 80 || v > 0.5) {
+      // Commit the close. The CSS transition will animate it from the
+      // current translateY back to 100% via the .sheet (not .sheet.show)
+      // base transform. Clear our inline transform so the class state wins.
+      sheet.style.transform = "";
+      closeSheet();
+    } else {
+      // Snap back to fully open.
+      sheet.style.transform = "";
+    }
+  };
+  sheet.addEventListener("touchend", release, { passive: true });
+  sheet.addEventListener("touchcancel", release, { passive: true });
+  _sheetSwipeWired = true;
 }
 function closeSheet() {
   if (_lockSheet) return;
@@ -29232,13 +29303,26 @@ function _tourEnsureChrome() {
     @media (prefers-reduced-motion: reduce) {
       #tour-spotlight { animation: none; }
     }
+    /* Always rendered while the tour is active — captures every click so
+       the background app stays uninteractive. In 'dim' mode (no target)
+       it dims + blurs the page; in 'spot' mode (a target is highlighted)
+       it's fully transparent and the spotlight's box-shadow does the
+       dimming. Either way clicks on the catcher advance the tour. */
     #tour-overlay {
-      position: fixed; inset: 0; background: rgba(0,0,0,0.55);
-      -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+      position: fixed; inset: 0;
       z-index: 9997; display: none; opacity: 0;
       transition: opacity .25s ease;
+      cursor: pointer;
     }
     #tour-overlay.show { opacity: 1; }
+    #tour-overlay.dim {
+      background: rgba(0,0,0,0.55);
+      -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px);
+    }
+    #tour-overlay.spot {
+      background: transparent;
+      -webkit-backdrop-filter: none; backdrop-filter: none;
+    }
     #tour-tooltip {
       position: fixed; z-index: 9999;
       background: var(--card, #fff); color: var(--text, #111);
@@ -29313,8 +29397,34 @@ function _tourEnsureChrome() {
   const tooltip = document.createElement("div");
   tooltip.id = "tour-tooltip";
   document.body.append(overlay, spotlight, tooltip);
-  // Tap the dim overlay to dismiss the tour (also marks as seen).
-  overlay.addEventListener("click", tutorialFinish);
+  // Tap anywhere on the catcher → advance to next step (or finish on the
+  // last). When a spotlight target exists we hit-test the click against
+  // the target's bounding rect — clicks inside the highlight forward to
+  // the target so the real action (toggle habit, switch tab, etc.) fires
+  // AND the existing target-listener advances after the standard 320ms
+  // settle. Clicks outside the spotlight just advance immediately. This
+  // means the user can't accidentally hit something in the background
+  // during the tutorial — every click is owned by the tour.
+  overlay.addEventListener("click", (e) => {
+    const s = TUTORIAL_STEPS[_tutStep];
+    if (s && s.target) {
+      const el = document.querySelector(s.target);
+      if (el) {
+        const r = el.getBoundingClientRect();
+        const inside = e.clientX >= r.left && e.clientX <= r.right
+                    && e.clientY >= r.top  && e.clientY <= r.bottom;
+        if (inside) {
+          // Forward to the real target — capture-phase advance listener
+          // catches the resulting click event and advances after 320ms.
+          try { el.click(); } catch {}
+          return;
+        }
+      }
+    }
+    // Outside any highlight (or no target step) → just advance.
+    if (_tutStep < TUTORIAL_STEPS.length - 1) tutorialNext();
+    else tutorialFinish();
+  });
 }
 
 // Demo-overlay state for the tour. The tour temporarily replaces DB with
@@ -29550,8 +29660,15 @@ function _tourPosition() {
     spotlight.style.width  = (r.width + pad*2) + "px";
     spotlight.style.height = (r.height + pad*2) + "px";
     spotlight.style.display = "block";
-    overlay.style.display = "none"; // spotlight's box-shadow provides the dimming
-    overlay.classList.remove("show");
+    // Catcher stays visible in spotlight mode but goes transparent — the
+    // spotlight's huge box-shadow does the actual dimming, while the
+    // catcher just owns the click surface so the page underneath isn't
+    // interactive. Tap on catcher = advance; tap inside the spotlight =
+    // forwards to target (handled in catcher click listener).
+    overlay.style.display = "block";
+    overlay.classList.add("show");
+    overlay.classList.add("spot");
+    overlay.classList.remove("dim");
     // Place tooltip above or below the spotlight, whichever has more room.
     const tr = tooltip.getBoundingClientRect();
     const spaceBelow = vh - (r.bottom + pad);
@@ -29577,6 +29694,8 @@ function _tourPosition() {
     // is still visible behind. Tooltip docks at the bottom-center.
     spotlight.style.display = "none";
     overlay.style.display = "block";
+    overlay.classList.add("dim");
+    overlay.classList.remove("spot");
     setTimeout(() => overlay.classList.add("show"), 16);
     const tr = tooltip.getBoundingClientRect();
     tooltip.style.left = "50%";
