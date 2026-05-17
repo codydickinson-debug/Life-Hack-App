@@ -3324,7 +3324,9 @@ function _pairingTokenString() {
 function _decodePairingToken(s) {
   try {
     const json = atob(String(s || "").trim());
-    const obj = JSON.parse(json);
+    // Use safeJsonParse — strips __proto__/constructor/prototype keys so
+    // a malicious pairing token can't pollute Object.prototype.
+    const obj = safeJsonParse(json);
     if (!obj || obj.v !== 1) throw new Error("unsupported token version");
     if (!obj.backendUrl || !obj.userId || !obj.clientSecret) throw new Error("missing fields");
     // Basic shape validation
@@ -26904,7 +26906,12 @@ function _parseAndRunActions(rawText) {
   const confirmations = [];
   let cleaned = rawText.replace(_CORNILEUS_ACTION_RE, (match, json) => {
     let action;
-    try { action = JSON.parse(json.trim()); }
+    // Use safeJsonParse — Cornileus actions mutate DB, so a malicious
+    // payload (potentially injected via prompt-injection from untrusted
+    // Plaid merchant names or web content) shouldn't be able to set
+    // __proto__ keys. _runCornileusAction also allowlist-validates
+    // action.type as a defense-in-depth.
+    try { action = safeJsonParse(json.trim()); }
     catch (e) {
       confirmations.push({ ok: false, label: "Couldn't parse an action Cornileus sent" });
       return "";
@@ -28274,11 +28281,31 @@ function changePassphraseSheet() {
    who can clear localStorage can reset it — but it deters casual attackers
    on a stolen unlocked phone, which is the realistic threat. */
 const LOCK_STATE_KEY = "ascend_lock_state";
+// Read from localStorage first (persistent across reloads); fall back to
+// sessionStorage so a quota-failed write to localStorage still survives
+// for the current session. Critical: silently dropping the lockout state
+// would reset the brute-force counter and bypass the rate-limit.
 function _readLockState() {
-  try { return safeJsonParse(localStorage.getItem(LOCK_STATE_KEY) || "{}"); } catch { return {}; }
+  try {
+    const ls = localStorage.getItem(LOCK_STATE_KEY);
+    if (ls) return safeJsonParse(ls);
+    try { const ss = sessionStorage.getItem(LOCK_STATE_KEY); if (ss) return safeJsonParse(ss); } catch {}
+    return {};
+  } catch { return {}; }
 }
 function _writeLockState(s) {
-  try { localStorage.setItem(LOCK_STATE_KEY, JSON.stringify(s)); } catch {}
+  const json = JSON.stringify(s);
+  try {
+    localStorage.setItem(LOCK_STATE_KEY, json);
+    // Mirror to sessionStorage so a later quota failure on localStorage
+    // can fall back without losing the counter mid-session.
+    try { sessionStorage.setItem(LOCK_STATE_KEY, json); } catch {}
+  } catch {
+    // localStorage rejected (quota exceeded, private-mode) — best-effort to
+    // sessionStorage so the brute-force counter still applies to the rest
+    // of this session, even if it resets on next page load.
+    try { sessionStorage.setItem(LOCK_STATE_KEY, json); } catch {}
+  }
 }
 function _lockoutSeconds(fails) {
   if (fails < 4)  return 0;
@@ -34347,7 +34374,7 @@ const NEGOTIATION_TEMPLATES = [
 
 function negotiationToolkitSheet() {
   const html = NEGOTIATION_TEMPLATES.map(t => `
-    <div class="row tappable" onclick="negotiationScriptSheet(${jsAttr(t.id)})" role="button" tabindex="0">
+    <div class="row tappable" onclick="negotiationTemplateSheet(${jsAttr(t.id)})" role="button" tabindex="0">
       <div class="lead">${t.emoji}</div>
       <div class="body">
         <div class="t1">${esc(t.title)}</div>
@@ -34419,7 +34446,12 @@ function negotiateBillWithAISeed(billName, monthlyAmount) {
   openCounselor(seed, "money");
 }
 
-function negotiationScriptSheet(id) {
+// Renamed from negotiationScriptSheet — that name belongs to the AI-driven
+// version at ~L17276 (async, takes a merchant string and asks Cornileus to
+// draft a tailored email). This template version is a static-template
+// lookup. Function-hoisting was making the template one win, leaving the
+// AI flow as dead code reached only by L5936's "Negotiation script" tile.
+function negotiationTemplateSheet(id) {
   const t = NEGOTIATION_TEMPLATES.find(x => x.id === id);
   if (!t) { negotiationToolkitSheet(); return; }
   // Format the script: convert \n\n into paragraphs.
@@ -37391,8 +37423,20 @@ async function scanHoldingsFile(file) {
     });
     const txt = (data.content || []).map(c => c.text).join("") || "{}";
     const cleaned = txt.replace(/^```(?:json)?\s*/i, "").replace(/```\s*$/i, "").trim();
-    let parsed; try { parsed = JSON.parse(cleaned); } catch { parsed = {}; }
-    const holdings = Array.isArray(parsed.holdings) ? parsed.holdings : [];
+    let parsed; try { parsed = safeJsonParse(cleaned); } catch { parsed = {}; }
+    // Coerce + clamp every numeric field — a malicious or hallucinated
+    // screenshot could yield Infinity, NaN, or values like 1e308 that
+    // would poison downstream wealth math. Cap at $1B per position
+    // (anyone with a single $1B holding is not the user persona).
+    const rawHoldings = Array.isArray(parsed.holdings) ? parsed.holdings : [];
+    const holdings = rawHoldings.map(h => ({
+      ...h,
+      ticker: h && typeof h.ticker === "string" ? h.ticker.slice(0, 16) : null,
+      name: h && typeof h.name === "string" ? h.name.slice(0, 80) : "",
+      type: ["stock","etf","mutual_fund","bond","crypto","cash","other"].includes(h && h.type) ? h.type : "other",
+      value: Math.max(0, Math.min(1e9, +(h && h.value) || 0)),
+      quantity: h && h.quantity != null && Number.isFinite(+h.quantity) ? Math.max(0, Math.min(1e12, +h.quantity)) : null,
+    })).filter(h => h.value > 0 && h.name);
     if (!holdings.length) {
       toast("Couldn't find any positions in that image");
       return;
@@ -38186,7 +38230,7 @@ function init() {
     resetSinkingFund, deleteSinkingFund,
     NW_BENCHMARKS, benchmarkForAge, benchmarksSheet,
     computeRental, rentalPropertySheet,
-    NEGOTIATION_TEMPLATES, negotiationToolkitSheet, negotiationScriptSheet,
+    NEGOTIATION_TEMPLATES, negotiationToolkitSheet, negotiationScriptSheet, negotiationTemplateSheet,
     INCOME_STRATEGIES, incomeStrategiesSheet, incomeStrategySheet,
     INSURANCE_TYPES, insuranceChecklistSheet, insuranceDetailSheet,
     ESTATE_TASKS, estatePlanningSheet, _markEstateTask,
