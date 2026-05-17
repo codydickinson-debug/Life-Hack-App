@@ -2092,7 +2092,7 @@ const DEFAULT_DB = {
   budget: { income: 0, expenses: [] },
   spend:  [],   // manual + auto-imported transactions: [{id, date, category, amount, note, source:'manual'|'plaid', plaid_id?, merchant_name?, pending?}]
   wins:   [],
-  stocks: { recentTickers: [], account: 10000, watchlist: [], holdings: {}, quoteCache: {}, alerts: [], realizedPL: [], watchlistSort: "default", portfolioHistory: [] },
+  stocks: { recentTickers: [], account: 10000, watchlist: [], holdings: {}, quoteCache: {}, alerts: [], realizedPL: [], watchlistSort: "default", portfolioHistory: [], benchmarkCache: {}, ytdByTicker: {} },
   insurance: {}, // { health: {have, note, ts}, life: {...}, ... } — see insuranceAuditSheet
   // (cornileusFollowups removed — followups live on DB.counselor.followups,
   //  which is where every caller reads/writes them. The top-level field
@@ -12129,6 +12129,40 @@ function _stocksRenderPortfolio() {
           </div>
         `;
       })()}
+      ${(() => {
+        // S&P 500 benchmark comparison — "are you beating the market?"
+        const port = _stocksPortfolioYtdReturn();
+        const bench = (DB.stocks && DB.stocks.benchmarkCache) || {};
+        const sp = bench.sp500Ytd;
+        if (!port || sp == null) return "";
+        const delta = port.ret - sp;
+        const beating = delta >= 0;
+        const deltaColor = beating ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+        const portColor = port.ret >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+        const spColor = sp >= 0 ? "var(--green,#34C759)" : "var(--red,#FF3B30)";
+        const verdict = beating ? `Beating S&P by` : `Trailing S&P by`;
+        const tip = port.source === "history"
+          ? `YTD return since ${esc(port.baselineDate)} (from your portfolio history)`
+          : `Weighted avg of ${port.covered}/${port.total} holdings' YTD returns — open more tickers to improve accuracy`;
+        return `
+          <div title="${tip}" style="margin-top:10px;padding:10px 12px;background:var(--bg-elev);border-radius:8px">
+            <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px">
+              <div style="font-size:10px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">vs S&amp;P 500 · YTD</div>
+              <div style="font-size:11.5px;font-weight:800;color:${deltaColor};font-variant-numeric:tabular-nums">${verdict} <b>${beating ? "+" : "-"}${Math.abs(delta * 100).toFixed(1)}pp</b></div>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-variant-numeric:tabular-nums">
+              <div style="background:var(--card);border-radius:6px;padding:7px 9px;text-align:center;border:0.5px solid var(--sep)">
+                <div style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">Your portfolio</div>
+                <div style="font-size:16px;font-weight:800;color:${portColor};margin-top:2px">${port.ret >= 0 ? "+" : ""}${(port.ret * 100).toFixed(1)}%</div>
+              </div>
+              <div style="background:var(--card);border-radius:6px;padding:7px 9px;text-align:center;border:0.5px solid var(--sep)">
+                <div style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:600">S&amp;P 500 (SPY)</div>
+                <div style="font-size:16px;font-weight:800;color:${spColor};margin-top:2px">${sp >= 0 ? "+" : ""}${(sp * 100).toFixed(1)}%</div>
+              </div>
+            </div>
+          </div>
+        `;
+      })()}
       ${annualDiv > 0 ? `
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-top:10px;padding:8px 10px;background:var(--bg-elev);border-radius:8px">
           <div>
@@ -18929,6 +18963,103 @@ function _stocksYoyComparison() {
   };
 }
 
+/* ---------- S&P 500 benchmark comparison ----------
+   Honest "are you beating the market?" gauge. Computes the user's
+   portfolio YTD return two ways:
+     1. From DB.stocks.portfolioHistory if it spans Jan 1 (most accurate —
+        reflects actual entries/exits and dollar-weighted timing).
+     2. Else weighted average of per-ticker YTD returns (cleaner if the
+        user is new and history only covers a few weeks).
+   S&P 500 YTD is fetched via /api/quote/SPY/full (cached in DB.stocks.benchmarkCache
+   with a 12-hour TTL — SPY moves daily but YTD doesn't swing intraday). */
+function _stocksPortfolioYtdReturn() {
+  const hist = (DB.stocks && DB.stocks.portfolioHistory) || [];
+  const cache = (DB.stocks && DB.stocks.quoteCache) || {};
+  const holdings = (DB.stocks && DB.stocks.holdings) || {};
+  const year = new Date().getFullYear();
+  const yearStart = `${year}-01-01`;
+  // Method 1 — portfolioHistory-based YTD
+  if (hist.length >= 5) {
+    // First snapshot in or after Jan 1 of the current year, else first snapshot
+    // before Jan 1 (acts as a "carryover" baseline). Last snapshot = today's value.
+    let baseline = null;
+    for (const h of hist) {
+      if (h.date >= yearStart) { baseline = h; break; }
+    }
+    if (!baseline) baseline = hist[0]; // all data is pre-Jan 1
+    const last = hist[hist.length - 1];
+    if (baseline && last && +baseline.value > 0 && baseline.date < last.date) {
+      const ret = (+last.value - +baseline.value) / +baseline.value;
+      return { ret, baselineDate: baseline.date, source: "history" };
+    }
+  }
+  // Method 2 — weighted avg of per-ticker YTD from full-quote cache
+  // (We don't always have ytd_return — it requires /api/quote/<tk>/full,
+  // which is only called when a user opens a ticker detail. Cache hits are
+  // opportunistic, so this method only fires when we have enough coverage.)
+  const ytdByTk = (DB.stocks && DB.stocks.ytdByTicker) || {};
+  let mkt = 0, weighted = 0, covered = 0, total = 0;
+  for (const [tk, h] of Object.entries(holdings)) {
+    const shares = +h.shares || 0;
+    if (shares <= 0) continue;
+    total++;
+    const q = cache[tk];
+    const price = q && !q.error && q.price != null ? +q.price : null;
+    if (price == null) continue;
+    const m = price * shares;
+    mkt += m;
+    const ytd = ytdByTk[tk];
+    if (ytd != null && !isNaN(+ytd)) {
+      weighted += +ytd * m;
+      covered++;
+    }
+  }
+  if (mkt > 0 && covered >= Math.max(1, Math.floor(total * 0.5))) {
+    return { ret: weighted / mkt, source: "weighted", covered, total };
+  }
+  return null;
+}
+
+async function _stocksFetchBenchmark() {
+  // Pulls SPY YTD and caches it. Safe to call repeatedly — no-ops if
+  // the cache is fresh enough.
+  if (!DB.stocks) DB.stocks = {};
+  const cache = DB.stocks.benchmarkCache || {};
+  const ageH = cache.fetchedAt ? (Date.now() - cache.fetchedAt) / 3600000 : Infinity;
+  if (cache.sp500Ytd != null && ageH < 12) return cache;
+  try {
+    const r = await fetch("/api/quote/SPY/full");
+    if (!r.ok) return cache;
+    const data = await r.json();
+    if (data && data.ytd_return != null) {
+      DB.stocks.benchmarkCache = {
+        sp500Ytd: +data.ytd_return,
+        sp500Price: data.price != null ? +data.price : null,
+        fetchedAt: Date.now(),
+      };
+      // Cache SPY's YTD in the per-ticker map too (so it's available if user holds SPY)
+      if (!DB.stocks.ytdByTicker) DB.stocks.ytdByTicker = {};
+      DB.stocks.ytdByTicker.SPY = +data.ytd_return;
+      await save();
+      // Re-render so the comparison line picks up the fresh number
+      try { _stocksRenderPortfolio(); } catch {}
+      return DB.stocks.benchmarkCache;
+    }
+  } catch {}
+  return cache;
+}
+
+/* Opportunistically caches per-ticker YTD from a /full quote response.
+   Called from _stocksOpenDetail so detail visits seed the comparison. */
+function _stocksRecordTickerYtd(tk, ytd) {
+  if (!DB.stocks) DB.stocks = {};
+  if (!DB.stocks.ytdByTicker) DB.stocks.ytdByTicker = {};
+  if (tk && ytd != null && !isNaN(+ytd)) {
+    DB.stocks.ytdByTicker[(tk + "").toUpperCase()] = +ytd;
+    save();
+  }
+}
+
 /* ---------- Portfolio milestone celebrations ----------
    When the live portfolio value crosses a milestone threshold for the
    first time, fire a toast + confetti. Crossings are recorded in
@@ -19191,6 +19322,9 @@ async function _stocksRefreshAll() {
       _stocksRenderTopMovers();
       _stocksAlertsCheck();
       _stocksCheckMilestones();
+      // Refresh S&P 500 benchmark in the background (fire-and-forget — it
+      // re-renders the portfolio card on its own if the cache was stale).
+      _stocksFetchBenchmark().catch(() => {});
     }
   } catch (e) {
     toast("Couldn't fetch quotes: " + (e.message || "network"));
@@ -19268,6 +19402,12 @@ async function _stocksOpenDetail(tk) {
       DB.stocks.dividendCache[q.ticker] = { yield: +q.dividend_yield, fetchedAt: Date.now() };
       // Fire-and-forget save; not critical if it loses.
       save();
+    }
+    // Cache YTD return so the S&P 500 benchmark line on the portfolio
+    // hero can fall back to a weighted average when portfolioHistory
+    // doesn't span the full year.
+    if (q.ytd_return != null) {
+      try { _stocksRecordTickerYtd(q.ticker, q.ytd_return); } catch {}
     }
     _stocksRenderDetail(q);
   } catch (e) {
@@ -21008,6 +21148,18 @@ function calendarDaySheet(dateKey) {
   const d = new Date(dateKey + "T00:00:00");
   const titleLbl = d.toLocaleDateString("en-US", { weekday: "long", month: "long", day: "numeric", year: "numeric" });
   const existingNote = (DB.calendarNotes || {})[dateKey] || "";
+  // US federal holiday badge (if any) — surfaces "today is Christmas / observed Memorial Day"
+  // at a glance before the user scrolls through the day's logged data.
+  const holiday = _holidayForDate(dateKey);
+  const holidayBadge = holiday ? `
+    <div style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.35);border-radius:10px;padding:9px 12px;margin:-2px 0 12px;display:flex;align-items:center;gap:9px">
+      <div style="font-size:18px;line-height:1">${holiday.emoji || "🇺🇸"}</div>
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13.5px;font-weight:700;color:#ef4444;line-height:1.2">${esc(holiday.name)}</div>
+        <div style="font-size:11px;color:var(--t3);margin-top:1px">US federal holiday${holiday.observed ? " · observed" : ""}</div>
+      </div>
+    </div>
+  ` : "";
 
   // Habits that day — for past+today dates, tapping toggles the done state
   // (backfill). For future dates the checks are display-only.
@@ -21158,6 +21310,7 @@ function calendarDaySheet(dateKey) {
   openSheet(`
     <h2 style="margin-bottom:4px">${titleLbl}${currentMood ? ` <span style="margin-left:6px">${currentMood}</span>` : ''}</h2>
     <p class="muted" style="font-size:12.5px;margin-bottom:14px">Everything tracked on this day</p>
+    ${holidayBadge}
     ${dayStripHtml}
     ${quickActions}
     ${moodPicker}
@@ -21210,6 +21363,93 @@ function calendarDaySheet(dateKey) {
   `);
 }
 
+/* ---------- US federal holidays ----------
+   Pure date math, no API. Computes all 11 OPM-recognized federal holidays
+   for a given year + an "observed" key when a holiday falls on a weekend
+   (Sat → Fri, Sun → Mon). Result: {dateKey: holidayName, ...}.
+   Hide via DB.settings.hideFederalHolidays for non-US users. */
+function _USFederalHolidays(year) {
+  const pad = (n) => String(n).padStart(2, "0");
+  const key = (y, m, d) => `${y}-${pad(m)}-${pad(d)}`;
+  // Nth weekday of month — weekday 0=Sun,1=Mon...
+  const nthWeekday = (y, m, weekday, n) => {
+    const first = new Date(y, m - 1, 1).getDay();
+    const offset = (weekday - first + 7) % 7;
+    return 1 + offset + (n - 1) * 7;
+  };
+  // Last weekday of month
+  const lastWeekday = (y, m, weekday) => {
+    const dim = new Date(y, m, 0).getDate();
+    const last = new Date(y, m - 1, dim).getDay();
+    const offset = (last - weekday + 7) % 7;
+    return dim - offset;
+  };
+  const fixed = [
+    { m: 1,  d: 1,  name: "New Year's Day", emoji: "🎆" },
+    { m: 6,  d: 19, name: "Juneteenth", emoji: "🎗️", from: 2021 },
+    { m: 7,  d: 4,  name: "Independence Day", emoji: "🎆" },
+    { m: 11, d: 11, name: "Veterans Day", emoji: "🎖️" },
+    { m: 12, d: 25, name: "Christmas Day", emoji: "🎄" },
+  ];
+  const floating = [
+    { m: 1,  rule: () => nthWeekday(year, 1, 1, 3),  name: "MLK Jr. Day", emoji: "✊" },          // 3rd Mon Jan
+    { m: 2,  rule: () => nthWeekday(year, 2, 1, 3),  name: "Presidents' Day", emoji: "🇺🇸" },     // 3rd Mon Feb
+    { m: 5,  rule: () => lastWeekday(year, 5, 1),    name: "Memorial Day", emoji: "🎗️" },       // Last Mon May
+    { m: 9,  rule: () => nthWeekday(year, 9, 1, 1),  name: "Labor Day", emoji: "🛠️" },          // 1st Mon Sep
+    { m: 10, rule: () => nthWeekday(year, 10, 1, 2), name: "Columbus Day", emoji: "🌎" },        // 2nd Mon Oct
+    { m: 11, rule: () => nthWeekday(year, 11, 4, 4), name: "Thanksgiving", emoji: "🦃" },        // 4th Thu Nov
+  ];
+  const out = {};
+  for (const h of fixed) {
+    if (h.from && year < h.from) continue;
+    out[key(year, h.m, h.d)] = { name: h.name, emoji: h.emoji };
+    // Observed shift for weekend-falling fixed holidays
+    const dow = new Date(year, h.m - 1, h.d).getDay();
+    if (dow === 0) {
+      // Sun → observed Mon
+      const dim = new Date(year, h.m, 0).getDate();
+      const obs = h.d + 1;
+      if (obs <= dim) out[key(year, h.m, obs)] = { name: `${h.name} (observed)`, emoji: h.emoji, observed: true };
+    } else if (dow === 6) {
+      // Sat → observed Fri
+      const obs = h.d - 1;
+      if (obs >= 1) out[key(year, h.m, obs)] = { name: `${h.name} (observed)`, emoji: h.emoji, observed: true };
+    }
+  }
+  for (const h of floating) {
+    out[key(year, h.m, h.rule())] = { name: h.name, emoji: h.emoji };
+  }
+  return out;
+}
+
+function _holidaysForMonth(y, m) {
+  // m is 0-indexed (matches JS Date.getMonth())
+  if (DB.settings && DB.settings.hideFederalHolidays) return {};
+  const all = _USFederalHolidays(y);
+  // Also include neighbor-year holidays if month spans Jan/Dec
+  const out = {};
+  for (const [k, v] of Object.entries(all)) {
+    if (k.startsWith(`${y}-${String(m + 1).padStart(2, "0")}`)) out[k] = v;
+  }
+  return out;
+}
+
+function _holidayForDate(dateKey) {
+  if (DB.settings && DB.settings.hideFederalHolidays) return null;
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(dateKey || "")) return null;
+  const y = +dateKey.slice(0, 4);
+  const all = _USFederalHolidays(y);
+  return all[dateKey] || null;
+}
+
+function toggleFederalHolidays() {
+  DB.settings.hideFederalHolidays = !DB.settings.hideFederalHolidays;
+  save();
+  if (typeof renderCalendar === "function" && document.getElementById("page-calendar")) renderCalendar();
+  if (typeof renderSettings === "function" && document.getElementById("page-settings")) renderSettings();
+  toast(DB.settings.hideFederalHolidays ? "Federal holidays hidden" : "Federal holidays shown");
+}
+
 function renderCalendar() {
   const y = calendarMonth.getFullYear(), m = calendarMonth.getMonth();
   const monthLabel = calendarMonth.toLocaleDateString("en-US", { month: "long", year: "numeric" });
@@ -21258,6 +21498,9 @@ function renderCalendar() {
       if (info && /^\d{4}-\d{2}-\d{2}$/.test(info.ex_dividend_date || "")) exDivDates.add(info.ex_dividend_date);
     }
   } catch {}
+  // US federal holidays for this month (suppressed when hideFederalHolidays is on).
+  // Mapping dateKey → {name, emoji, observed?} — used for cell dots, tooltips, and the legend.
+  const holidayMap = _holidaysForMonth(y, m);
 
   // Aggregate month-level stats for the header strip
   let monthHabitDone = 0, monthHabitPossible = 0;
@@ -21309,6 +21552,7 @@ function renderCalendar() {
       hasUserDate: userDates.has(k),
       hasEarnings: earningsDates.has(k),
       hasExDiv: exDivDates.has(k),
+      holiday: holidayMap[k] || null,
       mood: moodMap[k] || "",
     });
   }
@@ -21327,7 +21571,11 @@ function renderCalendar() {
     }
     if (c.isFuture && c.hasBill) bg = "rgba(237,139,34,0.10)";
     if (c.isFuture && c.hasPlan && bg === "var(--bg-elev)") bg = "rgba(124,58,237,0.10)";
+    // Subtle red wash for federal holidays — only when no other meaningful
+    // signal (habits/bills/plans) is already painting the cell.
+    if (c.holiday && bg === "var(--bg-elev)") bg = "rgba(239,68,68,0.08)";
     const ring = c.isToday ? "box-shadow:inset 0 0 0 2px var(--blue);" : "";
+    const holidayTitle = c.holiday ? ` title="${esc(c.holiday.name)}"` : "";
     const dots = [
       c.hasWin && '<span style="background:var(--yellow)"></span>',
       c.hasGoal && '<span style="background:var(--purple)"></span>',
@@ -21339,11 +21587,16 @@ function renderCalendar() {
       c.hasUserDate && '<span style="background:var(--pink,#ec4899)" title="Important date"></span>',
       c.hasEarnings && '<span style="background:#0ea5e9" title="Stock earnings"></span>',
       c.hasExDiv && '<span style="background:#22d3ee" title="Ex-dividend"></span>',
+      c.holiday && `<span style="background:#ef4444" title="${esc(c.holiday.name)}"></span>`,
     ].filter(Boolean).join("");
+    // Tiny holiday emoji watermark in the corner — gives instant recognition
+    // without taking up a row. Hidden if the user already has a mood emoji
+    // for that day (mood takes priority).
+    const holidayEmoji = c.holiday && !c.mood ? `<span title="${esc(c.holiday.name)}" style="position:absolute;top:3px;right:3px;font-size:10px;line-height:1;opacity:0.85">${c.holiday.emoji}</span>` : "";
     return `
-      <div class="cal-cell" style="background:${bg};${ring}" onclick="calendarDaySheet('${c.key}')" role="button" tabindex="0">
+      <div class="cal-cell" style="background:${bg};${ring}"${holidayTitle} onclick="calendarDaySheet('${c.key}')" role="button" tabindex="0">
         <span class="cal-day">${c.day}</span>
-        ${c.mood ? `<span style="position:absolute;top:3px;right:3px;font-size:11px;line-height:1;opacity:0.85">${c.mood}</span>` : ''}
+        ${c.mood ? `<span style="position:absolute;top:3px;right:3px;font-size:11px;line-height:1;opacity:0.85">${c.mood}</span>` : holidayEmoji}
         ${dots ? `<span class="cal-dots">${dots}</span>` : ""}
       </div>
     `;
@@ -21474,6 +21727,7 @@ function renderCalendar() {
         <div style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:var(--blue)"></span>note</div>
         <div style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:#0ea5e9"></span>earnings</div>
         <div style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:#22d3ee"></span>ex-div</div>
+        ${DB.settings && DB.settings.hideFederalHolidays ? "" : '<div style="display:flex;align-items:center;gap:5px"><span style="width:7px;height:7px;border-radius:50%;background:#ef4444"></span>US holiday</div>'}
       </div>
     `}
   `;
@@ -21530,7 +21784,25 @@ function _agendaViewHtml() {
       onclick: `calendarDaySheet(${jsAttr(d.date)})`,
     });
   }
-  // 4) Life events that haven't happened yet (future-dated). Pulls from
+  // 4) US federal holidays (next 60 days, current + next year coverage).
+  //    Suppressed when hideFederalHolidays is on.
+  if (!(DB.settings && DB.settings.hideFederalHolidays)) {
+    const curYear = today.getFullYear();
+    const holidays = { ..._USFederalHolidays(curYear), ..._USFederalHolidays(curYear + 1) };
+    for (const [k, h] of Object.entries(holidays)) {
+      const daysOut = Math.round((new Date(k + "T00:00:00") - today) / 86400000);
+      if (daysOut < 0 || daysOut > horizon) continue;
+      items.push({
+        date: k,
+        emoji: h.emoji || "🇺🇸",
+        title: h.name,
+        sub: "US federal holiday",
+        color: "#ef4444",
+        onclick: `calendarDaySheet(${jsAttr(k)})`,
+      });
+    }
+  }
+  // 5) Life events that haven't happened yet (future-dated). Pulls from
   //    both DB.lifeEvents (the canonical store) and the legacy
   //    DB.nwAnnotations so old data still shows.
   const allLifeEvents = [
@@ -21756,6 +22028,14 @@ function renderSettings() {
           })()}</div>
         </div>
         <div class="trail chev"></div>
+      </div>
+      <div class="row">
+        <div class="lead">🇺🇸</div>
+        <div class="body">
+          <div class="t1">Show US federal holidays</div>
+          <div class="t2">Marks holidays on the Calendar month + agenda views</div>
+        </div>
+        <input type="checkbox" ${DB.settings && DB.settings.hideFederalHolidays ? "" : "checked"} onchange="toggleFederalHolidays()" style="width:50px;height:30px" />
       </div>
     </div>
 
@@ -36718,6 +36998,8 @@ function init() {
     _exportEncrypted, _exportPlaintext, _doExportEncrypted, _friendlyApiError,
     haptic,
     splitTransactionSheet, _renderSplitSheet, _commitSplit,
+    _stocksPortfolioYtdReturn, _stocksFetchBenchmark, _stocksRecordTickerYtd,
+    _USFederalHolidays, _holidaysForMonth, _holidayForDate, toggleFederalHolidays,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, disableEncryptionSheet, showLockScreen,
     setPassphrase, unlockWithPassphrase, disablePassphrase, encryptObject, decryptObject, deriveKey,
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,
