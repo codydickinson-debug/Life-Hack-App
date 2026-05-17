@@ -2182,6 +2182,8 @@ const DEFAULT_DB = {
     _settingsShowAll: false,  // when false, Settings hides niche/power-user sections behind a single 'Show all settings' toggle in the Advanced section
     _wealthShowTools: false,  // when false, Money → Wealth hides Priority Pyramid / Investing / Tax / Calculators / Cards / Learn behind a single 'Show learning & tools' tap
     _spendShowAccounts: false, // when false, Money → Spend hides Accounts/Holdings/Debts cards (they live on Wealth) behind a tap so the spend list isn't buried
+    _stocksShowAllTools: false, // when false, Stocks → Research tools shows only the 5 essentials (advisor, scan, screener, compare, guided start) and tucks the remaining 20 behind a 'Show all research tools' tap
+    _planShowTools: false,    // when false, Plan tab tucks the What-if simulator, credit-card matches, and savings-opportunities card behind a single 'Explore scenarios & ideas' tap so the user's actual plans are the focus
     dismissedLeaks: {},       // { 'YYYY-MM': [category, ...] } — spend-leak suggestions the user has dismissed for that month
     dismissedRecurring: [],   // [string] — detected-recurring suggestion keys the user has dismissed
   },
@@ -8197,9 +8199,18 @@ function renderPlanning() {
     ${planHealthCardHtml()}
     ${counselorCta}
     ${renderRoadmapsSection()}
-    ${cardRecsCallout}
-    ${whatIfCardHtml()}
-    ${savingsOpportunitiesCardHtml()}
+    ${DB.settings._planShowTools ? `
+      ${cardRecsCallout}
+      ${whatIfCardHtml()}
+      ${savingsOpportunitiesCardHtml()}
+      <div class="row tappable" onclick="DB.settings._planShowTools=false;save();renderPlanning()" role="button" tabindex="0" style="background:transparent;border:none;color:var(--t3);font-size:12px;text-align:center;padding:8px;margin:-6px 0 8px;cursor:pointer">
+        <div style="flex:1;text-align:center">Hide scenarios &amp; ideas ↑</div>
+      </div>
+    ` : `
+      <div class="row tappable" onclick="DB.settings._planShowTools=true;save();renderPlanning()" role="button" tabindex="0" style="background:var(--card);border:0.5px dashed var(--sep);border-radius:var(--r);padding:14px 16px;margin:0 0 14px;color:var(--t2);font-size:13px;text-align:center;cursor:pointer">
+        <div style="flex:1;text-align:center">🔮 Explore scenarios &amp; ideas <span style="color:var(--t3);font-size:11.5px">— what-if simulator, card matches, savings ideas</span></div>
+      </div>
+    `}
     ${sections}
   `;
   // Populate the what-if cells with their initial values (they ship as "…"
@@ -11451,9 +11462,14 @@ function renderStocks() {
     <!-- Holdings list -->
     <div id="stk-holdings-wrap"></div>
 
-    <!-- Market scan + housing/mortgage links -->
+    <!-- Research tools — 5 essentials always visible; full 25-row toolkit hidden behind a tap so the section doesn't dominate the page. -->
     <div class="section-h" style="margin-top:14px"><span class="lbl">Research tools</span></div>
     <div class="list">
+      <div class="row tappable" onclick="cornileusAdvisorSheet()" role="button" tabindex="0" style="background:linear-gradient(135deg,rgba(124,58,237,0.10),rgba(236,72,153,0.06));border-left:3px solid #7c3aed">
+        <div class="lead">✨</div>
+        <div class="body"><div class="t1">Cornileus as your advisor</div><div class="t2">Full financial review · this month / quarter / year action plan</div></div>
+        <div class="trail chev"></div>
+      </div>
       <div class="row tappable" onclick="marketScanSheet()" role="button" tabindex="0">
         <div class="lead">🔍</div>
         <div class="body"><div class="t1">Market scan</div><div class="t2">Scan S&amp;P 500, ETFs, REITs — find buys/sells across hundreds of tickers</div></div>
@@ -11469,6 +11485,12 @@ function renderStocks() {
         <div class="body"><div class="t1">Compare tickers</div><div class="t2">Side-by-side metrics for any two stocks</div></div>
         <div class="trail chev"></div>
       </div>
+      <div class="row tappable" onclick="startInvestingSheet()" role="button" tabindex="0" style="background:linear-gradient(135deg,rgba(14,165,233,0.10),rgba(124,58,237,0.06));border-left:3px solid #0ea5e9">
+        <div class="lead">🚀</div>
+        <div class="body"><div class="t1">Start investing — guided</div><div class="t2">Pick a starter portfolio · risk quiz · compound interest visualizer</div></div>
+        <div class="trail chev"></div>
+      </div>
+      ${DB.settings._stocksShowAllTools ? `
       <div class="row tappable" onclick="earningsCalendarSheet()" role="button" tabindex="0">
         <div class="lead">📅</div>
         <div class="body"><div class="t1">Upcoming earnings</div><div class="t2">Next earnings dates across your watchlist + holdings</div></div>
@@ -11494,11 +11516,6 @@ function renderStocks() {
         <div class="body"><div class="t1">Cornileus weekly digest</div><div class="t2">AI commentary on what changed for you this week</div></div>
         <div class="trail chev"></div>
       </div>
-      <div class="row tappable" onclick="cornileusAdvisorSheet()" role="button" tabindex="0" style="background:linear-gradient(135deg,rgba(124,58,237,0.10),rgba(236,72,153,0.06));border-left:3px solid #7c3aed">
-        <div class="lead">✨</div>
-        <div class="body"><div class="t1">Cornileus as your advisor</div><div class="t2">Full financial review · this month / quarter / year action plan</div></div>
-        <div class="trail chev"></div>
-      </div>
       <div class="row tappable" onclick="planBuilderSheet()" role="button" tabindex="0">
         <div class="lead">📐</div>
         <div class="body"><div class="t1">Build a plan</div><div class="t2">$X by age Y → compound math + chart + AI explanation</div></div>
@@ -11507,11 +11524,6 @@ function renderStocks() {
       <div class="row tappable" onclick="learnLibrarySheet()" role="button" tabindex="0">
         <div class="lead">🎓</div>
         <div class="body"><div class="t1">Learn the basics</div><div class="t2">P/E, beta, RSI, dividends — explained plainly</div></div>
-        <div class="trail chev"></div>
-      </div>
-      <div class="row tappable" onclick="startInvestingSheet()" role="button" tabindex="0" style="background:linear-gradient(135deg,rgba(14,165,233,0.10),rgba(124,58,237,0.06));border-left:3px solid #0ea5e9">
-        <div class="lead">🚀</div>
-        <div class="body"><div class="t1">Start investing — guided</div><div class="t2">Pick a starter portfolio · risk quiz · compound interest visualizer</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="compoundVisualSheet()" role="button" tabindex="0">
@@ -11579,6 +11591,14 @@ function renderStocks() {
         <div class="body"><div class="t1">Financial news</div><div class="t2">Aggregated headlines from major publications</div></div>
         <div class="trail chev"></div>
       </div>
+      <div class="row tappable" onclick="DB.settings._stocksShowAllTools=false;save();renderStocks()" role="button" tabindex="0" style="background:transparent;border:none;color:var(--t3);font-size:12px;text-align:center;padding:8px;cursor:pointer">
+        <div style="flex:1;text-align:center">Hide extra tools ↑</div>
+      </div>
+      ` : `
+      <div class="row tappable" onclick="DB.settings._stocksShowAllTools=true;save();renderStocks()" role="button" tabindex="0" style="background:var(--card);border:0.5px dashed var(--sep);color:var(--t2);font-size:13px;text-align:center;padding:14px;cursor:pointer">
+        <div style="flex:1;text-align:center">🧰 Show all research tools <span style="color:var(--t3);font-size:11.5px">— 20 more: earnings, alerts, dividends, taxes, plans, CSV…</span></div>
+      </div>
+      `}
     </div>
   `;
 
