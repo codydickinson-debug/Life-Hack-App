@@ -2179,6 +2179,8 @@ const DEFAULT_DB = {
     recentSearches: [],       // [string] last 6 queries from global search, newest first
     _achievementsSeen: [],    // [string] — achievement ids the user has been shown the unlock toast for, to suppress re-firing
     _todayDefaultsApplied: false, // one-shot flag: when false, Today's first render hides advanced sections via Customize-Today defaults
+    _settingsShowAll: false,  // when false, Settings hides niche/power-user sections behind a single 'Show all settings' toggle in the Advanced section
+    _wealthShowTools: false,  // when false, Money → Wealth hides Priority Pyramid / Investing / Tax / Calculators / Cards / Learn behind a single 'Show learning & tools' tap
     dismissedLeaks: {},       // { 'YYYY-MM': [category, ...] } — spend-leak suggestions the user has dismissed for that month
     dismissedRecurring: [],   // [string] — detected-recurring suggestion keys the user has dismissed
   },
@@ -10016,20 +10018,30 @@ function renderMoney() {
           </div>
         `;
       })()}
-      <div id="wh-pyramid"></div>
-      ${pyramidSummary}
       <div id="wh-projections"></div>
       ${projectionsSection}
-      <div id="wh-investing"></div>
-      ${allocationEntry}
-      <div id="wh-tax"></div>
-      ${taxSummary}
-      <div id="wh-tools"></div>
-      ${decisionTools}
-      <div id="wh-cards"></div>
-      ${cardsEntry}
-      <div id="wh-learn"></div>
-      ${learnEntry}
+
+      ${DB.settings._wealthShowTools ? `
+        <div id="wh-pyramid"></div>
+        ${pyramidSummary}
+        <div id="wh-investing"></div>
+        ${allocationEntry}
+        <div id="wh-tax"></div>
+        ${taxSummary}
+        <div id="wh-tools"></div>
+        ${decisionTools}
+        <div id="wh-cards"></div>
+        ${cardsEntry}
+        <div id="wh-learn"></div>
+        ${learnEntry}
+        <div class="row tappable" onclick="DB.settings._wealthShowTools=false;save();renderMoney()" role="button" tabindex="0" style="background:transparent;border:none;color:var(--t3);font-size:12px;text-align:center;padding:8px;margin:4px 0 14px;cursor:pointer;text-align:center">
+          <div style="flex:1;text-align:center">Hide learning &amp; tools ↑</div>
+        </div>
+      ` : `
+        <div class="row tappable" onclick="DB.settings._wealthShowTools=true;save();renderMoney()" role="button" tabindex="0" style="background:var(--card);border:0.5px dashed var(--sep);border-radius:var(--r);padding:14px 16px;margin:6px 0 14px;color:var(--t2);font-size:13px;text-align:center;cursor:pointer">
+          <div style="flex:1;text-align:center">📚 Show learning &amp; tools <span style="color:var(--t3);font-size:11.5px">— pyramid, investing, taxes, calculators, cards, lessons</span></div>
+        </div>
+      `}
 
       <div id="wh-assets"></div>
       ${(() => {
@@ -10540,9 +10552,8 @@ function renderMoney() {
               : emptyStateHtml({
                   emoji: "💳",
                   title: "Log your first spend",
-                  sub: "Tap the form above for a quick entry, or connect a bank in Settings to auto-import everything.",
-                  primary: { label: "📷 Scan a receipt", onclick: "quickAddSpendSheet()" },
-                  secondary: { label: "+ Quick add", onclick: "quickAddSpendSheet()" },
+                  sub: "Tap the form above to add one manually.",
+                  primary: { label: "+ Add a spend", onclick: "quickAddSpendSheet()" },
                 });
           }
           // Pagination: default to 40 visible, user can tap "Show more"
@@ -21519,6 +21530,7 @@ function renderSettings() {
       </div>
     </div>
 
+    ${DB.settings._settingsShowAll ? `
     <div class="section-h"><span class="lbl">Stocks</span></div>
     <div class="list">
       ${(() => {
@@ -21558,6 +21570,7 @@ function renderSettings() {
         <div class="trail chev"></div>
       </div>
     </div>
+    ` : ""}
 
     <div class="section-h"><span class="lbl">Reminders &amp; notifications</span></div>
     <div class="list">
@@ -21842,6 +21855,7 @@ function renderSettings() {
       </div>
     ` : ""}
 
+    ${DB.settings._settingsShowAll ? `
     <div class="section-h"><span class="lbl">Year review</span></div>
     <div class="list">
       <div class="row tappable" onclick="yearReviewSheet()">
@@ -21869,6 +21883,7 @@ function renderSettings() {
         </div>
       `).join("") : `<div class="row"><div class="body"><div class="t2 muted">Add rent, subscriptions, paycheck, etc. — used to compute Safe-to-spend.</div></div></div>`}
     </div>
+    ` : ""}
 
     <div id="sec-privacy"></div>
     <div class="section-h"><span class="lbl">Privacy & encryption</span></div>
@@ -21902,6 +21917,7 @@ function renderSettings() {
       ` : ""}
     </div>
 
+    ${DB.settings._settingsShowAll ? `
     <div class="section-h"><span class="lbl">Safe-to-spend</span></div>
     <div class="list">
       <div class="row">
@@ -21927,6 +21943,7 @@ function renderSettings() {
       `).join("") || `<div class="row"><div class="body"><div class="t2 muted">A short note each day. They compound. Encrypted with the rest of your data.</div></div></div>`}
       ${(DB.reflections||[]).length > 3 ? `<div class="row"><div class="body"><div class="t2 muted">${DB.reflections.length - 3} more saved</div></div></div>` : ""}
     </div>
+    ` : ""}
 
     <div class="section-h"><span class="lbl">Recommend to someone</span></div>
     <div class="list">
@@ -21937,6 +21954,7 @@ function renderSettings() {
       </div>
     </div>
 
+    ${DB.settings._settingsShowAll ? `
     <div class="section-h"><span class="lbl">Celebrations</span></div>
     <div class="list">
       <div class="row">
@@ -21946,6 +21964,7 @@ function renderSettings() {
           onchange="DB.settings.celebrationsEnabled=this.checked;save()" style="width:50px;height:30px" />
       </div>
     </div>
+    ` : ""}
 
     <div id="sec-advanced"></div>
     <div class="section-h"><span class="lbl">Advanced</span></div>
@@ -21956,8 +21975,15 @@ function renderSettings() {
         <input type="checkbox" ${DB.settings.advancedFeaturesEnabled?'checked':''}
           onchange="DB.settings.advancedFeaturesEnabled=this.checked;save();render()" style="width:50px;height:30px" />
       </div>
+      <div class="row">
+        <div class="lead">📋</div>
+        <div class="body"><div class="t1">Show all settings</div><div class="t2">Reveal niche power-user sections: Stocks tab visibility, Year review, Recurring transactions, Safe-to-spend, Reflections, Celebrations, Demo data</div></div>
+        <input type="checkbox" ${DB.settings._settingsShowAll?'checked':''}
+          onchange="DB.settings._settingsShowAll=this.checked;save();render()" style="width:50px;height:30px" />
+      </div>
     </div>
 
+    ${DB.settings._settingsShowAll ? `
     <div class="section-h"><span class="lbl">Demo data</span></div>
     <div class="list">
       <div class="row tappable" onclick="loadDemoData()">
@@ -21966,6 +21992,7 @@ function renderSettings() {
         <div class="trail chev"></div>
       </div>
     </div>
+    ` : ""}
 
     <div class="section-h"><span class="lbl">Help</span></div>
     <div class="list">
