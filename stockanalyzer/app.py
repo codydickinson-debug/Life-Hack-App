@@ -14,7 +14,9 @@ browser window automatically.
 from __future__ import annotations
 
 import json
+import logging
 import os
+import re
 import threading
 import time
 import webbrowser
@@ -34,6 +36,43 @@ import mortgages
 import news
 
 app = Flask(__name__, static_url_path="/stockanalyzer-static")
+
+# Configure a real logger so we can record full error context server-side
+# while only returning generic messages to clients (prevents info-leakage
+# of library internals, file paths, and upstream details).
+_log = logging.getLogger("stockanalyzer")
+if not _log.handlers:
+    _log.setLevel(logging.INFO)
+    _h = logging.StreamHandler()
+    _h.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    _log.addHandler(_h)
+
+
+# Strict allowlist for ticker symbols reaching yfinance — defends against
+# SSRF/path-traversal attempts where a maliciously crafted path segment
+# could compose unexpected URLs inside yfinance. Yahoo tickers fit this:
+# uppercase letters, digits, dot, dash, caret (for indices like ^GSPC),
+# and equals (for futures like ES=F). 1–10 chars.
+_TICKER_RE = re.compile(r"^[A-Z0-9.\-^=]{1,10}$")
+
+
+def _valid_ticker(s):
+    """Return upper-cased ticker if valid, else None."""
+    if not s or not isinstance(s, str):
+        return None
+    up = s.strip().upper()
+    return up if _TICKER_RE.match(up) else None
+
+
+def _err(public_message, exc=None, status=500):
+    """Log full exception details server-side, return a generic message to
+    the client. Prevents leakage of stack traces, library internals, and
+    upstream service payloads through error responses."""
+    if exc is not None:
+        _log.exception("%s: %s", public_message, exc)
+    else:
+        _log.error(public_message)
+    return jsonify({"error": public_message}), status
 
 
 def _norm_yield(y):
@@ -132,6 +171,11 @@ def api_scan():
         account = float(request.args.get("account", 10000))
     except ValueError:
         account = 10000.0
+    # Clamp to a sane range — float("1e308") parses without error and would
+    # propagate Infinity/NaN through downstream multiplications in decide().
+    if not (account == account):  # NaN check
+        account = 10000.0
+    account = max(0.0, min(1_000_000_000.0, account))
     period = request.args.get("period", "5y")
     universe_name = request.args.get("universe", "stocks")
     universe = list(get_universe(universe_name))
@@ -187,13 +231,16 @@ def api_news():
     try:
         return jsonify(news.get_news(source_ids=source_ids, limit=limit, force_refresh=force))
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("news fetch failed", e)
 
 
 @app.route("/api/quote/<ticker>")
 def api_quote(ticker):
     """Lightweight current-price + 1d-change quote (no full pillar analysis)."""
     import yfinance as yf
+    ticker = _valid_ticker(ticker)
+    if not ticker:
+        return jsonify({"error": "invalid ticker format"}), 400
     try:
         t = yf.Ticker(ticker)
         df = t.history(period="5d", auto_adjust=True)
@@ -222,6 +269,9 @@ def api_quote_full(ticker):
     Cached by yfinance so repeat calls within a few minutes are fast.
     """
     import yfinance as yf
+    ticker = _valid_ticker(ticker)
+    if not ticker:
+        return jsonify({"error": "invalid ticker format"}), 400
     try:
         t = yf.Ticker(ticker)
         # 1-year history (used for 52-week range + 30-day sparkline + 1y chart)
@@ -326,6 +376,9 @@ def api_ticker_broker(ticker):
     on the Vercel side via Cache-Control headers.
     """
     import yfinance as yf
+    ticker = _valid_ticker(ticker)
+    if not ticker:
+        return jsonify({"error": "invalid ticker format"}), 400
     try:
         t = yf.Ticker(ticker)
         # 5y daily — covers all timeframes we need to slice
@@ -588,6 +641,9 @@ def api_forecast(ticker):
     """
     import yfinance as yf
     import math, random
+    ticker = _valid_ticker(ticker)
+    if not ticker:
+        return jsonify({"error": "invalid ticker format"}), 400
     try:
         months = max(3, min(60, int(request.args.get("months", 24))))
     except ValueError:
@@ -785,7 +841,8 @@ def api_dividends_calendar():
     tickers_arg = (request.args.get("tickers") or "").strip()
     if not tickers_arg:
         return jsonify({"error": "tickers query param required"}), 400
-    tickers = [t.strip().upper() for t in tickers_arg.split(",") if t.strip()][:30]
+    tickers = [_valid_ticker(t) for t in tickers_arg.split(",")[:30]]
+    tickers = [t for t in tickers if t]
     out = {}
     def lookup(tk):
         try:
@@ -828,6 +885,9 @@ def api_etf_holdings(ticker):
       expense_ratio, total_assets, ytd_return
     """
     import yfinance as yf
+    ticker = _valid_ticker(ticker)
+    if not ticker:
+        return jsonify({"error": "invalid ticker format"}), 400
     try:
         t = yf.Ticker(ticker)
         info = {}
@@ -893,6 +953,9 @@ def api_holders(ticker):
     via yfinance — same data Yahoo Finance shows on the Holders tab.
     """
     import yfinance as yf
+    ticker = _valid_ticker(ticker)
+    if not ticker:
+        return jsonify({"error": "invalid ticker format"}), 400
     out = {"institutional": [], "mutual_funds": [], "insider_tx": [], "insider_roster": []}
     try:
         t = yf.Ticker(ticker)
@@ -959,6 +1022,9 @@ def api_news_ticker(ticker):
     Each item: {title, publisher, url, published, summary?, thumbnail?}.
     """
     import yfinance as yf
+    ticker = _valid_ticker(ticker)
+    if not ticker:
+        return jsonify({"error": "invalid ticker format"}), 400
     try:
         t = yf.Ticker(ticker)
         raw_news = []
@@ -1022,6 +1088,9 @@ def api_peers(ticker):
     do a coarse sector/industry-based pick from a hand-built S&P 500 +
     ETF list. Returns up to 6 peers."""
     import yfinance as yf
+    ticker = _valid_ticker(ticker)
+    if not ticker:
+        return jsonify({"error": "invalid ticker format"}), 400
     try:
         t = yf.Ticker(ticker)
         info = {}
@@ -1075,7 +1144,8 @@ def api_earnings_batch():
     tickers_arg = (request.args.get("tickers") or "").strip()
     if not tickers_arg:
         return jsonify({"error": "tickers query param required"}), 400
-    tickers = [t.strip().upper() for t in tickers_arg.split(",") if t.strip()][:30]
+    tickers = [_valid_ticker(t) for t in tickers_arg.split(",")[:30]]
+    tickers = [t for t in tickers if t]
     out = {}
     def lookup(tk):
         try:
@@ -1263,7 +1333,8 @@ def api_quote_batch():
     tickers_arg = (request.args.get("tickers") or "").strip()
     if not tickers_arg:
         return jsonify({"error": "tickers query param required"}), 400
-    tickers = [t.strip().upper() for t in tickers_arg.split(",") if t.strip()][:25]
+    tickers = [_valid_ticker(t) for t in tickers_arg.split(",")[:25]]
+    tickers = [t for t in tickers if t]
     out = {}
     for tk in tickers:
         try:

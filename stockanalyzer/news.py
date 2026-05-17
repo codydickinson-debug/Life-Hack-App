@@ -23,10 +23,26 @@ import html
 import re
 import threading
 import time
-import xml.etree.ElementTree as ET
 from concurrent.futures import ThreadPoolExecutor
 from email.utils import parsedate_to_datetime
 from urllib.request import Request, urlopen
+
+# defusedxml hardens stdlib's XML parser against billion-laughs and
+# external-entity attacks — important since we're parsing third-party
+# RSS feeds, any one of which could be compromised. Falls back to the
+# stdlib parser if defusedxml isn't installed (development convenience),
+# with a runtime warning so the operator notices.
+try:
+    from defusedxml import ElementTree as ET  # noqa: N812
+except ImportError:
+    import xml.etree.ElementTree as ET  # noqa: N812
+    import warnings
+    warnings.warn(
+        "defusedxml not installed — falling back to xml.etree which is vulnerable "
+        "to malicious feeds. Install defusedxml in production.",
+        RuntimeWarning,
+        stacklevel=2,
+    )
 
 
 # ---------------------------------------------------------------------
@@ -39,7 +55,7 @@ SOURCES = [
     {"id": "cnbc",        "name": "CNBC",              "url": "https://www.cnbc.com/id/100003114/device/rss/rss.html",        "color": "#cc0000"},
     {"id": "nyt",         "name": "NYT Business",      "url": "https://rss.nytimes.com/services/xml/rss/nyt/Business.xml",    "color": "#1a1a1a"},
     {"id": "bloomberg",   "name": "Bloomberg Markets", "url": "https://feeds.bloomberg.com/markets/news.rss",                 "color": "#ff5500"},
-    {"id": "marketwatch", "name": "MarketWatch",       "url": "http://feeds.marketwatch.com/marketwatch/topstories",          "color": "#0067a5"},
+    {"id": "marketwatch", "name": "MarketWatch",       "url": "https://feeds.marketwatch.com/marketwatch/topstories",         "color": "#0067a5"},
     {"id": "investing",   "name": "Investing.com",     "url": "https://www.investing.com/rss/news.rss",                       "color": "#e93f33"},
 ]
 
