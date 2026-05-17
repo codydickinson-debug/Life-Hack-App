@@ -2456,6 +2456,51 @@ function _parseDb(raw) {
   if (Array.isArray(merged.investmentTransactions) && merged.investmentTransactions.length > 2000) {
     merged.investmentTransactions = merged.investmentTransactions.slice(0, 2000);
   }
+  // Memory-cap unbounded arrays that grow with user activity. Anything
+  // older/lower-priority than these limits is auto-pruned on load so a
+  // long-time user's DB doesn't bloat past localStorage's ~5MB cap.
+  // Caps kept conservative — most users won't hit them in years.
+  if (Array.isArray(merged.spend) && merged.spend.length > 10000) {
+    // Keep newest 10k by date. Sort descending then slice; preserves Plaid
+    // ordering well enough since dates are ISO strings.
+    merged.spend = merged.spend
+      .slice()
+      .sort((a, b) => String(b && b.date || "").localeCompare(String(a && a.date || "")))
+      .slice(0, 10000);
+  }
+  if (merged.stocks && Array.isArray(merged.stocks.realizedPL) && merged.stocks.realizedPL.length > 500) {
+    merged.stocks.realizedPL = merged.stocks.realizedPL.slice(-500);
+  }
+  // Prune stale triggered price alerts (>30d old) so the alerts array
+  // doesn't grow forever on every quote refresh.
+  if (merged.stocks && Array.isArray(merged.stocks.alerts)) {
+    const cutoff = Date.now() - 30 * 86400000;
+    merged.stocks.alerts = merged.stocks.alerts.filter(a => {
+      if (!a) return false;
+      if (!a.triggeredAt) return true; // not yet triggered — keep
+      return a.triggeredAt >= cutoff;  // triggered but recent — keep
+    });
+  }
+  if (Array.isArray(merged.dismissedRecurring) && merged.dismissedRecurring.length > 500) {
+    merged.dismissedRecurring = merged.dismissedRecurring.slice(-500);
+  }
+  if (Array.isArray(merged.pendingDeposits) && merged.pendingDeposits.length > 200) {
+    merged.pendingDeposits = merged.pendingDeposits.slice(-200);
+  }
+  // User-driven slow-growth arrays — capped generously so the cap is
+  // never hit in practice but the worst-case is bounded.
+  const slowCaps = [
+    ["wishlist", 200],
+    ["lifeEvents", 200],
+    ["purchaseRegrets", 200],
+    ["careerHistory", 200],
+    ["paperTrades", 200],
+  ];
+  for (const [k, cap] of slowCaps) {
+    if (Array.isArray(merged[k]) && merged[k].length > cap) {
+      merged[k] = merged[k].slice(-cap);
+    }
+  }
   // Migration: drop the legacy top-level cornileusFollowups if any user save
   // still carries it. Real ones live on counselor.followups.
   if ("cornileusFollowups" in merged) delete merged.cornileusFollowups;
@@ -5616,10 +5661,18 @@ function _suggestedWins() {
     const s = streakOf(h);
     if (MS.includes(s)) out.push(`${s}-day ${h.name} streak`);
   });
-  // 3. Savings logged today
+  // 3. Savings logged today — scan from the end (latest entries land last)
+  // so the typical hit is O(1) instead of O(log-length) per saving.
   (DB.savings || []).forEach(s => {
     if (out.length >= 3) return;
-    const todayLog = (s.log || []).find(l => l.date === k);
+    const log = s.log || [];
+    let todayLog = null;
+    for (let i = log.length - 1; i >= 0; i--) {
+      if (log[i] && log[i].date === k) { todayLog = log[i]; break; }
+      // Logs aren't strictly date-sorted but newest is conventionally last —
+      // bail after 30 back-entries to keep worst-case bounded.
+      if (i < log.length - 30) break;
+    }
     if (todayLog && (+todayLog.amount || 0) > 0) out.push(`Added ${fmt$0(+todayLog.amount)} to ${s.name}`);
   });
   // 4. Goal completed today
@@ -19826,8 +19879,19 @@ async function _stocksAddTicker(raw) {
 
 async function _stocksRemoveTicker(tk) {
   if (!DB.stocks || !Array.isArray(DB.stocks.watchlist)) return;
+  // Only purge per-ticker caches if the ticker is also gone from holdings —
+  // a user might watchlist-remove a stock they still own, in which case the
+  // dividend/earnings data is still useful elsewhere.
+  const stillHeld = !!(DB.stocks.holdings && DB.stocks.holdings[tk] && +DB.stocks.holdings[tk].shares > 0);
   DB.stocks.watchlist = DB.stocks.watchlist.filter(x => x !== tk);
-  if (DB.stocks.quoteCache) delete DB.stocks.quoteCache[tk];
+  if (!stillHeld) {
+    if (DB.stocks.quoteCache)    delete DB.stocks.quoteCache[tk];
+    if (DB.stocks.dividendCache) delete DB.stocks.dividendCache[tk];
+    if (DB.stocks.earningsCache) delete DB.stocks.earningsCache[tk];
+    if (DB.stocks.exDivCache)    delete DB.stocks.exDivCache[tk];
+    if (DB.stocks.ytdByTicker)   delete DB.stocks.ytdByTicker[tk];
+    if (DB.stocks.explainCache)  delete DB.stocks.explainCache[tk];
+  }
   await save();
   _stocksRenderWatchlist();
 }
@@ -23103,28 +23167,37 @@ function _setupCompactSettings() {
   // changing section order doesn't lose state.
   const openSet = new Set((DB.settings && DB.settings._openSettingsSections) || []);
   const headers = page.querySelectorAll(".section-h");
-  headers.forEach(h => {
+  for (let i = 0; i < headers.length; i++) {
+    const h = headers[i];
     const lblEl = h.querySelector(".lbl");
-    if (!lblEl) return;
+    if (!lblEl) continue;
     const key = (lblEl.textContent || "").trim().toLowerCase().slice(0, 80);
-    if (!key) return;
+    if (!key) continue;
     if (openSet.has(key)) h.classList.add("open");
-    // Avoid double-binding on re-render — strip any prior listener via cloneNode.
-    if (h.dataset.compactBound === "1") return;
-    h.dataset.compactBound = "1";
-    h.addEventListener("click", (e) => {
-      // Don't toggle when the user is clicking an inline action button or
-      // an input inside the header (eg. "+ Add", checkboxes).
+    h.dataset.compactKey = key;
+  }
+  // Bind ONE delegated listener on the page element instead of 25 per-header
+  // listeners. Saves ~24 addEventListener calls per renderSettings (cheap each
+  // but they add up on rapid setting toggles). Guarded so we never bind twice.
+  if (page.dataset.compactDelegateBound !== "1") {
+    page.dataset.compactDelegateBound = "1";
+    page.addEventListener("click", (e) => {
+      // Only active in compact mode — exit fast if the user toggled it off.
+      if (!page.classList.contains("settings-compact")) return;
+      const h = e.target && e.target.closest && e.target.closest(".section-h");
+      if (!h || !page.contains(h)) return;
+      // Don't toggle when clicking inline action buttons / inputs inside the header.
       const t = e.target;
-      if (t && t.closest && (t.closest(".act") || t.tagName === "INPUT" || t.tagName === "BUTTON" || t.tagName === "SELECT")) return;
+      if (t.closest(".act") || t.tagName === "INPUT" || t.tagName === "BUTTON" || t.tagName === "SELECT") return;
+      const key = h.dataset.compactKey;
+      if (!key) return;
       h.classList.toggle("open");
-      // Persist
       const cur = new Set((DB.settings && DB.settings._openSettingsSections) || []);
       if (h.classList.contains("open")) cur.add(key); else cur.delete(key);
       DB.settings._openSettingsSections = Array.from(cur);
       try { save(); } catch {}
     });
-  });
+  }
 }
 
 function toggleCompactSettings(on) {
@@ -24302,6 +24375,13 @@ function nextRecurringDate(r) {
 }
 
 function upcomingBills(daysAhead = 7) {
+  // Render-scoped memo — Money/Today/Calendar/forecast/push triggers each
+  // call this multiple times per render. Cache by daysAhead so different
+  // horizons (0, 2, 7, 14, 30, 60) still produce correct results.
+  if (typeof _renderMemo === "object") {
+    const ck = "upcomingBills:" + daysAhead;
+    if (ck in _renderMemo) return _renderMemo[ck];
+  }
   const today = new Date();
   const todayStart = new Date(today.getFullYear(), today.getMonth(), today.getDate());
   const out = [];
@@ -24344,7 +24424,9 @@ function upcomingBills(daysAhead = 7) {
     });
   }
 
-  return out.sort((a,b) => a.days - b.days);
+  out.sort((a,b) => a.days - b.days);
+  if (typeof _renderMemo === "object") _renderMemo["upcomingBills:" + daysAhead] = out;
+  return out;
 }
 function dismissBill(key, date) {
   if (!DB.dismissedBills) DB.dismissedBills = {};
@@ -27900,6 +27982,13 @@ function liabilitySheet(existing) {
 
 /* ================ SUBSCRIPTIONS + NET WORTH ================ */
 function detectSubscriptions() {
+  // Render-scoped memo — this is the single biggest cost on the Money
+  // tab (scans every Plaid tx + groups them) and gets called transitively
+  // by upcomingBills() multiple times per render. Cache the result so
+  // subsequent calls in the same render pass are free.
+  if (typeof _renderMemo === "object" && "detectSubscriptions" in _renderMemo) {
+    return _renderMemo.detectSubscriptions;
+  }
   // Group plaid outflows by normalized merchant key
   const plaid = (DB.spend || []).filter(t => t.source === "plaid" && (+t.amount) > 0);
   const groups = {};
@@ -27953,7 +28042,9 @@ function detectSubscriptions() {
       status,
     });
   }
-  return subs.sort((a,b) => b.monthly_cost - a.monthly_cost);
+  subs.sort((a,b) => b.monthly_cost - a.monthly_cost);
+  if (typeof _renderMemo === "object") _renderMemo.detectSubscriptions = subs;
+  return subs;
 }
 function setSubscriptionStatus(key, status) {
   if (!DB.subscriptionsMeta) DB.subscriptionsMeta = {};
