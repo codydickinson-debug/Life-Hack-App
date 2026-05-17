@@ -3018,8 +3018,8 @@ async function disablePassphrase() {
    boundary is (1) the per-device secret model and (2) the Worker's per-IP rate
    limit on /enroll. A leaked key without rate-limit-bypass capability can only
    create new user records, never read existing ones. */
-const DEFAULT_BACKEND_URL = "";       // e.g. "https://ascend-backend.your-name.workers.dev" after you wrangler deploy
-const DEFAULT_ENROLLMENT_KEY = "";    // the value you set with `wrangler secret put ENROLLMENT_KEY`. ≥32 chars.
+const DEFAULT_BACKEND_URL = "https://ascend-backend.acend.workers.dev";
+const DEFAULT_ENROLLMENT_KEY = "c7064a7834ec7445b33f4b307f7f8e57d05efe449125c3e8040cb830440a24fd";
 
 // Returns the URL we should call — user override first, then the hosted default.
 function _effectiveBackendUrl() {
