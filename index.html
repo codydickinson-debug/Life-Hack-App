@@ -36066,6 +36066,35 @@ function init() {
     DB.settings._wealthScoreMigration = true;
     save();
   }
+  // Simplify-Today migration: features piled up to 13+ sections on a single
+  // screen. For users who never customized which sections show, expand the
+  // default-hidden list so the daily glance is short and high-signal again
+  // (Daily Pulse + Wealth Score + Safe-to-Spend + Today's Spent + Habits +
+  // Wins + Counselor). Situational, nostalgic, or duplicate-of-another-tab
+  // sections start hidden. Everything is one tap away in Settings →
+  // Customize Today. Skipped if the user already curated the list.
+  if (!DB.settings._todaySimplifyMigration) {
+    const PRIOR_DEFAULT = new Set(["reminder", "moneyReflection"]);
+    const list = Array.isArray(DB.settings.hiddenTodaySections) ? DB.settings.hiddenTodaySections : [];
+    const untouched = list.length === 0 || list.every(id => PRIOR_DEFAULT.has(id));
+    if (untouched) {
+      DB.settings.hiddenTodaySections = [
+        "reminder",          // rotating quote — low signal
+        "moneyReflection",   // rotating prompt — low signal
+        "onThisDay",         // nostalgic, not actionable on a daily glance
+        "milestoneBanner",   // situational; fires only when applicable, but most days adds noise
+        "smartPlays",        // 5 money nudges — interrupts daily focus, lives in its own sheet
+        "spendLeaks",        // situational; surfaces from Money tab
+        "importantDates",    // Calendar tab is the canonical home
+        "comingUp",          // bills due — Money tab is the canonical home
+        "mood",              // nice-to-have, not core
+        "weeklyRecap",       // Sunday-only — re-enable if you want it
+        "weeklyReview",      // Sunday-only — re-enable if you want it
+      ];
+    }
+    DB.settings._todaySimplifyMigration = true;
+    save();
+  }
   if ("serviceWorker" in navigator && location.protocol.startsWith("http")) {
     navigator.serviceWorker.register("sw.js").catch(()=>{});
   }
