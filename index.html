@@ -2184,6 +2184,7 @@ const DEFAULT_DB = {
     _spendShowAccounts: false, // when false, Money → Spend hides Accounts/Holdings/Debts cards (they live on Wealth) behind a tap so the spend list isn't buried
     _stocksShowAllTools: false, // when false, Stocks → Research tools shows only the 5 essentials (advisor, scan, screener, compare, guided start) and tucks the remaining 20 behind a 'Show all research tools' tap
     _planShowTools: false,    // when false, Plan tab tucks the What-if simulator, credit-card matches, and savings-opportunities card behind a single 'Explore scenarios & ideas' tap so the user's actual plans are the focus
+    _useCustomBackend: false, // when true, reveals the manual Backend URL + Enrollment Key rows in Settings and ignores the hardcoded DEFAULT_BACKEND_URL/DEFAULT_ENROLLMENT_KEY for this device
     dismissedLeaks: {},       // { 'YYYY-MM': [category, ...] } — spend-leak suggestions the user has dismissed for that month
     dismissedRecurring: [],   // [string] — detected-recurring suggestion keys the user has dismissed
   },
@@ -2879,14 +2880,42 @@ async function disablePassphrase() {
    - This means a stolen apiKey alone can't impersonate this device; an attacker would
      also need the local clientSecret (which is encrypted along with the rest of DB
      when a passphrase is set).
-*/
+
+   Hosted defaults: when the operator deploys one Cloudflare Worker for everyone
+   (the consumer release), DEFAULT_BACKEND_URL/DEFAULT_ENROLLMENT_KEY ship with the
+   app so users don't have to configure anything. Per-device enrollment still
+   isolates users from each other in the Worker's KV (each gets their own userId
+   + clientSecret + encrypted Plaid tokens). Power users can override with their
+   own Worker via Settings → "Use a custom backend".
+
+   The enrollment key is in publicly-served JS — that's expected. The security
+   boundary is (1) the per-device secret model and (2) the Worker's per-IP rate
+   limit on /enroll. A leaked key without rate-limit-bypass capability can only
+   create new user records, never read existing ones. */
+const DEFAULT_BACKEND_URL = "";       // e.g. "https://ascend-backend.your-name.workers.dev" after you wrangler deploy
+const DEFAULT_ENROLLMENT_KEY = "";    // the value you set with `wrangler secret put ENROLLMENT_KEY`. ≥32 chars.
+
+// Returns the URL we should call — user override first, then the hosted default.
+function _effectiveBackendUrl() {
+  return (DB.settings.backendUrl || DEFAULT_BACKEND_URL || "").replace(/\/+$/, "");
+}
+// Returns the enrollment key to use on /enroll — user override first, then default.
+function _effectiveEnrollmentKey() {
+  return DB.settings.apiKey || DEFAULT_ENROLLMENT_KEY || "";
+}
+// Has the operator provided a hosted backend? Drives whether we hide the manual
+// config rows in Settings and whether _backendReady() considers the user good-to-go.
+function _hasHostedBackend() {
+  return !!(DEFAULT_BACKEND_URL && DEFAULT_ENROLLMENT_KEY);
+}
+
 function ensureUserId() {
   if (!DB.user.userId) { DB.user.userId = "u_" + uid() + uid(); _origSave(); }
   return DB.user.userId;
 }
 
 async function _apiRaw(path, opts = {}) {
-  const url = (DB.settings.backendUrl || "").replace(/\/+$/, "") + path;
+  const url = _effectiveBackendUrl() + path;
   const r = await fetch(url, opts);
   const text = await r.text();
   let body; try { body = JSON.parse(text); } catch { body = { raw: text }; }
@@ -2911,7 +2940,8 @@ async function _apiRaw(path, opts = {}) {
 }
 
 async function _enrollDevice() {
-  if (!DB.settings.apiKey) throw new Error("Backend API key not configured (paste your enrollment key in Settings)");
+  const enrollmentKey = _effectiveEnrollmentKey();
+  if (!enrollmentKey) throw new Error("Backend not configured (no enrollment key available)");
   const userId = ensureUserId();
   // Worker mints the per-device secret server-side and returns it — the
   // client no longer chooses its own credential. If the response is missing
@@ -2920,7 +2950,7 @@ async function _enrollDevice() {
   const resp = await _apiRaw("/enroll", {
     method: "POST",
     headers: {
-      "Authorization": "Bearer " + DB.settings.apiKey,
+      "Authorization": "Bearer " + enrollmentKey,
       "Content-Type": "application/json",
     },
     body: JSON.stringify({ userId }),
@@ -2928,10 +2958,10 @@ async function _enrollDevice() {
   const secret = resp && typeof resp.clientSecret === "string" ? resp.clientSecret.trim() : "";
   if (secret.length < 32) throw new Error("Enrollment failed — backend did not return a device secret. Make sure your Worker is up to date.");
   DB.user.clientSecret = secret;
-  // Enrollment succeeded — clear the operator's long-lived enrollment key from
-  // local storage. From here on, this device authenticates with its own
-  // per-device clientSecret. If the device ever needs to re-enroll (e.g. KV
-  // reset), the user pastes the enrollment key again in Settings.
+  // Enrollment succeeded — clear any user-pasted enrollment key from local
+  // storage. From here on, this device authenticates with its own per-device
+  // clientSecret. If the device ever needs to re-enroll (e.g. KV reset), the
+  // hosted default kicks back in, or the user re-pastes for a custom backend.
   DB.settings.apiKey = "";
   await save();
   return secret;
@@ -2949,7 +2979,7 @@ function _ensureEnrolled() {
 }
 
 async function api(path, opts = {}) {
-  if (!DB.settings.backendUrl) throw new Error("Backend URL not configured");
+  if (!_effectiveBackendUrl()) throw new Error("Backend URL not configured");
   ensureUserId();
   if (!DB.user.clientSecret) await _ensureEnrolled();
   const headers = Object.assign({
@@ -2959,8 +2989,10 @@ async function api(path, opts = {}) {
   try {
     return await _apiRaw(path, Object.assign({}, opts, { headers }));
   } catch (e) {
-    // _apiRaw clears clientSecret on 401; retry once to silently re-enroll.
-    if (!DB.user.clientSecret && DB.settings.apiKey) {
+    // _apiRaw clears clientSecret on 401; retry once to silently re-enroll
+    // against whatever enrollment key is currently effective (user override
+    // first, then hosted default).
+    if (!DB.user.clientSecret && _effectiveEnrollmentKey()) {
       await _ensureEnrolled();
       const headers2 = Object.assign({
         "Authorization": "Bearer " + DB.user.userId + ":" + DB.user.clientSecret,
@@ -2992,14 +3024,14 @@ async function aiApi(payload) {
       body: JSON.stringify(payload),
     });
   } catch (netErr) {
-    // Network failure to same-origin proxy — try the user's Worker if any.
-    if (DB.settings.backendUrl) return await api("/anthropic/messages", { method: "POST", body: JSON.stringify(payload) });
+    // Network failure to same-origin proxy — try the Worker as fallback.
+    if (_effectiveBackendUrl()) return await api("/anthropic/messages", { method: "POST", body: JSON.stringify(payload) });
     throw new Error("Network error reaching AI: " + (netErr.message || "fetch failed"));
   }
   const text = await r.text();
   let body; try { body = JSON.parse(text); } catch { body = { raw: text }; }
-  if (r.status === 503 && DB.settings.backendUrl) {
-    // Operator hasn't set ANTHROPIC_API_KEY on Vercel; fall back to user's Worker.
+  if (r.status === 503 && _effectiveBackendUrl()) {
+    // Operator hasn't set ANTHROPIC_API_KEY on Vercel; fall back to the Worker.
     return await api("/anthropic/messages", { method: "POST", body: JSON.stringify(payload) });
   }
   if (!r.ok) {
@@ -21621,9 +21653,15 @@ function renderSettings() {
       </div>
     </div>
 
-    ${DB.settings.advancedFeaturesEnabled ? `
+    ${(DB.settings.advancedFeaturesEnabled || _hasHostedBackend()) ? `
     <div class="section-h"><span class="lbl">Bank sync (Plaid)</span></div>
     <div class="list">
+      ${(_hasHostedBackend() && !DB.settings._useCustomBackend) ? `
+      <div class="row">
+        <div class="lead">✅</div>
+        <div class="body"><div class="t1">Bank sync ready</div><div class="t2">${DB.user.clientSecret ? "This device is enrolled — tap Connect a bank below." : "Powered by Ascend's hosted backend. No setup needed. Your access token is AES-GCM encrypted on the server, isolated per device."}</div></div>
+      </div>
+      ` : `
       <div class="row">
         <div class="lead">🔗</div>
         <div class="body"><div class="t1">Backend URL</div><div class="t2">Your Cloudflare Worker URL</div></div>
@@ -21638,6 +21676,15 @@ function renderSettings() {
           value="${esc(DB.settings.apiKey||"")}" placeholder="paste here"
           oninput="DB.settings.apiKey=this.value.replace(/[\x00-\x1F\x7F]/g,'').trim();saveDebounced()" onblur="flushPendingSave()" maxlength="500" />
       </div>
+      `}
+      ${_hasHostedBackend() ? `
+      <div class="row">
+        <div class="lead">🛠️</div>
+        <div class="body"><div class="t1">Use a custom backend</div><div class="t2">Self-host your own Cloudflare Worker instead of Ascend's hosted backend. Requires deploying backend/worker.js — see DEPLOY.md.</div></div>
+        <input type="checkbox" ${DB.settings._useCustomBackend?'checked':''}
+          onchange="DB.settings._useCustomBackend=this.checked;if(!this.checked){DB.user.clientSecret='';DB.settings.backendUrl='';DB.settings.apiKey='';}save();render()" style="width:50px;height:30px" />
+      </div>
+      ` : ""}
       <div class="row">
         <div class="lead">⚡</div>
         <div class="body"><div class="t1">Auto-sync on open</div><div class="t2">Pull new transactions when app launches</div></div>
@@ -22933,10 +22980,12 @@ function importData() {
 }
 
 /* ================ PLAID HELPERS ================ */
-// Backend is "configured" if we have the URL + either the enrollment key
-// (first-call use) OR a per-device clientSecret (already enrolled).
+// Backend is "configured" if we have an effective URL + either an effective
+// enrollment key (first-call use) OR a per-device clientSecret (already
+// enrolled). "Effective" = user override first, then hosted default — so a
+// consumer install with hardcoded DEFAULT_BACKEND_URL is ready out of the box.
 function _backendReady() {
-  return !!DB.settings.backendUrl && !!(DB.settings.apiKey || DB.user.clientSecret);
+  return !!_effectiveBackendUrl() && !!(_effectiveEnrollmentKey() || DB.user.clientSecret);
 }
 async function syncNow() {
   if (!_backendReady()) { toast("Configure backend in Settings first"); return; }
@@ -34743,7 +34792,7 @@ function dataSafetySheet() {
         ? `Your local data is AES-GCM encrypted at rest. The key is derived from your passphrase via PBKDF2-SHA256 (600,000 iterations) and held only in memory while you're using the app. <strong>If you forget the passphrase, your data is unrecoverable by design</strong> — there is no backdoor.`
         : `Set a passphrase in Settings → Security to AES-GCM encrypt everything in localStorage. Key derived via PBKDF2-SHA256 (600k iterations), held only in memory. <strong>If you forget the passphrase, your data is unrecoverable by design</strong>. Auto-lock can re-prompt after an idle period.`)}
 
-    ${card("🏦", "Bank sync (Plaid)", `When you tap "Connect a bank", your <strong>credentials go directly to Plaid</strong> — Ascend and your backend never see them. Plaid returns an access token to your Cloudflare Worker backend, which AES-GCM encrypts it with a key only the worker has before writing to Cloudflare KV. Per-device enrollment means a stolen key can't impersonate you elsewhere. Plaid's "reconnect bank" webhooks are <strong>cryptographically signed (ES256 JWT)</strong> and verified server-side before any in-app prompt — no one can spoof a fake reconnect notice. Disconnect any bank anytime in Settings — the encrypted token is deleted.`)}
+    ${card("🏦", "Bank sync (Plaid)", `When you tap "Connect a bank", your <strong>credentials go directly to Plaid</strong> — Ascend never sees them. Plaid returns an access token to Ascend's Cloudflare Worker, which AES-GCM encrypts it with a server-side key before writing to Cloudflare KV. Per-device enrollment isolates every user's token in their own KV namespace — no other Ascend user can read your data. Plaid's "reconnect bank" webhooks are <strong>cryptographically signed (ES256 JWT)</strong> and verified server-side before any in-app prompt — no one can spoof a fake reconnect notice. Disconnect any bank anytime in Settings — the encrypted token is deleted. Power users can self-host (Settings → "Use a custom backend") to keep tokens on infrastructure they fully control.`)}
 
     ${card("✨", "Cornileus (AI counselor)", `When you send Cornileus a message, your text + a snapshot of your financial situation (≤18 KB) is forwarded to Anthropic via your backend proxy. The Anthropic API key lives only on the backend. Per <a href="https://www.anthropic.com" target="_blank" rel="noopener noreferrer" style="color:var(--purple);text-decoration:underline">Anthropic's API terms</a>, inputs aren't used to train their models. Chat auto-clears when you close the counselor (you can pin to keep). Daily call cap (default 50) bounds runaway cost.`)}
 
@@ -34785,7 +34834,7 @@ function bankConnectTrustSheet() {
     <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">
       ${item("🔒", "<strong>Your bank credentials never touch Ascend.</strong> Plaid's secure window opens next; your username and password go straight to Plaid, not to us or our backend.")}
       ${item("🤝", "Plaid is the same connector used by Robinhood, Venmo, Chime, and most major fintech apps. <a href=\"https://plaid.com/safety/\" target=\"_blank\" rel=\"noopener noreferrer\" style=\"color:var(--purple);text-decoration:underline\">plaid.com/safety</a>")}
-      ${item("🛡️", "What gets stored: an <strong>encrypted access token</strong> in your Cloudflare Worker (AES-GCM, server-side key). It lets us read balances and transactions — nothing else.")}
+      ${item("🛡️", "What gets stored: an <strong>AES-GCM-encrypted access token</strong> on Ascend's Cloudflare Worker, isolated to your device's userId. It lets us read balances and transactions — nothing else. Per-device enrollment means no other user can read your data.")}
       ${item("📥", "What syncs to your phone: account balances, transactions, account names. Stored only on this device.")}
       ${item("✂️", "Disconnect anytime in Settings → Bank sync. We delete the encrypted token immediately.")}
     </div>

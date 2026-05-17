@@ -86,9 +86,14 @@ export default {
       const auth = await checkAuth(request, env, url);
       if (auth.error) return json({ error: auth.error }, auth.status || 401, allowed);
 
-      // Enrollment is gated by ENROLLMENT_KEY only
+      // Enrollment is gated by ENROLLMENT_KEY only. For consumer releases
+      // that ship the key in publicly-served JS, the security boundary is
+      // a per-IP rate limit — a leaked key without abuse capacity can only
+      // create new isolated user records, never read existing ones.
       if (url.pathname === "/enroll" && request.method === "POST") {
         if (auth.mode !== "enrollment") return json({ error: "enrollment key required" }, 401, allowed);
+        const limited = await _enrollRateGate(request, env, allowed);
+        if (limited) return limited;
         return await handleEnroll(request, env, allowed);
       }
 
@@ -1160,6 +1165,40 @@ function _isAllowedPushEndpoint(url) {
 // before any daily cap kicks in. If `perDayCap` is provided, also enforce a
 // per-UTC-day cap so an attacker can't sustain the hourly rate for 24h.
 // Returns a 429 Response if either cap is hit, else null.
+// Per-IP rate limit on /enroll. The enrollment key ships in the consumer JS
+// bundle and is functionally public; this gate is the actual security
+// boundary against mass-enrollment abuse. Caps:
+//   - 5 enrollments per IP per hour (normal users enroll once per device)
+//   - 25 per IP per day (covers device upgrades, family/friend testing, etc.)
+// Source IP is taken from CF-Connecting-IP (Cloudflare-set), falling back to
+// X-Real-IP, then the leftmost X-Forwarded-For — Cloudflare overwrites this
+// header at the edge, so it can't be spoofed by the client.
+async function _enrollRateGate(request, env, origin) {
+  const ip = (request.headers.get("CF-Connecting-IP")
+            || request.headers.get("X-Real-IP")
+            || (request.headers.get("X-Forwarded-For") || "").split(",")[0]
+            || "unknown").trim().slice(0, 64);
+  // Use a sanitized IP fragment as the KV key suffix — IPv4/IPv6 chars only.
+  const ipKey = ip.replace(/[^A-Za-z0-9:.\-]/g, "_") || "unknown";
+  const iso = new Date().toISOString();
+  const hourKey = `enroll:rl:${ipKey}:${iso.slice(0, 13)}`;
+  const dayKey  = `enroll:rl:${ipKey}:day:${iso.slice(0, 10)}`;
+  const HOUR_CAP = 5;
+  const DAY_CAP  = 25;
+  const curHour = parseInt(await env.ASCEND_KV.get(hourKey) || "0", 10) || 0;
+  if (curHour >= HOUR_CAP) {
+    return json({ error: `Too many enrollments from this network. Try again in an hour.`, code: "rate_limit" }, 429, origin);
+  }
+  const curDay = parseInt(await env.ASCEND_KV.get(dayKey) || "0", 10) || 0;
+  if (curDay >= DAY_CAP) {
+    return json({ error: `Daily enrollment limit reached from this network. Try again tomorrow.`, code: "rate_limit_daily" }, 429, origin);
+  }
+  // Reserve before doing the work; TTLs cover clock skew (~70 min / ~26 h).
+  await env.ASCEND_KV.put(hourKey, String(curHour + 1), { expirationTtl: 70 * 60 });
+  await env.ASCEND_KV.put(dayKey,  String(curDay + 1),  { expirationTtl: 26 * 60 * 60 });
+  return null;
+}
+
 async function _pushRateGate(env, userId, bucket, perHourCap, origin, perDayCap) {
   const iso = new Date().toISOString();
   const hourKey = `u:${userId}:push:${bucket}:${iso.slice(0, 13)}`; // YYYY-MM-DDTHH

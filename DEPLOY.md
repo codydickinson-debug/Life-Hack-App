@@ -6,6 +6,43 @@ If you have **Claude Code**, you can paste any of these steps to it and it'll ru
 
 ---
 
+## 🚀 OPERATOR PATH — Hosting Ascend so anyone can use it (no per-user setup)
+
+> If you're shipping Ascend as a product and want anyone who opens the PWA to get bank sync **without configuring anything**, this is the path. You deploy one Worker for everyone. Per-device enrollment isolates users from each other in KV — each gets their own userId + clientSecret + encrypted Plaid tokens. You pay Plaid ($0.30/connected item/mo after the free 100) and Cloudflare (effectively free for personal-app scale).
+
+**Do steps 1–8 of the regular guide below** (sign up for Plaid + Cloudflare, install wrangler, create KV namespace, generate keys, set secrets, `wrangler deploy`).
+
+**Then do this once** — bake the hosted backend into the public JS so users get it zero-config:
+
+1. Open `index.html` and find:
+   ```js
+   const DEFAULT_BACKEND_URL = "";
+   const DEFAULT_ENROLLMENT_KEY = "";
+   ```
+   (Search for `DEFAULT_BACKEND_URL`.)
+2. Paste in your deployed values:
+   ```js
+   const DEFAULT_BACKEND_URL = "https://ascend-backend.YOUR-SUBDOMAIN.workers.dev";
+   const DEFAULT_ENROLLMENT_KEY = "PASTE-THE-ENROLLMENT-KEY-FROM-STEP-6";
+   ```
+3. Re-deploy the PWA (Vercel auto-deploys on push to `main`).
+
+That's it. Every user who installs the PWA from your URL gets bank sync as a first-class feature, no setup. The Settings page hides the manual Backend URL / Enrollment Key rows automatically when these defaults are set. Power users can still self-host by flipping Settings → "Use a custom backend" to ON.
+
+**Security model for this path:**
+- The enrollment key now ships in publicly-served JS — that's expected. The security boundary is (a) per-device enrollment (each user's KV namespace is keyed to their own userId; one user can't read another's tokens) and (b) the per-IP rate limit on `/enroll` (5/hour, 25/day) which we ship to bound mass-enrollment abuse.
+- Plaid access tokens are still AES-GCM encrypted with your worker's `ENCRYPTION_KEY` before hitting KV. A KV breach still yields useless ciphertext.
+- You can rotate `ENROLLMENT_KEY` anytime: `wrangler secret put ENROLLMENT_KEY` with a new value, then update `DEFAULT_ENROLLMENT_KEY` in `index.html`, then redeploy. Existing devices are unaffected — they already have their per-device clientSecret.
+- Disclose the hosted-backend architecture in your privacy policy (the shipped `privacy.html` already does).
+
+---
+
+## 🔧 SELF-HOST PATH — Run your own backend (no operator dependency)
+
+This is the original guide below. For users who want their Plaid tokens on infrastructure they fully control, or for the operator's own first-time setup.
+
+---
+
 ## What you're building
 
 ```
