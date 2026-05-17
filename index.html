@@ -22794,12 +22794,47 @@ function fireOnOpenTriggers() {
    sitting there is the worst-case data-at-rest exposure for this app, so
    we make the encrypted path the default and require an explicit opt-in
    for plaintext. */
-function _downloadBlob(text, filename, mime) {
-  const url = URL.createObjectURL(new Blob([text], { type: mime || "application/json" }));
+// Saves text as a downloadable/sharable file. On iOS PWAs the `<a download>`
+// trick is unreliable (Safari often opens the file inline instead of letting
+// the user save it), so we try the native Web Share API first when files are
+// supported. That opens the iOS share sheet, letting the user save directly
+// to Files → iCloud Drive — the only practical way to back up a PWA's data
+// off-device without a server. Falls back to the classic download for
+// browsers without share-files support (most desktop browsers).
+//
+// Returns a Promise<boolean>: true if save was triggered (download fired
+// or share completed), false if the user explicitly cancelled. Callers can
+// use this to decide whether to update DB.lastExportAt — we shouldn't
+// claim a backup happened when the user cancelled the share sheet.
+async function _downloadBlob(text, filename, mime) {
+  const type = mime || "application/json";
+  const blob = new Blob([text], { type });
+  // Web Share API with files — preferred path on iOS / Android.
+  try {
+    if (typeof File === "function" && navigator.canShare) {
+      const file = new File([blob], filename, { type });
+      if (navigator.canShare({ files: [file] })) {
+        await navigator.share({
+          files: [file],
+          title: "Ascend backup",
+          text: "Your Ascend backup file. Save it to Files → iCloud Drive or your password manager so you can restore on a new device.",
+        });
+        return true;
+      }
+    }
+  } catch (e) {
+    // User cancelled the share sheet — surface that so the caller can skip
+    // updating lastExportAt. Other share failures fall through to the
+    // download path so we still save somewhere.
+    if (e && e.name === "AbortError") return false;
+  }
+  // Download fallback (desktop, older browsers).
+  const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();
   URL.revokeObjectURL(url);
+  return true;
 }
 // Apple-grade destructive-action flow for "Reset everything". A single
 // confirm() was too easy to fat-finger and didn't give the user the
@@ -22867,12 +22902,13 @@ async function exportData() {
   `);
 }
 
-function _exportPlaintext() {
+async function _exportPlaintext() {
   if (!confirm("Plaintext export will include every financial figure, account, bill, name, and note in clear text. Files in Downloads are often synced to cloud storage. Continue with plaintext?")) return;
-  _downloadBlob(JSON.stringify(DB, null, 2), `ascend-backup-${todayKey()}.json`, "application/json");
+  const saved = await _downloadBlob(JSON.stringify(DB, null, 2), `ascend-backup-${todayKey()}.json`, "application/json");
+  if (!saved) return; // user cancelled the share sheet
   DB.lastExportAt = Date.now();
   try { save(); } catch {}
-  toast("Plaintext backup downloaded");
+  toast("Backup saved — keep it somewhere safe");
 }
 
 async function _exportEncrypted() {
@@ -22906,11 +22942,12 @@ async function _doExportEncrypted() {
       exported: new Date().toISOString(),
       salt, iv: env.iv, ct: env.ct,
     };
-    _downloadBlob(JSON.stringify(blob, null, 2), `ascend-backup-${todayKey()}.ascend`, "application/octet-stream");
+    const saved = await _downloadBlob(JSON.stringify(blob, null, 2), `ascend-backup-${todayKey()}.ascend`, "application/octet-stream");
+    closeSheet();
+    if (!saved) return; // user cancelled the share sheet
     DB.lastExportAt = Date.now();
     try { save(); } catch {}
-    closeSheet();
-    toast("Encrypted backup downloaded");
+    toast("Encrypted backup saved — keep the passphrase safe");
   } catch (e) {
     toast("Export failed — " + (e.message || "try again"));
   }
@@ -22956,9 +22993,9 @@ function importData() {
           const salt = DB.__salt || newSalt();
           const env = await encryptObject(DB, APP_KEY);
           const blob = { v: APP_KEY_V || CRYPTO_V_CURRENT, app: "ascend-pre-import", exported: new Date().toISOString(), salt, iv: env.iv, ct: env.ct };
-          _downloadBlob(JSON.stringify(blob, null, 2), `ascend-pre-import-${todayKey()}.ascend`, "application/octet-stream");
+          await _downloadBlob(JSON.stringify(blob, null, 2), `ascend-pre-import-${todayKey()}.ascend`, "application/octet-stream");
         } else {
-          _downloadBlob(JSON.stringify(DB, null, 2), `ascend-pre-import-${todayKey()}.json`, "application/json");
+          await _downloadBlob(JSON.stringify(DB, null, 2), `ascend-pre-import-${todayKey()}.json`, "application/json");
         }
       } catch { /* don't block import on backup failure */ }
       // Build merged DB: start from DEFAULT_DB, then deep-merge settings/user/budget so
@@ -27768,6 +27805,9 @@ function onboardingStep1() {
   `, `
     <button class="btn" style="width:100%;background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;border:none" onclick="(()=>{const n=$('#onb-name').value.trim();_onbState.name=n;closeSheet();aiOnboardingStart({name:n,fromOnboarding:true});})()">✨ Set up with Cornileus (chat)</button>
     <button class="btn secondary" style="width:100%;margin-top:8px" onclick="(()=>{_onbState.name=$('#onb-name').value.trim();onboardingStep2();})()">Pick from a list (faster)</button>
+    <div style="text-align:center;margin-top:14px">
+      <button onclick="closeSheet();setTimeout(importData,120)" style="background:none;border:none;color:var(--t3);font-size:12.5px;cursor:pointer;text-decoration:underline;padding:6px;font-weight:500">I have a backup file — restore</button>
+    </div>
   `);
 }
 
