@@ -259,7 +259,7 @@ def api_quote(ticker):
             "as_of": df.index[-1].strftime("%Y-%m-%d"),
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("request failed", e)
 
 
 @app.route("/api/quote/<ticker>/full")
@@ -350,7 +350,7 @@ def api_quote_full(ticker):
             "history_1y_closes": closes[-252:] if len(closes) > 252 else closes,
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("request failed", e)
 
 
 @app.route("/api/ticker/<ticker>")
@@ -615,7 +615,7 @@ def api_ticker_broker(ticker):
             "news": news_items,
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("request failed", e)
 
 
 @app.route("/api/forecast/<ticker>")
@@ -724,7 +724,7 @@ def api_forecast(ticker):
             "method": "GBM (geometric Brownian motion) — drift + volatility from 5y daily returns",
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("request failed", e)
 
 
 @app.route("/api/breadth")
@@ -825,7 +825,7 @@ def api_breadth():
         else:             out["band"] = "Extreme greed"
         return jsonify(out)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("request failed", e)
 
 
 @app.route("/api/dividends/calendar")
@@ -936,7 +936,7 @@ def api_etf_holdings(ticker):
         out["category"]       = info.get("category")
         return jsonify(out)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("request failed", e)
 
 
 @app.route("/api/holders/<ticker>")
@@ -1009,7 +1009,7 @@ def api_holders(ticker):
 
         return jsonify(out)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("request failed", e)
 
 
 @app.route("/api/news/<ticker>")
@@ -1079,7 +1079,7 @@ def api_news_ticker(ticker):
             "count": len(items),
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("request failed", e)
 
 
 @app.route("/api/peers/<ticker>")
@@ -1128,7 +1128,7 @@ def api_peers(ticker):
                 continue
         return jsonify({"peers": peers, "sector": sector, "industry": industry})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("request failed", e)
 
 
 @app.route("/api/earnings/batch")
@@ -1369,7 +1369,7 @@ def api_housing_national():
     try:
         snap = housing.get_national()
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("request failed", e)
     if snap is None:
         return jsonify({"error": "no national data"}), 404
     return jsonify(housing.snapshot_to_dict(snap))
@@ -1380,7 +1380,7 @@ def api_housing_zip(zip_code: str):
     try:
         snap = housing.get_zip(zip_code)
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("request failed", e)
     if snap is None:
         return jsonify({"error": f"no data for ZIP {zip_code}"}), 404
     return jsonify(housing.snapshot_to_dict(snap))
@@ -1392,7 +1392,7 @@ def api_housing_metros():
     try:
         metros = housing.get_metros()
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("request failed", e)
     sort = request.args.get("sort", "hot")
     metros.sort(key=lambda m: m.verdict.score, reverse=(sort == "hot"))
     limit = max(1, min(50, int(request.args.get("limit", 10))))
@@ -1425,7 +1425,7 @@ def api_mortgage_current():
     try:
         return jsonify(mortgages.get_current_rates())
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("request failed", e)
 
 
 @app.route("/api/mortgage/history")
@@ -1442,7 +1442,7 @@ def api_mortgage_history():
             "data": mortgages.get_history(name, years=years),
         })
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("request failed", e)
 
 
 @app.route("/api/mortgage/calculate", methods=["POST"])
@@ -1462,7 +1462,7 @@ def api_mortgage_calculate():
     except (TypeError, ValueError) as e:
         return jsonify({"error": f"bad input: {e}"}), 400
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return _err("request failed", e)
 
 
 # ----------------------------------------------------------------------
