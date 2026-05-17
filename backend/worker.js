@@ -18,7 +18,10 @@
  *
  * Auth model:
  *   - Each device enrolls once: POST /enroll with `Authorization: Bearer <ENROLLMENT_KEY>` and
- *     body { userId, clientSecret }. Worker stores SHA-256 of clientSecret at u:<userId>:auth.
+ *     body { userId }. The worker mints a per-device clientSecret (32 random bytes, hex) server-side,
+ *     stores SHA-256 of it at u:<userId>:auth, and returns the secret in the response for the
+ *     client to persist. Any clientSecret in the request body is ignored — the worker controls all
+ *     issued credentials so a malicious client can't choose a low-entropy or pre-known value.
  *   - All other endpoints require `Authorization: Bearer <userId>:<clientSecret>`. Worker derives the
  *     userId from the auth header, ignoring any userId in the request body (prevents spoofing).
  *   - Audit log is written to u:<userId>:audit (capped JSON array of recent events).
