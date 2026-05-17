@@ -11012,7 +11012,7 @@ function renderMoney() {
       <div class="budget-hero">
         <div class="bh-lbl">This month spent</div>
         <div class="bh-val" data-priv="amount">${fmt$0(ms)}</div>
-        <div class="bh-sub" data-priv="amount">${DB.spend.filter(t=>t.date.startsWith(todayKey().slice(0,7))).length} transactions${totalAvail ? ` · ${fmt$0(totalAvail)} available across accounts` : ""}</div>
+        <div class="bh-sub" data-priv="amount">${DB.spend.filter(t=>t.date && t.date.startsWith(todayKey().slice(0,7))).length} transactions${totalAvail ? ` · ${fmt$0(totalAvail)} available across accounts` : ""}</div>
       </div>
       ${trendHtml}
       ${spendDowHtml}
@@ -12410,8 +12410,11 @@ function _stocksRenderHeatmap(quotes) {
     if (p >= 0) return `rgba(52,199,89,${0.10 + intensity * 0.45})`;
     return `rgba(255,59,48,${0.10 + intensity * 0.45})`;
   };
-  // Aggregate market mood
-  const avg = rows.reduce((s, r) => s + r.chg, 0) / rows.length;
+  // Aggregate market mood — skip null chg + guard the divide so a row of
+  // all-error quotes doesn't produce NaN (which then silently fails the
+  // mood thresholds and leaks "Mixed · NaN%" into the chip).
+  const moodRows = rows.filter(r => r.chg != null && !isNaN(+r.chg));
+  const avg = moodRows.length ? moodRows.reduce((s, r) => s + r.chg, 0) / moodRows.length : 0;
   const mood = avg > 0.005 ? "Risk-on" : avg < -0.005 ? "Risk-off" : "Mixed";
   const moodColor = avg > 0.005 ? "var(--green,#34C759)" : avg < -0.005 ? "var(--red,#FF3B30)" : "var(--orange,#FF9500)";
   wrap.innerHTML = `
@@ -14645,15 +14648,18 @@ function planBuilderSheet() {
 
 function _stocksPlanRecompute() {
   const goal = parseFloat(document.getElementById("plan-goal").value) || 0;
-  const targetAge = parseInt(document.getElementById("plan-age").value, 10);
+  const currentAge = (DB.profile && +DB.profile.age) || 30;
+  // Default targetAge to currentAge+30 when the field is empty (NaN propagates
+  // through the projection loop as $NaN otherwise — NaN <= 0 is false, so the
+  // years-guard below doesn't catch it).
+  const targetAge = parseInt(document.getElementById("plan-age").value, 10) || (currentAge + 30);
   const startBal = parseFloat(document.getElementById("plan-current").value) || 0;
   const monthly = parseFloat(document.getElementById("plan-monthly").value) || 0;
   const annual = parseFloat(document.getElementById("plan-return").value) || 7;
-  const currentAge = (DB.profile && +DB.profile.age) || 30;
   const out = document.getElementById("plan-result");
   if (!out) return;
   const years = targetAge - currentAge;
-  if (years <= 0) { out.innerHTML = `<div style="color:var(--red);font-size:13px;text-align:center;padding:14px">Target age must be greater than your current age.</div>`; return; }
+  if (!Number.isFinite(years) || years <= 0) { out.innerHTML = `<div style="color:var(--red);font-size:13px;text-align:center;padding:14px">Target age must be greater than your current age.</div>`; return; }
 
   // Project balance month by month
   const monthlyR = Math.pow(1 + annual/100, 1/12) - 1;
@@ -14747,12 +14753,12 @@ function _stocksPlanRecompute() {
 
 async function _stocksPlanAiCommentary() {
   const goal = parseFloat(document.getElementById("plan-goal").value) || 0;
-  const targetAge = parseInt(document.getElementById("plan-age").value, 10);
+  const currentAge = (DB.profile && +DB.profile.age) || 30;
+  const targetAge = parseInt(document.getElementById("plan-age").value, 10) || (currentAge + 30);
   const startBal = parseFloat(document.getElementById("plan-current").value) || 0;
   const monthly = parseFloat(document.getElementById("plan-monthly").value) || 0;
   const annual = parseFloat(document.getElementById("plan-return").value) || 7;
-  const currentAge = (DB.profile && +DB.profile.age) || 30;
-  const years = targetAge - currentAge;
+  const years = Math.max(1, targetAge - currentAge);
   const ai = document.getElementById("plan-ai");
   if (!ai) return;
   ai.innerHTML = `<div style="background:var(--card);border-radius:var(--r);padding:14px;text-align:center;color:var(--t3);font-size:13px">✨ Cornileus is explaining your plan…</div>`;
@@ -16409,7 +16415,7 @@ function _lsRecompute() {
   const b = window._lsBaseline; if (!b) return;
   const incomeChg = parseFloat(document.getElementById("ls-income").value) || 0;
   const expenseChg = parseFloat(document.getElementById("ls-expense").value) || 0;
-  const targetAge = parseInt(document.getElementById("ls-age").value, 10);
+  const targetAge = parseInt(document.getElementById("ls-age").value, 10) || ((b.currentAge || 30) + 30);
   const retPct = parseFloat(document.getElementById("ls-ret").value) || 7;
   document.getElementById("ls-income-lbl").textContent = (incomeChg >= 0 ? "+" : "") + incomeChg + "%";
   document.getElementById("ls-expense-lbl").textContent = (expenseChg >= 0 ? "+" : "") + expenseChg + "%";
@@ -16743,7 +16749,7 @@ function reverseLifeMathSheet() {
 }
 function _rlmRecompute() {
   const b = window._rlmBaseline; if (!b) return;
-  const targetAge = parseInt(document.getElementById("rlm-age").value, 10);
+  const targetAge = parseInt(document.getElementById("rlm-age").value, 10) || (b.currentAge + 30);
   const monthlyNeed = parseFloat(document.getElementById("rlm-monthly").value) || 0;
   const swr = parseFloat(document.getElementById("rlm-swr").value) || 4;
   const ret = parseFloat(document.getElementById("rlm-ret").value) || 7;
@@ -17117,7 +17123,7 @@ function skillTreeSheet() {
         <div style="font-size:14px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums">${earnedCount} / ${SKILL_TREE_NODES.length} unlocked</div>
       </div>
       <div style="height:8px;background:var(--bg-elev);border-radius:4px;overflow:hidden">
-        <div style="height:100%;width:${(earnedCount / SKILL_TREE_NODES.length) * 100}%;background:linear-gradient(90deg,#34C759,#007AFF);transition:width .4s"></div>
+        <div style="height:100%;width:${(SKILL_TREE_NODES.length ? earnedCount / SKILL_TREE_NODES.length : 0) * 100}%;background:linear-gradient(90deg,#34C759,#007AFF);transition:width .4s"></div>
       </div>
     </div>
     ${totalTiers.map(t => `
@@ -17173,12 +17179,12 @@ function _giRecompute() {
   const b = window._giBaseline; if (!b) return;
   const monthly = parseFloat(document.getElementById("gi-monthly").value) || 0;
   const ret = parseFloat(document.getElementById("gi-return").value) || 7;
-  const deathAge = parseInt(document.getElementById("gi-death").value, 10);
+  const deathAge = parseInt(document.getElementById("gi-death").value, 10) || (b.currentAge + 30);
   const years = Math.max(1, deathAge - b.currentAge);
   const r = Math.pow(1 + ret/100, 1/12) - 1;
   const n = years * 12;
-  // Annuity FV
-  const fv = monthly * ((Math.pow(1 + r, n) - 1) / r);
+  // Annuity FV — guard against r=0 (user typed 0% return), which would 0/0.
+  const fv = r === 0 ? monthly * n : monthly * ((Math.pow(1 + r, n) - 1) / r);
   // What does the inheritance become if the heir lets it grow another 30 yrs at the same rate?
   const grandkidYears = 30;
   const grandkidFV = fv * Math.pow(1 + ret/100, grandkidYears);
@@ -20244,7 +20250,10 @@ SUGGESTION: <2-3 sentences of plain-English actionable advice for a retail inves
       return m ? m[1].trim() : "";
     };
     const verdict = parse("VERDICT") || "Hold";
-    const conf = parseInt(parse("CONFIDENCE"), 10);
+    // Clamp [0,100] and default to 50 — AI can return "medium", blank, or
+    // an out-of-range number; the briefing chip should never show "NaN%".
+    const _confRaw = parseInt(parse("CONFIDENCE"), 10);
+    const conf = Number.isFinite(_confRaw) ? Math.max(0, Math.min(100, _confRaw)) : 50;
     const oneLine = parse("ONE-LINE");
     const bullish = parse("BULLISH");
     const bearish = parse("BEARISH");
@@ -25030,7 +25039,7 @@ async function fetchInsight(prompt, context) {
 }
 async function getMonthlyInsight() {
   const monthKey = todayKey().slice(0,7);
-  const recent = (DB.spend||[]).filter(t => t.date.startsWith(monthKey));
+  const recent = (DB.spend||[]).filter(t => t && t.date && t.date.startsWith(monthKey));
   // Aggregate by category to keep payload small + private
   const byCat = {};
   for (const t of recent) {
@@ -27272,11 +27281,11 @@ function yearReview(year) {
   // Goals
   const goalsCompleted = (DB.goals||[]).filter(g => g.done && g.completedAt && new Date(g.completedAt).getFullYear() === y);
   // Spending
-  const yearSpend = (DB.spend||[]).filter(t => t.date.startsWith(yPrefix));
+  const yearSpend = (DB.spend||[]).filter(t => t && t.date && t.date.startsWith(yPrefix));
   const yearOut = yearSpend.filter(t => +t.amount > 0).reduce((s,t)=>s+(+t.amount||0), 0);
   const yearIn  = yearSpend.filter(t => +t.amount < 0).reduce((s,t)=>s+Math.abs(+t.amount||0), 0);
   // Wins
-  const winsYear = (DB.wins||[]).filter(w => w.date.startsWith(yPrefix));
+  const winsYear = (DB.wins||[]).filter(w => w && w.date && w.date.startsWith(yPrefix));
   // Top streaks (current)
   const streaks = (DB.habits||[]).map(h => ({ name: h.name, emoji: h.emoji, streak: streakOf(h) })).sort((a,b)=>b.streak - a.streak).slice(0,5);
 
@@ -29906,7 +29915,7 @@ function _tourRender() {
   const isLast = _tutStep === TUTORIAL_STEPS.length - 1;
   const isFirst = _tutStep === 0;
   const hasTarget = !!s.target;
-  const progressPct = ((_tutStep + 1) / TUTORIAL_STEPS.length) * 100;
+  const progressPct = TUTORIAL_STEPS.length ? ((_tutStep + 1) / TUTORIAL_STEPS.length) * 100 : 0;
   // When there's a target the spotlight pulses and a hint tells the user
   // they can tap it OR hit Next. When there isn't, hide the hint to avoid
   // pointing at nothing.
