@@ -435,6 +435,7 @@ async function handleSync(env, userId, origin) {
   const itemIds = await getItemIndex(env, userId);
   const allTx = [];
   const allAccounts = [];
+  const removedTxIds = [];   // Plaid transaction_ids the bank now reports as removed
   const updated = [];
   let plaidCallsUsed = 0;
   let truncated = false;
@@ -521,10 +522,18 @@ async function handleSync(env, userId, origin) {
       });
     });
 
+    // Forward removed transaction IDs to the client so it can delete the
+    // corresponding rows from DB.spend. Without this, transactions Plaid
+    // cancels/refunds stay in the local DB forever (ghost rows that no
+    // longer reconcile with the bank statement).
+    for (const r of removed) {
+      if (r && r.transaction_id) removedTxIds.push(r.transaction_id);
+    }
+
     updated.push({ item_id: itemId, added: added.length, modified: modified.length, removed: removed.length });
   }
 
-  return json({ ok: true, accounts: allAccounts, transactions: allTx, updated, truncated }, 200, origin);
+  return json({ ok: true, accounts: allAccounts, transactions: allTx, removed_transaction_ids: removedTxIds, updated, truncated }, 200, origin);
 }
 
 async function handleItems(env, userId, origin) {

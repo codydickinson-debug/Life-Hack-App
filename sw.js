@@ -15,6 +15,9 @@ const STATIC_ASSETS = [
   "./icon-192.png",
   "./icon-512.png",
   "./icon-512-maskable.png",
+  // icon-1024 is referenced by manifest.json + marketing.html OG cards; without
+  // it the first offline navigation can't serve the social preview image.
+  "./icon-1024.png",
 ];
 
 const ICON_RE = /\/icon-[\w-]+\.png$/;

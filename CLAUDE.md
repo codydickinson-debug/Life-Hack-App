@@ -94,7 +94,7 @@ Cache name is derived from a **SHA-256 hash of `index.html`** (first 4 bytes, he
 
 ### Cloudflare Worker backend (optional, Plaid)
 
-`backend/worker.js` is one ES module (~570 lines, no SDK). All Plaid calls go through `plaidCall(env, path, body)` which posts to `PLAID_HOSTS[env.PLAID_ENV]` with credentials.
+`backend/worker.js` is one ES module (~1,760 lines, no SDK). All Plaid calls go through `plaidCall(env, path, body)` which posts to `PLAID_HOSTS[env.PLAID_ENV]` with credentials.
 
 - **Auth (per-device enrollment, not a shared key)**: every endpoint except `/`, `/health`, and `/enroll` requires `Authorization: Bearer <clientSecret>`. The first call from a new device hits `/enroll` with the operator's `ENROLLMENT_KEY` (legacy name: `API_KEY`); the worker mints a per-device `clientSecret`, stores `SHA-256(secret)` keyed to the device's `userId` in KV, and returns the secret to the client. After enrollment, the device sends its own secret on every call — the enrollment key is no longer used. A leaked per-device secret only impersonates one device.
 - **CORS**: `ALLOWED_ORIGIN` secret should be the deployed PWA URL. The check is skipped when there's no `Origin` header (e.g. curl), so the security boundary is the bearer token, not CORS. Set `ALLOWED_ORIGIN` to `*` only temporarily.

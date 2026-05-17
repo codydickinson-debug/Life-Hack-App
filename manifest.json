@@ -19,13 +19,7 @@
     { "src": "icon-512-maskable.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" },
     { "src": "icon-1024.png",         "sizes": "1024x1024", "type": "image/png", "purpose": "any" }
   ],
-  "screenshots": [
-    { "src": "screenshots/today.png",     "sizes": "1170x2532", "type": "image/png", "form_factor": "narrow", "label": "Today tab — habits, wins, daily pulse" },
-    { "src": "screenshots/calendar.png",  "sizes": "1170x2532", "type": "image/png", "form_factor": "narrow", "label": "Calendar — habits and mood by day" },
-    { "src": "screenshots/plan.png",      "sizes": "1170x2532", "type": "image/png", "form_factor": "narrow", "label": "Plan — health snapshot and pace tracking" },
-    { "src": "screenshots/money.png",     "sizes": "1170x2532", "type": "image/png", "form_factor": "narrow", "label": "Money — net worth, spending, debt" },
-    { "src": "screenshots/cornileus.png", "sizes": "1170x2532", "type": "image/png", "form_factor": "narrow", "label": "Cornileus — your AI financial counselor" }
-  ],
+  "_comment_screenshots": "Re-enable the screenshots[] block below once screenshots/{today,calendar,plan,money,cornileus}.png exist. They were referenced but not yet committed — manifest validators flag missing screenshot URLs and Chrome's install UI silently falls back to text-only.",
   "shortcuts": [
     { "name": "Add spend",  "short_name": "+Spend",  "description": "Log a transaction",                       "url": "/?tab=money&action=add-spend" },
     { "name": "Add a win",  "short_name": "+Win",    "description": "Capture a small victory",                 "url": "/?tab=today&action=add-win" },

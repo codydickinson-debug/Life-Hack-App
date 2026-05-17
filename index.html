@@ -3239,6 +3239,18 @@ async function backendSync() {
   // otherwise DB.holdings would still claim a stale account.
   DB.holdings = (DB.holdings || []).filter(h => !h.account_id || liveAcctIds.has(h.account_id));
   snapshotNetWorth();
+  // Honor Plaid's removed-transactions list — these are transactions the
+  // bank now reports as cancelled/refunded/duplicates. Without this they
+  // stay in DB.spend as ghost rows that no longer reconcile against the
+  // statement. Drop them BEFORE merging adds so a same-id re-add (rare
+  // but possible) replays cleanly.
+  const removedIds = Array.isArray(r.removed_transaction_ids) ? new Set(r.removed_transaction_ids) : null;
+  let removedCount = 0;
+  if (removedIds && removedIds.size) {
+    const before = DB.spend.length;
+    DB.spend = DB.spend.filter(t => !(t && t.source === "plaid" && removedIds.has(t.plaid_id)));
+    removedCount = before - DB.spend.length;
+  }
   // Merge transactions: any plaid_id we already have, skip; else add
   const existing = new Set(DB.spend.filter(t => t.source === "plaid").map(t => t.plaid_id));
   let added = 0;
@@ -3266,7 +3278,7 @@ async function backendSync() {
   // ("Restaurants $240 ≈ 7× your usual").
   try { (typeof processNewAnomalies === "function") && processNewAnomalies(); } catch {}
   await save();
-  return { added, accounts: DB.accounts.length };
+  return { added, removed: removedCount, accounts: DB.accounts.length };
 }
 async function backendListItems() {
   return api(`/items?userId=${encodeURIComponent(ensureUserId())}`);
