@@ -1543,6 +1543,26 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   animation: skel-shimmer 1.8s linear infinite;
 }
 
+/* ---------- Reduced-motion accessibility ----------
+   Users who've enabled "Reduce motion" in their OS preferences shouldn't
+   get pulsing/shimmering loaders, sliding sheets, or animated chevrons.
+   These animations cause vestibular discomfort for some users. We
+   collapse durations to near-zero and disable infinite-loop animations
+   so the UI stays static. JS-driven motion (confetti, haptic) is gated
+   separately via reducedMotionEnabled() in script. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+  .skel, .skel-line, .skel-circle, .skel-card, .skel-ai {
+    animation: none !important;
+    opacity: 0.6;
+  }
+}
+
 /* What-if simulator on Plan tab */
 .whatif-card {
   background: linear-gradient(135deg, color-mix(in srgb, var(--corn-from) 10%, transparent), color-mix(in srgb, var(--corn-to) 8%, transparent));
@@ -2275,6 +2295,7 @@ const DEFAULT_DB = {
     privacyMode: false,      // when true, blur all dollar amounts in UI (tap to reveal)
     autoLockMinutes: 0,      // when encrypted: minutes hidden before APP_KEY clears (0 = off)
     monthlySavingsTarget: 0, // factored into safe-to-spend (per-month dollars set aside)
+    dailySpendCap: 0,        // when >0, Today shows a progress bar and notifies at 90% usage
     celebrationsEnabled: true, // confetti on streak milestones / goal completion
     accentColor: "",          // hex string — overrides the default blue accent across the app. Empty = use default.
     recentSearches: [],       // [string] last 6 queries from global search, newest first
@@ -7327,6 +7348,39 @@ function renderToday() {
       `;
     })()}
 
+    ${(() => {
+      // Daily spend cap progress — hidden when not set, otherwise shows a
+      // bar from "spent today / cap" with the bar turning red as it nears
+      // 100%. Tap to edit. A push at 90% is fired by fireOnOpenTriggers.
+      const cap = +DB.settings.dailySpendCap || 0;
+      if (cap <= 0) return "";
+      if (isTodaySectionHidden('spendCap')) return "";
+      const todayK = todayKey();
+      const today = (DB.spend || [])
+        .filter(t => t && t.date === todayK && !t._split && (+t.amount || 0) > 0)
+        .reduce((s, t) => s + (+t.amount || 0), 0);
+      const pct = Math.min(1, today / cap);
+      const remaining = Math.max(0, cap - today);
+      const color = pct >= 1 ? "var(--red,#FF3B30)" : pct >= 0.9 ? "var(--orange,#FF9500)" : pct >= 0.7 ? "var(--orange,#FF9500)" : "var(--green,#34C759)";
+      const message = pct >= 1
+        ? `<b style="color:var(--red,#FF3B30)">Over cap by ${fmt$0(today - cap)}</b>`
+        : pct >= 0.9
+          ? `<b style="color:var(--orange,#FF9500)">${fmt$0(remaining)} left — slow down</b>`
+          : `<b style="color:var(--t1)" data-priv="amount">${fmt$0(remaining)} left</b> · ${(pct * 100).toFixed(0)}% used`;
+      return `
+        <div onclick="showTab('settings');setTimeout(()=>{const el=document.querySelector('input[oninput*=dailySpendCap]');if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.focus();}},300)" role="button" tabindex="0" style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${color};border-radius:var(--r);padding:12px 16px;margin-bottom:14px;cursor:pointer">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
+            <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Today's spend cap</div>
+            <div style="font-size:13.5px;font-weight:700;color:${color};font-variant-numeric:tabular-nums" data-priv="amount">${fmt$0(today)} / ${fmt$0(cap)}</div>
+          </div>
+          <div style="height:6px;background:var(--bg-elev);border-radius:3px;overflow:hidden;position:relative">
+            <div style="position:absolute;left:0;top:0;height:100%;width:${(pct * 100).toFixed(1)}%;background:${color};border-radius:3px;transition:width .3s ease"></div>
+          </div>
+          <div style="font-size:11.5px;color:var(--t3);margin-top:6px">${message}</div>
+        </div>
+      `;
+    })()}
+
     ${isTodaySectionHidden('spendLeaks') ? "" : (() => {
       // Auto-flag spending categories that surged month-over-month. Showing
       // them on Today (rather than buried in Money) means the user sees the
@@ -9910,6 +9964,67 @@ function renderMoney() {
     // Hidden when no bank is connected or there's nothing modeled.
     const cashflowCard = _cashflowForecastHtml();
 
+    // Net worth projection — "at this rate, $100k in 14 months".
+    // Linear-regression slope over net-worth snapshots; only shown when we
+    // have ≥30 days of history AND the slope is positive (otherwise the
+    // projection would be misleading).
+    const projectionCard = (() => {
+      const allHist = (DB.netWorthHistory || []).slice();
+      if (allHist.length < 8) return "";
+      const firstTs = new Date(allHist[0].date + "T00:00:00").getTime();
+      const lastTs  = new Date(allHist[allHist.length - 1].date + "T00:00:00").getTime();
+      if ((lastTs - firstTs) / 86400000 < 30) return "";
+      const n = allHist.length;
+      let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+      const xs = allHist.map(p => (new Date(p.date + "T00:00:00").getTime() - firstTs) / 86400000);
+      for (let i = 0; i < n; i++) {
+        const x = xs[i], y = +allHist[i].total || 0;
+        sumX += x; sumY += y; sumXY += x * y; sumXX += x * x;
+      }
+      const denom = n * sumXX - sumX * sumX;
+      if (denom === 0) return "";
+      const b = (n * sumXY - sumX * sumY) / denom;   // slope = $/day
+      const monthlyRate = b * 30;
+      const cur = comp.total;
+      if (monthlyRate < 50) return "";  // negative or near-flat — no projection
+      const MILESTONES = [10000, 25000, 50000, 100000, 250000, 500000, 1000000, 2000000, 5000000];
+      const next = MILESTONES.find(m => m > cur);
+      if (!next) return "";
+      const dollarsToGo = next - cur;
+      const monthsToGo = dollarsToGo / monthlyRate;
+      if (monthsToGo > 360) return "";  // >30 years — not motivating
+      const targetDate = new Date();
+      targetDate.setDate(targetDate.getDate() + Math.round(monthsToGo * 30));
+      const lbl = targetDate.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+      const monthsLbl = monthsToGo < 12
+        ? `${Math.round(monthsToGo)} mo`
+        : monthsToGo < 60
+          ? `${(monthsToGo / 12).toFixed(1)} years`
+          : `${Math.round(monthsToGo / 12)} years`;
+      const milestoneLabel = next >= 1000000 ? `$${(next / 1000000).toFixed(0)}M` : `$${(next / 1000).toFixed(0)}k`;
+      return `
+        <div style="background:linear-gradient(135deg,rgba(124,58,237,0.10),rgba(236,72,153,0.06));border:0.5px solid rgba(124,58,237,0.35);border-radius:var(--r);padding:14px 16px;margin-bottom:12px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;gap:8px;margin-bottom:6px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Next milestone</div>
+              <div style="font-size:11.5px;color:var(--t3);margin-top:1px" data-priv="amount">At ${fmt$0(Math.round(monthlyRate))}/mo trend</div>
+            </div>
+            <div style="text-align:right">
+              <div style="font-size:24px;font-weight:800;color:#a78bfa;letter-spacing:-0.01em">${milestoneLabel}</div>
+              <div style="font-size:11px;color:var(--t3);font-variant-numeric:tabular-nums" data-priv="amount">${fmt$0(Math.round(dollarsToGo))} to go</div>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:10px;margin-top:8px;padding-top:10px;border-top:0.5px solid rgba(124,58,237,0.18)">
+            <div style="flex:1;height:6px;background:rgba(255,255,255,0.06);border-radius:3px;overflow:hidden;position:relative">
+              <div style="position:absolute;left:0;top:0;height:100%;width:${Math.max(2, Math.min(100, (cur / next) * 100)).toFixed(1)}%;background:linear-gradient(90deg,#7c3aed,#ec4899);border-radius:3px"></div>
+            </div>
+            <div style="font-size:13px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums;flex-shrink:0">${monthsLbl}</div>
+            <div style="font-size:11px;color:var(--t3);flex-shrink:0">~${esc(lbl)}</div>
+          </div>
+        </div>
+      `;
+    })();
+
     // Composition bar — where the wealth lives.
     const compBar = (() => {
       const positive = comp.cash + comp.investments + comp.realAssets;
@@ -10389,6 +10504,7 @@ function renderMoney() {
       ${healthCard}
       <div id="wh-chart"></div>
       ${chartCard}
+      ${projectionCard}
       ${cashflowCard}
       ${compBar}
       <div id="wh-flow"></div>
@@ -22795,6 +22911,13 @@ function renderSettings() {
           oninput="DB.settings.monthlySavingsTarget=Number(this.value)||0;saveDebounced();render()" onblur="flushPendingSave()"
           style="background:var(--bg-elev);padding:8px;border-radius:8px;width:90px;text-align:right" />
       </div>
+      <div class="row">
+        <div class="lead">🛑</div>
+        <div class="body"><div class="t1">Daily spend cap</div><div class="t2">${DB.settings.dailySpendCap > 0 ? `Bar shows on Today · push when 90% used` : "0 = off · set a number to track daily limit on Today"}</div></div>
+        <input type="number" inputmode="numeric" value="${DB.settings.dailySpendCap||0}"
+          oninput="DB.settings.dailySpendCap=Number(this.value)||0;saveDebounced();render()" onblur="flushPendingSave()"
+          style="background:var(--bg-elev);padding:8px;border-radius:8px;width:90px;text-align:right" />
+      </div>
     </div>
 
     <div class="section-h"><span class="lbl">Reflections</span><button class="act" onclick="addReflectionSheet()">+ Add</button></div>
@@ -23679,6 +23802,25 @@ function fireOnOpenTriggers() {
       if (day === 0 && hour >= 10 && hour <= 20) {
         fire("📝 Weekly review", "Look back on your week — what stood out?", "weekly");
         return;
+      }
+    }
+    // 9. Daily spend cap — fire at 90%+ usage (once per day per cap setting).
+    //    Sits last because it's the "you're about to go over" backstop and
+    //    we don't want it competing with runway/bills priority for the
+    //    one-push-per-open slot.
+    if (cats.spendCap !== false && !fired("spendCap")) {
+      const cap = +DB.settings.dailySpendCap || 0;
+      if (cap > 0) {
+        const today = (DB.spend || [])
+          .filter(t => t && t.date === tk && !t._split && (+t.amount || 0) > 0)
+          .reduce((s, t) => s + (+t.amount || 0), 0);
+        if (today / cap >= 0.9) {
+          const over = today > cap;
+          fire(over ? "🛑 Over your daily cap" : "⚠️ 90% of daily cap used",
+               over ? `${fmt$0(today)} spent · ${fmt$0(today - cap)} over` : `${fmt$0(cap - today)} left for today`,
+               "spendCap");
+          return;
+        }
       }
     }
   } catch (e) { /* never let a notification bug break app open */ }
