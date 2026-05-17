@@ -91,6 +91,18 @@ export default {
       return await handlePlaidWebhook(request, env);
     }
 
+    // Public push-availability probe — the frontend uses this to decide
+    // whether to even show the "enable background push" CTA, BEFORE the
+    // user has enrolled. Returns only the public key (which is fine to
+    // expose — that's literally what makes it the public key) plus a
+    // boolean for whether the backend has all three VAPID secrets set.
+    if (url.pathname === "/push/vapid-public-key" && request.method === "GET") {
+      return json({
+        key: env.VAPID_PUBLIC_KEY || null,
+        enabled: !!(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY && env.VAPID_SUBJECT),
+      }, 200, allowed);
+    }
+
     try {
       const auth = await checkAuth(request, env, url);
       if (auth.error) return json({ error: auth.error }, auth.status || 401, allowed);
@@ -157,12 +169,8 @@ export default {
         return await handleDeleteAccount(env, userId, allowed);
       }
       // ----- Push notifications -----
-      // Public key is the only push endpoint that doesn't need user auth —
-      // actually it does, since checkAuth gates everything; we just don't
-      // log it as an audit event. The frontend fetches this once.
-      if (url.pathname === "/push/vapid-public-key" && request.method === "GET") {
-        return json({ key: env.VAPID_PUBLIC_KEY || null, enabled: !!(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY && env.VAPID_SUBJECT) }, 200, allowed);
-      }
+      // (vapid-public-key is handled above as a public endpoint so the
+      // frontend can probe push availability before enrolling.)
       if (url.pathname === "/push/subscribe" && request.method === "POST") {
         return await audited(env, userId, "push_subscribe",
           () => handlePushSubscribe(request, env, userId, allowed));
@@ -442,6 +450,12 @@ async function handleSync(env, userId, origin) {
     } catch {
       continue; // skip if undecryptable (key mismatch)
     }
+    // Migration: backfill the reverse index for items enrolled before the
+    // item-owner record existed. Idempotent + no-op for new items.
+    try {
+      const existing = await env.ASCEND_KV.get(`item-owner:${itemId}`);
+      if (existing !== userId) await env.ASCEND_KV.put(`item-owner:${itemId}`, userId);
+    } catch {}
 
     // Pull accounts
     try {
@@ -1005,6 +1019,15 @@ async function handlePlaidWebhook(request, env) {
   const code = String(body.webhook_code || "").toUpperCase().slice(0, 60);
   if (!itemId || !type) return new Response("", { status: 200 });
 
+  // Ownership check — Plaid signature only proves "Plaid sent this", not
+  // that this item belongs to one of our enrolled users. Without this,
+  // an item_id from a different Plaid customer (or a fabricated one) would
+  // create a `webhook:<itemId>` record we'd waste KV storage on, and
+  // could surface to a future user that happens to enroll with that same
+  // (impossible-but-defense-in-depth) item_id. Silently drop unknowns.
+  const owner = await getItemOwner(env, itemId);
+  if (!owner) return new Response("", { status: 200 });
+
   // Events worth surfacing to the user — anything that requires their action
   const actionableCodes = new Set([
     "ERROR",                        // ITEM
@@ -1114,11 +1137,24 @@ async function addItemToIndex(env, userId, itemId) {
   const arr = await getItemIndex(env, userId);
   if (!arr.includes(itemId)) arr.push(itemId);
   await env.ASCEND_KV.put(indexKey(userId), JSON.stringify(arr));
+  // Reverse index — lets handlePlaidWebhook verify that an incoming
+  // webhook's item_id actually belongs to one of our enrolled users
+  // before we persist anything. Without this, a verified-but-foreign
+  // Plaid item_id (e.g. another customer's, or a bug-induced fabrication)
+  // would create an orphaned webhook record we'd waste KV storage on
+  // and could in theory surface to a future user with a colliding id.
+  await env.ASCEND_KV.put(`item-owner:${itemId}`, userId);
 }
 async function removeItemFromIndex(env, userId, itemId) {
   const arr = await getItemIndex(env, userId);
   const next = arr.filter((x) => x !== itemId);
   await env.ASCEND_KV.put(indexKey(userId), JSON.stringify(next));
+  // Drop the reverse-index entry too so a webhook arriving after a
+  // disconnect doesn't re-create a stale ownership record.
+  await env.ASCEND_KV.delete(`item-owner:${itemId}`);
+}
+async function getItemOwner(env, itemId) {
+  return await env.ASCEND_KV.get(`item-owner:${itemId}`);
 }
 
 // ============ Crypto (AES-GCM) ============
@@ -1385,12 +1421,30 @@ async function handlePushTest(env, userId, origin) {
 // re-validates, but stripping at the boundary keeps malicious payloads out
 // of KV (so an old stored push doesn't leak past a future SW that's less
 // strict). Returns "/" for anything unsafe.
+// Allowlist of pathname prefixes the service worker is permitted to
+// navigate to when the user taps a notification. Any other path falls
+// through to "/". Defends against a compromised push payload pointing the
+// PWA at a destructive route like /?action=delete-everything or sending
+// the user to a tab that auto-performs a side effect.
+const _ALLOWED_PUSH_PATHS = [
+  "/", "/?", "/?tab=today", "/?tab=money", "/?tab=stocks", "/?tab=goals",
+  "/?tab=stats", "/?tab=calendar", "/?tab=planning", "/?tab=settings",
+];
 function _safePushUrl(raw) {
   if (typeof raw !== "string" || raw.length > 200) return "/";
-  // Only allow same-origin paths; reject absolute URLs (including data:,
-  // javascript:, etc.) and protocol-relative paths.
+  // Reject absolute URLs (including data:, javascript:, etc.) and
+  // protocol-relative paths.
   if (!/^\//.test(raw) || /^\/\//.test(raw)) return "/";
-  return raw;
+  // Parse to separate path from query/fragment, drop the fragment, and
+  // verify the path+query starts with an allowlisted prefix.
+  try {
+    const u = new URL(raw, "https://placeholder.local");
+    const pathPlusQuery = u.pathname + u.search;
+    for (const ok of _ALLOWED_PUSH_PATHS) {
+      if (pathPlusQuery === ok || pathPlusQuery.startsWith(ok)) return pathPlusQuery;
+    }
+  } catch {}
+  return "/";
 }
 
 async function handlePushSend(request, env, userId, origin) {
