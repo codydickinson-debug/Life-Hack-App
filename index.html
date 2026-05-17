@@ -409,6 +409,47 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .section-h .act:hover { opacity: .82; }
 .section-h .act:active { opacity: .55; }
 
+/* ---------- Settings compact mode ----------
+   When .settings-compact is on the page-settings container, every
+   .section-h becomes a tap-to-expand header and the .list immediately
+   following it is hidden until the header gets the .open class.
+   Drives the Settings reorganization without changing any markup — pure
+   CSS + a delegate click handler. */
+.settings-compact .list { display: none; }
+.settings-compact .section-h {
+  cursor: pointer;
+  background: var(--card);
+  border: 0.5px solid var(--sep);
+  border-radius: 12px;
+  padding: 13px 16px;
+  margin: 6px 0;
+  position: relative;
+  transition: background .14s ease;
+}
+.settings-compact .section-h:hover { background: var(--bg-elev); }
+.settings-compact .section-h::after {
+  content: "▾";
+  position: absolute;
+  right: 14px;
+  top: 50%;
+  transform: translateY(-50%);
+  color: var(--t3);
+  font-size: 12px;
+  transition: transform .18s ease;
+}
+.settings-compact .section-h.open::after {
+  transform: translateY(-50%) rotate(180deg);
+}
+.settings-compact .section-h.open + .list {
+  display: block;
+  animation: fadeIn .18s ease;
+}
+/* Inline action button ("+ Add" etc.) stays clickable without expanding */
+.settings-compact .section-h .act {
+  position: relative; z-index: 2;
+  margin-right: 18px;  /* clear room for the chevron */
+}
+
 /* ================ LISTS / CARDS (iOS grouped) ================ */
 .list {
   background: var(--card);
@@ -21982,10 +22023,25 @@ function renderSettings() {
     <style>#settings-nav::-webkit-scrollbar{display:none}</style>
   `;
 
+  // Compact mode toggle — collapses every section header to a single
+  // tap-to-expand chip. Per-section open/closed state is persisted in
+  // DB.settings._openSettingsSections so the layout survives navigation.
+  const compactMode = !!(DB.settings && DB.settings.compactSettings);
+  const compactToggle = `
+    <div style="display:flex;align-items:center;justify-content:space-between;background:var(--card);border:0.5px solid var(--sep);border-radius:12px;padding:10px 14px;margin:0 0 14px;gap:10px">
+      <div style="flex:1;min-width:0">
+        <div style="font-size:13px;font-weight:600;color:var(--t1);line-height:1.2">${compactMode ? "Compact view" : "Full view"}</div>
+        <div style="font-size:11.5px;color:var(--t3);margin-top:2px">${compactMode ? "Each section is collapsed — tap a header to expand" : "All settings expanded — toggle to collapse into groups"}</div>
+      </div>
+      <input type="checkbox" ${compactMode ? "checked" : ""} onchange="toggleCompactSettings(this.checked)" style="width:50px;height:30px;flex-shrink:0" />
+    </div>
+  `;
+
   $("#page-settings").innerHTML = `
     <div class="lg-title">Settings</div>
     ${encryptionWarning}
     ${settingsJumpStrip}
+    ${compactToggle}
 
     <div id="sec-you"></div>
     <div class="section-h"><span class="lbl">You</span></div>
@@ -22677,6 +22733,57 @@ function renderSettings() {
     </div>
     <div style="height:30px"></div>
   `;
+  // Apply compact-mode collapsing once the markup is in the DOM. This is a
+  // post-render pass so the existing section markup never had to change —
+  // every .section-h becomes a click target, the following .list is
+  // shown/hidden via CSS based on the .open class on the header.
+  _setupCompactSettings();
+}
+
+/* ---------- Compact-settings wiring ---------- */
+function _setupCompactSettings() {
+  const page = document.getElementById("page-settings");
+  if (!page) return;
+  const compact = !!(DB.settings && DB.settings.compactSettings);
+  page.classList.toggle("settings-compact", compact);
+  if (!compact) return;
+  // Restore per-section open state. Use the .lbl text as a stable key so
+  // changing section order doesn't lose state.
+  const openSet = new Set((DB.settings && DB.settings._openSettingsSections) || []);
+  const headers = page.querySelectorAll(".section-h");
+  headers.forEach(h => {
+    const lblEl = h.querySelector(".lbl");
+    if (!lblEl) return;
+    const key = (lblEl.textContent || "").trim().toLowerCase().slice(0, 80);
+    if (!key) return;
+    if (openSet.has(key)) h.classList.add("open");
+    // Avoid double-binding on re-render — strip any prior listener via cloneNode.
+    if (h.dataset.compactBound === "1") return;
+    h.dataset.compactBound = "1";
+    h.addEventListener("click", (e) => {
+      // Don't toggle when the user is clicking an inline action button or
+      // an input inside the header (eg. "+ Add", checkboxes).
+      const t = e.target;
+      if (t && t.closest && (t.closest(".act") || t.tagName === "INPUT" || t.tagName === "BUTTON" || t.tagName === "SELECT")) return;
+      h.classList.toggle("open");
+      // Persist
+      const cur = new Set((DB.settings && DB.settings._openSettingsSections) || []);
+      if (h.classList.contains("open")) cur.add(key); else cur.delete(key);
+      DB.settings._openSettingsSections = Array.from(cur);
+      try { save(); } catch {}
+    });
+  });
+}
+
+function toggleCompactSettings(on) {
+  DB.settings.compactSettings = !!on;
+  // First time enabling: open the first three "essentials" (You, Smart money plays, Appearance)
+  // so the page isn't a wall of collapsed chips.
+  if (on && !(DB.settings._openSettingsSections && DB.settings._openSettingsSections.length)) {
+    DB.settings._openSettingsSections = ["you", "smart money plays", "appearance"];
+  }
+  save();
+  renderSettings();
 }
 
 /* ================ SETTINGS HELPERS ================ */
@@ -37310,6 +37417,7 @@ function init() {
     _stocksPortfolioYtdReturn, _stocksFetchBenchmark, _stocksRecordTickerYtd,
     _USFederalHolidays, _holidaysForMonth, _holidayForDate, toggleFederalHolidays,
     shareYearReviewImage, _roundRect,
+    toggleCompactSettings, _setupCompactSettings,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, disableEncryptionSheet, showLockScreen,
     setPassphrase, unlockWithPassphrase, disablePassphrase, encryptObject, decryptObject, deriveKey,
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,
