@@ -2555,6 +2555,10 @@ const $$ = (s, p=document) => Array.from(p.querySelectorAll(s));
 const uid = () => Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 const fmt$ = (n) => "$" + (Math.round((n||0)*100)/100).toLocaleString("en-US", { maximumFractionDigits: 2 });
 const fmt$0 = (n) => "$" + Math.round(n||0).toLocaleString();
+// fmt$2 — always 2 decimals + thousands separator. Use for ledger-style
+// rows (prices, P&L, cost basis) where "$12,345.6" looks wrong but
+// fmt$ would render it that way. Use fmt$ for casual UI labels.
+const fmt$2 = (n) => "$" + (+(n||0)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 const todayKey = (d=new Date()) => {
   const y = d.getFullYear(); const m = String(d.getMonth()+1).padStart(2,"0"); const dd = String(d.getDate()).padStart(2,"0");
   return `${y}-${m}-${dd}`;
@@ -4455,7 +4459,7 @@ function _goalStepInputRow(step, idx) {
     <div class="goal-step-input" data-sid="${esc(step.id || "")}" style="display:flex;gap:6px;align-items:center">
       <span style="color:var(--t3);font-size:11px;width:18px;text-align:center">${idx + 1}.</span>
       <input maxlength="120" placeholder="${idx === 0 ? 'e.g. Open the account' : idx === 1 ? 'e.g. Save first $1k' : idx === 2 ? 'e.g. Hit halfway' : 'Milestone ' + (idx + 1)}" value="${esc(step.text || "")}" style="flex:1;background:var(--bg-elev);padding:8px 10px;border-radius:8px;font-size:13px;border:0.5px solid var(--sep);color:var(--t1)" />
-      <button type="button" onclick="this.closest('.goal-step-input').remove();document.getElementById('g-add-step').removeAttribute('disabled');" style="background:none;border:none;color:var(--t3);font-size:18px;cursor:pointer;padding:0 6px;flex-shrink:0">×</button>
+      <button type="button" aria-label="Remove milestone" title="Remove milestone" onclick="this.closest('.goal-step-input').remove();document.getElementById('g-add-step').removeAttribute('disabled');" style="background:none;border:none;color:var(--t3);font-size:18px;cursor:pointer;padding:0 6px;flex-shrink:0">×</button>
     </div>
   `;
 }
@@ -4643,7 +4647,7 @@ function _renderSplitSheet(tx, total, cats) {
             style="background:var(--bg-elev);padding:8px 10px;border-radius:8px;font-size:13px;border:0;color:var(--t1)">
             ${cats.map(c => `<option value="${esc(c)}" ${c===r.category?"selected":""}>${esc(c)}</option>`).join("")}
           </select>
-          ${rows.length > 2 ? `<button class="del-x" onclick="(()=>{window._splitRows=window._splitRows.filter(x=>x.id!==${jsAttr(r.id)});_renderSplitSheet(${jsAttr({id:tx.id,note:tx.note,category:tx.category,date:tx.date,amount:tx.amount})}, ${total}, ${jsAttr(cats)});})()" style="min-width:0">×</button>` : '<div></div>'}
+          ${rows.length > 2 ? `<button class="del-x" aria-label="Remove split row" title="Remove split row" onclick="(()=>{window._splitRows=window._splitRows.filter(x=>x.id!==${jsAttr(r.id)});_renderSplitSheet(${jsAttr({id:tx.id,note:tx.note,category:tx.category,date:tx.date,amount:tx.amount})}, ${total}, ${jsAttr(cats)});})()" style="min-width:0">×</button>` : '<div></div>'}
         </div>
       `).join("")}
     </div>
@@ -6500,7 +6504,7 @@ function renderToday() {
         const hrs = Math.max(1, Math.round((Date.now() - fresh.triggeredAt) / 3600000));
         const when = hrs < 24 ? `${hrs}h ago` : `${Math.round(hrs/24)}d ago`;
         return { emoji: "🔔",
-          text: `${fresh.ticker} ${dir} $${(+fresh.threshold).toFixed(2)}`,
+          text: `${fresh.ticker} ${dir} ${fmt$2(+fresh.threshold)}`,
           suffix: `· alert ${when}`,
           onclick: `showTab('stocks')` };
       }
@@ -7130,7 +7134,7 @@ function renderToday() {
           <div class="lead">📊</div>
           <div class="body">
             <div class="t1">${esc(tk)} ${chg >= 0 ? "is up" : "dropped"} ${Math.abs(chg).toFixed(2)}%</div>
-            <div class="t2" style="font-size:12px;color:${color};font-weight:600" data-priv="amount">$${(+q.price).toFixed(2)} · ${q.change >= 0 ? "+" : ""}$${(+q.change || 0).toFixed(2)} today</div>
+            <div class="t2" style="font-size:12px;color:${color};font-weight:600" data-priv="amount">${fmt$2(+q.price)} · ${q.change >= 0 ? "+" : "-"}${fmt$2(Math.abs(+q.change || 0))} today</div>
           </div>
           <div class="trail chev"></div>
         </div>
@@ -7160,7 +7164,7 @@ function renderToday() {
           <div class="lead">📈</div>
           <div class="body">
             <div class="t1" data-priv="amount">Portfolio ${fmt$0(value)}</div>
-            <div class="t2" style="font-size:12px;color:${dailyColor};font-weight:600" data-priv="amount">${dailyChg >= 0 ? "+" : "-"}$${Math.abs(dailyChg).toFixed(2)} today (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%) · ${tickers.length} holding${tickers.length===1?"":"s"}${missing>0?` · ${missing} need refresh`:""}</div>
+            <div class="t2" style="font-size:12px;color:${dailyColor};font-weight:600" data-priv="amount">${dailyChg >= 0 ? "+" : "-"}${fmt$2(Math.abs(dailyChg))} today (${pct >= 0 ? "+" : ""}${pct.toFixed(2)}%) · ${tickers.length} holding${tickers.length===1?"":"s"}${missing>0?` · ${missing} need refresh`:""}</div>
           </div>
           <div class="trail chev"></div>
         </div>
@@ -7516,7 +7520,7 @@ function renderGoals() {
       <div class="step">
         <button class="check ${s.done?'done':''}" onclick="toggleStep('${g.id}','${s.id}')">✓</button>
         <div class="txt ${s.done?'done':''}" onclick="toggleStep('${g.id}','${s.id}')">${esc(s.text)}</div>
-        <button class="x" onclick="deleteStep('${g.id}','${s.id}')">×</button>
+        <button class="x" aria-label="Delete step" title="Delete step" onclick="deleteStep('${g.id}','${s.id}')">×</button>
       </div>
     `).join("");
     const chain = goalChain(g.id);
@@ -9901,9 +9905,16 @@ function renderMoney() {
             <div class="lead" style="font-size:14px">•</div>
             <input class="bcat-name" maxlength="${TEXT_MAX}" style="background:transparent;flex:1;font-size:15px" value="${esc(e.name)}" oninput="DB.budget.expenses.find(x=>x.id==='${e.id}').name=sanitizeText(this.value);saveDebounced();" onblur="flushPendingSave()" />
             <input class="bcat-amt" type="number" inputmode="decimal" value="${e.amount||""}" placeholder="0" oninput="DB.budget.expenses.find(x=>x.id==='${e.id}').amount=Number(this.value)||0;saveDebounced();" onblur="flushPendingSave();render()" />
-            <button class="del-x" onclick="if(confirm('Delete?'))deleteExpense('${e.id}')">×</button>
+            <button class="del-x" aria-label="Delete category" title="Delete category" onclick="if(confirm('Delete?'))deleteExpense('${e.id}')">×</button>
           </div>
-        `).join("") : `<div class="row"><div class="body"><div class="t2 muted">No expense categories yet — tap +Add</div></div></div>`}
+        `).join("") : `
+          <div onclick="addExpenseInline()" role="button" tabindex="0" style="background:var(--bg-elev);border:0.5px dashed var(--sep);border-radius:var(--r);padding:18px 14px;text-align:center;cursor:pointer">
+            <div style="font-size:28px;margin-bottom:6px">📂</div>
+            <div style="font-size:13.5px;font-weight:600;color:var(--t1);margin-bottom:4px">Set up your budget categories</div>
+            <div style="font-size:11.5px;color:var(--t3);line-height:1.45">Rent, groceries, eating out, subscriptions, fun money — whatever you actually spend on.</div>
+            <div style="font-size:11.5px;color:var(--blue,#2F6FEB);font-weight:600;margin-top:8px">+ Add first category</div>
+          </div>
+        `}
       </div>
     `;
   }
@@ -10620,7 +10631,7 @@ function renderMoney() {
             <div class="lead">💼</div>
             <div class="body">
               <div class="t1">${entries.length} holding${entries.length === 1 ? "" : "s"}</div>
-              <div class="t2" style="font-size:11.5px" data-priv="amount"><b style="color:${plColor}">${pl >= 0 ? "+" : ""}$${Math.abs(pl).toFixed(2)}</b> unrealized · cost $${costTotal.toFixed(0)}</div>
+              <div class="t2" style="font-size:11.5px" data-priv="amount"><b style="color:${plColor}">${pl >= 0 ? "+" : "-"}${fmt$2(Math.abs(pl))}</b> unrealized · cost ${fmt$0(costTotal)}</div>
             </div>
             <div class="trail" style="font-weight:700;color:var(--t1)" data-priv="amount">${fmt$0(total)}</div>
           </div>
@@ -12321,7 +12332,7 @@ function _stocksRenderTopMovers() {
         <div style="display:flex;align-items:center;gap:7px">${_stkTickerAvatar(r.tk, 26)}<div style="font-size:14.5px;font-weight:800;color:var(--t1)">${esc(r.tk)}</div></div>
         <div style="font-size:13px;font-weight:700;color:${color};font-variant-numeric:tabular-nums">${r.chg >= 0 ? "+" : ""}${(r.chg * 100).toFixed(2)}%</div>
       </div>
-      <div style="font-size:10.5px;color:var(--t3);margin-top:3px;font-variant-numeric:tabular-nums" data-priv="amount">$${(r.price || 0).toFixed(2)} · ${r.abs >= 0 ? "+" : "-"}$${Math.abs(r.abs || 0).toFixed(2)}</div>
+      <div style="font-size:10.5px;color:var(--t3);margin-top:3px;font-variant-numeric:tabular-nums" data-priv="amount">${fmt$2(r.price || 0)} · ${r.abs >= 0 ? "+" : "-"}${fmt$2(Math.abs(r.abs || 0))}</div>
     </div>
   `;
   wrap.innerHTML = `
@@ -12408,7 +12419,7 @@ function _stocksRenderHeatmap(quotes) {
       <span class="lbl">Today's market</span>
       <div style="background:var(--bg-elev);color:${moodColor};border-radius:999px;padding:2px 9px;font-size:10.5px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase">${mood} · ${avg >= 0 ? "+" : ""}${(avg * 100).toFixed(2)}%</div>
       <div style="flex:1"></div>
-      <button class="act" onclick="DB.stocks.heatmapCache=null;_stocksLoadHeatmap()" style="font-size:11px">↻</button>
+      <button class="act" aria-label="Refresh sector heatmap" title="Refresh" onclick="DB.stocks.heatmapCache=null;_stocksLoadHeatmap()" style="font-size:11px">↻</button>
     </div>
     <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:6px">
       ${rows.map(r => `
@@ -12540,13 +12551,13 @@ function _stocksRenderPortfolio() {
         ${missingPrice > 0 ? `<div style="font-size:10px;color:var(--t3)">refresh for live prices</div>` : ""}
       </div>
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
-        <div style="font-size:32px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-0.02em" data-priv="amount">$${mkt.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})}</div>
+        <div style="font-size:32px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-0.02em" data-priv="amount">${fmt$2(mkt)}</div>
         <div style="font-size:28px;line-height:1" title="Portfolio mood — today's % move">${moodEmoji}</div>
       </div>
       <div style="display:flex;gap:14px;font-size:12.5px;margin-top:4px;flex-wrap:wrap;font-variant-numeric:tabular-nums">
-        <div><span style="color:var(--t3)">Today</span> <b style="color:${dayColor}" data-priv="amount">${dayChange >= 0 ? "+" : ""}$${Math.abs(dayChange).toFixed(2)}</b> <span style="color:${dayColor}">(${dayChange >= 0 ? "+" : ""}${(dayChangePct * 100).toFixed(2)}%)</span></div>
-        <div><span style="color:var(--t3)">Total P&amp;L</span> <b style="color:${plColor}" data-priv="amount">${totalPl >= 0 ? "+" : ""}$${Math.abs(totalPl).toFixed(2)}</b> <span style="color:${plColor}">(${totalPl >= 0 ? "+" : ""}${(totalPlPct * 100).toFixed(2)}%)</span></div>
-        <div><span style="color:var(--t3)">Cost</span> <b style="color:var(--t2)" data-priv="amount">$${cost.toFixed(2)}</b></div>
+        <div><span style="color:var(--t3)">Today</span> <b style="color:${dayColor}" data-priv="amount">${dayChange >= 0 ? "+" : "-"}${fmt$2(Math.abs(dayChange))}</b> <span style="color:${dayColor}">(${dayChange >= 0 ? "+" : ""}${(dayChangePct * 100).toFixed(2)}%)</span></div>
+        <div><span style="color:var(--t3)">Total P&amp;L</span> <b style="color:${plColor}" data-priv="amount">${totalPl >= 0 ? "+" : "-"}${fmt$2(Math.abs(totalPl))}</b> <span style="color:${plColor}">(${totalPl >= 0 ? "+" : ""}${(totalPlPct * 100).toFixed(2)}%)</span></div>
+        <div><span style="color:var(--t3)">Cost</span> <b style="color:var(--t2)" data-priv="amount">${fmt$2(cost)}</b></div>
       </div>
       ${mkt > 0 ? `
         <div style="display:flex;align-items:center;gap:14px;margin-top:14px;padding-top:12px;border-top:0.5px solid var(--sep)">
@@ -12646,9 +12657,9 @@ function _stocksRenderPortfolio() {
         const stop = +h.stopLoss || 0; const take = +h.takeProfit || 0;
         const limitsRow = (stop || take) ? `
           <div style="font-size:10px;color:var(--t3);margin-top:2px;font-variant-numeric:tabular-nums" data-priv="amount">
-            ${stop ? `<span style="color:var(--red,#FF3B30)">⊥ $${stop.toFixed(2)}</span>` : ""}
+            ${stop ? `<span style="color:var(--red,#FF3B30)">⊥ ${fmt$2(stop)}</span>` : ""}
             ${stop && take ? " · " : ""}
-            ${take ? `<span style="color:var(--green,#34C759)">⊤ $${take.toFixed(2)}</span>` : ""}
+            ${take ? `<span style="color:var(--green,#34C759)">⊤ ${fmt$2(take)}</span>` : ""}
           </div>` : "";
         const noteRow = h.note ? `
           <div style="font-size:10.5px;color:var(--t2);margin-top:3px;line-height:1.35;font-style:italic;border-left:2px solid var(--sep);padding-left:6px">${esc(h.note)}</div>` : "";
@@ -12665,13 +12676,13 @@ function _stocksRenderPortfolio() {
                 </div>
               </div>
               <div class="body" style="flex:1;min-width:0;margin-left:6px">
-                <div style="font-size:12.5px;color:var(--t2);font-variant-numeric:tabular-nums" data-priv="amount">${r.price != null ? `$${r.price.toFixed(2)}` : "—"} <span style="color:var(--t3);font-size:10.5px">cost $${r.c.toFixed(2)}</span></div>
-                <div style="font-size:11px;color:${pColor};font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums" data-priv="amount">${r.pl >= 0 ? "+" : ""}$${Math.abs(r.pl).toFixed(2)} (${r.pl >= 0 ? "+" : ""}${(r.plPct * 100).toFixed(1)}%)</div>
+                <div style="font-size:12.5px;color:var(--t2);font-variant-numeric:tabular-nums" data-priv="amount">${r.price != null ? fmt$2(r.price) : "—"} <span style="color:var(--t3);font-size:10.5px">cost ${fmt$2(r.c)}</span></div>
+                <div style="font-size:11px;color:${pColor};font-weight:600;margin-top:1px;font-variant-numeric:tabular-nums" data-priv="amount">${r.pl >= 0 ? "+" : "-"}${fmt$2(Math.abs(r.pl))} (${r.pl >= 0 ? "+" : ""}${(r.plPct * 100).toFixed(1)}%)</div>
                 ${limitsRow}
                 ${noteRow}
               </div>
               <div style="text-align:right;flex-shrink:0">
-                <div style="font-weight:700;font-size:13.5px;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${r.m.toFixed(2)}</div>
+                <div style="font-weight:700;font-size:13.5px;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt$2(r.m)}</div>
                 <div style="display:flex;gap:6px;justify-content:flex-end;margin-top:2px">
                   <button onclick="event.stopPropagation();_stocksHoldingLimitsSheet(${jsAttr(r.tk)})" title="Stop/target" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:2px 4px;cursor:pointer;text-decoration:underline">stop</button>
                   <button onclick="event.stopPropagation();_stocksClosePositionSheet(${jsAttr(r.tk)})" title="Sell" style="background:transparent;border:0;color:var(--t3);font-size:11px;padding:2px 4px;cursor:pointer;text-decoration:underline">sell</button>
@@ -12896,9 +12907,9 @@ function _stocksShowRebalancePlan() {
       <div style="display:flex;justify-content:space-between;padding:8px 11px;background:var(--bg-elev);border-radius:8px;margin-bottom:4px">
         <div>
           <div style="font-weight:700;font-size:13px;color:var(--t1)">${isBuy ? "Buy" : "Sell"} ${esc(r.tk)}</div>
-          <div style="font-size:10.5px;color:var(--t3)" data-priv="amount">${shares.toFixed(2)} sh @ $${r.price.toFixed(2)} · ${((r.value/total)*100).toFixed(1)}% → ${(r.target*100).toFixed(1)}%</div>
+          <div style="font-size:10.5px;color:var(--t3)" data-priv="amount">${shares.toFixed(2)} sh @ ${fmt$2(r.price)} · ${((r.value/total)*100).toFixed(1)}% → ${(r.target*100).toFixed(1)}%</div>
         </div>
-        <div style="font-size:14px;font-weight:700;color:${isBuy?'var(--green,#34C759)':'var(--red,#FF3B30)'};font-variant-numeric:tabular-nums" data-priv="amount">${isBuy?"+":"-"}$${amt.toFixed(0)}</div>
+        <div style="font-size:14px;font-weight:700;color:${isBuy?'var(--green,#34C759)':'var(--red,#FF3B30)'};font-variant-numeric:tabular-nums" data-priv="amount">${isBuy?"+":"-"}${fmt$0(amt)}</div>
       </div>
     `;
   };
@@ -12938,7 +12949,7 @@ function performanceAttributionSheet() {
     <p class="muted" style="font-size:12.5px;margin-bottom:12px">Who's driving your unrealized gains and losses.</p>
     <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${totalColor};border-radius:var(--r);padding:14px;margin-bottom:10px">
       <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Total unrealized P&amp;L</div>
-      <div style="font-size:24px;font-weight:800;color:${totalColor};font-variant-numeric:tabular-nums" data-priv="amount">${totalPl >= 0 ? "+" : "-"}$${Math.abs(totalPl).toFixed(2)}</div>
+      <div style="font-size:24px;font-weight:800;color:${totalColor};font-variant-numeric:tabular-nums" data-priv="amount">${totalPl >= 0 ? "+" : "-"}${fmt$2(Math.abs(totalPl))}</div>
     </div>
     <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
       <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">By position</div>
@@ -12948,8 +12959,8 @@ function performanceAttributionSheet() {
         return `
           <div onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(r.tk)}),120)" role="button" tabindex="0" style="margin-bottom:8px;cursor:pointer">
             <div style="display:flex;justify-content:space-between;align-items:baseline;font-size:12px;margin-bottom:3px">
-              <span style="font-weight:700;color:var(--t1)" data-priv="amount">${esc(r.tk)} <span style="color:var(--t3);font-weight:500;font-size:10.5px">${r.shares} sh @ $${r.cost.toFixed(2)} → $${r.price.toFixed(2)}</span></span>
-              <span style="color:${c};font-weight:700;font-variant-numeric:tabular-nums" data-priv="amount">${r.pl >= 0 ? "+" : "-"}$${Math.abs(r.pl).toFixed(0)} <span style="font-size:10.5px;font-weight:500">(${r.plPct >= 0 ? "+" : ""}${(r.plPct*100).toFixed(1)}%)</span></span>
+              <span style="font-weight:700;color:var(--t1)" data-priv="amount">${esc(r.tk)} <span style="color:var(--t3);font-weight:500;font-size:10.5px">${r.shares} sh @ ${fmt$2(r.cost)} → ${fmt$2(r.price)}</span></span>
+              <span style="color:${c};font-weight:700;font-variant-numeric:tabular-nums" data-priv="amount">${r.pl >= 0 ? "+" : "-"}${fmt$0(Math.abs(r.pl))} <span style="font-size:10.5px;font-weight:500">(${r.plPct >= 0 ? "+" : ""}${(r.plPct*100).toFixed(1)}%)</span></span>
             </div>
             <div style="position:relative;height:6px;background:var(--bg-elev);border-radius:3px;overflow:hidden">
               <div style="position:absolute;${r.pl >= 0 ? 'left:50%' : 'right:50%'};width:${widthPct/2}%;height:100%;background:${c};opacity:0.8"></div>
@@ -14976,7 +14987,7 @@ function _stocksRenderBreadth(d) {
       <span class="lbl">Market sentiment</span>
       <div style="background:var(--bg-elev);color:${color};border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase">${esc(band)}</div>
       <div style="flex:1"></div>
-      <button class="act" onclick="DB.stocks.breadthCache=null;_stocksLoadBreadth()" style="font-size:11px">↻</button>
+      <button class="act" aria-label="Refresh market breadth" title="Refresh" onclick="DB.stocks.breadthCache=null;_stocksLoadBreadth()" style="font-size:11px">↻</button>
     </div>
     <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:6px">
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
@@ -37999,7 +38010,7 @@ function init() {
   } catch {}
 
   Object.assign(window, {
-    DB, save, load, clone, todayKey, fmt$, fmt$0, esc, uid,
+    DB, save, load, clone, todayKey, fmt$, fmt$0, fmt$2, esc, uid,
     monthlyIncome, dayRecord, _planLiveCurrent, _planLinkedSavingsSum, _completeLinkedGoals,
     sanitizeText, sanitizeBackendUrl, safeUrl, URL_MAX, TEXT_MAX, NOTE_MAX,
     showTab, render, renderToday, renderGoals, renderPlanning, renderMoney, renderStocks, renderStats, renderSettings, renderHeader,
