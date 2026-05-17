@@ -2862,11 +2862,17 @@ async function pinQuoteToToday() {
     toast("Note is full — clear some space first");
     return;
   }
+  // Snapshot prior value so a failed encryption save can roll back the
+  // in-memory mutation — otherwise a subsequent unrelated save() would
+  // persist this change despite the user seeing an error toast.
+  const prior = DB.calendarNotes[k];
   DB.calendarNotes[k] = combined;
   try {
     await save();
     toast("Quote saved to today's note");
   } catch (e) {
+    if (prior === undefined) delete DB.calendarNotes[k];
+    else DB.calendarNotes[k] = prior;
     toast("Couldn't save — please try again");
     return;
   }
@@ -5431,7 +5437,13 @@ function _a11yLabelDeleteButtons() {
 // because every save() triggers render(). Roughly halves the work the
 // Money tab does on a phone with a year of accumulated data.
 let _renderMemo = {};
+// True only while render() is executing. Memoizing helpers should only
+// cache results during a render pass — callers outside render (push
+// scheduler, snapshotNetWorth at midnight, async event handlers) would
+// otherwise read stale data from a long-completed render pass.
+let _renderActive = false;
 function _memoize(key, fn) {
+  if (!_renderActive) return fn();
   if (key in _renderMemo) return _renderMemo[key];
   const v = fn();
   _renderMemo[key] = v;
@@ -5440,6 +5452,7 @@ function _memoize(key, fn) {
 
 function render() {
   _renderMemo = {}; // fresh cache per render pass
+  _renderActive = true;
   renderHeader();
   const tab = activeTab;
   if (tab === "today")    renderToday();
@@ -5476,6 +5489,7 @@ function render() {
       }
     }
   } catch {}
+  _renderActive = false;
 }
 
 // Calendar month being viewed — defaults to today's month, navigated by calendarPrev/Next.
@@ -9225,8 +9239,10 @@ var wealthRange = "90"; // "30" | "90" | "365" | "all" — controls net-worth ch
 function wealthComposition() {
   // Hot path — called from 6+ surfaces on Money tab render.
   // Memoize within a single render() pass to avoid repeating the
-  // accounts + assets + liabilities + stocks loops.
-  if (typeof _renderMemo === "object" && "wealthComposition" in _renderMemo) {
+  // accounts + assets + liabilities + stocks loops. Gated on
+  // _renderActive so out-of-render callers (snapshotNetWorth, push
+  // scheduler) always compute fresh.
+  if (_renderActive && typeof _renderMemo === "object" && "wealthComposition" in _renderMemo) {
     return _renderMemo.wealthComposition;
   }
   let cash = 0, investments = 0, realAssets = 0, debts = 0;
@@ -24380,7 +24396,9 @@ function upcomingBills(daysAhead = 7) {
   // Render-scoped memo — Money/Today/Calendar/forecast/push triggers each
   // call this multiple times per render. Cache by daysAhead so different
   // horizons (0, 2, 7, 14, 30, 60) still produce correct results.
-  if (typeof _renderMemo === "object") {
+  // Gated on _renderActive so push-notification scheduler calls outside
+  // render always compute fresh.
+  if (_renderActive && typeof _renderMemo === "object") {
     const ck = "upcomingBills:" + daysAhead;
     if (ck in _renderMemo) return _renderMemo[ck];
   }
@@ -24671,7 +24689,10 @@ function processSyncedDeposits() {
     // Skip if older than 30 days (probably already handled in a previous
     // session). 14d was too aggressive for users who connect a bank after
     // a sync gap — they'd miss the last 2-3 paychecks entirely.
-    const ageDays = (Date.now() - new Date(tx.date).getTime()) / 86400000;
+    // Append T00:00:00 so YYYY-MM-DD parses as local midnight (UTC midnight
+    // would shift "today" back a day for west-of-UTC users, occasionally
+    // re-surfacing yesterday's paycheck as eligible).
+    const ageDays = (Date.now() - new Date(tx.date + "T00:00:00").getTime()) / 86400000;
     if (ageDays > 30) continue;
     DB.pendingDeposits = DB.pendingDeposits || [];
     DB.pendingDeposits.push({
@@ -24872,11 +24893,14 @@ function timeToGoal(savingId) {
   if (log.length < 2) return null;
   const now = new Date();
   const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 6, 1);
-  const recent = log.filter(l => new Date(l.date) >= sixMonthsAgo);
+  // Append T00:00:00 so YYYY-MM-DD is parsed in the local TZ — bare ISO
+  // dates parse as UTC midnight, which shifts the date back a day in
+  // negative offsets and breaks the "since X" cutoff for west-of-UTC users.
+  const recent = log.filter(l => l && l.date && new Date(l.date + "T00:00:00") >= sixMonthsAgo);
   if (recent.length < 2) return null;
   const total = recent.reduce((a,l) => a + (+l.amount||0), 0);
   if (total <= 0) return null;
-  const monthsObserved = Math.max(1, (now - new Date(recent[0].date)) / (1000*60*60*24*30));
+  const monthsObserved = Math.max(1, (now - new Date(recent[0].date + "T00:00:00")) / (1000*60*60*24*30));
   const monthlyRate = total / monthsObserved;
   const remaining = sav.target - sav.current;
   const monthsToGo = remaining / monthlyRate;
@@ -25658,7 +25682,7 @@ function buildCounselorSnapshot() {
       const t = new Date(d.date + "T00:00:00").getTime();
       return t >= Date.now() - 86400000 && t <= cutoffMs;
     })
-    .sort((a,b) => new Date(a.date) - new Date(b.date))
+    .sort((a,b) => new Date(a.date + "T00:00:00") - new Date(b.date + "T00:00:00"))
     .slice(0, 8)
     .map(d => ({ title: d.title, date: d.date, icon: d.icon || "📅" }));
 
@@ -27992,8 +28016,9 @@ function detectSubscriptions() {
   // Render-scoped memo — this is the single biggest cost on the Money
   // tab (scans every Plaid tx + groups them) and gets called transitively
   // by upcomingBills() multiple times per render. Cache the result so
-  // subsequent calls in the same render pass are free.
-  if (typeof _renderMemo === "object" && "detectSubscriptions" in _renderMemo) {
+  // subsequent calls in the same render pass are free. Gated on
+  // _renderActive so out-of-render callers always compute fresh.
+  if (_renderActive && typeof _renderMemo === "object" && "detectSubscriptions" in _renderMemo) {
     return _renderMemo.detectSubscriptions;
   }
   // Group plaid outflows by normalized merchant key
@@ -30666,7 +30691,7 @@ const RECURRING_PER_MONTH = { weekly: 4.345, biweekly: 2.1725, monthly: 1, yearl
 function recurringMonthlyTotal(kind) {
   // Hot path — called from a dozen places per Money/Today render.
   const cacheKey = "recurringMonthlyTotal:" + kind;
-  if (typeof _renderMemo === "object" && cacheKey in _renderMemo) {
+  if (_renderActive && typeof _renderMemo === "object" && cacheKey in _renderMemo) {
     return _renderMemo[cacheKey];
   }
   const list = (DB.recurring || []).filter(r => r.kind === kind);
@@ -30720,7 +30745,7 @@ function impliedMonthlySavings() {
 }
 function safeToSpend() {
   // Hot path — called from Today + Money tabs + Cornileus snapshot.
-  if (typeof _renderMemo === "object" && "safeToSpend" in _renderMemo) {
+  if (_renderActive && typeof _renderMemo === "object" && "safeToSpend" in _renderMemo) {
     return _renderMemo.safeToSpend;
   }
   const income = monthlyIncome();
@@ -30860,7 +30885,7 @@ function _playsTotalSavings() {
   // an unlinked bank PLUS $2k Plaid checking — will see $5k counted, not
   // $7k. That's still better than 0 (the old behavior) or $7k
   // (double-count).
-  if (typeof _renderMemo === "object" && "_playsTotalSavings" in _renderMemo) {
+  if (_renderActive && typeof _renderMemo === "object" && "_playsTotalSavings" in _renderMemo) {
     return _renderMemo._playsTotalSavings;
   }
   const buckets = (DB.savings || []).reduce((s,x) => s + (+x.current || 0), 0);
