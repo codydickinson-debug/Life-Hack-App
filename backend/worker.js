@@ -1155,17 +1155,28 @@ function _isAllowedPushEndpoint(url) {
   return ALLOWED_PUSH_HOSTS.some(rx => rx.test(url));
 }
 
-// Per-user rate limit for the push endpoints. Cheap counter in KV — the
-// burst cap stops a runaway client from cycling subscriptions / spamming
-// /push/test before the daily cap kicks in. Returns 429 response if hit.
-async function _pushRateGate(env, userId, bucket, perHourCap, origin) {
-  const key = `u:${userId}:push:${bucket}:${new Date().toISOString().slice(0, 13)}`; // YYYY-MM-DDTHH
-  const cur = parseInt(await env.ASCEND_KV.get(key) || "0", 10) || 0;
-  if (cur >= perHourCap) {
+// Per-user rate limit for the push endpoints. Cheap KV counter — the burst
+// cap stops a runaway client from cycling subscriptions / spamming /push/test
+// before any daily cap kicks in. If `perDayCap` is provided, also enforce a
+// per-UTC-day cap so an attacker can't sustain the hourly rate for 24h.
+// Returns a 429 Response if either cap is hit, else null.
+async function _pushRateGate(env, userId, bucket, perHourCap, origin, perDayCap) {
+  const iso = new Date().toISOString();
+  const hourKey = `u:${userId}:push:${bucket}:${iso.slice(0, 13)}`; // YYYY-MM-DDTHH
+  const curHour = parseInt(await env.ASCEND_KV.get(hourKey) || "0", 10) || 0;
+  if (curHour >= perHourCap) {
     return json({ error: `Rate limit: ${perHourCap}/hour for ${bucket}. Slow down.`, code: "rate_limit" }, 429, origin);
   }
+  if (perDayCap) {
+    const dayKey = `u:${userId}:push:${bucket}:day:${iso.slice(0, 10)}`;
+    const curDay = parseInt(await env.ASCEND_KV.get(dayKey) || "0", 10) || 0;
+    if (curDay >= perDayCap) {
+      return json({ error: `Daily limit: ${perDayCap}/day for ${bucket}. Try again tomorrow.`, code: "rate_limit_daily" }, 429, origin);
+    }
+    await env.ASCEND_KV.put(dayKey, String(curDay + 1), { expirationTtl: 26 * 60 * 60 });
+  }
   // Reserve before doing the work; TTL ~70 min covers any clock skew.
-  await env.ASCEND_KV.put(key, String(cur + 1), { expirationTtl: 70 * 60 });
+  await env.ASCEND_KV.put(hourKey, String(curHour + 1), { expirationTtl: 70 * 60 });
   return null;
 }
 
@@ -1173,7 +1184,11 @@ async function handlePushSubscribe(request, env, userId, origin) {
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) {
     return json({ error: "Push not configured on this backend (missing VAPID_*)" }, 503, origin);
   }
-  const limited = await _pushRateGate(env, userId, "subscribe", 20, origin);
+  // Subscribe is effectively a one-time user action (rotated when the SW
+  // push subscription expires or the user re-grants permission). 5/hour
+  // gives slack for the rare permission-flip cycle without enabling a
+  // misbehaving client to churn KV records.
+  const limited = await _pushRateGate(env, userId, "subscribe", 5, origin);
   if (limited) return limited;
   const body = await request.json().catch(() => ({}));
   const sub = body.subscription;
@@ -1222,7 +1237,10 @@ async function handlePushUnsubscribe(env, userId, origin) {
 }
 
 async function handlePushTest(env, userId, origin) {
-  const limited = await _pushRateGate(env, userId, "test", 10, origin);
+  // Test is user-initiated ("send me a test push to verify delivery"). A
+  // healthy user taps it once. Tightened from 10/hour to 3/hour — a stolen
+  // device-secret can't use this to spam the device.
+  const limited = await _pushRateGate(env, userId, "test", 3, origin);
   if (limited) return limited;
   const raw = await env.ASCEND_KV.get(pushKey(userId));
   if (!raw) return json({ error: "not subscribed" }, 400, origin);
@@ -1253,7 +1271,11 @@ function _safePushUrl(raw) {
 }
 
 async function handlePushSend(request, env, userId, origin) {
-  const limited = await _pushRateGate(env, userId, "send", 30, origin);
+  // /push/send is the milestone-alert path (e.g. "you crossed $100k"). The
+  // frontend calls it sparingly, but a compromised clientSecret could spam
+  // the device. Hourly cap bounds burst; daily cap (50/day, matching the
+  // Anthropic proxy cap) bounds sustained abuse over 24h.
+  const limited = await _pushRateGate(env, userId, "send", 30, origin, 50);
   if (limited) return limited;
   const raw = await env.ASCEND_KV.get(pushKey(userId));
   if (!raw) return json({ error: "not subscribed" }, 400, origin);
