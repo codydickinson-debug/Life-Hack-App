@@ -1442,6 +1442,66 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   50%     { box-shadow: 0 0 0 8px transparent; }
 }
 
+/* ---------- Skeleton loaders ----------
+   Generic pulsing shimmer used for AI replies-in-flight, stock quote
+   refreshes, Plaid sync, and any other "we're waiting on a network
+   round-trip" state. Replaces the bare "Loading…" text — gives users a
+   visual placeholder so the layout doesn't jump when content arrives.
+
+   `.skel` = pulsing solid block (use width/height inline)
+   `.skel-line` = single full-width bar (16px tall, common case)
+   `.skel-circle` = pulsing circle (use width inline, height matches)
+   `.skel-card` = card-shaped placeholder with shimmer animation
+   `@keyframes pulse` is defined here too so the bare `animation:pulse`
+   usages elsewhere finally have a definition.
+*/
+@keyframes pulse {
+  0%, 100% { opacity: 0.45; }
+  50%      { opacity: 0.85; }
+}
+@keyframes skel-shimmer {
+  0%   { background-position: -300px 0; }
+  100% { background-position: 300px 0; }
+}
+.skel {
+  background: var(--bg-elev);
+  border-radius: 8px;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.skel-line {
+  height: 14px;
+  background: var(--bg-elev);
+  border-radius: 6px;
+  margin: 6px 0;
+  animation: pulse 1.4s ease-in-out infinite;
+}
+.skel-circle {
+  border-radius: 50%;
+  background: var(--bg-elev);
+  animation: pulse 1.4s ease-in-out infinite;
+  display: inline-block;
+}
+.skel-card {
+  background: linear-gradient(90deg, var(--bg-elev) 0%, var(--card) 50%, var(--bg-elev) 100%);
+  background-size: 600px 100%;
+  border-radius: var(--r, 14px);
+  border: 0.5px solid var(--sep);
+  animation: skel-shimmer 1.6s linear infinite;
+}
+/* Visually-distinct AI thinking skeleton — uses Cornileus's purple-pink
+   accent so users immediately recognize it as "AI is thinking" vs a
+   generic data load. */
+.skel-ai {
+  background: linear-gradient(90deg,
+    rgba(124,58,237,0.10) 0%,
+    rgba(236,72,153,0.18) 50%,
+    rgba(124,58,237,0.10) 100%);
+  background-size: 600px 100%;
+  border-radius: var(--r, 14px);
+  border: 0.5px solid rgba(124,58,237,0.25);
+  animation: skel-shimmer 1.8s linear infinite;
+}
+
 /* What-if simulator on Plan tab */
 .whatif-card {
   background: linear-gradient(135deg, color-mix(in srgb, var(--corn-from) 10%, transparent), color-mix(in srgb, var(--corn-to) 8%, transparent));
@@ -7083,7 +7143,12 @@ function renderToday() {
             <button class="btn sm secondary" style="font-size:11px;padding:4px 10px" ${DB._aiInsightLoading ? 'disabled' : ''} onclick="runAiInsight()">${DB._aiInsightLoading ? "Thinking…" : "Refresh"}</button>
           </div>
           ${DB._aiInsightLoading ? `
-            <div style="font-size:13.5px;line-height:1.55;color:var(--t3);font-style:italic">Cornileus is reading your latest numbers…</div>
+            <div style="font-size:11.5px;color:var(--t3);font-style:italic;margin-bottom:8px">Cornileus is reading your latest numbers…</div>
+            <div class="skel-ai" style="padding:12px 14px;border-radius:12px">
+              <div class="skel-line" style="width:96%;height:12px;margin:0 0 7px;background:rgba(255,255,255,0.12)"></div>
+              <div class="skel-line" style="width:88%;height:12px;margin:0 0 7px;background:rgba(255,255,255,0.12)"></div>
+              <div class="skel-line" style="width:62%;height:12px;margin:0;background:rgba(255,255,255,0.12)"></div>
+            </div>
           ` : `
             <div style="font-size:13.5px;line-height:1.55;color:var(--t1);white-space:pre-wrap">${esc(last.response)}</div>
           `}
@@ -10337,7 +10402,21 @@ function renderMoney() {
     const cats = spendCategories();
     const totalAvail = (DB.accounts || []).filter(a => a.type === "depository").reduce((s,a)=>s+(+a.balance_available||+a.balance_current||0),0);
     const accountsHtml = (DB.accounts && DB.accounts.length) ? `
-      <div class="section-h"><span class="lbl">Accounts</span>${DB.settings.backendUrl ? `<button class="act" onclick="syncNow()">Sync ↻</button>` : ""}</div>
+      <div class="section-h"><span class="lbl">Accounts</span>${DB.settings.backendUrl ? `<button class="act" ${DB._syncing ? "disabled" : ""} onclick="syncNow()">${DB._syncing ? "Syncing…" : "Sync ↻"}</button>` : ""}</div>
+      ${DB._syncing ? `
+        <div class="list" style="margin-bottom:6px">
+          ${DB.accounts.map(a => `
+            <div class="row" style="opacity:0.7">
+              <div class="lead">${a.type === "credit" ? "💳" : a.type === "investment" || a.type === "brokerage" ? "📈" : a.type === "loan" ? "🧾" : "🏦"}</div>
+              <div class="body">
+                <div class="t1">${esc(a.name)} ${a.mask ? `<span class="muted" style="font-weight:400">···${esc(a.mask)}</span>` : ""}</div>
+                <div class="skel-line" style="width:60%;height:11px;margin:4px 0 0"></div>
+              </div>
+              <div class="skel" style="width:60px;height:18px"></div>
+            </div>
+          `).join("")}
+        </div>
+      ` : `
       <div class="list">
         ${DB.accounts.map(a => `
           <div class="row">
@@ -10350,7 +10429,7 @@ function renderMoney() {
           </div>
         `).join("")}
       </div>
-    ` : (DB.settings.advancedFeaturesEnabled ? (DB.settings.backendUrl ? `
+    `}` : (DB.settings.advancedFeaturesEnabled ? (DB.settings.backendUrl ? `
       <div style="background:var(--card);border-radius:var(--r);margin-bottom:12px">
         ${emptyStateHtml({
           emoji: "🏦",
@@ -23467,6 +23546,12 @@ function _backendReady() {
 async function syncNow() {
   if (!_backendReady()) { toast("Configure backend in Settings first"); return; }
   toast("Syncing…");
+  // Set a transient flag so Money / Wealth renderers can show skeleton
+  // placeholders for accounts/holdings/transactions while the round-trip
+  // is in flight. Cleared in the finally so a failed sync still removes
+  // the indicator.
+  DB._syncing = true;
+  try { render(); } catch {}
   try {
     const r = await backendSync();
     // Capture broken items BEFORE the refresh so we can detect newly-broken
@@ -23525,6 +23610,7 @@ async function syncNow() {
     );
     render();
   } catch (e) { toast(_friendlyApiError("Sync", e)); }
+  finally { DB._syncing = false; try { render(); } catch {} }
 }
 
 async function disconnectItem(itemId) {
@@ -25689,12 +25775,21 @@ function counselorRender() {
   ` : "";
 
   const voiceSupported = !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-  // While Cornileus is thinking, show animated dots next to a small avatar
-  // (so the thinking face in the header is reinforced in the chat itself).
+  // While Cornileus is thinking, show animated dots PLUS a skeleton block
+  // shaped like a real reply — three shimmering lines of decreasing width
+  // — so the user gets immediate "your message landed, a reply is coming"
+  // feedback instead of staring at empty space.
   const thinkingBubble = busy ? `
     <div style="display:flex;gap:8px;margin-bottom:12px;align-items:flex-start">
       ${cornAvatarHtml(32, false, "thinking")}
-      <div class="corn-think-dots"><span></span><span></span><span></span></div>
+      <div style="flex:1;min-width:0">
+        <div class="corn-think-dots" style="margin-bottom:8px"><span></span><span></span><span></span></div>
+        <div class="skel-ai" style="padding:14px 16px;border-radius:18px">
+          <div class="skel-line" style="width:92%;height:13px;margin:0 0 8px;background:rgba(255,255,255,0.12)"></div>
+          <div class="skel-line" style="width:78%;height:13px;margin:0 0 8px;background:rgba(255,255,255,0.12)"></div>
+          <div class="skel-line" style="width:55%;height:13px;margin:0;background:rgba(255,255,255,0.12)"></div>
+        </div>
+      </div>
     </div>
   ` : "";
   const footer = busy ? `
@@ -27951,11 +28046,225 @@ function yearReviewSheet() {
     <hr class="sep">
     <label>Wins logged</label>
     <div style="font-size:13px;color:var(--t2)">${r.winsYear} small wins captured this year.</div>
-    <div class="actions">
-      <button class="btn secondary" onclick="closeSheet()">Close</button>
-      <button class="btn" onclick="downloadShareCard()">Download streak card</button>
+    <div class="actions" style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+      <button class="btn secondary" onclick="downloadShareCard()">Streak card</button>
+      <button class="btn" onclick="shareYearReviewImage()" style="background:linear-gradient(135deg,#7c3aed,#ec4899);color:#fff;border:none">📸 Share year</button>
     </div>
+    <button class="btn secondary" style="width:100%;margin-top:8px" onclick="closeSheet()">Close</button>
   `);
+}
+
+/* ---------- Year-in-review shareable image ----------
+   Renders the year's stats onto a 1080x1920 portrait Canvas (Stories/Reels
+   aspect ratio) and either uses the Web Share API (mobile) or falls back
+   to a download. Pure Canvas2D so there's no external dep.
+
+   The card is built top-down: hero title → 4 big KPIs → optional money
+   row → habit heatmap → top habits → brand footer. Layout uses fixed Y
+   offsets — each section advances `y` so adding/removing sections is
+   linear.
+
+   Why 1080×1920: it's the universal Stories/Status aspect ratio. iMessage,
+   Snapchat, Instagram, and Twitter all accept it without re-cropping. */
+async function shareYearReviewImage() {
+  const r = yearReview();
+  const haveAny = r.totalChecks || r.goalsCompleted.length || r.yearOut > 0 || r.savingsDeposited > 0 || r.winsYear;
+  if (!haveAny) { toast("Nothing logged yet this year to share"); return; }
+  try { haptic("light"); } catch {}
+  toast("Generating image…");
+  await new Promise(resolve => setTimeout(resolve, 30)); // let the toast paint
+
+  const W = 1080, H = 1920;
+  const canvas = document.createElement("canvas");
+  canvas.width = W; canvas.height = H;
+  const ctx = canvas.getContext("2d");
+
+  // Background — purple-to-pink gradient matching the app's accent.
+  const grad = ctx.createLinearGradient(0, 0, W, H);
+  grad.addColorStop(0,   "#1a0f2e");
+  grad.addColorStop(0.4, "#3b1e64");
+  grad.addColorStop(1,   "#0a0a0a");
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle starfield for depth
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
+  for (let i = 0; i < 80; i++) {
+    const x = Math.random() * W, y = Math.random() * H;
+    const s = Math.random() * 3 + 1;
+    ctx.fillRect(x, y, s, s);
+  }
+
+  const F = (size, weight) => `${weight} ${size}px -apple-system, "SF Pro Display", "Segoe UI", system-ui, sans-serif`;
+
+  // Brand chip top
+  ctx.fillStyle = "rgba(255,255,255,0.7)";
+  ctx.font = F(28, 700);
+  ctx.textAlign = "left";
+  ctx.fillText("✨ ASCEND", 80, 130);
+
+  // Year hero
+  ctx.fillStyle = "#fff";
+  ctx.textAlign = "left";
+  ctx.font = F(180, 800);
+  ctx.fillText(String(r.year), 80, 320);
+  ctx.fillStyle = "rgba(255,255,255,0.75)";
+  ctx.font = F(46, 600);
+  ctx.fillText("in review", 80, 380);
+
+  // Subtitle — user's name, if set
+  if (DB.user && DB.user.name) {
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.font = F(34, 500);
+    ctx.fillText(`for ${DB.user.name}`, 80, 430);
+  }
+
+  // 4-up KPI grid — two big numbers per row
+  const kpiCells = [
+    { v: String(r.totalChecks),                lbl: "habit check-offs",    accent: "#34C759" },
+    { v: String(r.goalsCompleted.length),      lbl: "goals completed",     accent: "#FF9500" },
+    { v: r.winsYear ? String(r.winsYear) : "·", lbl: "wins captured",      accent: "#FFD60A" },
+    { v: r.savingsDeposited > 0 ? "$" + Math.round(r.savingsDeposited / 1000) + "K" : "·", lbl: "saved",  accent: "#5AC8FA" },
+  ];
+  let y = 540;
+  for (let i = 0; i < kpiCells.length; i++) {
+    const col = i % 2, row = Math.floor(i / 2);
+    const cellX = 80 + col * (440 + 40);
+    const cellY = y + row * 220;
+    const k = kpiCells[i];
+    // Card bg
+    ctx.fillStyle = "rgba(255,255,255,0.06)";
+    _roundRect(ctx, cellX, cellY, 440, 190, 28);
+    ctx.fill();
+    // Big number
+    ctx.fillStyle = k.accent;
+    ctx.font = F(96, 800);
+    ctx.textAlign = "left";
+    ctx.fillText(k.v, cellX + 30, cellY + 105);
+    // Label
+    ctx.fillStyle = "rgba(255,255,255,0.7)";
+    ctx.font = F(28, 600);
+    ctx.fillText(k.lbl, cellX + 30, cellY + 155);
+  }
+  y += 220 * 2 + 50;
+
+  // Habit-consistency heatmap (12 monthly cells)
+  if (r.totalChecks > 0) {
+    const yearStr = String(r.year);
+    const monthBuckets = Array.from({ length: 12 }, () => ({ done: 0, possible: 0 }));
+    for (const h of (DB.habits || [])) {
+      for (const [k, v] of Object.entries(h.log || {})) {
+        if (!k.startsWith(yearStr + "-")) continue;
+        const m = parseInt(k.slice(5, 7), 10) - 1;
+        if (m < 0 || m > 11) continue;
+        monthBuckets[m].possible++;
+        const did = h.type === "count" ? (+v || 0) >= (+h.target || 1) : !!v;
+        if (did) monthBuckets[m].done++;
+      }
+    }
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.font = F(28, 700);
+    ctx.fillText("CONSISTENCY EACH MONTH", 80, y);
+    y += 30;
+    const cellSize = 70, gap = 8;
+    const heatX = 80;
+    for (let m = 0; m < 12; m++) {
+      const b = monthBuckets[m];
+      const pct = b.possible ? b.done / b.possible : 0;
+      let alpha = 0.08;
+      if (pct >= 0.8) alpha = 0.95;
+      else if (pct >= 0.6) alpha = 0.65;
+      else if (pct >= 0.4) alpha = 0.40;
+      else if (pct > 0)    alpha = 0.20;
+      ctx.fillStyle = `rgba(46,184,117,${alpha})`;
+      const cx = heatX + m * (cellSize + gap);
+      _roundRect(ctx, cx, y + 20, cellSize, cellSize, 10);
+      ctx.fill();
+      // Month-letter label below
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.font = F(22, 600);
+      ctx.textAlign = "center";
+      const lbl = new Date(r.year, m, 1).toLocaleDateString("en-US", { month: "short" })[0];
+      ctx.fillText(lbl, cx + cellSize / 2, y + 20 + cellSize + 30);
+    }
+    y += 150;
+  }
+
+  // Top 3 habits — emoji + name + count
+  const topHabits = r.perHabit.slice(0, 3).filter(h => h.count > 0);
+  if (topHabits.length) {
+    y += 30;
+    ctx.textAlign = "left";
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.font = F(28, 700);
+    ctx.fillText("MOST CONSISTENT", 80, y);
+    y += 50;
+    for (const h of topHabits) {
+      ctx.fillStyle = "rgba(255,255,255,0.06)";
+      _roundRect(ctx, 80, y, 920, 110, 22);
+      ctx.fill();
+      ctx.fillStyle = "#fff";
+      ctx.font = F(52, 700);
+      ctx.fillText((h.emoji || "✨") + "  " + (h.name || "").slice(0, 28), 120, y + 70);
+      ctx.fillStyle = "#34C759";
+      ctx.font = F(48, 800);
+      ctx.textAlign = "right";
+      ctx.fillText(String(h.count), 960, y + 70);
+      ctx.textAlign = "left";
+      y += 130;
+    }
+  }
+
+  // Brand footer
+  ctx.fillStyle = "rgba(255,255,255,0.5)";
+  ctx.font = F(28, 600);
+  ctx.textAlign = "center";
+  ctx.fillText("Built with Ascend · ascend-app", W / 2, H - 70);
+
+  // Convert to blob and share/download
+  canvas.toBlob(async (blob) => {
+    if (!blob) { toast("Couldn't generate image"); return; }
+    const filename = `ascend-${r.year}-review.png`;
+    const file = new File([blob], filename, { type: "image/png" });
+    // Try Web Share API first (mobile native share sheet)
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({
+          files: [file],
+          title: `${r.year} in review`,
+          text: `My ${r.year} on Ascend — ${r.totalChecks} habit check-offs${r.goalsCompleted.length ? `, ${r.goalsCompleted.length} goals completed` : ""}.`,
+        });
+        try { haptic("success"); } catch {}
+        return;
+      } catch (e) {
+        // user cancelled OR share failed — fall through to download
+        if (e && e.name === "AbortError") return;
+      }
+    }
+    // Fallback: trigger a download
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url; a.download = filename;
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    toast("Image downloaded — share it from your gallery");
+  }, "image/png", 0.95);
+}
+
+// Rounded-rect helper — Canvas2D's roundRect lands inconsistently across
+// browsers, so we draw the path manually.
+function _roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
 }
 
 
@@ -37000,6 +37309,7 @@ function init() {
     splitTransactionSheet, _renderSplitSheet, _commitSplit,
     _stocksPortfolioYtdReturn, _stocksFetchBenchmark, _stocksRecordTickerYtd,
     _USFederalHolidays, _holidaysForMonth, _holidayForDate, toggleFederalHolidays,
+    shareYearReviewImage, _roundRect,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, disableEncryptionSheet, showLockScreen,
     setPassphrase, unlockWithPassphrase, disablePassphrase, encryptObject, decryptObject, deriveKey,
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,
