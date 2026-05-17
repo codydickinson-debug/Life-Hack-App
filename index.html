@@ -5786,6 +5786,15 @@ function setupHealthSheet() {
         </div>
       `).join("")}
     </div>
+    ${(DB.habits || []).length === 0 && (DB.spend || []).length === 0 ? `
+      <div style="background:rgba(124,58,237,0.08);border:1px solid rgba(124,58,237,0.25);border-radius:10px;padding:12px 14px;margin-top:14px;display:flex;align-items:flex-start;gap:10px;cursor:pointer" onclick="closeSheet();setTimeout(()=>loadDemoData(),120)">
+        <div style="font-size:20px;flex-shrink:0">✨</div>
+        <div style="flex:1;min-width:0">
+          <div style="font-size:13px;font-weight:600;color:var(--purple,#7c3aed)">Just exploring? Load demo data.</div>
+          <div style="font-size:11.5px;color:var(--t2);margin-top:2px">Fills every tab with realistic fake data so you can see every feature in action. Wipes when you reset.</div>
+        </div>
+      </div>
+    ` : ""}
     <div class="actions"><button class="btn" onclick="closeSheet()">${pct === 100 ? "✓ All set" : "Done for now"}</button></div>
   `);
 }
@@ -22065,7 +22074,6 @@ function renderSettings() {
       </div>
     </div>
 
-    ${DB.settings._settingsShowAll ? `
     <div class="section-h"><span class="lbl">Demo data</span></div>
     <div class="list">
       <div class="row tappable" onclick="loadDemoData()">
@@ -22074,7 +22082,6 @@ function renderSettings() {
         <div class="trail chev"></div>
       </div>
     </div>
-    ` : ""}
 
     <div class="section-h"><span class="lbl">Help</span></div>
     <div class="list">
