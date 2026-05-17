@@ -43,4 +43,16 @@ These are intentional, not bugs — please don't report them as such:
 
 If your finding is non-trivial, we'd appreciate ~60 days before public disclosure. We'll work with you on a timeline.
 
+## Recent hardening (v3.8 — 2026-05-17)
+
+Cross-stack audit + fix pass. Highlights:
+
+- **Worker**: Anthropic upstream responses are field-whitelisted before forwarding (no leaked Anthropic error metadata / model ids). Plaid webhooks now verify item ownership against a reverse `item-owner:<itemId>` index. `decryptString` rejects malformed packed ciphertext. `handleSync` has a 40-call per-invocation budget with `truncated:true` continuation. Push payload `url` field is path-allowlisted (defends against destructive deep links via a crafted push).
+- **Frontend**: `_decodePairingToken` + Cornileus action JSON parsing routed through `safeJsonParse` (proto-pollution defense). Encryption-lockout brute-force counter mirrors to sessionStorage so a `QuotaExceededError` doesn't reset the rate limit.
+- **Python**: every yfinance-routed path parameter validated by strict regex (`^[A-Z0-9.\-^=]{1,10}$`) — SSRF/path-traversal defense. RSS image URLs require HTTPS + an allowlisted news-CDN host (defeats third-party-tracker amplification via a compromised feed). `defusedxml` replaces stdlib ElementTree for RSS parsing.
+- **Service worker**: `notificationclick` path-allowlists nav targets the same way the worker does.
+- **Vercel headers**: HSTS preload, Cross-Origin-Opener-Policy, Cross-Origin-Resource-Policy. Per-route edge cache on the actually-cacheable Python endpoints.
+
+Full per-commit detail in `RELEASES.md`.
+
 Thanks for keeping Ascend safer.

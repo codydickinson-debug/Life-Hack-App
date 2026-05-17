@@ -4,15 +4,15 @@ compatibility_date = "2024-09-01"
 
 # After running `wrangler kv namespace create ASCEND_KV`, paste the id below.
 #
-# IMPORTANT: this is your account's KV namespace id, not a secret — but
-# committing it makes forkers accidentally point at YOUR Cloudflare KV
-# until they replace it. Recommended pattern: keep this as a placeholder
-# in the repo, paste your real id locally before `wrangler deploy`, and
-# never commit the change back (or use `wrangler kv namespace create`
-# to mint a fresh one per operator).
+# ⚠ FORKERS: this id points at the upstream operator's Cloudflare KV
+# namespace. It's not a secret (auth still requires their API token), but
+# you MUST replace it with your own before deploying — otherwise wrangler
+# will fail with "namespace not in your account". Run
+# `wrangler kv namespace create ASCEND_KV` and paste the new id here.
+# Don't commit the change back upstream.
 [[kv_namespaces]]
 binding = "ASCEND_KV"
-id = "REPLACE_WITH_YOUR_KV_NAMESPACE_ID"
+id = "44a23ecf3805442a979f201d43834ea6"
 
 # Scheduled trigger — runs every 15 minutes to deliver any scheduled
 # pushes whose time has arrived. Cheap; idles when nothing's due.
