@@ -3500,6 +3500,16 @@ $("#content").addEventListener("scroll", () => {
     if (e.touches.length !== 1) { active = false; return; }
     const sheet = $("#sheet");
     if (sheet && sheet.classList.contains("show")) { active = false; return; }
+    // Don't intercept swipes inside horizontal scrollers (ticker carousels,
+    // the watchlist on the Stocks tab, image strips, etc.) — those have
+    // their own native horizontal-scroll behavior that the user expects.
+    if (e.target && e.target.closest && e.target.closest('[data-noswipe="1"], .stk-watchlist, .stk-carousel, [style*="overflow-x:auto"], [style*="overflow-x: auto"]')) {
+      active = false; return;
+    }
+    // Disable on the Stocks tab — it's dense with horizontal scrollers
+    // (sector heatmap, watchlist scroll) and false-positive tab switches
+    // are too costly there.
+    if (activeTab === "stocks") { active = false; return; }
     const t = e.touches[0];
     sx = t.clientX; sy = t.clientY; st = Date.now(); active = true;
   }, { passive: true });
@@ -3516,8 +3526,10 @@ $("#content").addEventListener("scroll", () => {
     const visible = TAB_ORDER.filter(t => !hiddenTabs.includes(t));
     let i = visible.indexOf(activeTab);
     if (i < 0) return;
-    if (dx < 0 && i < visible.length - 1) showTab(visible[i + 1]);
-    else if (dx > 0 && i > 0) showTab(visible[i - 1]);
+    // Visual feedback — a tiny flash of the new tab's pill so the user
+    // knows the gesture registered before the page re-renders.
+    if (dx < 0 && i < visible.length - 1) { try { haptic("light"); } catch {} showTab(visible[i + 1]); }
+    else if (dx > 0 && i > 0) { try { haptic("light"); } catch {} showTab(visible[i - 1]); }
   }, { passive: true });
 })();
 // Keyboard shortcut: Cmd/Ctrl + K opens global search (when not already in an
@@ -11227,6 +11239,83 @@ function renderStats() {
               <div style="font-size:18px;font-weight:700;color:${totalRealized>=0?'var(--green,#34C759)':'var(--red,#FF3B30)'};font-variant-numeric:tabular-nums;line-height:1" data-priv="amount">${totalRealized>=0?'+':'-'}$${Math.abs(totalRealized).toFixed(0)}</div>
               <div style="font-size:10.5px;color:var(--t3);margin-top:4px;line-height:1.2">realized<br>P&L all-time</div>
             </div>
+          </div>
+        </div>
+      `;
+    })()}
+
+    ${(() => {
+      // Spending pattern heatmap: day-of-week × hour-of-day.
+      // Reveals "when do I bleed money" patterns (Friday night dinners,
+      // Saturday afternoon impulse, Sunday brunch, weekday lunch). Only
+      // shown when there's enough data + enough timestamps to draw a meaningful
+      // grid (most manual spend rows are date-only, so we lean on Plaid-synced
+      // tx + any manual entries with explicit times).
+      const spend = (DB.spend || []).filter(t => t && +t.amount > 0 && !t._split);
+      if (spend.length < 20) return "";
+      // 90-day window for stability
+      const cutoff = Date.now() - 90 * 86400000;
+      const recent = spend.filter(t => {
+        const ts = new Date(t.date + (t.time ? "T" + t.time : "T12:00:00")).getTime();
+        return ts >= cutoff;
+      });
+      if (recent.length < 15) return "";
+      // 7×24 grid — dow 0=Mon...6=Sun
+      const grid = Array.from({ length: 7 }, () => Array.from({ length: 24 }, () => ({ count: 0, total: 0 })));
+      let totalsTimed = 0;
+      for (const t of recent) {
+        const dt = new Date(t.date + (t.time ? "T" + t.time : "T12:00:00"));
+        if (isNaN(dt.getTime())) continue;
+        const dow = (dt.getDay() + 6) % 7;
+        const hr = dt.getHours();
+        grid[dow][hr].count++;
+        grid[dow][hr].total += +t.amount || 0;
+        totalsTimed++;
+      }
+      if (totalsTimed < 15) return "";
+      // Aggregate to find peaks
+      const allTotals = grid.flatMap(row => row.map(c => c.total));
+      const maxCell = Math.max(...allTotals, 1);
+      // Find single hottest cell for the headline
+      let hotDow = 0, hotHr = 0, hotVal = 0;
+      for (let d = 0; d < 7; d++) for (let h = 0; h < 24; h++) {
+        if (grid[d][h].total > hotVal) { hotVal = grid[d][h].total; hotDow = d; hotHr = h; }
+      }
+      // Color scale: green-to-red based on cell.total / maxCell
+      const colorFor = (v) => {
+        if (v <= 0) return "var(--bg-elev)";
+        const r = v / maxCell; // 0..1
+        // Cool (low) → hot (high). Use orange-red gradient.
+        const alpha = 0.12 + r * 0.78;
+        return `rgba(237,139,34,${alpha.toFixed(2)})`;
+      };
+      const dowLabels = ["M","T","W","T","F","S","S"];
+      const hrLabel = (h) => h === 0 ? "12a" : h < 12 ? `${h}a` : h === 12 ? "12p" : `${h-12}p`;
+      const dowNames = ["Monday","Tuesday","Wednesday","Thursday","Friday","Saturday","Sunday"];
+      return `
+        <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px 16px;margin-bottom:14px">
+          <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px;gap:8px;flex-wrap:wrap">
+            <div>
+              <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Spending heatmap · 90d</div>
+              <div style="font-size:11.5px;color:var(--t3);margin-top:2px">When dollars actually leave</div>
+            </div>
+            <div style="font-size:11px;color:var(--orange,#FF9500);font-weight:600;text-align:right">peak: ${esc(dowNames[hotDow])} ${esc(hrLabel(hotHr))} <b style="color:var(--t1)" data-priv="amount">${fmt$0(hotVal)}</b></div>
+          </div>
+          <div style="display:grid;grid-template-columns:24px repeat(24,1fr);gap:2px;margin-top:6px;align-items:center">
+            <div></div>
+            ${Array.from({ length: 24 }, (_, h) => `<div style="font-size:7.5px;color:var(--t3);text-align:center;${h % 4 === 0 ? "" : "opacity:0"}">${h % 4 === 0 ? esc(hrLabel(h)) : ""}</div>`).join("")}
+            ${dowLabels.map((lbl, d) => `
+              <div style="font-size:9.5px;color:var(--t3);text-align:center;font-weight:600">${lbl}</div>
+              ${Array.from({ length: 24 }, (_, h) => {
+                const cell = grid[d][h];
+                const title = cell.count > 0 ? `${dowNames[d]} ${hrLabel(h)}: ${fmt$0(cell.total)} (${cell.count} tx)` : "";
+                return `<div title="${esc(title)}" style="aspect-ratio:1/1;background:${colorFor(cell.total)};border-radius:2px;min-height:11px"></div>`;
+              }).join("")}
+            `).join("")}
+          </div>
+          <div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;font-size:9.5px;color:var(--t3)">
+            <span>${totalsTimed} timestamped transactions</span>
+            <span style="display:inline-flex;align-items:center;gap:5px">less <span style="display:inline-block;width:50px;height:5px;background:linear-gradient(90deg,var(--bg-elev),rgba(237,139,34,0.9));border-radius:2px"></span> more</span>
           </div>
         </div>
       `;
@@ -22916,12 +23005,13 @@ async function toggleNotifications(on) {
     if (!("Notification" in window)) { toast("Notifications not supported"); render(); return; }
     const perm = await Notification.requestPermission();
     if (perm !== "granted") { toast("Permission denied"); DB.settings.notifications = false; save(); render(); return; }
-    DB.settings.notifications = true; save(); scheduleReminder(); scheduleHabitReminders(); toast("Reminders on");
+    DB.settings.notifications = true; save(); scheduleReminder(); scheduleHabitReminders(); scheduleBillsReminder(); toast("Reminders on");
   } else {
     DB.settings.notifications = false; save();
     for (const t of _reminderTimers) clearTimeout(t);
     for (const t of _habitReminderTimers) clearTimeout(t);
-    _reminderTimers = []; _habitReminderTimers = [];
+    for (const t of _billsReminderTimers) clearTimeout(t);
+    _reminderTimers = []; _habitReminderTimers = []; _billsReminderTimers = [];
   }
   render();
 }
@@ -22956,7 +23046,13 @@ function setReminderTime(oldT, newT) {
 function toggleNotifyCategory(cat) {
   DB.settings.notifyCategories = DB.settings.notifyCategories || {};
   DB.settings.notifyCategories[cat] = !DB.settings.notifyCategories[cat];
-  save(); notificationSettingsSheet();
+  save();
+  // If toggling the bills category, rebuild the dedicated bills scheduler
+  // so the change takes effect without an app reload.
+  if (cat === "bills" && typeof scheduleBillsReminder === "function") {
+    try { scheduleBillsReminder(); } catch {}
+  }
+  notificationSettingsSheet();
 }
 
 // ============================================================================
@@ -23373,6 +23469,60 @@ function scheduleReminder() {
   const msToNextMinute = 60_000 - (Date.now() % 60_000);
   const firstTid = setTimeout(tick, Math.max(500, msToNextMinute));
   _reminderTimers.push(firstTid);
+}
+
+// Bills-due-today reminder — fires at 9:00am if any bill (Plaid sub or
+// user-managed recurring) is due today. One consolidated notification
+// per day so 3 bills due same day = 1 notification, not 3. Honors the
+// notifyCategories.bills setting so users can disable just this without
+// killing all reminders. Same DST-safe 60-second tick pattern.
+let _billsReminderTimers = [];
+let _billsReminderGen = 0;
+const BILLS_REMINDER_TIME = "09:00";
+
+function scheduleBillsReminder() {
+  for (const t of _billsReminderTimers) clearTimeout(t);
+  _billsReminderTimers = [];
+  const myGen = ++_billsReminderGen;
+  if (!DB.settings.notifications) return;
+  const cats = DB.settings.notifyCategories || {};
+  if (cats.bills === false) return;
+  const tick = () => {
+    if (myGen !== _billsReminderGen) return;
+    if (!DB.settings.notifications) return;
+    const cats2 = DB.settings.notifyCategories || {};
+    if (cats2.bills === false) return;
+    const now = new Date();
+    const hhmm = `${String(now.getHours()).padStart(2,"0")}:${String(now.getMinutes()).padStart(2,"0")}`;
+    const tk = todayKey();
+    if (hhmm === BILLS_REMINDER_TIME) {
+      const last = (DB.settings._lastBillsReminder || "");
+      if (last !== tk) {
+        try {
+          const today2 = (typeof upcomingBills === "function") ? (upcomingBills(0) || []).filter(b => b && b.next_predicted === tk) : [];
+          if (today2.length) {
+            const total = today2.reduce((s, b) => s + (+b.amount || 0), 0);
+            const title = today2.length === 1
+              ? `📆 ${today2[0].name || today2[0].merchant || "Bill"} due today`
+              : `📆 ${today2.length} bills due today`;
+            const body = today2.length === 1
+              ? (typeof fmt$0 === "function" ? fmt$0(today2[0].amount || 0) : "$" + (today2[0].amount || 0))
+              : `Total: ${typeof fmt$0 === "function" ? fmt$0(total) : "$" + total}`;
+            if (typeof Notification !== "undefined" && Notification.permission === "granted") {
+              try { new Notification(title, { body, icon: "icon-180.png", tag: "bills-today" }); } catch {}
+            }
+            DB.settings._lastBillsReminder = tk;
+            try { saveDebounced && saveDebounced(); } catch {}
+          }
+        } catch {}
+      }
+    }
+    const tid = setTimeout(tick, 60_000);
+    _billsReminderTimers.push(tid);
+  };
+  const msToNextMinute = 60_000 - (Date.now() % 60_000);
+  const firstTid = setTimeout(tick, Math.max(500, msToNextMinute));
+  _billsReminderTimers.push(firstTid);
 }
 
 // Per-habit reminder timers — fire at h.reminderTime (if set) if the habit
@@ -37625,6 +37775,7 @@ function init() {
   if (DB.settings.notifications) {
     scheduleReminder();
     scheduleHabitReminders();
+    scheduleBillsReminder();
     // Fire on-open triggers ~1.5s after init so the renderer has settled
     // and the user has time to see the app before a notification flashes.
     setTimeout(() => fireOnOpenTriggers(), 1500);
@@ -37729,6 +37880,7 @@ function init() {
     toggleCompactSettings, _setupCompactSettings,
     freezeStreakToday, _isFrozen, _freezesUsedThisMonth, _freezesAvailable,
     _cashflowForecast, _cashflowForecastHtml,
+    scheduleBillsReminder,
     setupPassphraseSheet, manageEncryption, changePassphraseSheet, disableEncryptionSheet, showLockScreen,
     setPassphrase, unlockWithPassphrase, disablePassphrase, encryptObject, decryptObject, deriveKey,
     detectSubscriptions, setSubscriptionStatus, snapshotNetWorth, netWorthSparkline,
