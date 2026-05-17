@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 **Ascend** — a personal habit/goal/money tracker shipped as an installable PWA. Three pieces:
 
-- **Frontend**: a single static `index.html` (~16,200 lines, HTML + CSS + JS inline) plus `sw.js`, `manifest.json`, and icons. No build step, no framework, no bundler.
+- **Frontend**: a single static `index.html` (~38k lines / ~2.2 MB, HTML + CSS + JS inline) plus `sw.js`, `manifest.json`, and icons. No build step, no framework, no bundler. The size sounds large for a "static page" but the app ships ~95% of a desktop app's surface area as a PWA — every habit/goal/money/stocks/stats/calendar/settings view, the AI counselor surfaces, all the calculators, and the entire onboarding flow lives in this one file.
 - **Vercel Python backend** (always on, deployed alongside the frontend): a Flask app under `stockanalyzer/` exposed at `/api/*` via `api/index.py`. Powers live stock quotes, market scans (SSE-streamed), housing/mortgage analysis, and an AI proxy for the in-app Cornileus counselor — keys live in Vercel env vars, never the browser. Standalone HTML view at `/stockanalyzer` (Flask templates + `stockanalyzer-static/`).
 - **Cloudflare Worker backend** (optional, Plaid bank sync): single-file `backend/worker.js` brokers Plaid Link, transaction sync, and AES-GCM-encrypted token storage in Cloudflare KV. Only needed if the user wants auto bank import; the app works fully offline with manual entry otherwise.
 

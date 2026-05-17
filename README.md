@@ -6,7 +6,7 @@ A focused habit, goal, and money tracker. Single-file PWA — installs on your i
 
 ```
 Life-Hack-App/
-├── index.html              ← the whole app (HTML + CSS + JS in one file, ~20k lines)
+├── index.html              ← the whole app (HTML + CSS + JS in one file, ~38k lines / ~2.2 MB)
 ├── manifest.json           ← PWA manifest (Add to Home Screen)
 ├── sw.js                   ← service worker (offline + caching)
 ├── icon-*.png              ← app icons (180/192/512/maskable + iOS sizes)
@@ -86,8 +86,9 @@ Working with Claude Code? Run `claude` in this folder. `CLAUDE.md` auto-loads as
 
 Open ideas (ask if you want any of these):
 - Apple Health integration (auto-check workout/water habits)
-- Real push notifications when app is closed (needs server piece)
 - Recurring-deposit auto-allocation across savings buckets
 - Family / shared accounts
 - Charting library upgrade (current charts are SVG-by-hand)
 - Light-mode polish pass
+
+Already shipped (was on the roadmap, no longer is): real push notifications when the app is closed — works on iOS 16.4+ Home Screen PWA, Android, and desktop. See `backend/worker.js` for the VAPID + scheduled-push implementation.

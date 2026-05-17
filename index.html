@@ -800,7 +800,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .bh-sub .pos { color: var(--green); font-weight: 700; }
 .bh-sub .neg { color: var(--red); font-weight: 700; }
 
-.bcat-row { display: flex; align-items: center; padding: 13px 16px; gap: 10px; min-height: 56px; }
 .bcat-name { flex: 1; font-size: 15px; font-weight: 500; }
 .bcat-amt {
   font-size: 15px; font-weight: 600;
@@ -841,8 +840,6 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-color: var(--sep-2);
 }
 .spend-amount-form .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
-
-.tx-row .body .t1 .amt { font-weight: 700; font-variant-numeric: tabular-nums; }
 
 /* Stats */
 .heatmap { display: flex; gap: 4px; padding: 14px 14px 10px; overflow-x: auto; }
@@ -1096,11 +1093,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 
 /* utility */
-.mb12 { margin-bottom: 12px; }
-.mb24 { margin-bottom: 24px; }
 .muted { color: var(--t3); }
 .center { text-align: center; }
-.tabnum { font-variant-numeric: tabular-nums; }
 hr.sep { border: none; border-top: .5px solid var(--sep); margin: 14px 0; }
 
 input[type=number]::-webkit-inner-spin-button,
@@ -2969,9 +2963,6 @@ save = async function() {
     _maybeWarnQuota(e);
   }
 };
-
-// Sync wrapper for inline handlers; fire-and-forget.
-function saveNow() { save(); }
 
 /* Debounced save for keystroke handlers. The encrypted save path does a
    full AES-GCM encrypt on every call — at 5 keystrokes/sec that's an
@@ -5441,14 +5432,14 @@ let _renderMemo = {};
 // cache results during a render pass — callers outside render (push
 // scheduler, snapshotNetWorth at midnight, async event handlers) would
 // otherwise read stale data from a long-completed render pass.
+//
+// Current memoizers (wealthComposition, upcomingBills, detectSubscriptions,
+// recurringMonthlyTotal, safeToSpend, _playsTotalSavings) each inline this
+// pattern: `if (_renderActive && key in _renderMemo) return _renderMemo[key]`
+// then `_renderMemo[key] = result` before returning. The previous _memoize
+// helper was never adopted (and now deleted) — new memoizers should follow
+// the inline pattern to keep the per-function cache key visible.
 let _renderActive = false;
-function _memoize(key, fn) {
-  if (!_renderActive) return fn();
-  if (key in _renderMemo) return _renderMemo[key];
-  const v = fn();
-  _renderMemo[key] = v;
-  return v;
-}
 
 function render() {
   _renderMemo = {}; // fresh cache per render pass
@@ -16563,17 +16554,6 @@ function hoursOf(amount) {
   const rate = +DB.hoursOfLifeRate || 0;
   if (!rate || !amount) return null;
   return Math.abs(amount) / rate;
-}
-
-function fmtHours(amount) {
-  const h = hoursOf(amount);
-  if (h == null) return null;
-  if (h < 1) return Math.round(h * 60) + "min";
-  if (h < 40) return h.toFixed(1) + "h";
-  // Convert to workdays (8h) and workweeks (40h)
-  if (h < 200) return Math.round(h / 8) + " workday" + (Math.round(h/8) === 1 ? "" : "s");
-  if (h < 2080) return Math.round(h / 40) + " workweek" + (Math.round(h/40) === 1 ? "" : "s");
-  return (h / 2080).toFixed(1) + " years of work";
 }
 
 /* ---------- 3. Behavioral bias diagnostic + real-time interruption ----------
