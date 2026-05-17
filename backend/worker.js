@@ -68,7 +68,16 @@ export default {
 
     // Public endpoints
     if (url.pathname === "/" || url.pathname === "/health") {
-      return json({ ok: true, service: "ascend-backend", version: "v3" }, 200, allowed);
+      const payload = { ok: true, service: "ascend-backend", version: "v3" };
+      // Surface a warning if the operator left ALLOWED_ORIGIN at "*". The
+      // bearer token is the security boundary so this isn't a vulnerability,
+      // but a missing/wildcard origin makes the worker callable from any
+      // page on the web — including malicious pages that have somehow
+      // obtained a leaked clientSecret. Prefer a concrete URL for prod.
+      if (allowed === "*") {
+        payload.warning = "ALLOWED_ORIGIN is '*' — set it to your PWA URL for stronger isolation. See DEPLOY.md.";
+      }
+      return json(payload, 200, allowed);
     }
 
     // Plaid webhook receiver — Plaid POSTs here with no auth header; it signs
@@ -407,13 +416,23 @@ async function handleExchange(request, env, userId, origin) {
   return json({ ok: true, item_id: itemId, institution_name: institutionName }, 200, origin);
 }
 
+// Per-invocation Plaid-call budget. Workers free tier gives ~30s CPU; a
+// user with 8 linked items × 10 cursor pages × ~200ms/Plaid call exceeds
+// that. When we hit the budget, we save the cursor and let the client call
+// /sync again to pick up where we left off. SYNC_TRUNCATED in the response
+// tells the client there's more.
+const SYNC_PLAID_CALL_BUDGET = 40;
+
 async function handleSync(env, userId, origin) {
   const itemIds = await getItemIndex(env, userId);
   const allTx = [];
   const allAccounts = [];
   const updated = [];
+  let plaidCallsUsed = 0;
+  let truncated = false;
 
   for (const itemId of itemIds) {
+    if (plaidCallsUsed >= SYNC_PLAID_CALL_BUDGET) { truncated = true; break; }
     const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!recRaw) continue;
     const rec = JSON.parse(recRaw);
@@ -426,6 +445,7 @@ async function handleSync(env, userId, origin) {
 
     // Pull accounts
     try {
+      plaidCallsUsed++;
       const a = await plaidCall(env, "/accounts/get", { access_token: accessToken });
       a.accounts.forEach((acct) => {
         allAccounts.push({
@@ -449,7 +469,8 @@ async function handleSync(env, userId, origin) {
     let hasMore = true;
     let added = [], modified = [], removed = [];
     let safety = 0;
-    while (hasMore && safety++ < 10) {
+    while (hasMore && safety++ < 10 && plaidCallsUsed < SYNC_PLAID_CALL_BUDGET) {
+      plaidCallsUsed++;
       const t = await plaidCall(env, "/transactions/sync", {
         access_token: accessToken,
         cursor: cursor || undefined,
@@ -461,6 +482,8 @@ async function handleSync(env, userId, origin) {
       cursor = t.next_cursor;
       hasMore = !!t.has_more;
     }
+    // Mark truncated if Plaid still had more for this item but we ran out of budget.
+    if (hasMore && plaidCallsUsed >= SYNC_PLAID_CALL_BUDGET) truncated = true;
     rec.cursor = cursor;
     rec.lastSyncAt = new Date().toISOString();
     await env.ASCEND_KV.put(itemKey(userId, itemId), JSON.stringify(rec));
@@ -487,7 +510,7 @@ async function handleSync(env, userId, origin) {
     updated.push({ item_id: itemId, added: added.length, modified: modified.length, removed: removed.length });
   }
 
-  return json({ ok: true, accounts: allAccounts, transactions: allTx, updated }, 200, origin);
+  return json({ ok: true, accounts: allAccounts, transactions: allTx, updated, truncated }, 200, origin);
 }
 
 async function handleItems(env, userId, origin) {
@@ -516,8 +539,16 @@ async function handleItems(env, userId, origin) {
 }
 
 async function handleRemoveItem(url, env, userId, origin) {
-  const itemId = decodeURIComponent(url.pathname.split("/").pop() || "");
+  // decodeURIComponent throws URIError on malformed escapes like "%FF" —
+  // surface as a 400 instead of letting it bubble into a 500 with a
+  // confusing internal message.
+  let itemId;
+  try { itemId = decodeURIComponent(url.pathname.split("/").pop() || ""); }
+  catch { return json({ error: "malformed itemId" }, 400, origin); }
   if (!itemId) return json({ error: "itemId required" }, 400, origin);
+  // Tighten to the format Plaid actually uses (the audit was right that we
+  // were passing arbitrary URL fragments into KV keys).
+  if (!/^[A-Za-z0-9_\-]{1,80}$/.test(itemId)) return json({ error: "invalid itemId format" }, 400, origin);
 
   const raw = await env.ASCEND_KV.get(itemKey(userId, itemId));
   if (raw) {
@@ -804,6 +835,14 @@ async function handleAnthropic(request, env, userId, origin) {
     return json({ error: "AI insights not configured on this backend" }, 503, origin);
   }
 
+  // Reject oversized request bodies before parsing — protects the worker's
+  // CPU budget against an attacker who can ship 100MB JSON to one POST.
+  // 200KB is comfortably above the messages-array clamp below (20 msgs × 40KB).
+  const contentLength = parseInt(request.headers.get("content-length") || "0", 10);
+  if (contentLength > 1_000_000) {
+    return json({ error: "request body too large" }, 413, origin);
+  }
+
   const body = await request.json().catch(() => ({}));
   // Validate + clamp the request to prevent abuse
   const model = String(body.model || "claude-haiku-4-5-20251001").slice(0, 80);
@@ -879,9 +918,41 @@ async function handleAnthropic(request, env, userId, origin) {
 
   await appendAudit(env, userId, r.ok ? `anthropic_${feature}` : `anthropic_${feature}_error`);
 
+  // Whitelist the fields we forward to the client so upstream error metadata
+  // (model_id, internal request ids, organization hints, and in rare 401
+  // variants the obfuscated tail of the API key) never reaches the browser.
+  // On success: forward {id, type, role, model, content, stop_reason, stop_sequence, usage}.
+  // On error: forward {error: {type, message}} with the message trimmed.
   const text = await r.text();
-  // Pass through whatever Anthropic returned, but never the API key
-  return new Response(text, {
+  let parsed;
+  try { parsed = JSON.parse(text); } catch { parsed = null; }
+  let safe;
+  if (r.ok && parsed && typeof parsed === "object") {
+    safe = {
+      id: typeof parsed.id === "string" ? parsed.id.slice(0, 120) : undefined,
+      type: typeof parsed.type === "string" ? parsed.type.slice(0, 40) : undefined,
+      role: typeof parsed.role === "string" ? parsed.role.slice(0, 40) : undefined,
+      model: typeof parsed.model === "string" ? parsed.model.slice(0, 80) : undefined,
+      content: Array.isArray(parsed.content) ? parsed.content : undefined,
+      stop_reason: parsed.stop_reason || undefined,
+      stop_sequence: parsed.stop_sequence || undefined,
+      usage: parsed.usage && typeof parsed.usage === "object" ? {
+        input_tokens: +parsed.usage.input_tokens || 0,
+        output_tokens: +parsed.usage.output_tokens || 0,
+      } : undefined,
+    };
+  } else if (parsed && parsed.error && typeof parsed.error === "object") {
+    safe = {
+      error: {
+        type: typeof parsed.error.type === "string" ? parsed.error.type.slice(0, 64) : "upstream_error",
+        message: typeof parsed.error.message === "string" ? parsed.error.message.slice(0, 300) : "Upstream AI service returned an error.",
+      },
+    };
+  } else {
+    // Couldn't parse — generic message, don't leak the raw upstream body.
+    safe = { error: { type: "upstream_error", message: r.ok ? "Empty response from AI" : `Upstream returned HTTP ${r.status}` } };
+  }
+  return new Response(JSON.stringify(safe), {
     status: r.status,
     headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
   });
@@ -1064,7 +1135,20 @@ async function encryptString(plain, keyB64) {
   return bytesToB64(iv) + ":" + bytesToB64(ct);
 }
 async function decryptString(packed, keyB64) {
-  const [ivB64, ctB64] = String(packed).split(":");
+  // Validate the packed format ("<ivB64>:<ctB64>") before parsing — a
+  // malformed entry would otherwise throw an "InvalidCharacterError" from
+  // atob(undefined), which bubbles into a 500 with an internal-state-y
+  // message. Better to surface a clean "corrupted ciphertext" error.
+  const s = String(packed || "");
+  const parts = s.split(":");
+  if (parts.length !== 2 || !parts[0] || !parts[1]) {
+    throw new Error("corrupted ciphertext: bad packed format");
+  }
+  const [ivB64, ctB64] = parts;
+  // base64 sanity check before atob — atob throws cryptically on non-base64.
+  if (!/^[A-Za-z0-9+/=]+$/.test(ivB64) || !/^[A-Za-z0-9+/=]+$/.test(ctB64)) {
+    throw new Error("corrupted ciphertext: non-base64 segment");
+  }
   const key = await importKeyB64(keyB64);
   const iv = b64ToBytes(ivB64);
   const ct = b64ToBytes(ctB64);
