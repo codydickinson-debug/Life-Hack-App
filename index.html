@@ -2069,24 +2069,24 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   </div>
 
   <div id="content">
-    <div class="page active" id="page-today"></div>
-    <div class="page" id="page-goals"></div>
-    <div class="page" id="page-planning"></div>
-    <div class="page" id="page-money"></div>
-    <div class="page" id="page-stocks"></div>
-    <div class="page" id="page-stats"></div>
-    <div class="page" id="page-calendar"></div>
-    <div class="page" id="page-settings"></div>
+    <div class="page active" id="page-today"     role="tabpanel" aria-labelledby="tab-today"     tabindex="0"></div>
+    <div class="page"        id="page-goals"     role="tabpanel" aria-labelledby="tab-goals"     tabindex="0"></div>
+    <div class="page"        id="page-planning"  role="tabpanel" aria-labelledby="tab-planning"  tabindex="0"></div>
+    <div class="page"        id="page-money"     role="tabpanel" aria-labelledby="tab-money"     tabindex="0"></div>
+    <div class="page"        id="page-stocks"    role="tabpanel" aria-labelledby="tab-stocks"    tabindex="0"></div>
+    <div class="page"        id="page-stats"     role="tabpanel" aria-labelledby="tab-stats"     tabindex="0"></div>
+    <div class="page"        id="page-calendar"  role="tabpanel" aria-labelledby="tab-calendar"  tabindex="0"></div>
+    <div class="page"        id="page-settings"  role="region"   aria-label="Settings"           tabindex="0"></div>
   </div>
 
-  <nav id="tabbar">
-    <button class="tab active" data-tab="today"><span class="ic">☀︎</span><span>Today</span></button>
-    <button class="tab" data-tab="calendar"><span class="ic">▤</span><span>Calendar</span></button>
-    <button class="tab" data-tab="goals"><span class="ic">◎</span><span>Goals</span></button>
-    <button class="tab" data-tab="planning"><span class="ic">✦</span><span>Plan</span></button>
-    <button class="tab" data-tab="money"><span class="ic">$</span><span>Money</span></button>
-    <button class="tab" data-tab="stocks"><span class="ic">↗</span><span>Stocks</span></button>
-    <button class="tab" data-tab="stats"><span class="ic">▦</span><span>Stats</span></button>
+  <nav id="tabbar" role="tablist" aria-label="Main navigation">
+    <button class="tab active" data-tab="today"    id="tab-today"    role="tab" aria-selected="true"  aria-controls="page-today"><span class="ic" aria-hidden="true">☀︎</span><span>Today</span></button>
+    <button class="tab"        data-tab="calendar" id="tab-calendar" role="tab" aria-selected="false" aria-controls="page-calendar"><span class="ic" aria-hidden="true">▤</span><span>Calendar</span></button>
+    <button class="tab"        data-tab="goals"    id="tab-goals"    role="tab" aria-selected="false" aria-controls="page-goals"><span class="ic" aria-hidden="true">◎</span><span>Goals</span></button>
+    <button class="tab"        data-tab="planning" id="tab-planning" role="tab" aria-selected="false" aria-controls="page-planning"><span class="ic" aria-hidden="true">✦</span><span>Plan</span></button>
+    <button class="tab"        data-tab="money"    id="tab-money"    role="tab" aria-selected="false" aria-controls="page-money"><span class="ic" aria-hidden="true">$</span><span>Money</span></button>
+    <button class="tab"        data-tab="stocks"   id="tab-stocks"   role="tab" aria-selected="false" aria-controls="page-stocks"><span class="ic" aria-hidden="true">↗</span><span>Stocks</span></button>
+    <button class="tab"        data-tab="stats"    id="tab-stats"    role="tab" aria-selected="false" aria-controls="page-stats"><span class="ic" aria-hidden="true">▦</span><span>Stats</span></button>
   </nav>
 
   <button id="counselor-fab" aria-label="Talk to financial counselor" title="Financial counselor" onclick="openCornileusObservations()">✨<span id="cornileus-badge" class="cornileus-badge" style="display:none"></span></button>
@@ -3554,11 +3554,33 @@ try { BUILD_DATE = new Date(document.lastModified).toLocaleString(undefined, { d
 var activeTab = "today";
 function showTab(name) {
   activeTab = name;
-  $$(".tab").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
+  // A5: keep aria-selected in sync with the .active class so screen
+  // readers announce which tab is selected.
+  $$(".tab").forEach(t => {
+    const isActive = t.dataset.tab === name;
+    t.classList.toggle("active", isActive);
+    t.setAttribute("aria-selected", isActive ? "true" : "false");
+  });
   $$(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + name));
   try { $("#content").scrollTo({ top: 0, behavior: "instant" }); } catch {}
   render();
 }
+// A5: ARIA Authoring Practices for tablist — Left/Right arrows move
+// focus between visible tabs, Home/End jump to first/last. Activation
+// still happens on click; we don't auto-activate on focus (less
+// surprising on a phone where a misfocus shouldn't reload the page).
+document.getElementById("tabbar").addEventListener("keydown", (e) => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(e.key)) return;
+  const tabs = Array.from(document.querySelectorAll('#tabbar [role="tab"]')).filter(t => t.offsetParent !== null);
+  if (!tabs.length) return;
+  const i = tabs.indexOf(document.activeElement);
+  let next = i;
+  if (e.key === "ArrowLeft")  next = i <= 0 ? tabs.length - 1 : i - 1;
+  else if (e.key === "ArrowRight") next = i >= tabs.length - 1 ? 0 : i + 1;
+  else if (e.key === "Home")  next = 0;
+  else if (e.key === "End")   next = tabs.length - 1;
+  if (next !== i) { e.preventDefault(); tabs[next].focus(); }
+});
 $$(".tab").forEach(t => t.addEventListener("click", () => {
   // Tapping an already-active tab scrolls that page to top (standard iOS app
   // gesture). Useful for long Stats/Calendar pages.
