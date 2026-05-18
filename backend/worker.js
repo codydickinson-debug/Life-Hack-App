@@ -52,32 +52,49 @@ export default {
 
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const allowed = env.ALLOWED_ORIGIN || "*";
+    // Origin handling — never fall back to wildcard. The default is the
+    // production PWA URL; operators can override via ALLOWED_ORIGIN. If the
+    // operator explicitly sets ALLOWED_ORIGIN="*" we honor it (e.g. for
+    // sandbox / dev environments) but log a warning on every health check.
+    // Browsers send Origin on cross-origin requests; same-origin or
+    // non-browser clients (curl, native apps) omit it and bypass — the
+    // bearer token remains the real security boundary.
+    const DEFAULT_ALLOWED = "https://life-hack-app.vercel.app";
+    const allowed = (env.ALLOWED_ORIGIN && env.ALLOWED_ORIGIN.trim()) || DEFAULT_ALLOWED;
     const reqOrigin = request.headers.get("Origin") || "";
+
+    // For ACAO header purposes: if the request's Origin matches the
+    // operator's allowlist (single value today; could become a Set), echo it
+    // back. Otherwise echo the operator's canonical origin. Never echo a
+    // foreign origin wholesale — that's what "Allow-Origin: *" used to do
+    // and it's the worst of both worlds (no isolation, no auth headers).
+    const respOrigin = (allowed === "*")
+      ? (reqOrigin || "*")
+      : (reqOrigin && reqOrigin === allowed ? allowed : allowed);
 
     // CORS preflight
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders(allowed) });
+      return new Response(null, { headers: corsHeaders(respOrigin) });
     }
 
-    // Origin enforcement: if a browser sends Origin and it doesn't match ALLOWED_ORIGIN
-    // (and ALLOWED_ORIGIN isn't "*"), reject. Non-browser clients (no Origin header) bypass.
+    // Origin enforcement: if a browser sends Origin and it doesn't match
+    // ALLOWED_ORIGIN (and ALLOWED_ORIGIN isn't "*"), reject with 403.
+    // Non-browser clients (no Origin header) bypass — bearer is the
+    // security boundary there.
     if (allowed !== "*" && reqOrigin && reqOrigin !== allowed) {
-      return json({ error: "origin not allowed" }, 403, allowed);
+      return json({ error: "origin not allowed", code: "origin_denied" }, 403, respOrigin);
     }
 
     // Public endpoints
     if (url.pathname === "/" || url.pathname === "/health") {
       const payload = { ok: true, service: "ascend-backend", version: "v3" };
-      // Surface a warning if the operator left ALLOWED_ORIGIN at "*". The
-      // bearer token is the security boundary so this isn't a vulnerability,
-      // but a missing/wildcard origin makes the worker callable from any
-      // page on the web — including malicious pages that have somehow
-      // obtained a leaked clientSecret. Prefer a concrete URL for prod.
+      // Surface a warning if the operator explicitly set ALLOWED_ORIGIN to "*".
+      // This is sometimes legitimate (sandbox env) but it disables the
+      // CORS check so it should be intentional and visible.
       if (allowed === "*") {
-        payload.warning = "ALLOWED_ORIGIN is '*' — set it to your PWA URL for stronger isolation. See DEPLOY.md.";
+        payload.warning = "ALLOWED_ORIGIN is '*' — disable in prod by setting it to your PWA URL.";
       }
-      return json(payload, 200, allowed);
+      return json(payload, 200, respOrigin);
     }
 
     // Plaid webhook receiver — Plaid POSTs here with no auth header; it signs
@@ -100,98 +117,98 @@ export default {
       return json({
         key: env.VAPID_PUBLIC_KEY || null,
         enabled: !!(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY && env.VAPID_SUBJECT),
-      }, 200, allowed);
+      }, 200, respOrigin);
     }
 
     try {
       const auth = await checkAuth(request, env, url);
-      if (auth.error) return json({ error: auth.error }, auth.status || 401, allowed);
+      if (auth.error) return json({ error: auth.error }, auth.status || 401, respOrigin);
 
       // Enrollment is gated by ENROLLMENT_KEY only. For consumer releases
       // that ship the key in publicly-served JS, the security boundary is
       // a per-IP rate limit — a leaked key without abuse capacity can only
       // create new isolated user records, never read existing ones.
       if (url.pathname === "/enroll" && request.method === "POST") {
-        if (auth.mode !== "enrollment") return json({ error: "enrollment key required" }, 401, allowed);
-        const limited = await _enrollRateGate(request, env, allowed);
+        if (auth.mode !== "enrollment") return json({ error: "enrollment key required" }, 401, respOrigin);
+        const limited = await _enrollRateGate(request, env, respOrigin);
         if (limited) return limited;
-        return await handleEnroll(request, env, allowed);
+        return await handleEnroll(request, env, respOrigin);
       }
 
       // Everything else needs a real user identity
       if (auth.mode !== "user") {
-        return json({ error: "user authentication required (enroll first)" }, 401, allowed);
+        return json({ error: "user authentication required (enroll first)" }, 401, respOrigin);
       }
       const userId = auth.userId;
 
       if (url.pathname === "/link/token" && request.method === "POST") {
         return await audited(env, userId, "link_token",
-          () => handleLinkToken(env, userId, allowed));
+          () => handleLinkToken(env, userId, respOrigin));
       }
       if (url.pathname === "/exchange" && request.method === "POST") {
         return await audited(env, userId, "exchange",
-          () => handleExchange(request, env, userId, allowed));
+          () => handleExchange(request, env, userId, respOrigin));
       }
       if (url.pathname === "/sync" && request.method === "POST") {
         return await audited(env, userId, "sync",
-          () => handleSync(env, userId, allowed));
+          () => handleSync(env, userId, respOrigin));
       }
       if (url.pathname === "/holdings" && request.method === "POST") {
         return await audited(env, userId, "holdings",
-          () => handleHoldings(env, userId, allowed));
+          () => handleHoldings(env, userId, respOrigin));
       }
       if (url.pathname === "/liabilities" && request.method === "POST") {
         return await audited(env, userId, "liabilities",
-          () => handleLiabilities(env, userId, allowed));
+          () => handleLiabilities(env, userId, respOrigin));
       }
       if (url.pathname === "/recurring" && request.method === "POST") {
         return await audited(env, userId, "recurring",
-          () => handleRecurring(env, userId, allowed));
+          () => handleRecurring(env, userId, respOrigin));
       }
       if (url.pathname === "/investment-transactions" && request.method === "POST") {
         return await audited(env, userId, "investment_transactions",
-          () => handleInvestmentTransactions(request, env, userId, allowed));
+          () => handleInvestmentTransactions(request, env, userId, respOrigin));
       }
       if (url.pathname === "/items" && request.method === "GET") {
-        return await handleItems(env, userId, allowed);
+        return await handleItems(env, userId, respOrigin);
       }
       if (url.pathname.startsWith("/item/") && request.method === "DELETE") {
         return await audited(env, userId, "item_remove",
-          () => handleRemoveItem(url, env, userId, allowed));
+          () => handleRemoveItem(url, env, userId, respOrigin));
       }
       if (url.pathname === "/anthropic/messages" && request.method === "POST") {
-        return await handleAnthropic(request, env, userId, allowed);
+        return await handleAnthropic(request, env, userId, respOrigin);
       }
       if (url.pathname === "/audit" && request.method === "GET") {
-        return await handleAuditList(env, userId, allowed);
+        return await handleAuditList(env, userId, respOrigin);
       }
       if (url.pathname === "/account" && request.method === "DELETE") {
-        return await handleDeleteAccount(env, userId, allowed);
+        return await handleDeleteAccount(env, userId, respOrigin);
       }
       // ----- Push notifications -----
       // (vapid-public-key is handled above as a public endpoint so the
       // frontend can probe push availability before enrolling.)
       if (url.pathname === "/push/subscribe" && request.method === "POST") {
         return await audited(env, userId, "push_subscribe",
-          () => handlePushSubscribe(request, env, userId, allowed));
+          () => handlePushSubscribe(request, env, userId, respOrigin));
       }
       if (url.pathname === "/push/unsubscribe" && request.method === "POST") {
         return await audited(env, userId, "push_unsubscribe",
-          () => handlePushUnsubscribe(env, userId, allowed));
+          () => handlePushUnsubscribe(env, userId, respOrigin));
       }
       if (url.pathname === "/push/test" && request.method === "POST") {
         return await audited(env, userId, "push_test",
-          () => handlePushTest(env, userId, allowed));
+          () => handlePushTest(env, userId, respOrigin));
       }
       if (url.pathname === "/push/send" && request.method === "POST") {
         return await audited(env, userId, "push_send",
-          () => handlePushSend(request, env, userId, allowed));
+          () => handlePushSend(request, env, userId, respOrigin));
       }
-      return json({ error: "not found" }, 404, allowed);
+      return json({ error: "not found" }, 404, respOrigin);
     } catch (err) {
       // Don't leak stack traces to the client
       console.error("worker error", err && err.stack || err);
-      return json({ error: err.message || "server error" }, 500, allowed);
+      return json({ error: err.message || "server error" }, 500, respOrigin);
     }
   },
 };
