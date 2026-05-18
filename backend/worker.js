@@ -1039,15 +1039,28 @@ async function handleAnthropic(request, env, userId, origin) {
   const payload = { model, max_tokens: maxTokens, messages };
   if (systemPrompt) payload.system = systemPrompt;
 
-  const r = await fetch(ANTHROPIC_API, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": env.ANTHROPIC_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify(payload),
-  });
+  // Single retry on transient Anthropic errors. Don't retry on 4xx (user
+  // error — same input will get the same error). On 429 from Anthropic we
+  // back off briefly — our own per-user burst cap should rarely let us hit
+  // this. On 5xx we retry once.
+  let r;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    r = await fetch(ANTHROPIC_API, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": env.ANTHROPIC_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (r.ok) break;
+    if (attempt === 0 && (r.status === 429 || r.status >= 500)) {
+      await _sleep(r.status === 429 ? 500 : 250);
+      continue;
+    }
+    break;
+  }
 
   await appendAudit(env, userId, r.ok ? `anthropic_${feature}` : `anthropic_${feature}_error`);
 
@@ -1224,31 +1237,53 @@ async function appendAudit(env, userId, action) {
     arr.unshift({ t: new Date().toISOString(), a: action });
     if (arr.length > AUDIT_KEEP) arr.length = AUDIT_KEEP;
     await env.ASCEND_KV.put(key, JSON.stringify(arr));
-  } catch {}
+  } catch (e) {
+    // Audit-log write failures are not user-blocking but they ARE a signal
+    // that KV is under stress or the user's audit blob is corrupted. Surface
+    // to wrangler tail so the operator notices without spamming the client.
+    try { console.warn(`[audit_write_failed] uid=${userId} action=${action}: ${e && e.message}`); } catch {}
+  }
 }
 
 // ============ Plaid client (no SDK) ============
 
+// Wait `ms` milliseconds. Workers' setTimeout is available since
+// compat_date 2022-11-30; we're well past that.
+const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
 async function plaidCall(env, path, body) {
   const host = PLAID_HOSTS[env.PLAID_ENV] || PLAID_HOSTS.sandbox;
-  const r = await fetch(host + path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      client_id: env.PLAID_CLIENT_ID,
-      secret: env.PLAID_SECRET,
-      ...body,
-    }),
-  });
-  const text = await r.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = { raw: text }; }
-  if (!r.ok) {
+  // Single retry with backoff on transient Plaid errors (429, 5xx).
+  // Bounded so we don't blow the CPU budget on a misbehaving upstream.
+  // 429 backoff: 300ms (conservative — Plaid's docs say retry after a
+  // short delay; the rate-limit headers vary by endpoint). 5xx: 200ms.
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await fetch(host + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: env.PLAID_CLIENT_ID,
+        secret: env.PLAID_SECRET,
+        ...body,
+      }),
+    });
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    if (r.ok) return data;
+    // Retry once on transient upstream failures
+    if (attempt === 0 && (r.status === 429 || r.status >= 500)) {
+      const wait = r.status === 429 ? 300 : 200;
+      await _sleep(wait);
+      continue;
+    }
     const err = new Error(`Plaid ${path} failed: ${data.error_message || data.error_code || r.status}`);
     err.plaid = data;
+    err.status = r.status;
     throw err;
   }
-  return data;
+  throw lastErr || new Error(`Plaid ${path} failed after retry`);
 }
 
 // ============ KV index helpers ============
