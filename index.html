@@ -342,9 +342,12 @@ input::placeholder, textarea::placeholder { color: var(--t4); }
 }
 .tb-btn:hover { color: var(--t1); background: var(--bg-elev2); }
 .tb-btn:active { transform: scale(.92); background: var(--bg-elev2); }
-.tb-greet { display: flex; flex-direction: column; gap: 2px; }
-.tb-hello { font-size: 11px; color: var(--t3); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; }
-.tb-name  { font-size: 19px; font-weight: 700; letter-spacing: -0.022em; line-height: 1.15; color: var(--t1); }
+.tb-greet { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; max-width: 60%; }
+.tb-hello { font-size: 11px; color: var(--t3); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* M17: long names ("Good morning, Christopher") used to push the right-side
+   icon buttons offscreen. Ellipsis at 60% column width keeps the icons
+   reachable without truncating the typical first-name greeting. */
+.tb-name  { font-size: 19px; font-weight: 700; letter-spacing: -0.022em; line-height: 1.15; color: var(--t1); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 #content {
   flex: 1;
@@ -352,8 +355,11 @@ input::placeholder, textarea::placeholder { color: var(--t4); }
   overflow-x: hidden;
   -webkit-overflow-scrolling: touch;
   /* Extra bottom padding leaves room for the floating FAB + counselor button
-     to sit over empty space when the user scrolls to the end, not over content. */
-  padding: 4px 0 calc(var(--tab-h) + 110px);
+     to sit over empty space when the user scrolls to the end, not over
+     content. M14: bumped from 110 to 170 — the counselor FAB sits at
+     ~144px from the bottom and was overlapping the last-row content on
+     small screens. */
+  padding: 4px 0 calc(var(--tab-h) + 170px);
   scroll-behavior: smooth;
 }
 #content::-webkit-scrollbar { width: 0; height: 0; }
@@ -927,7 +933,15 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   padding: 8px 20px calc(var(--sa-bot) + 24px);
   box-shadow: var(--sh-pop);
   border-top: 0.5px solid var(--sep);
+  /* M16: when iOS keyboard opens for an <input>, the action row at the
+     bottom of the sheet can land underneath the keyboard. scroll-padding
+     reserves room so the auto-scroll-to-focused-input lands the next
+     interactive control comfortably above the keyboard. */
+  scroll-padding-bottom: 120px;
 }
+/* M16: also adopt dynamic viewport units where supported, so the sheet
+   reserves less space when the keyboard pushes the visual viewport up. */
+@supports (height: 100dvh) { .sheet { max-height: 92dvh; } }
 .sheet.show {
   transform: translateY(0);
   transition: transform .38s cubic-bezier(.32,.72,.34,1);
@@ -1354,7 +1368,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 .cf-card .cf-sub { font-size: 12px; color: var(--t3); margin-top: 8px; }
 
 /* Year heatmap */
-.heat-wrap { background: var(--card); border-radius: var(--r); border: 0.5px solid var(--sep); padding: 14px 12px; box-shadow: var(--sh-1); overflow-x: auto; }
+.heat-wrap { background: var(--card); border-radius: var(--r); border: 0.5px solid var(--sep); padding: 14px 12px; box-shadow: var(--sh-1); overflow-x: auto; -webkit-overflow-scrolling: touch; }
 .heat-wrap .heat-h { font-size: 11px; color: var(--t3); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; padding: 0 4px 8px; }
 .heat-grid { display: grid; grid-template-rows: repeat(7, 11px); grid-auto-flow: column; gap: 2px; padding: 4px; }
 .heat-cell { width: 11px; height: 11px; border-radius: 2px; background: var(--bg-elev); transition: transform .1s ease; }
@@ -1621,6 +1635,18 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 .whatif-card input[type=range] {
   width: 100%; -webkit-appearance: none; appearance: none;
   height: 8px; background: var(--bg-elev); border-radius: 999px; outline: none;
+}
+/* A19: bring the focus ring back for keyboard users — the outline:none
+   above strips it. The thumb gets a visible blue halo so the slider's
+   current focus is obvious without breaking the gradient-thumb style. */
+.whatif-card input[type=range]:focus-visible {
+  outline: none;
+}
+.whatif-card input[type=range]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--blue) 35%, transparent), 0 2px 8px color-mix(in srgb, var(--corn-from) 40%, transparent);
+}
+.whatif-card input[type=range]:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--blue) 35%, transparent);
 }
 .whatif-card input[type=range]::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
@@ -2136,8 +2162,8 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
     <button class="tab"        data-tab="stats"    id="tab-stats"    role="tab" aria-selected="false" aria-controls="page-stats"><span class="ic" aria-hidden="true">▦</span><span>Stats</span></button>
   </nav>
 
-  <button id="counselor-fab" aria-label="Talk to financial counselor" title="Financial counselor" onclick="openCornileusObservations()">✨<span id="cornileus-badge" class="cornileus-badge" style="display:none"></span></button>
-  <button id="fab" aria-label="Quick add" onclick="quickAddMenu()">+</button>
+  <button id="counselor-fab" aria-label="Talk to financial counselor" aria-haspopup="dialog" title="Financial counselor" onclick="openCornileusObservations()">✨<span id="cornileus-badge" class="cornileus-badge" style="display:none" aria-hidden="true"></span></button>
+  <button id="fab" aria-label="Quick add" aria-haspopup="menu" onclick="quickAddMenu()">+</button>
 </div>
 
 <div class="scrim" id="scrim" onclick="closeSheet()"></div>
@@ -5719,6 +5745,28 @@ function _a11yLabelDeleteButtons() {
   } catch {}
 }
 
+// A15: most Settings toggle checkboxes sit visually adjacent to a .t1 label
+// but aren't wrapped in <label> or paired via for/id. Screen readers read
+// just "checkbox, checked". After each render, find every checkbox that
+// lacks an aria-label and derive one from the nearest .t1 sibling text.
+// Cheap; the conditional skips already-labelled nodes. Doesn't touch
+// checkboxes that DO have aria-label or a wrapping <label>.
+function _a11yLabelToggleCheckboxes() {
+  try {
+    document.querySelectorAll('input[type="checkbox"]:not([aria-label])').forEach(cb => {
+      // Skip if already wrapped in a <label> (gets its name from that).
+      if (cb.closest("label")) return;
+      // Walk up to the nearest .row ancestor (the standard Settings row),
+      // then read the .t1 element's text.
+      const row = cb.closest(".row") || cb.parentElement;
+      if (!row) return;
+      const t1 = row.querySelector(".t1");
+      const txt = (t1 && t1.textContent || "").trim().slice(0, 80);
+      if (txt) cb.setAttribute("aria-label", txt);
+    });
+  } catch {}
+}
+
 // Per-render memoization cache. Cleared at the top of every render() so
 // expensive helpers (wealthComposition, safeToSpend, recurringMonthlyTotal,
 // _playsTotalSavings, etc.) that get called from multiple cards within a
@@ -5759,6 +5807,7 @@ function render() {
   // Sweep newly-inserted unlabelled close/delete buttons with an aria-label
   // so screen readers don't read them as just "X".
   if (typeof _a11yLabelDeleteButtons === "function") _a11yLabelDeleteButtons();
+  if (typeof _a11yLabelToggleCheckboxes === "function") _a11yLabelToggleCheckboxes();
   // Refresh the Cornileus FAB badge to reflect current observations.
   if (typeof _updateCornileusBadge === "function") _updateCornileusBadge();
   // Append today's Wealth Score to a small rolling history so the hero
@@ -26391,11 +26440,18 @@ function _updateCornileusBadge() {
     const badge = document.getElementById("cornileus-badge");
     if (!badge) return;
     const n = _cornileusObservations().length;
+    const fab = document.getElementById("counselor-fab");
     if (n > 0) {
       badge.textContent = String(n);
       badge.style.display = "flex";
+      // A18: roll the badge count into the FAB's accessible label so SR
+      // users hear "Talk to financial counselor, 3 new insights" instead
+      // of just the base label (badge has aria-hidden=true so it isn't
+      // also announced as a stray number).
+      if (fab) fab.setAttribute("aria-label", `Talk to financial counselor, ${n} new insight${n === 1 ? "" : "s"}`);
     } else {
       badge.style.display = "none";
+      if (fab) fab.setAttribute("aria-label", "Talk to financial counselor");
     }
   } catch {}
 }
