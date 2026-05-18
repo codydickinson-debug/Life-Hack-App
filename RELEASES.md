@@ -139,17 +139,16 @@ deferred with reasoning are listed at the end.
 
 ### Backend / dependency CVEs
 
-- `npm audit` on backend/ found 4 vulns: 1 high (undici WebSocket
-  permessage-deflate decompression DoS), 3 moderate (esbuild dev-
-  server CSRF, undici CRLF / smuggling, miniflare via undici). All
-  are dev-only dependencies of wrangler. They do NOT ship in the
-  deployed Cloudflare Worker. Fix is `npm install wrangler@latest`
-  which is a v3 to v4 MAJOR version bump and may change CLI flags
-  the operator uses (`wrangler dev`, `wrangler deploy`).
-- **Operator action required (handled outside this session):** bump
-  wrangler locally where you can test `wrangler dev` and
-  `wrangler deploy` end to end against the live Cloudflare account.
-  Migration guide: https://developers.cloudflare.com/workers/wrangler/migration/
+- `npm audit` on backend/ initially found 4 vulns: 1 high (undici
+  WebSocket permessage-deflate decompression DoS), 3 moderate (esbuild
+  dev-server CSRF, undici CRLF / smuggling, miniflare via undici). All
+  were dev-only dependencies of wrangler. They never shipped in the
+  deployed Cloudflare Worker.
+- **Shipped in `880a4cc`:** wrangler v3.78.0 → v4.92.0 (exact pin, no
+  caret). `backend/package-lock.json` now tracked. `npm audit` clean.
+  Verified `wrangler dev` boots against both the bump-time worker.js
+  and the parallel rewrite that landed alongside; no CLI flag or
+  wrangler.toml changes needed.
 
 ### Intentionally deferred (with reasons)
 
