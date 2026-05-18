@@ -2695,7 +2695,11 @@ function save() {
   }
 }
 
-DB = load();
+// Top-level load happens before any UI exists. Wrap in try/catch — if
+// localStorage access itself throws (some Safari private-mode versions),
+// load() bubbles uncaught and we get a blank page with no toast.
+// Falling back to a fresh DEFAULT_DB at least keeps the app rendering.
+try { DB = load(); } catch (e) { DB = clone(DEFAULT_DB); }
 
 /* ================ UTILS ================ */
 const $  = (s, p=document) => p.querySelector(s);
@@ -5001,9 +5005,14 @@ function splitTransactionSheet(id) {
   // Render split-row state in memory so adding/removing rows doesn't lose
   // user edits to existing rows.
   if (!window._splitRows) window._splitRows = [];
+  // Odd-cent totals like $10.07 used to seed two $5.04 rows which sum
+  // to $10.08, off-by-one-cent above the parent. Floor the first row
+  // and assign the remainder to the second so two rows always balance.
+  const half1 = Math.floor(total * 50) / 100;
+  const half2 = Math.round((total - half1) * 100) / 100;
   window._splitRows = [
-    { id: uid(), amount: (total/2).toFixed(2), category: tx.category || "Other", note: "" },
-    { id: uid(), amount: (total/2).toFixed(2), category: "Other", note: "" },
+    { id: uid(), amount: half1.toFixed(2), category: tx.category || "Other", note: "" },
+    { id: uid(), amount: half2.toFixed(2), category: "Other", note: "" },
   ];
   _renderSplitSheet(tx, total, cats);
 }
@@ -12951,7 +12960,7 @@ function _stocksRenderPortfolio() {
       return `<circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="${allocColorFor(a)}" stroke-width="${sw}" stroke-dasharray="${dash} ${gap}" stroke-dashoffset="${offset}" transform="rotate(-90 ${cx} ${cy})"/>`;
     }).join("");
     return `
-      <svg viewBox="0 0 100 100" style="display:block;width:90px;height:90px">
+      <svg viewBox="0 0 100 100" style="display:block;width:90px;height:90px;max-width:100%">
         <circle cx="${cx}" cy="${cy}" r="${r}" fill="none" stroke="var(--bg-elev)" stroke-width="${sw}"/>
         ${segs}
         <text x="${cx}" y="${cy - 1}" text-anchor="middle" font-size="9" fill="var(--t3)">${allocs.length} pos</text>
