@@ -55,7 +55,7 @@ This is the original guide below. For users who want their Plaid tokens on infra
                                    + per-user state)
 ```
 
-Cost: $0/month for personal use. Plaid Dev tier free for 100 connected items, Cloudflare Workers free for 100k req/day, KV free for 1GB.
+Cost: $0/month for personal use. Plaid Production free for 100 connected items (after a one-time security questionnaire — usually approved same-day for personal apps), Cloudflare Workers free for 100k req/day, KV free for 1GB.
 
 ---
 

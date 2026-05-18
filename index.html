@@ -3247,12 +3247,23 @@ const DEFAULT_BACKEND_URL = "https://ascend-backend.acend.workers.dev";
 const DEFAULT_ENROLLMENT_KEY = "c7064a7834ec7445b33f4b307f7f8e57d05efe449125c3e8040cb830440a24fd";
 
 // Returns the URL we should call — user override first, then the hosted default.
+// If the user has flipped 'Use a custom backend' ON (Settings → Bank sync), we
+// MUST NOT silently fall back to DEFAULT_BACKEND_URL — that would route a
+// privacy-minded self-hoster's traffic to the operator's hosted backend while
+// they wait to paste their own URL. Empty override + custom mode = empty URL,
+// which surfaces a clean 'configure backend' error rather than leaking data.
 function _effectiveBackendUrl() {
-  return (DB.settings.backendUrl || DEFAULT_BACKEND_URL || "").replace(/\/+$/, "");
+  const override = (DB.settings.backendUrl || "").trim();
+  if (DB.settings._useCustomBackend) return override.replace(/\/+$/, "");
+  return (override || DEFAULT_BACKEND_URL || "").replace(/\/+$/, "");
 }
 // Returns the enrollment key to use on /enroll — user override first, then default.
+// Same custom-backend guard as above: a user who opted into self-hosting must
+// never enroll their device against the operator's hosted Worker by accident.
 function _effectiveEnrollmentKey() {
-  return DB.settings.apiKey || DEFAULT_ENROLLMENT_KEY || "";
+  const override = DB.settings.apiKey || "";
+  if (DB.settings._useCustomBackend) return override;
+  return override || DEFAULT_ENROLLMENT_KEY || "";
 }
 // Has the operator provided a hosted backend? Drives whether we hide the manual
 // config rows in Settings and whether _backendReady() considers the user good-to-go.
@@ -11139,7 +11150,7 @@ function renderMoney() {
     const cats = spendCategories();
     const totalAvail = (DB.accounts || []).filter(a => a.type === "depository").reduce((s,a)=>s+(+a.balance_available||+a.balance_current||0),0);
     const accountsHtml = (DB.accounts && DB.accounts.length) ? `
-      <div class="section-h"><span class="lbl">Accounts</span>${DB.settings.backendUrl ? `<button class="act" ${DB._syncing ? "disabled" : ""} onclick="syncNow()">${DB._syncing ? "Syncing…" : "Sync ↻"}</button>` : ""}</div>
+      <div class="section-h"><span class="lbl">Accounts</span>${_backendReady() ? `<button class="act" ${DB._syncing ? "disabled" : ""} onclick="syncNow()">${DB._syncing ? "Syncing…" : "Sync ↻"}</button>` : ""}</div>
       ${DB._syncing ? `
         <div class="list" style="margin-bottom:6px">
           ${DB.accounts.map(a => `
@@ -11166,7 +11177,7 @@ function renderMoney() {
           </div>
         `).join("")}
       </div>
-    `}` : (DB.settings.advancedFeaturesEnabled ? (DB.settings.backendUrl ? `
+    `}` : (_backendReady() || _hasHostedBackend() ? `
       <div style="background:var(--card);border-radius:var(--r);margin-bottom:12px">
         ${emptyStateHtml({
           emoji: "🏦",
@@ -11176,7 +11187,7 @@ function renderMoney() {
           pad: "18px 16px",
         })}
       </div>
-    ` : `
+    ` : (DB.settings.advancedFeaturesEnabled ? `
       <div style="background:var(--card);border-radius:var(--r);margin-bottom:12px">
         ${emptyStateHtml({
           emoji: "🔌",
@@ -11185,7 +11196,7 @@ function renderMoney() {
           pad: "18px 16px",
         })}
       </div>
-    `) : "");
+    ` : ""));
     const holdingsHtml = (DB.holdings && DB.holdings.length) ? `
       <div class="section-h"><span class="lbl">Holdings</span><span class="muted" style="font-size:12px" data-priv="amount">${fmt$0(DB.holdings.reduce((s,h)=>s+(+h.institution_value||0),0))}</span></div>
       <div class="list">
@@ -30015,6 +30026,11 @@ function finishOnboarding() {
   }
   DB.settings.advancedFeaturesEnabled = (s.useChoice === "bank");
   DB.user.onboardedAt = Date.now();
+  // Suppress the "What's new" sheet for brand-new users — they've never used
+  // these features so there's nothing 'new' to surface. Seed lastSeenWhatsNew
+  // to the current key so maybeShowWhatsNew() skips on first post-onboarding
+  // launch. Existing users still see updates when WHATS_NEW_KEY bumps.
+  if (typeof WHATS_NEW_KEY !== "undefined") DB.lastSeenWhatsNew = WHATS_NEW_KEY;
   save();
   _lockSheet = false;
   const snapshot = {
@@ -30101,7 +30117,7 @@ const TUTORIAL_STEPS = [
     body: "Tap a streak pill to open habit history. Same streak shows on Calendar + Stats." },
 
   { emoji: "🏆", title: "Log a quick win", tab: "today",
-    target: "#page-today button[onclick*=\"addWin\"]",
+    target: "#page-today button[onclick^=\"addWinSheet\"]",
     body: "Wins build a separate streak. Tap + Add to capture a small victory." },
 
   { emoji: "📅", title: "Tabs link together", tab: "today",
@@ -31058,6 +31074,9 @@ async function aiOnbAcceptPlan() {
 
   DB.user.onboardedAt = Date.now();
   DB.user.onboardedVia = "ai";
+  // Suppress "What's new" sheet for users who just onboarded (they've never
+  // used these features). Mirrors the same seeding in finishOnboarding().
+  if (typeof WHATS_NEW_KEY !== "undefined") DB.lastSeenWhatsNew = WHATS_NEW_KEY;
 
   await save();
   _aiOnb = null;
@@ -37623,21 +37642,19 @@ function deleteReflection(id) {
 
 /* Roommate setup helper */
 function shareWithRoommateSheet() {
-  const url = ((DB.settings && DB.settings.backendUrl) || "").trim();
-  const hasBackend = !!url;
+  const pwaUrl = (typeof location !== "undefined" && location.origin) ? location.origin : "https://life-hack-app.vercel.app";
   openSheet(
-    '<h2>Share Ascend with a friend</h2>' +
+    '<h2>Invite a friend to Ascend</h2>' +
     '<p class="muted" style="font-size:13px;margin:6px 0 14px">' +
-      'Each Ascend install has its own private <b>userId</b>. You can share the same backend Worker with one other person - your data stays separate, encrypted on each device.' +
+      'Each install is fully separate. Their habits, goals, transactions, and (if they connect a bank) their encrypted Plaid token all live in their own isolated namespace — you never see each other\'s data.' +
     '</p>' +
     '<ol style="padding-left:18px;line-height:1.7;font-size:14px">' +
-      '<li>Send them <code style="background:var(--bg-elev);padding:2px 6px;border-radius:6px">' + esc(url || 'your deployed PWA URL') + '</code></li>' +
-      '<li>They install it from their phone (Add to Home Screen).</li>' +
-      '<li>If you want them to use Plaid bank sync too: share your Worker URL <i>and</i> the API key <b>privately</b> - not over SMS.</li>' +
-      '<li>They\'ll set their own passphrase. Their data is encrypted with their key, not yours.</li>' +
-      '<li>Per-user data lives at <code style="background:var(--bg-elev);padding:2px 6px;border-radius:6px">u:&lt;userId&gt;:*</code> in your Cloudflare KV - totally isolated.</li>' +
+      '<li>Send them this link: <code style="background:var(--bg-elev);padding:2px 6px;border-radius:6px">' + esc(pwaUrl) + '</code></li>' +
+      '<li>They open it in Safari on their phone and tap <b>Share → Add to Home Screen</b>.</li>' +
+      '<li>They walk through onboarding, set their own passphrase, and (optionally) connect their own bank.</li>' +
+      '<li>Their data is encrypted with their key, never yours. Your data is invisible to them.</li>' +
     '</ol>' +
-    (hasBackend ? "" : '<p class="muted" style="font-size:12px;margin-top:14px">Tip: deploy your Cloudflare Worker first (see DEPLOY.md), then come back here.</p>') +
+    '<p class="muted" style="font-size:12px;margin-top:14px">Couples sharing finances should use <b>Settings → Bank sync → Share with partner</b> instead — that\'s the path for two phones seeing the <i>same</i> bank-synced data.</p>' +
     '<div class="actions"><button class="btn" onclick="closeSheet()">Got it</button></div>'
   );
 }
