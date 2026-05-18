@@ -2,6 +2,22 @@ name = "ascend-backend"
 main = "worker.js"
 compatibility_date = "2024-09-01"
 
+# Cloudflare-managed observability — ships request logs + traces to the
+# dashboard at no cost. Pairs with the structured _accessLog() lines emitted
+# by worker.js so the dashboard logs are filterable by route/outcome/uid hash.
+[observability]
+enabled = true
+
+# CPU budget per request. Workers Paid plan default ceiling is 30000ms (30s);
+# Workers Free is 10ms and ignores this knob. The hottest path is /sync
+# (8 items × 10 cursor pages, each parsing a 250-transaction Plaid response
+# plus AES-GCM access-token decrypt) — measured around 200-500ms CPU in
+# practice. 5000ms (5s) gives ~10x headroom for outlier requests while
+# still catching runaway loops as a clean kill instead of silently hitting
+# the 30s plan ceiling and burning quota.
+[limits]
+cpu_ms = 5000
+
 # After running `wrangler kv namespace create ASCEND_KV`, paste the id below.
 #
 # ⚠ FORKERS: this id points at the upstream operator's Cloudflare KV
