@@ -400,9 +400,20 @@ async function sha256hex(s) {
   return hex;
 }
 
+// Reject oversized request bodies before parsing — protects the worker's
+// CPU budget against a stolen-secret client shipping garbage MB. Routes
+// that accept structured bodies set a higher ceiling (Anthropic: 1MB).
+// Routes with no body or small bodies use the default 10KB.
+function _bodyTooLarge(request, maxBytes = 10_000) {
+  const cl = parseInt(request.headers.get("content-length") || "0", 10) || 0;
+  if (cl > maxBytes) return true;
+  return false;
+}
+
 // ============ Endpoint handlers ============
 
 async function handleEnroll(request, env, origin) {
+  if (_bodyTooLarge(request)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const body = await request.json().catch(() => ({}));
   const userId = String(body.userId || "").trim();
   if (!/^u_[A-Za-z0-9_-]+$/.test(userId)) return json({ error: "invalid userId", code: "validation_error" }, 400, origin);
@@ -453,10 +464,16 @@ async function handleExchange(request, env, userId, origin) {
   // retries on flaky links without enabling a stolen-secret abuse loop.
   const limited = await _userRateGate(env, userId, "exchange", 5, origin, 20);
   if (limited) return limited;
+  if (_bodyTooLarge(request)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const body = await request.json().catch(() => ({}));
   const publicToken = String(body.public_token || "").trim();
-  const institutionName = String(body.institution_name || "Bank").trim();
+  // Cap institutionName so a stolen secret can't bloat KV (returned on every
+  // /items call). Real bank names are well under 100 chars.
+  const institutionName = String(body.institution_name || "Bank").trim().slice(0, 120);
   if (!publicToken) return json({ error: "public_token required", code: "validation_error" }, 400, origin);
+  // Plaid public_tokens are roughly "public-<env>-<uuid>" — bound the length
+  // before we ship to upstream. Generous ceiling (Plaid tokens are ~80 chars).
+  if (publicToken.length > 200) return json({ error: "public_token too long", code: "validation_error" }, 400, origin);
 
   const r = await plaidCall(env, "/item/public_token/exchange", { public_token: publicToken });
   const accessToken = r.access_token;
@@ -873,6 +890,7 @@ async function handleRecurring(env, userId, origin) {
 async function handleInvestmentTransactions(request, env, userId, origin) {
   const limited = await _userRateGate(env, userId, "investment_transactions", 10, origin, 60);
   if (limited) return limited;
+  if (_bodyTooLarge(request)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const body = await request.json().catch(() => ({}));
   const today = new Date();
   const ninetyAgo = new Date(today); ninetyAgo.setDate(today.getDate() - 90);
@@ -947,7 +965,22 @@ async function handleAnthropic(request, env, userId, origin) {
   // Validate + clamp the request to prevent abuse
   const model = String(body.model || "claude-haiku-4-5-20251001").slice(0, 80);
   const maxTokens = Math.min(parseInt(body.max_tokens, 10) || 800, 2000);
-  const messages = Array.isArray(body.messages) ? body.messages.slice(0, 20) : [];
+  // Validate each message is a {role, content} object with role in
+  // {user, assistant}. A raw "messages: [42, null, 'oops']" would otherwise
+  // pass through to Anthropic and 400 there with a less helpful error.
+  const rawMsgs = Array.isArray(body.messages) ? body.messages.slice(0, 20) : [];
+  const messages = [];
+  for (const m of rawMsgs) {
+    if (!m || typeof m !== "object" || Array.isArray(m)) continue;
+    const role = m.role === "assistant" ? "assistant" : m.role === "user" ? "user" : null;
+    if (!role) continue;
+    // content can be string OR Anthropic's structured-content array. Validate both shapes.
+    let content;
+    if (typeof m.content === "string") content = m.content;
+    else if (Array.isArray(m.content)) content = m.content;
+    else continue;
+    messages.push({ role, content });
+  }
   if (!messages.length) return json({ error: "messages required", code: "validation_error" }, 400, origin);
   // Optional system prompt — Anthropic accepts a top-level `system` string.
   // Forwarded only if the caller provided one (the AI onboarding flow does;
@@ -1513,6 +1546,9 @@ async function handlePushSubscribe(request, env, userId, origin) {
   // misbehaving client to churn KV records.
   const limited = await _userRateGate(env, userId, "subscribe", 5, origin);
   if (limited) return limited;
+  // 20KB ceiling — a schedule with 8 slots × 200-char bodies plus subscription
+  // keys (~100 bytes each) is well under 5KB. 20KB leaves headroom.
+  if (_bodyTooLarge(request, 20_000)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const body = await request.json().catch(() => ({}));
   const sub = body.subscription;
   if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
@@ -1618,15 +1654,18 @@ async function handlePushSend(request, env, userId, origin) {
   // Anthropic proxy cap) bounds sustained abuse over 24h.
   const limited = await _userRateGate(env, userId, "send", 30, origin, 50);
   if (limited) return limited;
+  if (_bodyTooLarge(request, 5_000)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const raw = await env.ASCEND_KV.get(pushKey(userId));
   if (!raw) return json({ error: "not subscribed", code: "not_subscribed" }, 400, origin);
   const body = await request.json().catch(() => ({}));
   const rec = JSON.parse(raw);
+  // Type-check each field so a non-string (e.g. {a:1}) doesn't slide through
+  // String(...) as the literal "[object Object]". Fall through to defaults.
   const payload = {
-    title: String(body.title || "Ascend").slice(0, 100),
-    body: String(body.body || "").slice(0, 400),
-    tag: String(body.tag || "ascend").slice(0, 60),
-    url: _safePushUrl(body.url),
+    title: (typeof body.title === "string" ? body.title : "Ascend").slice(0, 100),
+    body:  (typeof body.body  === "string" ? body.body  : "").slice(0, 400),
+    tag:   (typeof body.tag   === "string" ? body.tag   : "ascend").slice(0, 60),
+    url:   _safePushUrl(typeof body.url === "string" ? body.url : "/"),
   };
   try {
     await sendWebPush(env, rec.subscription, payload);
