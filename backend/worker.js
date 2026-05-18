@@ -24,7 +24,20 @@
  *     issued credentials so a malicious client can't choose a low-entropy or pre-known value.
  *   - All other endpoints require `Authorization: Bearer <userId>:<clientSecret>`. Worker derives the
  *     userId from the auth header, ignoring any userId in the request body (prevents spoofing).
- *   - Audit log is written to u:<userId>:audit (capped JSON array of recent events).
+ *   - Audit log is written to u:<userId>:audit (capped JSON array of recent events). Audit entries
+ *     include a 12-char SHA-256 prefix of the requesting IP + truncated UA so a user can spot
+ *     "this didn't come from my device" without the operator storing raw PII.
+ *
+ * Recovery model (intentional limitation):
+ *   - There is NO server-side recovery for a lost clientSecret. The worker stores only its
+ *     SHA-256; it cannot regenerate the original. If a user loses the secret on every device,
+ *     they re-enroll, get a new userId+secret, and the new userId has no link to the old one.
+ *     The old userId's KV entries (encrypted Plaid access tokens, audit log, etc.) orphan
+ *     until the operator manually cleans them up — they are NOT visible from the new account.
+ *   - To rotate a compromised secret while still possessing it: call /account DELETE (revokes
+ *     Plaid items + nukes KV), then /enroll again.
+ *   - To migrate to a new device while keeping bank links: export the secret out-of-band (the
+ *     frontend offers an "Export device key" flow under Settings → Bank sync).
  */
 
 const PLAID_HOSTS = {
@@ -34,10 +47,10 @@ const PLAID_HOSTS = {
 };
 
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
-const AUDIT_KEEP = 200;          // last N audit events per user
-const DEFAULT_LLM_CAP = 50;      // calls per user per day (per feature)
-const DEFAULT_LLM_BURST = 10;    // calls per user per minute (global across features)
-const WEBHOOK_KEEP_DAYS = 30;    // Plaid webhook events expire after N days
+const AUDIT_KEEP = 200;                        // last N audit events per user
+const DEFAULT_LLM_DAILY_CAP_PER_FEATURE = 50;  // calls per user per day, per `feature` tag
+const DEFAULT_LLM_BURST_CAP_PER_MIN = 10;      // calls per user per minute, across all features
+const WEBHOOK_KEEP_DAYS = 30;                  // Plaid webhook events expire after N days
 
 export default {
   // ============ Scheduled handler ============
@@ -46,38 +59,71 @@ export default {
   // pushes whose target HH:MM has arrived in the user's local clock window.
   // Idles cheaply when nothing's due.
   async scheduled(event, env, ctx) {
-    try { await deliverScheduledPushes(env); }
-    catch (e) { console.error("scheduled push delivery failed:", e && e.stack || e); }
+    const t0 = Date.now();
+    let delivered = 0, errors = 0;
+    try {
+      const out = await deliverScheduledPushes(env);
+      delivered = out?.delivered || 0;
+      errors = out?.errors || 0;
+    } catch (e) {
+      console.error("scheduled push delivery failed:", e && e.stack || e);
+      errors++;
+    }
+    // One structured log line per cron tick so the operator can see "did
+    // scheduled push fire today?" + latency without enabling tail.
+    try {
+      console.log(JSON.stringify({
+        t: new Date().toISOString(),
+        cron: "deliver_scheduled_pushes",
+        ms: Date.now() - t0,
+        delivered, errors,
+      }));
+    } catch {}
   },
 
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const allowed = env.ALLOWED_ORIGIN || "*";
+    // Origin handling — never fall back to wildcard. The default is the
+    // production PWA URL; operators can override via ALLOWED_ORIGIN. If the
+    // operator explicitly sets ALLOWED_ORIGIN="*" we honor it (e.g. for
+    // sandbox / dev environments) but log a warning on every health check.
+    // Browsers send Origin on cross-origin requests; same-origin or
+    // non-browser clients (curl, native apps) omit it and bypass — the
+    // bearer token remains the real security boundary.
+    const DEFAULT_ALLOWED = "https://life-hack-app.vercel.app";
+    const allowed = (env.ALLOWED_ORIGIN && env.ALLOWED_ORIGIN.trim()) || DEFAULT_ALLOWED;
     const reqOrigin = request.headers.get("Origin") || "";
+
+    // For ACAO header purposes: when wildcard, echo the request's Origin if
+    // it sent one (browsers always do; curl might not). When non-wildcard,
+    // always echo the canonical allowed origin — never the request's, so
+    // a rejected cross-origin request can't trick us into Allow-Origin'ing
+    // a foreign host.
+    const respOrigin = (allowed === "*") ? (reqOrigin || "*") : allowed;
 
     // CORS preflight
     if (request.method === "OPTIONS") {
-      return new Response(null, { headers: corsHeaders(allowed) });
+      return new Response(null, { headers: corsHeaders(respOrigin) });
     }
 
-    // Origin enforcement: if a browser sends Origin and it doesn't match ALLOWED_ORIGIN
-    // (and ALLOWED_ORIGIN isn't "*"), reject. Non-browser clients (no Origin header) bypass.
+    // Origin enforcement: if a browser sends Origin and it doesn't match
+    // ALLOWED_ORIGIN (and ALLOWED_ORIGIN isn't "*"), reject with 403.
+    // Non-browser clients (no Origin header) bypass — bearer is the
+    // security boundary there.
     if (allowed !== "*" && reqOrigin && reqOrigin !== allowed) {
-      return json({ error: "origin not allowed" }, 403, allowed);
+      return json({ error: "origin not allowed", code: "origin_denied" }, 403, respOrigin);
     }
 
     // Public endpoints
     if (url.pathname === "/" || url.pathname === "/health") {
       const payload = { ok: true, service: "ascend-backend", version: "v3" };
-      // Surface a warning if the operator left ALLOWED_ORIGIN at "*". The
-      // bearer token is the security boundary so this isn't a vulnerability,
-      // but a missing/wildcard origin makes the worker callable from any
-      // page on the web — including malicious pages that have somehow
-      // obtained a leaked clientSecret. Prefer a concrete URL for prod.
+      // Surface a warning if the operator explicitly set ALLOWED_ORIGIN to "*".
+      // This is sometimes legitimate (sandbox env) but it disables the
+      // CORS check so it should be intentional and visible.
       if (allowed === "*") {
-        payload.warning = "ALLOWED_ORIGIN is '*' — set it to your PWA URL for stronger isolation. See DEPLOY.md.";
+        payload.warning = "ALLOWED_ORIGIN is '*' — disable in prod by setting it to your PWA URL.";
       }
-      return json(payload, 200, allowed);
+      return json(payload, 200, respOrigin);
     }
 
     // Plaid webhook receiver — Plaid POSTs here with no auth header; it signs
@@ -98,101 +144,154 @@ export default {
     // boolean for whether the backend has all three VAPID secrets set.
     if (url.pathname === "/push/vapid-public-key" && request.method === "GET") {
       return json({
+        ok: true,
         key: env.VAPID_PUBLIC_KEY || null,
         enabled: !!(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY && env.VAPID_SUBJECT),
-      }, 200, allowed);
+      }, 200, respOrigin);
     }
 
+    // Capture request start for access-log latency. The log line is emitted
+    // once per request below — success, error, or 404 — so every authed
+    // request produces exactly one structured log entry.
+    const _t0 = Date.now();
+    let _loggedUserId = null;
+
+    // Pre-compute the audit-meta bag for this request. IP is hashed (PII),
+    // UA is truncated. Audit entries that need device-correlation get this
+    // appended; entries that don't (e.g., enrollment) skip it. Computed once
+    // per request to avoid hashing the same IP on every audited() call.
+    const _ip = (request.headers.get("CF-Connecting-IP")
+              || request.headers.get("X-Real-IP")
+              || (request.headers.get("X-Forwarded-For") || "").split(",")[0]
+              || "").trim().slice(0, 64);
+    const _ipHash = _ip ? await sha256hex(_ip).then(h => h.slice(0, 12)).catch(() => "") : "";
+    const _ua = (request.headers.get("User-Agent") || "").slice(0, 60);
+    const _reqMeta = (_ipHash || _ua) ? { ipHash: _ipHash, ua: _ua } : undefined;
+
+    // Inner dispatcher returns a Response; outer wrapper logs and returns.
+    let response;
     try {
-      const auth = await checkAuth(request, env, url);
-      if (auth.error) return json({ error: auth.error }, auth.status || 401, allowed);
+      response = await (async () => {
+        const auth = await checkAuth(request, env, url);
+        if (auth.error) return json({ error: auth.error, code: "unauthorized" }, auth.status || 401, respOrigin);
+        if (auth.mode === "user") _loggedUserId = auth.userId;
 
-      // Enrollment is gated by ENROLLMENT_KEY only. For consumer releases
-      // that ship the key in publicly-served JS, the security boundary is
-      // a per-IP rate limit — a leaked key without abuse capacity can only
-      // create new isolated user records, never read existing ones.
-      if (url.pathname === "/enroll" && request.method === "POST") {
-        if (auth.mode !== "enrollment") return json({ error: "enrollment key required" }, 401, allowed);
-        const limited = await _enrollRateGate(request, env, allowed);
-        if (limited) return limited;
-        return await handleEnroll(request, env, allowed);
-      }
+        // Enrollment is gated by ENROLLMENT_KEY only. For consumer releases
+        // that ship the key in publicly-served JS, the security boundary is
+        // a per-IP rate limit — a leaked key without abuse capacity can only
+        // create new isolated user records, never read existing ones.
+        if (url.pathname === "/enroll" && request.method === "POST") {
+          if (auth.mode !== "enrollment") return json({ error: "enrollment key required", code: "unauthorized" }, 401, respOrigin);
+          const limited = await _enrollRateGate(request, env, respOrigin);
+          if (limited) return limited;
+          return await handleEnroll(request, env, respOrigin);
+        }
 
-      // Everything else needs a real user identity
-      if (auth.mode !== "user") {
-        return json({ error: "user authentication required (enroll first)" }, 401, allowed);
-      }
-      const userId = auth.userId;
+        // Everything else needs a real user identity
+        if (auth.mode !== "user") {
+          return json({ error: "user authentication required (enroll first)", code: "unauthorized" }, 401, respOrigin);
+        }
+        const userId = auth.userId;
 
-      if (url.pathname === "/link/token" && request.method === "POST") {
-        return await audited(env, userId, "link_token",
-          () => handleLinkToken(env, userId, allowed));
-      }
-      if (url.pathname === "/exchange" && request.method === "POST") {
-        return await audited(env, userId, "exchange",
-          () => handleExchange(request, env, userId, allowed));
-      }
-      if (url.pathname === "/sync" && request.method === "POST") {
-        return await audited(env, userId, "sync",
-          () => handleSync(env, userId, allowed));
-      }
-      if (url.pathname === "/holdings" && request.method === "POST") {
-        return await audited(env, userId, "holdings",
-          () => handleHoldings(env, userId, allowed));
-      }
-      if (url.pathname === "/liabilities" && request.method === "POST") {
-        return await audited(env, userId, "liabilities",
-          () => handleLiabilities(env, userId, allowed));
-      }
-      if (url.pathname === "/recurring" && request.method === "POST") {
-        return await audited(env, userId, "recurring",
-          () => handleRecurring(env, userId, allowed));
-      }
-      if (url.pathname === "/investment-transactions" && request.method === "POST") {
-        return await audited(env, userId, "investment_transactions",
-          () => handleInvestmentTransactions(request, env, userId, allowed));
-      }
-      if (url.pathname === "/items" && request.method === "GET") {
-        return await handleItems(env, userId, allowed);
-      }
-      if (url.pathname.startsWith("/item/") && request.method === "DELETE") {
-        return await audited(env, userId, "item_remove",
-          () => handleRemoveItem(url, env, userId, allowed));
-      }
-      if (url.pathname === "/anthropic/messages" && request.method === "POST") {
-        return await handleAnthropic(request, env, userId, allowed);
-      }
-      if (url.pathname === "/audit" && request.method === "GET") {
-        return await handleAuditList(env, userId, allowed);
-      }
-      if (url.pathname === "/account" && request.method === "DELETE") {
-        return await handleDeleteAccount(env, userId, allowed);
-      }
-      // ----- Push notifications -----
-      // (vapid-public-key is handled above as a public endpoint so the
-      // frontend can probe push availability before enrolling.)
-      if (url.pathname === "/push/subscribe" && request.method === "POST") {
-        return await audited(env, userId, "push_subscribe",
-          () => handlePushSubscribe(request, env, userId, allowed));
-      }
-      if (url.pathname === "/push/unsubscribe" && request.method === "POST") {
-        return await audited(env, userId, "push_unsubscribe",
-          () => handlePushUnsubscribe(env, userId, allowed));
-      }
-      if (url.pathname === "/push/test" && request.method === "POST") {
-        return await audited(env, userId, "push_test",
-          () => handlePushTest(env, userId, allowed));
-      }
-      if (url.pathname === "/push/send" && request.method === "POST") {
-        return await audited(env, userId, "push_send",
-          () => handlePushSend(request, env, userId, allowed));
-      }
-      return json({ error: "not found" }, 404, allowed);
+        if (url.pathname === "/link/token" && request.method === "POST") {
+          return await audited(env, userId, "link_token",
+            () => handleLinkToken(env, userId, respOrigin), _reqMeta);
+        }
+        if (url.pathname === "/exchange" && request.method === "POST") {
+          return await audited(env, userId, "exchange",
+            () => handleExchange(request, env, userId, respOrigin), _reqMeta);
+        }
+        if (url.pathname === "/sync" && request.method === "POST") {
+          return await audited(env, userId, "sync",
+            () => handleSync(env, userId, respOrigin), _reqMeta);
+        }
+        if (url.pathname === "/holdings" && request.method === "POST") {
+          return await audited(env, userId, "holdings",
+            () => handleHoldings(env, userId, respOrigin), _reqMeta);
+        }
+        if (url.pathname === "/liabilities" && request.method === "POST") {
+          return await audited(env, userId, "liabilities",
+            () => handleLiabilities(env, userId, respOrigin), _reqMeta);
+        }
+        if (url.pathname === "/recurring" && request.method === "POST") {
+          return await audited(env, userId, "recurring",
+            () => handleRecurring(env, userId, respOrigin), _reqMeta);
+        }
+        if (url.pathname === "/investment-transactions" && request.method === "POST") {
+          return await audited(env, userId, "investment_transactions",
+            () => handleInvestmentTransactions(request, env, userId, respOrigin), _reqMeta);
+        }
+        if (url.pathname === "/items" && request.method === "GET") {
+          return await handleItems(env, userId, respOrigin);
+        }
+        if (url.pathname.startsWith("/item/") && request.method === "DELETE") {
+          return await audited(env, userId, "item_remove",
+            () => handleRemoveItem(url, env, userId, respOrigin), _reqMeta);
+        }
+        if (url.pathname === "/anthropic/messages" && request.method === "POST") {
+          return await handleAnthropic(request, env, userId, respOrigin);
+        }
+        if (url.pathname === "/audit" && request.method === "GET") {
+          return await handleAuditList(env, userId, respOrigin);
+        }
+        if (url.pathname === "/account" && request.method === "DELETE") {
+          return await handleDeleteAccount(env, userId, respOrigin);
+        }
+        // ----- Push notifications -----
+        // (vapid-public-key is handled above as a public endpoint so the
+        // frontend can probe push availability before enrolling.)
+        if (url.pathname === "/push/subscribe" && request.method === "POST") {
+          return await audited(env, userId, "push_subscribe",
+            () => handlePushSubscribe(request, env, userId, respOrigin), _reqMeta);
+        }
+        if (url.pathname === "/push/unsubscribe" && request.method === "POST") {
+          return await audited(env, userId, "push_unsubscribe",
+            () => handlePushUnsubscribe(env, userId, respOrigin), _reqMeta);
+        }
+        if (url.pathname === "/push/test" && request.method === "POST") {
+          return await audited(env, userId, "push_test",
+            () => handlePushTest(env, userId, respOrigin), _reqMeta);
+        }
+        if (url.pathname === "/push/send" && request.method === "POST") {
+          return await audited(env, userId, "push_send",
+            () => handlePushSend(request, env, userId, respOrigin), _reqMeta);
+        }
+        return json({ error: "not found", code: "not_found" }, 404, respOrigin);
+      })();
     } catch (err) {
-      // Don't leak stack traces to the client
-      console.error("worker error", err && err.stack || err);
-      return json({ error: err.message || "server error" }, 500, allowed);
+      // safeError logs the full context + stack to console.error (visible in
+      // wrangler tail / dashboard) and returns a generic message to the
+      // client. Never echo upstream Plaid/Anthropic messages — they leak
+      // endpoint paths, request IDs, and in rare 401 variants secret tails.
+      //
+      // If the thrown error has a .status (set by plaidCall + sendWebPush on
+      // upstream non-2xx), translate to a more accurate worker status:
+      //   - Plaid 4xx with err.plaid set → 502 plaid_upstream_error
+      //     (it's not the client's fault that Plaid rejected; client can't
+      //     fix it. 502 honestly tells them "the bank API broke, retry.")
+      //   - Plaid 5xx → 502 plaid_upstream_error
+      //   - everything else → 500 server_error (default)
+      let status = 500, code = "server_error", msg = "Something went wrong. Try again or contact support if it persists.";
+      if (err && err.plaid && typeof err.status === "number") {
+        status = 502;
+        code = "plaid_upstream_error";
+        msg = "Bank data provider returned an error. Try syncing again in a moment.";
+      }
+      response = json(safeError(err, { route: url.pathname, method: request.method, upstreamStatus: err?.status }, code, msg), status, respOrigin);
     }
+
+    // Emit one structured access log line per request. Logging must never
+    // affect the response — if it throws somehow, we still return the response.
+    try {
+      await _accessLog(env, {
+        userId: _loggedUserId,
+        route: url.pathname,
+        method: request.method,
+        status: response.status,
+        elapsedMs: Date.now() - _t0,
+      });
+    } catch { /* swallow */ }
+    return response;
   },
 };
 
@@ -204,9 +303,15 @@ async function checkAuth(request, env, url) {
   if (!m) return { error: "unauthorized", status: 401 };
   const token = m[1];
 
-  // Enrollment key (back-compat: accept either ENROLLMENT_KEY or legacy API_KEY)
+  // Enrollment key. Prefer ENROLLMENT_KEY; accept legacy API_KEY as a
+  // deprecated alias and warn so the operator notices and migrates.
+  // (Removing API_KEY entirely would break existing deployments that
+  // haven't been re-secret-set with the new name.)
   const enrollKey = env.ENROLLMENT_KEY || env.API_KEY || "";
   if (enrollKey && timingSafeEqStr(token, enrollKey)) {
+    if (!env.ENROLLMENT_KEY && env.API_KEY) {
+      try { console.warn("[deprecated_secret] API_KEY is deprecated — rename to ENROLLMENT_KEY"); } catch {}
+    }
     return { mode: "enrollment" };
   }
 
@@ -356,12 +461,41 @@ async function sha256hex(s) {
   return hex;
 }
 
+// Reject oversized request bodies before parsing — protects the worker's
+// CPU budget against a stolen-secret client shipping garbage MB. Routes
+// that accept structured bodies set a higher ceiling (Anthropic: 1MB).
+// Routes with no body or small bodies use the default 10KB.
+function _bodyTooLarge(request, maxBytes = 10_000) {
+  const cl = parseInt(request.headers.get("content-length") || "0", 10) || 0;
+  if (cl > maxBytes) return true;
+  return false;
+}
+
+// Lightweight content-type guard. Empty content-type passes (curl/native
+// clients commonly omit it); only reject if a content-type is set AND
+// it's not application/json. CF Workers' request.json() is lenient about
+// content-type so this is a hint, not a hard contract — but it surfaces
+// "wrong-content-type" as a clean 415 instead of letting a non-JSON body
+// silently parse to {} and trigger downstream validation errors.
+function _wrongContentType(request) {
+  const ct = (request.headers.get("Content-Type") || "").toLowerCase();
+  if (!ct) return false;
+  return !ct.includes("application/json");
+}
+
 // ============ Endpoint handlers ============
 
 async function handleEnroll(request, env, origin) {
+  if (_wrongContentType(request)) return json({ error: "Content-Type must be application/json", code: "wrong_content_type" }, 415, origin);
+  if (_bodyTooLarge(request)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const body = await request.json().catch(() => ({}));
   const userId = String(body.userId || "").trim();
-  if (!/^u_[A-Za-z0-9_-]+$/.test(userId)) return json({ error: "invalid userId" }, 400, origin);
+  if (!/^u_[A-Za-z0-9_-]+$/.test(userId)) {
+    return json({
+      error: "userId must match pattern u_[A-Za-z0-9_-]+ (frontend's ensureUserId generates this)",
+      code: "validation_error",
+    }, 400, origin);
+  }
 
   // Mint the per-device secret server-side so the worker (not the client)
   // controls the entropy of every issued credential. 32 bytes = 256 bits,
@@ -377,6 +511,17 @@ async function handleEnroll(request, env, origin) {
 }
 
 async function handleLinkToken(env, userId, origin) {
+  // /link/token is the start of a Plaid Link flow. Users rarely launch this
+  // more than a couple times per session; a stolen secret looping it would
+  // burn Plaid's link-creation quota.
+  const limited = await _userRateGate(env, userId, "link_token", 10, origin, 30);
+  if (limited) return limited;
+  // Fail early with a clear message when Plaid creds aren't set, instead
+  // of dispatching to plaidCall which would 400 from Plaid with a less
+  // helpful "missing client_id" body.
+  if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET) {
+    return json({ error: "Plaid not configured on this backend", code: "plaid_disabled" }, 503, origin);
+  }
   const params = {
     user: { client_user_id: userId },
     client_name: "Ascend",
@@ -396,14 +541,25 @@ async function handleLinkToken(env, userId, origin) {
   // POST ITEM_ERROR / PENDING_EXPIRATION / USER_PERMISSION_REVOKED events here.
   if (env.WEBHOOK_URL) params.webhook = env.WEBHOOK_URL;
   const r = await plaidCall(env, "/link/token/create", params);
-  return json({ link_token: r.link_token, expiration: r.expiration }, 200, origin);
+  return json({ ok: true, link_token: r.link_token, expiration: r.expiration }, 200, origin);
 }
 
 async function handleExchange(request, env, userId, origin) {
+  // /exchange happens once per institution-link. 5/hour leaves room for
+  // retries on flaky links without enabling a stolen-secret abuse loop.
+  const limited = await _userRateGate(env, userId, "exchange", 5, origin, 20);
+  if (limited) return limited;
+  if (_wrongContentType(request)) return json({ error: "Content-Type must be application/json", code: "wrong_content_type" }, 415, origin);
+  if (_bodyTooLarge(request)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const body = await request.json().catch(() => ({}));
   const publicToken = String(body.public_token || "").trim();
-  const institutionName = String(body.institution_name || "Bank").trim();
-  if (!publicToken) return json({ error: "public_token required" }, 400, origin);
+  // Cap institutionName so a stolen secret can't bloat KV (returned on every
+  // /items call). Real bank names are well under 100 chars.
+  const institutionName = String(body.institution_name || "Bank").trim().slice(0, 120);
+  if (!publicToken) return json({ error: "public_token required", code: "validation_error" }, 400, origin);
+  // Plaid public_tokens are roughly "public-<env>-<uuid>" — bound the length
+  // before we ship to upstream. Generous ceiling (Plaid tokens are ~80 chars).
+  if (publicToken.length > 200) return json({ error: "public_token too long", code: "validation_error" }, 400, origin);
 
   const r = await plaidCall(env, "/item/public_token/exchange", { public_token: publicToken });
   const accessToken = r.access_token;
@@ -432,6 +588,13 @@ async function handleExchange(request, env, userId, origin) {
 const SYNC_PLAID_CALL_BUDGET = 40;
 
 async function handleSync(env, userId, origin) {
+  // /sync is the hottest Plaid endpoint — each call can do up to 40 upstream
+  // Plaid API calls (SYNC_PLAID_CALL_BUDGET) across all linked items. A
+  // stolen secret looping /sync would burn the operator's Plaid quota fast.
+  // 10/hour leaves slack for foreground+background refreshes; 60/day caps
+  // sustained abuse. Normal users sync 1-3x per app-open.
+  const limited = await _userRateGate(env, userId, "sync", 10, origin, 60);
+  if (limited) return limited;
   const itemIds = await getItemIndex(env, userId);
   const allTx = [];
   const allAccounts = [];
@@ -537,6 +700,10 @@ async function handleSync(env, userId, origin) {
 }
 
 async function handleItems(env, userId, origin) {
+  // /items doesn't hit Plaid, just reads KV — cheap. But a stolen secret
+  // polling it tightly would still be wasteful. 60/hour ≈ once per minute.
+  const limited = await _userRateGate(env, userId, "items", 60, origin);
+  if (limited) return limited;
   const itemIds = await getItemIndex(env, userId);
   const items = [];
   for (const itemId of itemIds) {
@@ -558,20 +725,25 @@ async function handleItems(env, userId, origin) {
       webhook,
     });
   }
-  return json({ items }, 200, origin);
+  return json({ ok: true, items }, 200, origin);
 }
 
 async function handleRemoveItem(url, env, userId, origin) {
+  // Item removal is rare (user disconnects a bank) but irreversible from the
+  // backend's perspective (the encrypted access token is gone). 5/hour gives
+  // slack for retries without enabling rapid-fire data loss.
+  const limited = await _userRateGate(env, userId, "item_remove", 5, origin, 20);
+  if (limited) return limited;
   // decodeURIComponent throws URIError on malformed escapes like "%FF" —
   // surface as a 400 instead of letting it bubble into a 500 with a
   // confusing internal message.
   let itemId;
   try { itemId = decodeURIComponent(url.pathname.split("/").pop() || ""); }
-  catch { return json({ error: "malformed itemId" }, 400, origin); }
-  if (!itemId) return json({ error: "itemId required" }, 400, origin);
+  catch { return json({ error: "malformed itemId", code: "validation_error" }, 400, origin); }
+  if (!itemId) return json({ error: "itemId required", code: "validation_error" }, 400, origin);
   // Tighten to the format Plaid actually uses (the audit was right that we
   // were passing arbitrary URL fragments into KV keys).
-  if (!/^[A-Za-z0-9_\-]{1,80}$/.test(itemId)) return json({ error: "invalid itemId format" }, 400, origin);
+  if (!/^[A-Za-z0-9_\-]{1,80}$/.test(itemId)) return json({ error: "invalid itemId format", code: "validation_error" }, 400, origin);
 
   const raw = await env.ASCEND_KV.get(itemKey(userId, itemId));
   if (raw) {
@@ -589,11 +761,18 @@ async function handleRemoveItem(url, env, userId, origin) {
 }
 
 async function handleHoldings(env, userId, origin) {
+  const limited = await _userRateGate(env, userId, "holdings", 10, origin, 60);
+  if (limited) return limited;
   const itemIds = await getItemIndex(env, userId);
   const allHoldings = [];
   const allSecurities = {};
+  // Per-invocation Plaid-call budget — mirror handleSync's pattern so a user
+  // with many linked institutions can't blow the CPU budget.
+  let plaidCalls = 0;
+  let truncated = false;
 
   for (const itemId of itemIds) {
+    if (plaidCalls >= SYNC_PLAID_CALL_BUDGET) { truncated = true; break; }
     const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!recRaw) continue;
     const rec = JSON.parse(recRaw);
@@ -602,6 +781,7 @@ async function handleHoldings(env, userId, origin) {
     catch { continue; }
 
     try {
+      plaidCalls++;
       const r = await plaidCall(env, "/investments/holdings/get", { access_token: accessToken });
       for (const sec of (r.securities || [])) allSecurities[sec.security_id] = sec;
       for (const h of (r.holdings || [])) {
@@ -624,7 +804,7 @@ async function handleHoldings(env, userId, origin) {
     } catch (e) { continue; }
   }
 
-  return json({ ok: true, holdings: allHoldings }, 200, origin);
+  return json({ ok: true, holdings: allHoldings, truncated }, 200, origin);
 }
 
 // Liabilities — pulls credit card APRs/min payments/statement balances, plus
@@ -633,10 +813,15 @@ async function handleHoldings(env, userId, origin) {
 // that item, no error. Frontend pre-populates DB.debtMeta so the user
 // doesn't have to type APRs.
 async function handleLiabilities(env, userId, origin) {
+  const limited = await _userRateGate(env, userId, "liabilities", 10, origin, 60);
+  if (limited) return limited;
   const itemIds = await getItemIndex(env, userId);
   const credit = [], mortgage = [], student = [];
+  let plaidCalls = 0;
+  let truncated = false;
 
   for (const itemId of itemIds) {
+    if (plaidCalls >= SYNC_PLAID_CALL_BUDGET) { truncated = true; break; }
     const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!recRaw) continue;
     const rec = JSON.parse(recRaw);
@@ -645,6 +830,7 @@ async function handleLiabilities(env, userId, origin) {
     catch { continue; }
 
     try {
+      plaidCalls++;
       const r = await plaidCall(env, "/liabilities/get", { access_token: accessToken });
       const liab = r.liabilities || {};
       for (const c of (liab.credit || [])) {
@@ -733,7 +919,7 @@ async function handleLiabilities(env, userId, origin) {
     }
   }
 
-  return json({ ok: true, credit, mortgage, student }, 200, origin);
+  return json({ ok: true, credit, mortgage, student, truncated }, 200, origin);
 }
 
 // Recurring transactions — Plaid's pattern-detection across the user's
@@ -742,10 +928,16 @@ async function handleLiabilities(env, userId, origin) {
 // surfaces these as "Plaid spotted these — accept to add as recurring?" so
 // the user doesn't have to type Netflix, Spotify, rent, paycheck, etc.
 async function handleRecurring(env, userId, origin) {
+  const limited = await _userRateGate(env, userId, "recurring", 10, origin, 60);
+  if (limited) return limited;
   const itemIds = await getItemIndex(env, userId);
   const inflows = [], outflows = [];
+  let plaidCalls = 0;
+  let truncated = false;
 
   for (const itemId of itemIds) {
+    // Each item costs 2 Plaid calls here, so check budget conservatively.
+    if (plaidCalls + 2 > SYNC_PLAID_CALL_BUDGET) { truncated = true; break; }
     const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!recRaw) continue;
     const rec = JSON.parse(recRaw);
@@ -756,12 +948,14 @@ async function handleRecurring(env, userId, origin) {
     // Need account_ids for /transactions/recurring/get. Pull them inline.
     let acctIds = [];
     try {
+      plaidCalls++;
       const a = await plaidCall(env, "/accounts/get", { access_token: accessToken });
       acctIds = (a.accounts || []).map(x => x.account_id);
     } catch { continue; }
     if (!acctIds.length) continue;
 
     try {
+      plaidCalls++;
       const r = await plaidCall(env, "/transactions/recurring/get", {
         access_token: accessToken,
         account_ids: acctIds,
@@ -789,13 +983,17 @@ async function handleRecurring(env, userId, origin) {
     } catch (e) { continue; }
   }
 
-  return json({ ok: true, inflows, outflows }, 200, origin);
+  return json({ ok: true, inflows, outflows, truncated }, 200, origin);
 }
 
 // Investment transactions — buys, sells, dividends, fees. Useful for cost
 // basis tracking and realized P&L. Requires start_date and end_date; we
 // accept them from the request or default to the last 90 days.
 async function handleInvestmentTransactions(request, env, userId, origin) {
+  const limited = await _userRateGate(env, userId, "investment_transactions", 10, origin, 60);
+  if (limited) return limited;
+  if (_wrongContentType(request)) return json({ error: "Content-Type must be application/json", code: "wrong_content_type" }, 415, origin);
+  if (_bodyTooLarge(request)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const body = await request.json().catch(() => ({}));
   const today = new Date();
   const ninetyAgo = new Date(today); ninetyAgo.setDate(today.getDate() - 90);
@@ -804,13 +1002,16 @@ async function handleInvestmentTransactions(request, env, userId, origin) {
   // Validate ISO YYYY-MM-DD
   const dateRe = /^\d{4}-\d{2}-\d{2}$/;
   if (!dateRe.test(startDate) || !dateRe.test(endDate)) {
-    return json({ error: "start_date and end_date must be YYYY-MM-DD" }, 400, origin);
+    return json({ error: "start_date and end_date must be YYYY-MM-DD", code: "validation_error" }, 400, origin);
   }
 
   const itemIds = await getItemIndex(env, userId);
   const transactions = [];
+  let plaidCalls = 0;
+  let truncated = false;
 
   for (const itemId of itemIds) {
+    if (plaidCalls >= SYNC_PLAID_CALL_BUDGET) { truncated = true; break; }
     const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!recRaw) continue;
     const rec = JSON.parse(recRaw);
@@ -819,6 +1020,7 @@ async function handleInvestmentTransactions(request, env, userId, origin) {
     catch { continue; }
 
     try {
+      plaidCalls++;
       const r = await plaidCall(env, "/investments/transactions/get", {
         access_token: accessToken,
         start_date: startDate,
@@ -850,28 +1052,49 @@ async function handleInvestmentTransactions(request, env, userId, origin) {
     } catch (e) { continue; }
   }
 
-  return json({ ok: true, start_date: startDate, end_date: endDate, transactions }, 200, origin);
+  return json({ ok: true, start_date: startDate, end_date: endDate, transactions, truncated }, 200, origin);
 }
 
 async function handleAnthropic(request, env, userId, origin) {
   if (!env.ANTHROPIC_KEY) {
-    return json({ error: "AI insights not configured on this backend" }, 503, origin);
+    return json({ error: "AI insights not configured on this backend", code: "ai_disabled" }, 503, origin);
   }
 
+  if (_wrongContentType(request)) return json({ error: "Content-Type must be application/json", code: "wrong_content_type" }, 415, origin);
   // Reject oversized request bodies before parsing — protects the worker's
   // CPU budget against an attacker who can ship 100MB JSON to one POST.
   // 200KB is comfortably above the messages-array clamp below (20 msgs × 40KB).
   const contentLength = parseInt(request.headers.get("content-length") || "0", 10);
   if (contentLength > 1_000_000) {
-    return json({ error: "request body too large" }, 413, origin);
+    return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   }
 
   const body = await request.json().catch(() => ({}));
   // Validate + clamp the request to prevent abuse
   const model = String(body.model || "claude-haiku-4-5-20251001").slice(0, 80);
   const maxTokens = Math.min(parseInt(body.max_tokens, 10) || 800, 2000);
-  const messages = Array.isArray(body.messages) ? body.messages.slice(0, 20) : [];
-  if (!messages.length) return json({ error: "messages required" }, 400, origin);
+  // Validate each message is a {role, content} object with role in
+  // {user, assistant}. A raw "messages: [42, null, 'oops']" would otherwise
+  // pass through to Anthropic and 400 there with a less helpful error.
+  const rawMsgs = Array.isArray(body.messages) ? body.messages.slice(0, 20) : [];
+  const messages = [];
+  for (const m of rawMsgs) {
+    if (!m || typeof m !== "object" || Array.isArray(m)) continue;
+    const role = m.role === "assistant" ? "assistant" : m.role === "user" ? "user" : null;
+    if (!role) continue;
+    // content can be string OR Anthropic's structured-content array. Validate both shapes.
+    let content;
+    if (typeof m.content === "string") content = m.content;
+    else if (Array.isArray(m.content)) content = m.content;
+    else continue;
+    messages.push({ role, content });
+  }
+  if (!messages.length) {
+    return json({
+      error: "messages must be a non-empty array of { role: 'user'|'assistant', content: string | array }",
+      code: "validation_error",
+    }, 400, origin);
+  }
   // Optional system prompt — Anthropic accepts a top-level `system` string.
   // Forwarded only if the caller provided one (the AI onboarding flow does;
   // the insights flow does not). Capped to keep costs predictable.
@@ -890,8 +1113,8 @@ async function handleAnthropic(request, env, userId, origin) {
   // ---- Rate limiting: per-feature daily cap + global per-minute burst ----
   // The daily cap protects against quiet long-tail abuse; the burst cap stops
   // a runaway client from emptying the daily quota in seconds.
-  const dailyCap = parseInt(env.ANTHROPIC_DAILY_CAP || `${DEFAULT_LLM_CAP}`, 10) || DEFAULT_LLM_CAP;
-  const burstCap = parseInt(env.ANTHROPIC_BURST_CAP || `${DEFAULT_LLM_BURST}`, 10) || DEFAULT_LLM_BURST;
+  const dailyCap = parseInt(env.ANTHROPIC_DAILY_CAP || `${DEFAULT_LLM_DAILY_CAP_PER_FEATURE}`, 10) || DEFAULT_LLM_DAILY_CAP_PER_FEATURE;
+  const burstCap = parseInt(env.ANTHROPIC_BURST_CAP || `${DEFAULT_LLM_BURST_CAP_PER_MIN}`, 10) || DEFAULT_LLM_BURST_CAP_PER_MIN;
   const day = new Date().toISOString().slice(0, 10);
   const min = new Date().toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
   const dailyKey = `u:${userId}:llm:${feature}:${day}`;
@@ -929,15 +1152,28 @@ async function handleAnthropic(request, env, userId, origin) {
   const payload = { model, max_tokens: maxTokens, messages };
   if (systemPrompt) payload.system = systemPrompt;
 
-  const r = await fetch(ANTHROPIC_API, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": env.ANTHROPIC_KEY,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify(payload),
-  });
+  // Single retry on transient Anthropic errors. Don't retry on 4xx (user
+  // error — same input will get the same error). On 429 from Anthropic we
+  // back off briefly — our own per-user burst cap should rarely let us hit
+  // this. On 5xx we retry once.
+  let r;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    r = await fetch(ANTHROPIC_API, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": env.ANTHROPIC_KEY,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (r.ok) break;
+    if (attempt === 0 && (r.status === 429 || r.status >= 500)) {
+      await _sleep(r.status === 429 ? 500 : 250);
+      continue;
+    }
+    break;
+  }
 
   await appendAudit(env, userId, r.ok ? `anthropic_${feature}` : `anthropic_${feature}_error`);
 
@@ -949,9 +1185,31 @@ async function handleAnthropic(request, env, userId, origin) {
   const text = await r.text();
   let parsed;
   try { parsed = JSON.parse(text); } catch { parsed = null; }
+
+  // Translate upstream status to client-visible status. 401 from Anthropic
+  // means OUR ANTHROPIC_KEY is bad — that's an operator config issue, not the
+  // client's fault. Surface as 503 + ai_disabled so the frontend can show
+  // "AI temporarily unavailable" instead of treating it as a user-auth fail
+  // and clearing the device enrollment.
+  let clientStatus = r.status;
+  let clientCode = null;
+  if (r.status === 401 || r.status === 403) {
+    clientStatus = 503;
+    clientCode = "ai_disabled";
+    try { console.error(`[anthropic_auth_failed] upstream=${r.status} — check ANTHROPIC_KEY`); } catch {}
+  } else if (r.status === 429) {
+    clientCode = "ai_upstream_rate_limit"; // distinct from our own rate_limit_*
+  } else if (r.status >= 500) {
+    clientCode = "ai_upstream_error";
+    clientStatus = 502;
+  } else if (!r.ok) {
+    clientCode = "ai_upstream_error";
+  }
+
   let safe;
   if (r.ok && parsed && typeof parsed === "object") {
     safe = {
+      ok: true,
       id: typeof parsed.id === "string" ? parsed.id.slice(0, 120) : undefined,
       type: typeof parsed.type === "string" ? parsed.type.slice(0, 40) : undefined,
       role: typeof parsed.role === "string" ? parsed.role.slice(0, 40) : undefined,
@@ -964,27 +1222,37 @@ async function handleAnthropic(request, env, userId, origin) {
         output_tokens: +parsed.usage.output_tokens || 0,
       } : undefined,
     };
-  } else if (parsed && parsed.error && typeof parsed.error === "object") {
-    safe = {
-      error: {
-        type: typeof parsed.error.type === "string" ? parsed.error.type.slice(0, 64) : "upstream_error",
-        message: typeof parsed.error.message === "string" ? parsed.error.message.slice(0, 300) : "Upstream AI service returned an error.",
-      },
-    };
   } else {
-    // Couldn't parse — generic message, don't leak the raw upstream body.
-    safe = { error: { type: "upstream_error", message: r.ok ? "Empty response from AI" : `Upstream returned HTTP ${r.status}` } };
+    // Error path — never echo upstream error.message to the client (could
+    // leak request_id or API-key tails in rare 401 bodies). Generic message
+    // keyed by our translated code.
+    const msg = clientCode === "ai_disabled"
+      ? "AI service temporarily unavailable. Try again later."
+      : clientCode === "ai_upstream_rate_limit"
+      ? "AI service is busy. Try again in a moment."
+      : clientCode === "ai_upstream_error"
+      ? "AI service returned an error. Try again."
+      : "AI request failed.";
+    safe = { error: msg, code: clientCode || "ai_upstream_error" };
   }
   return new Response(JSON.stringify(safe), {
-    status: r.status,
+    status: clientStatus,
     headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
   });
 }
 
 async function handleAuditList(env, userId, origin) {
+  // Cheap KV read but worth bounding — frontend doesn't need to poll this.
+  const limited = await _userRateGate(env, userId, "audit", 30, origin);
+  if (limited) return limited;
   const raw = await env.ASCEND_KV.get(`u:${userId}:audit`);
   const events = raw ? JSON.parse(raw) : [];
-  return json({ events }, 200, origin);
+  // The audit ring buffer caps at AUDIT_KEEP entries (currently 200), so this
+  // endpoint always returns at most that many. There is no pagination —
+  // appendAudit() drops the oldest entry once the cap is hit. Returning the
+  // current cap in the response so the frontend can show "showing last N of
+  // up to MAX events" without hardcoding the number.
+  return json({ ok: true, events, cap: AUDIT_KEEP }, 200, origin);
 }
 
 // ============ Plaid webhook receiver ============
@@ -1064,6 +1332,12 @@ async function handlePlaidWebhook(request, env) {
 }
 
 async function handleDeleteAccount(env, userId, origin) {
+  // Destructive + irreversible. Frontend already has a confirm flow, but a
+  // stolen clientSecret could call this directly. Tight cap (2/hour, 3/day)
+  // — a real user deletes at most once. If they hit the cap they can wait or
+  // contact the operator out-of-band.
+  const limited = await _userRateGate(env, userId, "account_delete", 2, origin, 3);
+  if (limited) return limited;
   // Best-effort: revoke each Plaid item, then nuke all KV records under u:userId:*
   const itemIds = await getItemIndex(env, userId);
   for (const itemId of itemIds) {
@@ -1087,49 +1361,84 @@ async function handleDeleteAccount(env, userId, origin) {
 
 // ============ Audit log ============
 
-async function audited(env, userId, action, fn) {
+async function audited(env, userId, action, fn, meta) {
   const res = await fn();
-  // Only log if response looks successful
-  try {
-    if (res && res.status < 400) await appendAudit(env, userId, action);
-    else await appendAudit(env, userId, action + "_error");
-  } catch {}
+  // Tag the audit entry based on the response. Distinguish rate-limit from
+  // generic error so the user/operator can spot "I'm getting throttled"
+  // separately from "something is broken".
+  const tag = res.status < 400 ? action
+            : res.status === 429 ? action + "_rate_limited"
+            : action + "_error";
+  try { await appendAudit(env, userId, tag, meta); }
+  catch (e) { try { console.warn(`[audit_tag_failed] uid=${userId} tag=${tag}`); } catch {} }
   return res;
 }
 
-async function appendAudit(env, userId, action) {
+async function appendAudit(env, userId, action, meta) {
+  // meta is an optional small object — { ipHash?, ua? } — already truncated/
+  // hashed by the caller. We never store raw IPs (PII / GDPR) — only a
+  // 12-char SHA-256 prefix that a user can compare against their other audit
+  // entries to spot "this came from a different device than mine" without
+  // letting an audit-log reader fingerprint individuals.
   try {
     const key = `u:${userId}:audit`;
     const raw = await env.ASCEND_KV.get(key);
     const arr = raw ? JSON.parse(raw) : [];
-    arr.unshift({ t: new Date().toISOString(), a: action });
+    const entry = { t: new Date().toISOString(), a: action };
+    if (meta && typeof meta === "object") {
+      if (typeof meta.ipHash === "string") entry.ip = meta.ipHash.slice(0, 12);
+      if (typeof meta.ua === "string") entry.ua = meta.ua.slice(0, 60);
+    }
+    arr.unshift(entry);
     if (arr.length > AUDIT_KEEP) arr.length = AUDIT_KEEP;
     await env.ASCEND_KV.put(key, JSON.stringify(arr));
-  } catch {}
+  } catch (e) {
+    // Audit-log write failures are not user-blocking but they ARE a signal
+    // that KV is under stress or the user's audit blob is corrupted. Surface
+    // to wrangler tail so the operator notices without spamming the client.
+    try { console.warn(`[audit_write_failed] uid=${userId} action=${action}: ${e && e.message}`); } catch {}
+  }
 }
 
 // ============ Plaid client (no SDK) ============
 
+// Wait `ms` milliseconds. Workers' setTimeout is available since
+// compat_date 2022-11-30; we're well past that.
+const _sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
 async function plaidCall(env, path, body) {
   const host = PLAID_HOSTS[env.PLAID_ENV] || PLAID_HOSTS.sandbox;
-  const r = await fetch(host + path, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      client_id: env.PLAID_CLIENT_ID,
-      secret: env.PLAID_SECRET,
-      ...body,
-    }),
-  });
-  const text = await r.text();
-  let data;
-  try { data = JSON.parse(text); } catch { data = { raw: text }; }
-  if (!r.ok) {
+  // Single retry with backoff on transient Plaid errors (429, 5xx).
+  // Bounded so we don't blow the CPU budget on a misbehaving upstream.
+  // 429 backoff: 300ms (conservative — Plaid's docs say retry after a
+  // short delay; the rate-limit headers vary by endpoint). 5xx: 200ms.
+  let lastErr;
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const r = await fetch(host + path, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        client_id: env.PLAID_CLIENT_ID,
+        secret: env.PLAID_SECRET,
+        ...body,
+      }),
+    });
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = { raw: text }; }
+    if (r.ok) return data;
+    // Retry once on transient upstream failures
+    if (attempt === 0 && (r.status === 429 || r.status >= 500)) {
+      const wait = r.status === 429 ? 300 : 200;
+      await _sleep(wait);
+      continue;
+    }
     const err = new Error(`Plaid ${path} failed: ${data.error_message || data.error_code || r.status}`);
     err.plaid = data;
+    err.status = r.status;
     throw err;
   }
-  return data;
+  throw lastErr || new Error(`Plaid ${path} failed after retry`);
 }
 
 // ============ KV index helpers ============
@@ -1213,6 +1522,66 @@ function b64ToBytes(b64) {
 }
 
 // ============ HTTP helpers ============
+
+// Hash a userId to a 12-char prefix so logs can correlate requests from the
+// same device without leaking the actual userId (which is high-cardinality
+// but stable and would let a log reader fingerprint individual users). SHA-256
+// hex is overkill for size; truncate to 12 chars (~48 bits) — enough to
+// distinguish among the operator's expected user base, not enough to brute-
+// force back to a userId.
+async function _hashUid(uid) {
+  if (!uid) return "none";
+  try {
+    const h = await sha256hex(uid);
+    return h.slice(0, 12);
+  } catch { return "err"; }
+}
+
+// One structured log line per authenticated request — captured by
+// wrangler tail and Cloudflare's observability pipeline. Format chosen to
+// be greppable AND parseable. Never include:
+//   - raw userId (use _hashUid)
+//   - any Authorization header content
+//   - request body
+//   - Plaid response data
+//   - access tokens, ciphertext
+// `outcome` is "ok" | "client_error" | "server_error" | "rate_limited" |
+// "unauthorized" — bucketed for SLO dashboards.
+async function _accessLog(env, { userId, route, method, status, elapsedMs, code }) {
+  try {
+    const uidHash = await _hashUid(userId);
+    const outcome = status < 400 ? "ok"
+                  : status === 401 || status === 403 ? "unauthorized"
+                  : status === 429 ? "rate_limited"
+                  : status < 500 ? "client_error"
+                  : "server_error";
+    // One-line JSON keeps wrangler tail readable AND lets log-shippers parse.
+    console.log(JSON.stringify({
+      t: new Date().toISOString(),
+      uid: uidHash,
+      route, method, status, outcome,
+      ms: elapsedMs,
+      ...(code ? { code } : {}),
+    }));
+  } catch { /* logging must never throw */ }
+}
+
+// Log a server-side error with full context, return a sanitized client-safe
+// payload. Use everywhere an upstream/internal error could otherwise leak
+// (Plaid endpoint paths, Anthropic response bodies, stack traces, secret tails
+// in 401s, etc.). The `code` is a stable token the frontend can switch on; the
+// `clientMessage` is a generic human-readable string. The real error goes to
+// `console.error` so `wrangler tail` and the Cloudflare dashboard still see it.
+function safeError(err, context, code = "server_error", clientMessage = "Something went wrong. Try again or contact support if it persists.") {
+  try {
+    const ctxStr = typeof context === "string" ? context : JSON.stringify(context);
+    const errStr = err && (err.stack || err.message) ? (err.stack || err.message) : String(err);
+    console.error(`[${code}] ${ctxStr} :: ${errStr}`);
+  } catch {
+    // Even logging shouldn't throw. Worst case: drop the log and still return safe payload.
+  }
+  return { error: clientMessage, code };
+}
 
 function corsHeaders(origin) {
   return {
@@ -1299,6 +1668,10 @@ function _isAllowedPushEndpoint(url) {
 // boundary against mass-enrollment abuse. Caps:
 //   - 5 enrollments per IP per hour (normal users enroll once per device)
 //   - 25 per IP per day (covers device upgrades, family/friend testing, etc.)
+//   - GLOBAL cap of 500 enrollments per UTC day across all IPs — a
+//     defense-in-depth against a botnet that stays under the per-IP cap.
+//     Tuned for a single-operator app (you, your friends, ~handful of beta
+//     users); bump if your install base outgrows it.
 // Source IP is taken from CF-Connecting-IP (Cloudflare-set), falling back to
 // X-Real-IP, then the leftmost X-Forwarded-For — Cloudflare overwrites this
 // header at the edge, so it can't be spoofed by the client.
@@ -1312,8 +1685,17 @@ async function _enrollRateGate(request, env, origin) {
   const iso = new Date().toISOString();
   const hourKey = `enroll:rl:${ipKey}:${iso.slice(0, 13)}`;
   const dayKey  = `enroll:rl:${ipKey}:day:${iso.slice(0, 10)}`;
+  const globalKey = `enroll:rl:global:day:${iso.slice(0, 10)}`;
   const HOUR_CAP = 5;
   const DAY_CAP  = 25;
+  const GLOBAL_DAY_CAP = parseInt(env.ENROLL_GLOBAL_DAY_CAP || "500", 10) || 500;
+
+  // Global cap first — cheap KV read; protects against the botnet case.
+  const curGlobal = parseInt(await env.ASCEND_KV.get(globalKey) || "0", 10) || 0;
+  if (curGlobal >= GLOBAL_DAY_CAP) {
+    try { console.warn(`[enroll_global_cap_hit] day_count=${curGlobal}`); } catch {}
+    return json({ error: `Enrollment temporarily unavailable. Try again tomorrow.`, code: "rate_limit_global" }, 429, origin);
+  }
   const curHour = parseInt(await env.ASCEND_KV.get(hourKey) || "0", 10) || 0;
   if (curHour >= HOUR_CAP) {
     return json({ error: `Too many enrollments from this network. Try again in an hour.`, code: "rate_limit" }, 429, origin);
@@ -1323,20 +1705,30 @@ async function _enrollRateGate(request, env, origin) {
     return json({ error: `Daily enrollment limit reached from this network. Try again tomorrow.`, code: "rate_limit_daily" }, 429, origin);
   }
   // Reserve before doing the work; TTLs cover clock skew (~70 min / ~26 h).
-  await env.ASCEND_KV.put(hourKey, String(curHour + 1), { expirationTtl: 70 * 60 });
-  await env.ASCEND_KV.put(dayKey,  String(curDay + 1),  { expirationTtl: 26 * 60 * 60 });
+  await env.ASCEND_KV.put(hourKey,   String(curHour + 1),   { expirationTtl: 70 * 60 });
+  await env.ASCEND_KV.put(dayKey,    String(curDay + 1),    { expirationTtl: 26 * 60 * 60 });
+  await env.ASCEND_KV.put(globalKey, String(curGlobal + 1), { expirationTtl: 26 * 60 * 60 });
   return null;
 }
 
-async function _pushRateGate(env, userId, bucket, perHourCap, origin, perDayCap) {
+// Generic per-user rate gate. Bucket is a short string (e.g. "sync", "test",
+// "send") so different routes get isolated counters. Caller picks an hourly
+// cap; the daily cap is optional and stacked on top.
+//
+// KV writes are sloppy / racy by design — two parallel requests can both read
+// curHour=N (cap N+1), both reserve, both succeed. Acceptable at this app's
+// scale; documented here so a future contributor doesn't "fix" it by reaching
+// for Durable Objects without first measuring the slop. If the slop ever
+// matters: move counters to a Durable Object keyed by userId.
+async function _userRateGate(env, userId, bucket, perHourCap, origin, perDayCap) {
   const iso = new Date().toISOString();
-  const hourKey = `u:${userId}:push:${bucket}:${iso.slice(0, 13)}`; // YYYY-MM-DDTHH
+  const hourKey = `u:${userId}:rl:${bucket}:${iso.slice(0, 13)}`; // YYYY-MM-DDTHH
   const curHour = parseInt(await env.ASCEND_KV.get(hourKey) || "0", 10) || 0;
   if (curHour >= perHourCap) {
     return json({ error: `Rate limit: ${perHourCap}/hour for ${bucket}. Slow down.`, code: "rate_limit" }, 429, origin);
   }
   if (perDayCap) {
-    const dayKey = `u:${userId}:push:${bucket}:day:${iso.slice(0, 10)}`;
+    const dayKey = `u:${userId}:rl:${bucket}:day:${iso.slice(0, 10)}`;
     const curDay = parseInt(await env.ASCEND_KV.get(dayKey) || "0", 10) || 0;
     if (curDay >= perDayCap) {
       return json({ error: `Daily limit: ${perDayCap}/day for ${bucket}. Try again tomorrow.`, code: "rate_limit_daily" }, 429, origin);
@@ -1350,31 +1742,38 @@ async function _pushRateGate(env, userId, bucket, perHourCap, origin, perDayCap)
 
 async function handlePushSubscribe(request, env, userId, origin) {
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) {
-    return json({ error: "Push not configured on this backend (missing VAPID_*)" }, 503, origin);
+    return json({ error: "Push not configured on this backend (missing VAPID_*)", code: "push_disabled" }, 503, origin);
   }
   // Subscribe is effectively a one-time user action (rotated when the SW
   // push subscription expires or the user re-grants permission). 5/hour
   // gives slack for the rare permission-flip cycle without enabling a
   // misbehaving client to churn KV records.
-  const limited = await _pushRateGate(env, userId, "subscribe", 5, origin);
+  const limited = await _userRateGate(env, userId, "subscribe", 5, origin);
   if (limited) return limited;
+  // 20KB ceiling — a schedule with 8 slots × 200-char bodies plus subscription
+  // keys (~100 bytes each) is well under 5KB. 20KB leaves headroom.
+  if (_wrongContentType(request)) return json({ error: "Content-Type must be application/json", code: "wrong_content_type" }, 415, origin);
+  if (_bodyTooLarge(request, 20_000)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const body = await request.json().catch(() => ({}));
   const sub = body.subscription;
   if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
-    return json({ error: "invalid subscription" }, 400, origin);
+    return json({
+      error: "subscription must be { endpoint: string, keys: { p256dh: string, auth: string } }",
+      code: "validation_error",
+    }, 400, origin);
   }
   // Endpoint must be a known push service — no SSRF target of operator's choosing.
   if (!_isAllowedPushEndpoint(sub.endpoint)) {
-    return json({ error: "subscription endpoint not on push-service allowlist" }, 400, origin);
+    return json({ error: "subscription endpoint not on push-service allowlist", code: "validation_error" }, 400, origin);
   }
   // Cap key/secret sizes so an enrolled attacker can't bloat KV records.
   // Real p256dh is 65 bytes (88 b64), auth is 16 bytes (24 b64). 200 / 64
   // are generous ceilings that still constrain memory.
   if (typeof sub.keys.p256dh !== "string" || sub.keys.p256dh.length > 200) {
-    return json({ error: "p256dh too long" }, 400, origin);
+    return json({ error: "p256dh too long", code: "validation_error" }, 400, origin);
   }
   if (typeof sub.keys.auth !== "string" || sub.keys.auth.length > 64) {
-    return json({ error: "auth too long" }, 400, origin);
+    return json({ error: "auth too long", code: "validation_error" }, 400, origin);
   }
   // schedule = [{ hhmm: "08:00", body: "Optional body" }] — sent by frontend
   // when reminderTimes change. Body is optional; backend uses a generic
@@ -1408,10 +1807,13 @@ async function handlePushTest(env, userId, origin) {
   // Test is user-initiated ("send me a test push to verify delivery"). A
   // healthy user taps it once. Tightened from 10/hour to 3/hour — a stolen
   // device-secret can't use this to spam the device.
-  const limited = await _pushRateGate(env, userId, "test", 3, origin);
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) {
+    return json({ error: "Push not configured on this backend (missing VAPID_*)", code: "push_disabled" }, 503, origin);
+  }
+  const limited = await _userRateGate(env, userId, "test", 3, origin);
   if (limited) return limited;
   const raw = await env.ASCEND_KV.get(pushKey(userId));
-  if (!raw) return json({ error: "not subscribed" }, 400, origin);
+  if (!raw) return json({ error: "Subscribe to push first via POST /push/subscribe", code: "not_subscribed" }, 400, origin);
   const rec = JSON.parse(raw);
   try {
     await sendWebPush(env, rec.subscription, {
@@ -1422,7 +1824,19 @@ async function handlePushTest(env, userId, origin) {
     });
     return json({ ok: true }, 200, origin);
   } catch (e) {
-    return json({ error: "push failed: " + e.message }, 500, origin);
+    // Push test failures are usually subscription-side (404/410 = dead).
+    // 502 Bad Gateway is the honest status for any other upstream push-
+    // service failure since we're a proxy here.
+    const dead = (e.status === 404 || e.status === 410);
+    if (dead) {
+      await env.ASCEND_KV.delete(pushKey(userId));
+      await _removeFromPushIndex(env, userId);
+    }
+    const code = dead ? "push_subscription_expired" : "push_failed";
+    const msg  = dead
+      ? "Your push subscription has expired. Re-enable notifications to fix it."
+      : "Could not send test push. The push service returned an error.";
+    return json(safeError(e, { route: "/push/test", userId, pushStatus: e.status }, code, msg), dead ? 410 : 502, origin);
   }
 }
 
@@ -1461,39 +1875,56 @@ async function handlePushSend(request, env, userId, origin) {
   // frontend calls it sparingly, but a compromised clientSecret could spam
   // the device. Hourly cap bounds burst; daily cap (50/day, matching the
   // Anthropic proxy cap) bounds sustained abuse over 24h.
-  const limited = await _pushRateGate(env, userId, "send", 30, origin, 50);
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) {
+    return json({ error: "Push not configured on this backend (missing VAPID_*)", code: "push_disabled" }, 503, origin);
+  }
+  const limited = await _userRateGate(env, userId, "send", 30, origin, 50);
   if (limited) return limited;
+  if (_wrongContentType(request)) return json({ error: "Content-Type must be application/json", code: "wrong_content_type" }, 415, origin);
+  if (_bodyTooLarge(request, 5_000)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const raw = await env.ASCEND_KV.get(pushKey(userId));
-  if (!raw) return json({ error: "not subscribed" }, 400, origin);
+  if (!raw) return json({ error: "Subscribe to push first via POST /push/subscribe", code: "not_subscribed" }, 400, origin);
   const body = await request.json().catch(() => ({}));
   const rec = JSON.parse(raw);
+  // Type-check each field so a non-string (e.g. {a:1}) doesn't slide through
+  // String(...) as the literal "[object Object]". Fall through to defaults.
   const payload = {
-    title: String(body.title || "Ascend").slice(0, 100),
-    body: String(body.body || "").slice(0, 400),
-    tag: String(body.tag || "ascend").slice(0, 60),
-    url: _safePushUrl(body.url),
+    title: (typeof body.title === "string" ? body.title : "Ascend").slice(0, 100),
+    body:  (typeof body.body  === "string" ? body.body  : "").slice(0, 400),
+    tag:   (typeof body.tag   === "string" ? body.tag   : "ascend").slice(0, 60),
+    url:   _safePushUrl(typeof body.url === "string" ? body.url : "/"),
   };
   try {
     await sendWebPush(env, rec.subscription, payload);
     return json({ ok: true }, 200, origin);
   } catch (e) {
     // 404/410 means the subscription is dead — clean it up so we stop trying.
-    if (e.status === 404 || e.status === 410) {
+    // Surface as 410 Gone so the frontend can distinguish "permanently can't
+    // deliver to this subscription" from "transient delivery failure".
+    const dead = (e.status === 404 || e.status === 410);
+    if (dead) {
       await env.ASCEND_KV.delete(pushKey(userId));
       await _removeFromPushIndex(env, userId);
     }
-    return json({ error: "push failed: " + e.message, status: e.status || null }, 500, origin);
+    const code = dead ? "push_subscription_expired" : "push_failed";
+    const msg  = dead
+      ? "Your push subscription has expired. Re-enable notifications to fix it."
+      : "Could not deliver push. Try again or re-subscribe.";
+    return json(safeError(e, { route: "/push/send", userId, pushStatus: e.status }, code, msg), dead ? 410 : 502, origin);
   }
 }
 
 // ----- Scheduled delivery -----
 async function deliverScheduledPushes(env) {
-  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) return;
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) {
+    return { delivered: 0, errors: 0 };
+  }
   const userIds = await _getPushIndex(env);
-  if (!userIds.length) return;
+  if (!userIds.length) return { delivered: 0, errors: 0 };
   const now = new Date();
   const nowMs = now.getTime();
   const deadSubs = [];
+  let delivered = 0, errors = 0;
 
   for (const userId of userIds) {
     try {
@@ -1522,7 +1953,9 @@ async function deliverScheduledPushes(env) {
           });
           slot.lastFiredKey = fireKey;
           modified = true;
+          delivered++;
         } catch (e) {
+          errors++;
           if (e.status === 404 || e.status === 410) { deadSubs.push(userId); break; }
           // Other errors: leave lastFiredKey untouched so next cron retries.
         }
@@ -1539,6 +1972,7 @@ async function deliverScheduledPushes(env) {
     await env.ASCEND_KV.delete(pushKey(u));
     await _removeFromPushIndex(env, u);
   }
+  return { delivered, errors };
 }
 
 // HH:MM in the user's local timezone is within `windowMin` minutes of slot.

@@ -2,6 +2,36 @@ name = "ascend-backend"
 main = "worker.js"
 compatibility_date = "2024-09-01"
 
+# Cloudflare-managed observability — ships request logs + traces to the
+# dashboard at no cost. Pairs with the structured _accessLog() lines emitted
+# by worker.js so the dashboard logs are filterable by route/outcome/uid hash.
+[observability]
+enabled = true
+
+# CPU budget per request. Workers Paid plan default ceiling is 30000ms (30s);
+# Workers Free is 10ms and ignores this knob. The hottest path is /sync
+# (8 items × 10 cursor pages, each parsing a 250-transaction Plaid response
+# plus AES-GCM access-token decrypt) — measured around 200-500ms CPU in
+# practice. 5000ms (5s) gives ~10x headroom for outlier requests while
+# still catching runaway loops as a clean kill instead of silently hitting
+# the 30s plan ceiling and burning quota.
+[limits]
+cpu_ms = 5000
+
+# Non-secret config knobs. Use [vars] for values that should be inspectable
+# without rotating a secret (e.g. dashboard view). Anything that grants
+# access (PLAID_SECRET, ANTHROPIC_KEY, VAPID_PRIVATE_KEY, ENROLLMENT_KEY,
+# ENCRYPTION_KEY) stays in `wrangler secret put` — never here.
+[vars]
+# Default Anthropic per-feature daily cap and per-minute burst cap. Overrides
+# the constants in worker.js so the operator can tune without redeploy.
+# Bumping these costs money — leave conservative unless you're sure.
+ANTHROPIC_DAILY_CAP = "50"
+ANTHROPIC_BURST_CAP = "10"
+# Global daily cap on /enroll across all IPs. Defense-in-depth against
+# botnets that stay under the per-IP gate.
+ENROLL_GLOBAL_DAY_CAP = "500"
+
 # After running `wrangler kv namespace create ASCEND_KV`, paste the id below.
 #
 # ⚠ FORKERS: this id points at the upstream operator's Cloudflare KV
@@ -18,6 +48,17 @@ id = "44a23ecf3805442a979f201d43834ea6"
 # pushes whose time has arrived. Cheap; idles when nothing's due.
 [triggers]
 crons = ["*/15 * * * *"]
+
+# Custom domain (optional). Once you have api.<your-domain> pointing at
+# Cloudflare and the domain is on your account, uncomment to bind the
+# Worker to it. After binding, also set workers_dev = false (below) so
+# the *.workers.dev URL stops being a public bypass route.
+#
+# [[routes]]
+# pattern = "api.your-domain.com/*"
+# custom_domain = true
+#
+# workers_dev = false
 
 # Secrets are NOT set here. Set them via the CLI (one-time) so they don't end up in git:
 #   wrangler secret put PLAID_CLIENT_ID
