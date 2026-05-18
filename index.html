@@ -286,7 +286,8 @@ input::placeholder, textarea::placeholder { color: var(--t4); }
 
 .tb-title { font-size: 17px; font-weight: 600; letter-spacing: -.2px; }
 .tb-btn {
-  width: 38px; height: 38px;
+  /* M1: bumped to 44x44 to meet Apple/WCAG minimum tap target. */
+  width: 44px; height: 44px;
   border-radius: 50%;
   background: var(--bg-elev);
   display: inline-flex; align-items: center; justify-content: center;
@@ -1203,7 +1204,8 @@ body.priv-on [data-priv="amount"]:active { filter: blur(0); }
 
 /* Privacy chip in topbar */
 .tb-priv {
-  width: 38px; height: 38px; border-radius: 50%;
+  /* M2: bumped from 38 to 44 to meet WCAG tap-target minimum. */
+  width: 44px; height: 44px; border-radius: 50%;
   background: var(--bg-elev); display: inline-flex; align-items: center; justify-content: center;
   font-size: 16px; color: var(--t2); border: 0.5px solid var(--sep); margin-right: 6px;
   transition: transform .15s ease, color .15s ease;
@@ -4333,8 +4335,8 @@ function reorderHabitsSheet() {
       <div style="display:flex;align-items:center;gap:10px;padding:10px 12px;background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r2,12px);margin-bottom:6px">
         <span style="font-size:18px;flex-shrink:0">${h.emoji || '✦'}</span>
         <span style="flex:1;font-size:14px;color:var(--t1);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.name)}</span>
-        <button onclick="_moveHabit(${jsAttr(h.id)}, -1)" ${i === 0 ? 'disabled' : ''} style="background:var(--bg-elev);border:0.5px solid var(--sep);border-radius:8px;width:34px;height:34px;font-size:16px;cursor:pointer;color:${i === 0 ? 'var(--t4)' : 'var(--t1)'};display:flex;align-items:center;justify-content:center;padding:0" aria-label="Move up">↑</button>
-        <button onclick="_moveHabit(${jsAttr(h.id)}, 1)" ${i === sorted.length - 1 ? 'disabled' : ''} style="background:var(--bg-elev);border:0.5px solid var(--sep);border-radius:8px;width:34px;height:34px;font-size:16px;cursor:pointer;color:${i === sorted.length - 1 ? 'var(--t4)' : 'var(--t1)'};display:flex;align-items:center;justify-content:center;padding:0" aria-label="Move down">↓</button>
+        <button onclick="_moveHabit(${jsAttr(h.id)}, -1)" ${i === 0 ? 'disabled' : ''} style="background:var(--bg-elev);border:0.5px solid var(--sep);border-radius:10px;width:44px;height:44px;font-size:18px;cursor:pointer;color:${i === 0 ? 'var(--t4)' : 'var(--t1)'};display:flex;align-items:center;justify-content:center;padding:0" aria-label="Move up">↑</button>
+        <button onclick="_moveHabit(${jsAttr(h.id)}, 1)" ${i === sorted.length - 1 ? 'disabled' : ''} style="background:var(--bg-elev);border:0.5px solid var(--sep);border-radius:10px;width:44px;height:44px;font-size:18px;cursor:pointer;color:${i === sorted.length - 1 ? 'var(--t4)' : 'var(--t1)'};display:flex;align-items:center;justify-content:center;padding:0" aria-label="Move down">↓</button>
       </div>
     `).join("");
     return rows;
@@ -4830,7 +4832,7 @@ function _renderSplitSheet(tx, total, cats) {
     <p class="muted" style="font-size:12.5px;margin-bottom:14px">${esc(tx.note || tx.category)} · ${esc(tx.date)} · <b data-priv="amount" style="color:var(--t1)">${fmt$0(total)}</b> total. Break it into category-specific rows that sum to the same amount.</p>
     <div id="split-rows" style="display:flex;flex-direction:column;gap:8px;margin-bottom:10px">
       ${rows.map((r, i) => `
-        <div data-split-row="${esc(r.id)}" style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:90px 1fr 32px;gap:8px;align-items:center">
+        <div data-split-row="${esc(r.id)}" style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:10px 12px;display:grid;grid-template-columns:90px 1fr 44px;gap:8px;align-items:center">
           <input type="number" inputmode="decimal" step="0.01" min="0" value="${esc(r.amount)}"
             onchange="(()=>{const r=window._splitRows.find(x=>x.id===${jsAttr(r.id)});if(r)r.amount=this.value;_renderSplitSheet(${jsAttr({id:tx.id,note:tx.note,category:tx.category,date:tx.date,amount:tx.amount})}, ${total}, ${jsAttr(cats)});})()"
             style="background:var(--bg-elev);padding:8px 10px;border-radius:8px;font-size:13px;border:0;color:var(--t1);text-align:right" />
@@ -4838,7 +4840,7 @@ function _renderSplitSheet(tx, total, cats) {
             style="background:var(--bg-elev);padding:8px 10px;border-radius:8px;font-size:13px;border:0;color:var(--t1)">
             ${cats.map(c => `<option value="${esc(c)}" ${c===r.category?"selected":""}>${esc(c)}</option>`).join("")}
           </select>
-          ${rows.length > 2 ? `<button class="del-x" aria-label="Remove split row" title="Remove split row" onclick="(()=>{window._splitRows=window._splitRows.filter(x=>x.id!==${jsAttr(r.id)});_renderSplitSheet(${jsAttr({id:tx.id,note:tx.note,category:tx.category,date:tx.date,amount:tx.amount})}, ${total}, ${jsAttr(cats)});})()" style="min-width:0">×</button>` : '<div></div>'}
+          ${rows.length > 2 ? `<button class="del-x" aria-label="Remove split row" title="Remove split row" onclick="(()=>{window._splitRows=window._splitRows.filter(x=>x.id!==${jsAttr(r.id)});_renderSplitSheet(${jsAttr({id:tx.id,note:tx.note,category:tx.category,date:tx.date,amount:tx.amount})}, ${total}, ${jsAttr(cats)});})()">×</button>` : '<div></div>'}
         </div>
       `).join("")}
     </div>
@@ -10713,7 +10715,7 @@ function renderMoney() {
           { id: "wh-cards",       label: "Cards" },
           { id: "wh-learn",       label: "Learn" },
           { id: "wh-assets",      label: "Assets" },
-        ].map(p => `<button class="btn sm secondary" style="flex-shrink:0;font-size:11px;padding:6px 12px;white-space:nowrap" onclick="scrollToWealthSection(${jsAttr(p.id)})">${esc(p.label)}</button>`).join("")}
+        ].map(p => `<button class="btn sm secondary" style="flex-shrink:0;font-size:11px;padding:11px 14px;min-height:44px;white-space:nowrap" onclick="scrollToWealthSection(${jsAttr(p.id)})">${esc(p.label)}</button>`).join("")}
       </div>
       <style>#wealth-nav::-webkit-scrollbar{display:none}</style>
     `;
@@ -12303,7 +12305,7 @@ function renderStocks() {
         { id: "stk-portfolio-hero", label: "💼 Portfolio" },
         { id: "stk-watchlist",      label: "👀 Watchlist" },
         { id: "stk-holdings-wrap",  label: "📈 Holdings" },
-      ].map(p => `<button onclick="_stkScrollTo(${jsAttr(p.id)})" style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t1);border-radius:999px;padding:5px 12px;font-size:11.5px;font-weight:600;cursor:pointer;flex-shrink:0;white-space:nowrap">${esc(p.label)}</button>`).join("")}
+      ].map(p => `<button onclick="_stkScrollTo(${jsAttr(p.id)})" style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t1);border-radius:999px;padding:11px 14px;min-height:44px;font-size:11.5px;font-weight:600;cursor:pointer;flex-shrink:0;white-space:nowrap">${esc(p.label)}</button>`).join("")}
     </div>`}
 
     <!-- Market sentiment / breadth gauge -->
@@ -22364,9 +22366,9 @@ function renderCalendar() {
     </div>
     <div style="display:flex;justify-content:space-between;align-items:center;margin:0 0 14px">
       <div style="display:inline-flex;background:var(--bg-elev);border-radius:var(--r-pill,999px);padding:3px;gap:2px">
-        <button onclick="calendarSetView('month')" style="background:${calendarView==='month'?'var(--card)':'transparent'};color:var(--t1);border:none;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;${calendarView==='month'?'box-shadow:var(--sh-1);':''}">Month</button>
-        <button onclick="calendarSetView('year')" style="background:${calendarView==='year'?'var(--card)':'transparent'};color:var(--t1);border:none;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;${calendarView==='year'?'box-shadow:var(--sh-1);':''}">Year</button>
-        <button onclick="calendarSetView('agenda')" style="background:${calendarView==='agenda'?'var(--card)':'transparent'};color:var(--t1);border:none;padding:6px 14px;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;${calendarView==='agenda'?'box-shadow:var(--sh-1);':''}">Agenda</button>
+        <button onclick="calendarSetView('month')" style="background:${calendarView==='month'?'var(--card)':'transparent'};color:var(--t1);border:none;padding:11px 16px;min-height:44px;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;${calendarView==='month'?'box-shadow:var(--sh-1);':''}">Month</button>
+        <button onclick="calendarSetView('year')" style="background:${calendarView==='year'?'var(--card)':'transparent'};color:var(--t1);border:none;padding:11px 16px;min-height:44px;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;${calendarView==='year'?'box-shadow:var(--sh-1);':''}">Year</button>
+        <button onclick="calendarSetView('agenda')" style="background:${calendarView==='agenda'?'var(--card)':'transparent'};color:var(--t1);border:none;padding:11px 16px;min-height:44px;border-radius:999px;font-size:12px;font-weight:600;cursor:pointer;${calendarView==='agenda'?'box-shadow:var(--sh-1);':''}">Agenda</button>
       </div>
       ${Object.keys(DB.calendarNotes || {}).length ? `<button class="act" style="font-size:12px" onclick="allNotesSheet()">📓 All notes</button>` : ""}
     </div>
@@ -22582,7 +22584,7 @@ function renderSettings() {
         { id: "sec-privacy",   label: "Privacy" },
         { id: "sec-advanced",  label: "Advanced" },
         { id: "sec-data",      label: "Data" },
-      ].map(p => `<button class="btn sm secondary" style="flex-shrink:0;font-size:11.5px;padding:6px 12px;white-space:nowrap" onclick="scrollToSettingsSection(${jsAttr(p.id)})">${esc(p.label)}</button>`).join("")}
+      ].map(p => `<button class="btn sm secondary" style="flex-shrink:0;font-size:11.5px;padding:11px 14px;min-height:44px;white-space:nowrap" onclick="scrollToSettingsSection(${jsAttr(p.id)})">${esc(p.label)}</button>`).join("")}
     </div>
     <style>#settings-nav::-webkit-scrollbar{display:none}</style>
   `;
