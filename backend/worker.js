@@ -1100,6 +1100,12 @@ async function handlePlaidWebhook(request, env) {
 }
 
 async function handleDeleteAccount(env, userId, origin) {
+  // Destructive + irreversible. Frontend already has a confirm flow, but a
+  // stolen clientSecret could call this directly. Tight cap (2/hour, 3/day)
+  // — a real user deletes at most once. If they hit the cap they can wait or
+  // contact the operator out-of-band.
+  const limited = await _userRateGate(env, userId, "account_delete", 2, origin, 3);
+  if (limited) return limited;
   // Best-effort: revoke each Plaid item, then nuke all KV records under u:userId:*
   const itemIds = await getItemIndex(env, userId);
   for (const itemId of itemIds) {
