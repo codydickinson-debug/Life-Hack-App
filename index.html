@@ -100,6 +100,10 @@
   --pink:      #E64178;
   --indigo:    #4F4ED1;
   --teal:      #36B0CC;
+  /* "Between green and orange" — used for the OK-but-not-great band on
+     progress bars, score gauges, and cash/bull legends. 22+ raw inline
+     uses tokenized here. */
+  --lime:      var(--lime);
 
   /* Cornileus brand gradient — used for AI/counselor surfaces, FAB,
      whatif card, plan rails. Defined as endpoints so the gradient direction
@@ -129,6 +133,13 @@
 
   /* Spacing scale */
   --s1: 4px; --s2: 8px; --s3: 12px; --s4: 16px; --s5: 20px; --s6: 24px; --s7: 32px;
+
+  /* Motion timing scale. Pick from these instead of one-off ms values so
+     the app has a consistent rhythm. Override in @media reduced-motion. */
+  --dur-fast:   0.12s;
+  --dur-base:   0.18s;
+  --dur-slow:   0.32s;
+  --ease-out:   cubic-bezier(.32, .72, .34, 1);
 
   --sa-top:    env(safe-area-inset-top, 0px);
   --sa-bot:    env(safe-area-inset-bottom, 0px);
@@ -13834,7 +13845,7 @@ function _riskShowResult() {
   // Max 16, min 4. Map to band.
   let profile, color, suggested;
   if (total <= 7)       { profile = "Conservative";  color = "var(--green)"; suggested = "conservative"; }
-  else if (total <= 11) { profile = "Balanced";      color = "#9ACD32";              suggested = "three-fund"; }
+  else if (total <= 11) { profile = "Balanced";      color = "var(--lime)";              suggested = "three-fund"; }
   else if (total <= 14) { profile = "Growth";        color = "var(--orange)"; suggested = "dividend"; }
   else                  { profile = "Aggressive";    color = "var(--red)";    suggested = "aggressive-growth"; }
   const recPortfolio = STK_STARTER_PORTFOLIOS.find(p => p.id === suggested);
@@ -14148,7 +14159,7 @@ function _stocksPortfolioForecast() {
         <path d="${conePath}" fill="url(#pfc-grad)"/>
         <polyline points="${bearPts}" fill="none" stroke="var(--red)" stroke-width="1.3" stroke-dasharray="4 3"/>
         <polyline points="${basePts}" fill="none" stroke="var(--green)" stroke-width="2.2"/>
-        <polyline points="${bullPts}" fill="none" stroke="#9ACD32" stroke-width="1.3" stroke-dasharray="4 3"/>
+        <polyline points="${bullPts}" fill="none" stroke="var(--lime)" stroke-width="1.3" stroke-dasharray="4 3"/>
         <circle cx="0" cy="${yAt(totalNow).toFixed(1)}" r="3" fill="var(--blue)"/>
         <text x="6" y="${yAt(totalNow).toFixed(1) - 6}" font-size="9" fill="var(--blue)" font-weight="700">now ${fmt(totalNow)}</text>
         <text x="0" y="${H+14}" font-size="9" fill="var(--t3)">today</text>
@@ -14157,7 +14168,7 @@ function _stocksPortfolioForecast() {
       <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:14px">
         <div style="background:rgba(255,59,48,0.08);border:0.5px solid rgba(255,59,48,0.30);border-radius:8px;padding:7px 9px"><div style="font-size:9.5px;color:var(--red);text-transform:uppercase;font-weight:700">Bear 10%</div><div style="font-size:14px;font-weight:800;color:var(--t1)" data-priv="amount">${fmt(endBear)}</div></div>
         <div style="background:rgba(52,199,89,0.10);border:0.5px solid rgba(52,199,89,0.35);border-radius:8px;padding:7px 9px"><div style="font-size:9.5px;color:var(--green);text-transform:uppercase;font-weight:700">Base 50%</div><div style="font-size:14px;font-weight:800;color:var(--t1)" data-priv="amount">${fmt(endBase)}</div></div>
-        <div style="background:rgba(154,205,50,0.10);border:0.5px solid rgba(154,205,50,0.35);border-radius:8px;padding:7px 9px"><div style="font-size:9.5px;color:#9ACD32;text-transform:uppercase;font-weight:700">Bull 90%</div><div style="font-size:14px;font-weight:800;color:var(--t1)" data-priv="amount">${fmt(endBull)}</div></div>
+        <div style="background:rgba(154,205,50,0.10);border:0.5px solid rgba(154,205,50,0.35);border-radius:8px;padding:7px 9px"><div style="font-size:9.5px;color:var(--lime);text-transform:uppercase;font-weight:700">Bull 90%</div><div style="font-size:14px;font-weight:800;color:var(--t1)" data-priv="amount">${fmt(endBull)}</div></div>
       </div>
       <div style="margin-top:12px;padding:8px 11px;background:var(--bg-elev);border-radius:8px;font-size:11.5px;color:var(--t2);line-height:1.5">
         Today's portfolio <b style="color:var(--t1)" data-priv="amount">${fmt(totalNow)}</b>${monthly > 0 ? ` + ${monthly.toFixed(0)}/mo × ${months}mo = <b data-priv="amount">${fmt(totalContrib)}</b> contributed (total in: <b data-priv="amount">${fmt(totalIn)}</b>)` : ""}.
@@ -14545,7 +14556,7 @@ const STK_GLOSSARY = {
     evaluate: (v) => v == null ? null
       : v < 0.001 ? { tag: "Ultra-low", color: "var(--green)" }
       : v < 0.003 ? { tag: "Excellent", color: "var(--green)" }
-      : v < 0.005 ? { tag: "Good",      color: "#9ACD32" }
+      : v < 0.005 ? { tag: "Good",      color: "var(--lime)" }
       : v < 0.01  ? { tag: "OK",        color: "var(--t2)" }
       :             { tag: "High — verify it's worth it", color: "var(--orange)" },
   },
@@ -14805,7 +14816,7 @@ function _stocksRenderForecast(d) {
         <!-- Forecasts (dashed) -->
         <polyline points="${bearPts}" fill="none" stroke="var(--red)" stroke-width="1.4" stroke-dasharray="4 3" stroke-linecap="round" opacity="0.9"/>
         <polyline points="${basePts}" fill="none" stroke="var(--green)" stroke-width="1.8" stroke-dasharray="4 3" stroke-linecap="round"/>
-        <polyline points="${bullPts}" fill="none" stroke="#9ACD32" stroke-width="1.4" stroke-dasharray="4 3" stroke-linecap="round" opacity="0.9"/>
+        <polyline points="${bullPts}" fill="none" stroke="var(--lime)" stroke-width="1.4" stroke-dasharray="4 3" stroke-linecap="round" opacity="0.9"/>
         <!-- Present marker line -->
         <line x1="${presentX.toFixed(1)}" y1="0" x2="${presentX.toFixed(1)}" y2="${H}" stroke="var(--t3)" stroke-width="1" stroke-dasharray="2 3" opacity="0.5"/>
         <circle cx="${presentX.toFixed(1)}" cy="${presentY.toFixed(1)}" r="3.5" fill="var(--blue)" stroke="var(--bg)" stroke-width="2"/>
@@ -14835,11 +14846,11 @@ function _stocksRenderForecast(d) {
         </div>
         <div style="background:rgba(154,205,50,0.10);border:0.5px solid rgba(154,205,50,0.35);border-radius:10px;padding:9px 11px">
           <div style="display:flex;align-items:center;gap:4px;margin-bottom:2px">
-            <span style="width:8px;height:8px;border-radius:2px;background:#9ACD32"></span>
+            <span style="width:8px;height:8px;border-radius:2px;background:var(--lime)"></span>
             <span style="font-size:9.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.04em;font-weight:700">Bull (90%)</span>
           </div>
           <div style="font-size:15px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">$${endBull.toFixed(2)}</div>
-          <div style="font-size:10.5px;color:#9ACD32;font-variant-numeric:tabular-nums">${pct(endBull)>=0?"+":""}${pct(endBull).toFixed(1)}%</div>
+          <div style="font-size:10.5px;color:var(--lime);font-variant-numeric:tabular-nums">${pct(endBull)>=0?"+":""}${pct(endBull).toFixed(1)}%</div>
         </div>
       </div>
 
@@ -14967,7 +14978,7 @@ function _stocksRenderAdvisor(p) {
   if (!p) return "";
   const g = (p.grade || "Solid").trim();
   const gradeColor = /excellent|strong/i.test(g) ? "var(--green)"
-                   : /solid|ok/i.test(g)         ? "#9ACD32"
+                   : /solid|ok/i.test(g)         ? "var(--lime)"
                    : /weak/i.test(g)              ? "var(--orange)"
                    :                                "var(--red)";
   const stats = p.stats || {};
@@ -15402,7 +15413,7 @@ function _stocksRenderBreadth(d) {
   const color = score < 25 ? "var(--red)"
               : score < 45 ? "var(--orange)"
               : score < 55 ? "var(--t2)"
-              : score < 75 ? "#9ACD32"
+              : score < 75 ? "var(--lime)"
               :              "var(--green)";
   const W = 260, H = 110, cx = W / 2, cy = H - 12, R = 100;
   const pct = score / 100;
@@ -15421,7 +15432,7 @@ function _stocksRenderBreadth(d) {
           <svg viewBox="0 0 ${W} ${H}" style="display:block;width:160px;height:75px">
             <defs><linearGradient id="brg" x1="0" y1="0" x2="1" y2="0">
               <stop offset="0%" stop-color="#FF3B30"/><stop offset="35%" stop-color="#FF9500"/>
-              <stop offset="55%" stop-color="#9ACD32"/><stop offset="100%" stop-color="#34C759"/>
+              <stop offset="55%" stop-color="var(--lime)"/><stop offset="100%" stop-color="#34C759"/>
             </linearGradient></defs>
             <path d="M ${cx - R},${cy} A ${R},${R} 0 0 1 ${cx + R},${cy}" fill="none" stroke="url(#brg)" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
             <line x1="${cx}" y1="${cy}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" stroke="${color}" stroke-width="3" stroke-linecap="round"/>
@@ -15735,7 +15746,7 @@ function _stkDiversificationScore() {
   const effN = 1 / hhi;
   let band, color, msg;
   if (hhi < 0.15)      { band = "Well diversified"; color = "var(--green)"; msg = "Effective holdings: " + effN.toFixed(1) + ". Single-name risk is low."; }
-  else if (hhi < 0.30) { band = "Moderate";         color = "#9ACD32";              msg = "Effective holdings: " + effN.toFixed(1) + ". Reasonable spread but a couple of names dominate."; }
+  else if (hhi < 0.30) { band = "Moderate";         color = "var(--lime)";              msg = "Effective holdings: " + effN.toFixed(1) + ". Reasonable spread but a couple of names dominate."; }
   else if (hhi < 0.50) { band = "Concentrated";     color = "var(--orange)"; msg = "Effective holdings: " + effN.toFixed(1) + ". One or two positions drive most of the move."; }
   else                 { band = "Heavily concentrated"; color = "var(--red)"; msg = "Effective holdings: " + effN.toFixed(1) + ". A single name dominates — high single-stock risk."; }
   // Top position weight
@@ -15874,7 +15885,7 @@ function _stocksRenderPortfolioReview(p, fetchedAt) {
   if (!p) return "";
   const g = (p.grade || "B").trim().toUpperCase();
   const gradeColor = g.startsWith("A") ? "var(--green)" :
-                     g.startsWith("B") ? "#9ACD32" :
+                     g.startsWith("B") ? "var(--lime)" :
                      g.startsWith("C") ? "var(--orange)" :
                                           "var(--red)";
   const splitList = (s) => (s || "").split(/[;,•·]/).map(x => x.trim()).filter(x => x && x.toLowerCase() !== "none");
@@ -18306,7 +18317,7 @@ function careerSheet() {
     <h2 style="margin-bottom:4px">💼 Career trajectory</h2>
     <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Every job + every raise on one page. Your real comp curve over time.</p>
     ${jobs.length >= 2 ? `
-      <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${cagr >= 0.05 ? 'var(--green)' : cagr >= 0.02 ? '#9ACD32' : 'var(--orange)'};border-radius:var(--r);padding:13px;margin-bottom:14px">
+      <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${cagr >= 0.05 ? 'var(--green)' : cagr >= 0.02 ? 'var(--lime)' : 'var(--orange)'};border-radius:var(--r);padding:13px;margin-bottom:14px">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
           <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Comp growth rate</div>
           <div style="font-size:11.5px;color:var(--t3)">${yearsTotal} years tracked</div>
@@ -18466,7 +18477,7 @@ function fuMoneySheet() {
       const pct = Math.min(100, (currentNW / t.target) * 100);
       const reached = currentNW >= t.target;
       const remaining = Math.max(0, t.target - currentNW);
-      const color = reached ? "var(--green)" : pct > 50 ? "#9ACD32" : "var(--orange)";
+      const color = reached ? "var(--green)" : pct > 50 ? "var(--lime)" : "var(--orange)";
       return `
         <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${color};border-radius:10px;padding:13px 14px;margin-bottom:8px">
           <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:4px">
@@ -18793,7 +18804,7 @@ function _clRecompute() {
               ${rates.map(r => {
                 const v = start * Math.pow(1 + r/100, y);
                 const mult = v / start;
-                const color = mult >= 10 ? "var(--green)" : mult >= 4 ? "#9ACD32" : "var(--t1)";
+                const color = mult >= 10 ? "var(--green)" : mult >= 4 ? "var(--lime)" : "var(--t1)";
                 return `<td style="text-align:right;font-size:13px;color:${color};font-weight:700;padding:8px 6px;border-top:0.5px solid var(--sep)" data-priv="amount">${fmt(v)} <span style="color:var(--t3);font-weight:400;font-size:10.5px">${mult.toFixed(1)}×</span></td>`;
               }).join("")}
             </tr>
@@ -18889,7 +18900,7 @@ function _stRecompute() {
   const liquidAfterCrash = b.cash + b.inv * (1 - marketDrop);
   const afterEmergency = Math.max(0, liquidAfterCrash - emergency);
   const runwayMonths = monthlyDeficit > 0 ? afterEmergency / monthlyDeficit : 999;
-  const color = runwayMonths >= 12 ? "var(--green)" : runwayMonths >= 6 ? "#9ACD32" : runwayMonths >= 3 ? "var(--orange)" : "var(--red)";
+  const color = runwayMonths >= 12 ? "var(--green)" : runwayMonths >= 6 ? "var(--lime)" : runwayMonths >= 3 ? "var(--orange)" : "var(--red)";
   const label = runwayMonths >= 12 ? "Strong" : runwayMonths >= 6 ? "Decent" : runwayMonths >= 3 ? "Thin" : "Critical";
   const fmt = (v) => v >= 1e6 ? "$" + (v/1e6).toFixed(2) + "M" : v >= 1e3 ? "$" + (v/1e3).toFixed(0) + "K" : "$" + Math.round(v);
   const out = document.getElementById("st-result");
@@ -18946,12 +18957,12 @@ function estateChecklistSheet() {
   openSheet(`
     <h2 style="margin-bottom:4px">📜 Estate planning checklist</h2>
     <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Most people die without these in place. Family chaos for years follows. Knock them out one at a time.</p>
-    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${pct===100?'var(--green)':pct>=50?'#9ACD32':'var(--orange)'};border-radius:var(--r);padding:14px;margin-bottom:14px">
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${pct===100?'var(--green)':pct>=50?'var(--lime)':'var(--orange)'};border-radius:var(--r);padding:14px;margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
         <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Estate readiness</div>
         <div style="font-size:13px;color:var(--t1);font-weight:700;font-variant-numeric:tabular-nums">${done} / ${ESTATE_ITEMS.length} done</div>
       </div>
-      <div style="height:8px;background:var(--bg-elev);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${pct===100?'var(--green)':pct>=50?'#9ACD32':'var(--orange)'};transition:width .4s"></div></div>
+      <div style="height:8px;background:var(--bg-elev);border-radius:4px;overflow:hidden"><div style="height:100%;width:${pct}%;background:${pct===100?'var(--green)':pct>=50?'var(--lime)':'var(--orange)'};transition:width .4s"></div></div>
     </div>
     ${ESTATE_ITEMS.map(i => {
       const s = e[i.id] || {};
@@ -19019,7 +19030,7 @@ function charitableSheet() {
           <div style="font-size:11.5px;color:var(--t3)" data-priv="amount">$${givenYTD.toLocaleString()} of $${annualTarget.toLocaleString()}</div>
         </div>
         <div style="font-size:24px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums">${pct.toFixed(0)}%</div>
-        <div style="height:6px;background:var(--bg-elev);border-radius:3px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${pct}%;background:${pct>=100?'var(--green)':'#9ACD32'}"></div></div>
+        <div style="height:6px;background:var(--bg-elev);border-radius:3px;overflow:hidden;margin-top:6px"><div style="height:100%;width:${pct}%;background:${pct>=100?'var(--green)':'var(--lime)'}"></div></div>
         <div style="font-size:11px;color:var(--t3);margin-top:6px" data-priv="amount">${target}% of $${annualIncome.toLocaleString()}/yr income = $${annualTarget.toLocaleString()}/yr · $${(annualTarget/12).toFixed(0)}/mo</div>
       </div>
     ` : ""}
@@ -19120,7 +19131,7 @@ function assetClassBreakdownSheet() {
   const config = [
     { id: "stocks",      label: "Stocks / ETFs", color: "#34C759" },
     { id: "bonds",       label: "Bonds",         color: "#007AFF" },
-    { id: "cash",        label: "Cash",          color: "#9ACD32" },
+    { id: "cash",        label: "Cash",          color: "var(--lime)" },
     { id: "real_estate", label: "Real estate",   color: "#AF52DE" },
     { id: "commodities", label: "Commodities",   color: "#FF9500" },
     { id: "crypto",      label: "Crypto",        color: "#FF3B30" },
@@ -19170,7 +19181,7 @@ function assetClassBreakdownSheet() {
       <div style="background:var(--bg-elev);border-radius:10px;padding:11px 13px;margin-bottom:10px">
         <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:6px">Rule-of-thumb at age ${age}</div>
         <div style="font-size:11.5px;color:var(--t2);line-height:1.6">
-          Suggested mix: <b style="color:#34C759">${recStocks}% stocks</b> · <b style="color:#007AFF">${recBonds}% bonds</b> · <b style="color:#9ACD32">${recCash}% cash</b><br>
+          Suggested mix: <b style="color:#34C759">${recStocks}% stocks</b> · <b style="color:#007AFF">${recBonds}% bonds</b> · <b style="color:var(--lime)">${recCash}% cash</b><br>
           Your mix:    <b>${((breakdown.stocks/total)*100).toFixed(0)}% stocks</b> · <b>${((breakdown.bonds/total)*100).toFixed(0)}% bonds</b> · <b>${((breakdown.cash/total)*100).toFixed(0)}% cash</b>
         </div>
       </div>
@@ -19189,13 +19200,13 @@ function insuranceAuditSheet() {
   openSheet(`
     <h2 style="margin-bottom:4px">☂️ Insurance audit</h2>
     <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">6 categories of insurance. Each has plain-English "you need this if…" guidance. Educational — not licensed insurance advice.</p>
-    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${pct === 100 ? 'var(--green)' : pct >= 50 ? '#9ACD32' : 'var(--orange)'};border-radius:var(--r);padding:14px;margin-bottom:14px">
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${pct === 100 ? 'var(--green)' : pct >= 50 ? 'var(--lime)' : 'var(--orange)'};border-radius:var(--r);padding:14px;margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
         <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Coverage status</div>
         <div style="font-size:13px;color:var(--t1);font-weight:700;font-variant-numeric:tabular-nums">${done} / ${total} confirmed</div>
       </div>
       <div style="height:8px;background:var(--bg-elev);border-radius:4px;overflow:hidden">
-        <div style="height:100%;width:${pct}%;background:${pct === 100 ? 'var(--green)' : pct >= 50 ? '#9ACD32' : 'var(--orange)'};transition:width .4s"></div>
+        <div style="height:100%;width:${pct}%;background:${pct === 100 ? 'var(--green)' : pct >= 50 ? 'var(--lime)' : 'var(--orange)'};transition:width .4s"></div>
       </div>
     </div>
     ${INSURANCE_ITEMS.map(i => {
@@ -20765,7 +20776,7 @@ function _stocksRenderRiskCard(q) {
   const r = _stkRiskScore(q);
   const sharpe = _stkSharpeRatio(q);
   const color = r.band === "low" ? "var(--green)"
-              : r.band === "moderate" ? "#9ACD32"
+              : r.band === "moderate" ? "var(--lime)"
               : r.band === "elevated" ? "var(--orange)"
               : "var(--red)";
   const label = r.band === "low" ? "Low risk" : r.band === "moderate" ? "Moderate" : r.band === "elevated" ? "Elevated" : "High risk";
@@ -20801,7 +20812,7 @@ function _stocksRenderRiskCard(q) {
       </div>
       ${sharpe && sharpe.sharpe != null ? (() => {
         const s = sharpe.sharpe;
-        const sColor = s > 1 ? "var(--green)" : s > 0.5 ? "#9ACD32" : s > 0 ? "var(--orange)" : "var(--red)";
+        const sColor = s > 1 ? "var(--green)" : s > 0.5 ? "var(--lime)" : s > 0 ? "var(--orange)" : "var(--red)";
         const sLabel = s > 2 ? "Excellent" : s > 1 ? "Strong" : s > 0.5 ? "Decent" : s > 0 ? "Weak" : "Poor";
         return `
           <div style="margin-top:10px;padding:9px 11px;background:var(--bg-elev);border-radius:8px;display:flex;justify-content:space-between;align-items:center">
