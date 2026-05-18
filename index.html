@@ -79,11 +79,16 @@
   --sep:       rgba(17,17,19,.06);
   --sep-2:     rgba(17,17,19,.10);
 
-  /* Text — refined hierarchy */
+  /* Text — refined hierarchy.
+     A10-A11: darkened t3 and t4 to clear WCAG AA contrast on white card.
+     Old t3 #86868D on #FFF was ~3.5:1 (AA fail for body); new #6E6E76 is
+     ~4.7:1. Old t4 #B8B8BD was 2.4:1 (AA Large fail); new #8E8E96 is
+     ~3.6:1 (still ok only for AA Large / placeholder text, which is the
+     real usage — body text always uses t1 or t2). */
   --t1:        #0A0A0B;
   --t2:        #46464D;
-  --t3:        #86868D;
-  --t4:        #B8B8BD;
+  --t3:        #6E6E76;
+  --t4:        #8E8E96;
 
   /* Accents — calibrated system colors */
   --blue:      #2F6FEB;
@@ -139,8 +144,11 @@
     --sep-2:     rgba(255,255,255,.10);
     --t1:        #F5F5F7;
     --t2:        #B5B5BA;
-    --t3:        #7A7A82;
-    --t4:        #4A4A52;
+    /* A10-A11: lifted t3 from #7A7A82 (3.6:1 on #16161A, AA fail) to
+       #9C9CA4 (~5.0:1 AA pass). t4 lifted from #4A4A52 (2.1:1) to
+       #7A7A82 (3.6:1, AA Large pass — used for placeholders). */
+    --t3:        #9C9CA4;
+    --t4:        #7A7A82;
     --sh-1:      0 1px 2px rgba(0,0,0,0.30), 0 1px 3px rgba(0,0,0,0.20);
     --sh-2:      0 2px 4px rgba(0,0,0,0.30), 0 6px 20px rgba(0,0,0,0.30);
     --sh-pop:    0 4px 12px rgba(0,0,0,0.40), 0 16px 40px rgba(0,0,0,0.45);
@@ -155,8 +163,9 @@
   --sep-2:     rgba(255,255,255,.10);
   --t1:        #F5F5F7;
   --t2:        #B5B5BA;
-  --t3:        #7A7A82;
-  --t4:        #4A4A52;
+  /* A10-A11 contrast fix (see auto theme above for ratios). */
+  --t3:        #9C9CA4;
+  --t4:        #7A7A82;
   --sh-1:      0 1px 2px rgba(0,0,0,0.30), 0 1px 3px rgba(0,0,0,0.20);
   --sh-2:      0 2px 4px rgba(0,0,0,0.30), 0 6px 20px rgba(0,0,0,0.30);
   --sh-pop:    0 4px 12px rgba(0,0,0,0.40), 0 16px 40px rgba(0,0,0,0.45);
@@ -182,11 +191,13 @@
   --sh-1:      none;
   --sh-2:      none;
   --sh-pop:    0 8px 32px rgba(0,0,0,0.06);
-  /* Slightly lighter secondary text */
-  --t3:        #9A9AA0;
+  /* A10-A11: calm preset previously lifted light t3 to #9A9AA0 (~3.0:1,
+     AA fail). Anchored to the new base t3 (#6E6E76, 4.7:1) so calm
+     stays accessible. Same for the dark calm preset. */
+  --t3:        #6E6E76;
 }
 :root.style-calm.theme-dark {
-  --t3:        #888892;
+  --t3:        #9C9CA4;
   --sh-pop:    0 8px 32px rgba(0,0,0,0.35);
 }
 /* Calm — layout overrides */
@@ -2097,7 +2108,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 
 <div class="scrim" id="scrim" onclick="closeSheet()"></div>
 <div class="sheet" id="sheet"></div>
-<div id="toast"></div>
+<div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
 <script>
 /* ================================================================
@@ -3736,6 +3747,22 @@ document.addEventListener("keydown", (e) => {
     if (sheet && sheet.classList.contains("show")) {
       e.preventDefault();
       try { closeSheet(); } catch {}
+      return;
+    }
+  }
+  // A6: Enter / Space activates [role="button"] elements that aren't real
+  // <button>s. There are ~124 of these across the file (tappable rows on
+  // Today, Stocks, Money, etc.) — they have tabindex="0" but no keydown
+  // handler, so keyboard users could focus them but never trigger them.
+  // Delegated here so we don't need to bolt a handler onto each row.
+  // Real <button> elements get this for free from the browser, so skip
+  // them. Skip when focus is in a real input/textarea so typing Space
+  // doesn't bubble up as an activation.
+  if ((e.key === "Enter" || e.key === " ") && !inField) {
+    const t = document.activeElement;
+    if (t && t.getAttribute && t.getAttribute("role") === "button" && t.tagName !== "BUTTON") {
+      e.preventDefault();
+      try { t.click(); } catch {}
       return;
     }
   }
@@ -26848,7 +26875,7 @@ function counselorRender() {
       <button style="background:none;border:none;font-size:22px;color:var(--t3);cursor:pointer;padding:4px 8px;flex-shrink:0" onclick="closeSheet()" aria-label="Close">×</button>
     </div>
     ${greetingHtml}
-    <div id="cns-scroll" style="max-height:48vh;overflow-y:auto;padding-right:4px;margin-bottom:6px">
+    <div id="cns-scroll" role="log" aria-live="polite" aria-relevant="additions" aria-label="Conversation with Cornileus" style="max-height:48vh;overflow-y:auto;padding-right:4px;margin-bottom:6px">
       ${bubbles}
       ${thinkingBubble}
       ${suggested}
@@ -28570,20 +28597,37 @@ function _lockoutSeconds(fails) {
 }
 
 function showLockScreen() {
-  // Replace whole UI temporarily with a passphrase prompt
+  // Replace whole UI temporarily with a passphrase prompt.
+  // A7: role=dialog + aria-modal so SR announces a boundary; aria-labelledby
+  // points at the heading; the error region gets aria-live="assertive" so a
+  // wrong passphrase is announced. Focus is trapped via the existing dialog
+  // pattern (Tab/Shift+Tab cycle between input and button; nothing else is
+  // focusable on this page).
   document.body.innerHTML = `
-    <div style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);padding:32px;text-align:center">
-      <div style="font-size:44px;margin-bottom:14px">🔒</div>
-      <div style="font-size:24px;font-weight:700;margin-bottom:6px">Ascend is locked</div>
+    <div role="dialog" aria-modal="true" aria-labelledby="lock-title" style="position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;background:var(--bg);padding:32px;text-align:center">
+      <div style="font-size:44px;margin-bottom:14px" aria-hidden="true">🔒</div>
+      <div id="lock-title" style="font-size:24px;font-weight:700;margin-bottom:6px">Ascend is locked</div>
       <div style="color:var(--t3);margin-bottom:24px;font-size:14px">Enter your passphrase to unlock</div>
-      <input id="lock-pp" type="password" autofocus placeholder="Passphrase" autocomplete="current-password" style="background:var(--bg-elev);padding:14px;border-radius:12px;font-size:16px;width:100%;max-width:300px;text-align:center" />
+      <input id="lock-pp" type="password" autofocus placeholder="Passphrase" autocomplete="current-password" aria-label="Passphrase" style="background:var(--bg-elev);padding:14px;border-radius:12px;font-size:16px;width:100%;max-width:300px;text-align:center" />
       <button id="lock-go" style="margin-top:14px;padding:14px 24px;background:var(--blue);color:#fff;border-radius:12px;font-weight:600;font-size:16px;width:100%;max-width:300px;border:none">Unlock</button>
-      <div id="lock-err" style="color:var(--red);margin-top:14px;font-size:13px;height:16px"></div>
-      <div id="lock-cool" style="color:var(--t3);margin-top:6px;font-size:12px;height:16px"></div>
-      <div style="margin-top:24px;font-size:13px;color:var(--t3);max-width:300px;line-height:1.55">Forgot your passphrase? There's no recovery — your data is unrecoverable.</div>
+      <div id="lock-err" role="alert" aria-live="assertive" style="color:var(--red);margin-top:14px;font-size:13px;height:16px"></div>
+      <div id="lock-cool" role="status" aria-live="polite" style="color:var(--t3);margin-top:6px;font-size:12px;height:16px"></div>
+      <div style="margin-top:24px;font-size:13px;color:var(--t3);max-width:300px;line-height:1.55">Forgot your passphrase? There's no recovery, your data is unrecoverable.</div>
       <button type="button" id="lock-reset" style="margin-top:10px;padding:10px 18px;background:transparent;color:var(--red,#FF3B30);border:1px solid var(--red,#FF3B30);border-radius:10px;font-size:13px;font-weight:600;min-height:44px;min-width:44px;cursor:pointer">Reset and start over</button>
     </div>
   `;
+  // A7: focus trap. Only two focusables: passphrase input + unlock button +
+  // reset button. Tab cycles through them; nothing else is reachable.
+  document.body.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab") return;
+    const focusables = Array.from(document.querySelectorAll('#lock-pp, #lock-go, #lock-reset'))
+      .filter(el => el && !el.disabled);
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last  = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
 
   const errEl  = () => document.getElementById("lock-err");
   const coolEl = () => document.getElementById("lock-cool");
