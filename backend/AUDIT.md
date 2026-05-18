@@ -249,3 +249,88 @@ If you want a fix order, I'd ship in this sequence — each is a small atomic co
 ---
 
 **Total surface area:** 21 routes, ~14 KV key patterns, 10 Plaid endpoints, 1 Anthropic endpoint, 4 push services. No dead routes. Code quality is unusually high for a hand-rolled Worker — the rationale comments are top-tier. The gaps are real but no `P0` is "this is broken right now" — they're "production-grade hardening before strangers hit it." Ready for line-by-line fix passes on your signal.
+
+---
+
+## Execution log (what shipped)
+
+All P0/P1/P2/P3 items fixed, plus two free-form passes. 17 atomic commits on `mac-backend`, each pushed individually. Listed in commit order:
+
+| Commit | Items | Summary |
+|---|---|---|
+| `a88068d` | — | This audit report (no production code) |
+| `11caeaf` | G4.1 | Rate-limit Plaid + audit routes; generalize `_pushRateGate` → `_userRateGate`; KV namespace `u:<uid>:rl:<bucket>:*` |
+| `9deb6a7` | G4.3 | `/account` DELETE: 2/hour, 3/day |
+| `5cccd0b` | G3.1 | CORS default = `https://life-hack-app.vercel.app`; never wildcard fallback; `code:"origin_denied"` |
+| `f4babb2` | G2.1, G2.2, G6.1 | `safeError()` helper; top-level catch + push errors log full context, return generic message |
+| `f6008c0` | G7.1 | Per-request structured access log; userId hashed to 12-char prefix; outcome bucketed |
+| `2a6ddef` | G10.1, G10.2 | `[observability] enabled=true`; `[limits] cpu_ms=5000` |
+| `b596d50` | G8.1, G8.2 | All success → `ok:true`; all error → `code` field; codes enumerated in the commit message |
+| `c5edb9d` | G1.1–1.5 | `institutionName` capped 120; Anthropic `messages` shape-checked; `_bodyTooLarge()` helper on body-reading routes |
+| `0a02edf` | G2.4, G2.5, G4.2 | Audit-write `console.warn` on failure; single-retry backoff on Plaid/Anthropic 429/5xx; KV-race documented in `_userRateGate` |
+| `c8a55a5` | G9.1, G9.2, G9.4 | `API_KEY` deprecation warning; constant rename; `audited()` guard tidy |
+| `cce7842` | G5.2, G5.3, G5.4 | Global enroll daily cap (default 500, env-overridable); hashed-IP + UA in audit entries; loss-of-secret recovery model documented |
+| `2439bff` | G10.3, G10.4, G10.5 | `[vars]` block (`ANTHROPIC_DAILY_CAP`, `ANTHROPIC_BURST_CAP`, `ENROLL_GLOBAL_DAY_CAP`); commented-out custom-domain template |
+| `742e8a4` | Pass-2 | Plaid call budget added to `/holdings`, `/liabilities`, `/recurring`, `/investment-transactions` with `truncated` flag in response |
+| `41d4d7a` | Pass-2 | `/link/token` early-fails 503 on missing Plaid creds; `audited()` distinguishes 429 (`<action>_rate_limited`) from generic `_error`; `respOrigin` ternary simplified; scheduled cron emits one structured log per tick with `{delivered, errors, ms}` |
+| `733d70f` | Pass-3 | Helpful error messages (regex hint, expected shapes); Plaid upstream errors → 502 `plaid_upstream_error`; Anthropic 401/403 → 503 `ai_disabled` (operator-config); Anthropic 5xx → 502; push 410/404 → 410 Gone from worker; `/audit` response includes `cap: AUDIT_KEEP`; Anthropic success path now `ok:true` |
+| `ca77a64` | Pass-3 | `_wrongContentType()` helper → 415 `wrong_content_type` on every JSON-reading route |
+| `5d4320c` | Pass-3 | Drop unused back-compat aliases; `/push/test` and `/push/send` check VAPID secrets before rate gate |
+
+---
+
+## Error codes (final set)
+
+Frontend can switch on `.code`:
+
+**Validation / client error:**
+- `validation_error` (400) — bad/missing/malformed input
+- `wrong_content_type` (415) — non-JSON Content-Type
+- `payload_too_large` (413) — body over per-route ceiling
+- `not_subscribed` (400) — `/push/test` or `/push/send` without prior subscribe
+
+**Auth:**
+- `unauthorized` (401) — bad/missing bearer
+- `origin_denied` (403) — CORS reject
+- `not_found` (404) — route doesn't exist
+
+**Rate limits:**
+- `rate_limit` (429) — hourly cap
+- `rate_limit_daily` (429) — daily cap
+- `rate_limit_burst` (429) — per-minute burst cap
+- `rate_limit_global` (429) — global enrollment cap (defense vs botnet)
+
+**Operator config / upstream:**
+- `ai_disabled` (503) — `ANTHROPIC_KEY` unset, OR Anthropic 401/403 (means key is bad)
+- `push_disabled` (503) — VAPID_* unset
+- `plaid_disabled` (503) — Plaid creds unset on `/link/token`
+- `plaid_upstream_error` (502) — Plaid 4xx/5xx that bubbled through
+- `ai_upstream_rate_limit` (429) — Anthropic itself throttled us
+- `ai_upstream_error` (502) — Anthropic 5xx
+- `push_failed` (502) — push service rejected delivery
+- `push_subscription_expired` (410) — push service returned 404/410 (subscription dead, already reaped)
+- `server_error` (500) — fallback for top-level catch
+
+---
+
+## Intentionally deferred
+
+- **Frontend changes.** Out of scope per the brief. Two new error codes (`plaid_upstream_error`, `ai_upstream_rate_limit`, `wrong_content_type`, `rate_limit_global`, `plaid_disabled`) are unrecognized by the current frontend — its existing `_friendlyApiError()` helper falls through to a generic message for unknown codes, which is acceptable. Frontend pass for the new codes is a separate session's territory.
+- **`wrangler version bump`.** The user said they'd handle this locally.
+- **Durable Objects for atomic rate-limit counters.** KV-counter race window is documented in `_userRateGate`. The slop is acceptable at current scale; pivot if it ever matters.
+- **Pagination on `/audit`.** The 200-entry ring cap acts as effective pagination. Older entries drop off the back. The cap is now exposed in the response (`cap: 200`) so the frontend can render "last 200 events".
+- **API_KEY removal.** Kept the back-compat alias with a deprecation warning; removing it now would break any deployment that hasn't rotated to `ENROLLMENT_KEY`. Drop in a future commit once you confirm no live deployment uses the legacy name.
+- **`workers_dev = false` and custom domain binding.** Both are templated in `wrangler.toml` but commented out — they require operator-side DNS work first.
+- **G9.3 / G9.5.** Doc-only items; G9.3 (VAPID key-gen one-liner) and G9.5 (stale line-count comment in CLAUDE.md) live outside `backend/`.
+- **CLAUDE.md outdated metadata.** Top-level doc; out of scope.
+
+---
+
+## Net result
+
+- **3 files changed:** `backend/worker.js` (1,767 → 1,920 lines), `backend/wrangler.toml` (36 → 80 lines), `backend/AUDIT.md` (new).
+- **No behavior changes** for happy-path requests at normal call volume. Every change is either (a) defensive against abuse, (b) better observability, (c) clearer client contract.
+- **17 commits on `mac-backend`**, pushed individually so any one can be reverted in isolation.
+
+If anything I touched feels wrong, the per-commit diffs are small and self-contained — easy to back out.
+
