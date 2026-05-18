@@ -213,6 +213,36 @@
 :root.style-calm .card { box-shadow: none; border: 0.5px solid var(--sep); }
 :root.style-calm .btn { border-radius: 12px; }
 :root.style-calm .page { padding-top: 8px; }
+/* Calm — soften the bespoke hero cards on Today/Money that don't use .list:
+   strip thick colored left-borders, mute black/dark backgrounds, drop
+   inline shadows. Selectors target the inline `style="..."` patterns
+   the renderers use, so no markup changes needed.                          */
+:root.style-calm [style*="border-left:3px solid"],
+:root.style-calm [style*="border-left:3px solid"] *:not(button):not(.btn) {
+  border-left-color: transparent !important;
+}
+:root.style-calm [style*="box-shadow:var(--sh-1)"],
+:root.style-calm [style*="box-shadow:var(--sh-2)"],
+:root.style-calm [style*="box-shadow:var(--sh-pop)"] {
+  box-shadow: none !important;
+}
+:root.style-calm [style*="background:#0A0A0C"],
+:root.style-calm [style*="background:#000"],
+:root.style-calm [style*="background: #0A0A0C"],
+:root.style-calm [style*="background:linear-gradient(180deg,#1a"] {
+  background: var(--bg-elev) !important;
+  color: var(--t1) !important;
+}
+:root.style-calm [style*="background:#0A0A0C"] *,
+:root.style-calm [style*="background:linear-gradient(180deg,#1a"] * {
+  color: inherit !important;
+}
+/* Soften gradient hero buttons (purple-pink Cornileus CTAs) to a single
+   muted purple so the whole screen doesn't compete for attention.        */
+:root.style-calm [style*="linear-gradient(135deg,#7c3aed,#ec4899)"],
+:root.style-calm [style*="linear-gradient(135deg,#0ea5e9,#7c3aed)"] {
+  background: var(--purple) !important;
+}
 
 :root.style-bold {
   /* Single accent — purple replaces the rainbow palette for chrome */
