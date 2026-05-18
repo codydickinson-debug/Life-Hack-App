@@ -206,9 +206,11 @@ export default {
       }
       return json({ error: "not found" }, 404, respOrigin);
     } catch (err) {
-      // Don't leak stack traces to the client
-      console.error("worker error", err && err.stack || err);
-      return json({ error: err.message || "server error" }, 500, respOrigin);
+      // safeError logs the full context + stack to console.error (visible in
+      // wrangler tail / dashboard) and returns a generic message to the
+      // client. Never echo upstream Plaid/Anthropic messages — they leak
+      // endpoint paths, request IDs, and in rare 401 variants secret tails.
+      return json(safeError(err, { route: url.pathname, method: request.method }), 500, respOrigin);
     }
   },
 };
@@ -1273,6 +1275,23 @@ function b64ToBytes(b64) {
 
 // ============ HTTP helpers ============
 
+// Log a server-side error with full context, return a sanitized client-safe
+// payload. Use everywhere an upstream/internal error could otherwise leak
+// (Plaid endpoint paths, Anthropic response bodies, stack traces, secret tails
+// in 401s, etc.). The `code` is a stable token the frontend can switch on; the
+// `clientMessage` is a generic human-readable string. The real error goes to
+// `console.error` so `wrangler tail` and the Cloudflare dashboard still see it.
+function safeError(err, context, code = "server_error", clientMessage = "Something went wrong. Try again or contact support if it persists.") {
+  try {
+    const ctxStr = typeof context === "string" ? context : JSON.stringify(context);
+    const errStr = err && (err.stack || err.message) ? (err.stack || err.message) : String(err);
+    console.error(`[${code}] ${ctxStr} :: ${errStr}`);
+  } catch {
+    // Even logging shouldn't throw. Worst case: drop the log and still return safe payload.
+  }
+  return { error: clientMessage, code };
+}
+
 function corsHeaders(origin) {
   return {
     "Access-Control-Allow-Origin": origin,
@@ -1490,7 +1509,7 @@ async function handlePushTest(env, userId, origin) {
     });
     return json({ ok: true }, 200, origin);
   } catch (e) {
-    return json({ error: "push failed: " + e.message }, 500, origin);
+    return json(safeError(e, { route: "/push/test", userId, pushStatus: e.status }, "push_failed", "Could not send test push. Check your subscription and try again."), 500, origin);
   }
 }
 
@@ -1546,11 +1565,16 @@ async function handlePushSend(request, env, userId, origin) {
     return json({ ok: true }, 200, origin);
   } catch (e) {
     // 404/410 means the subscription is dead — clean it up so we stop trying.
-    if (e.status === 404 || e.status === 410) {
+    const dead = (e.status === 404 || e.status === 410);
+    if (dead) {
       await env.ASCEND_KV.delete(pushKey(userId));
       await _removeFromPushIndex(env, userId);
     }
-    return json({ error: "push failed: " + e.message, status: e.status || null }, 500, origin);
+    const code = dead ? "push_subscription_expired" : "push_failed";
+    const msg  = dead
+      ? "Your push subscription has expired. Re-enable notifications to fix it."
+      : "Could not deliver push. Try again or re-subscribe.";
+    return json(safeError(e, { route: "/push/send", userId, pushStatus: e.status }, code, msg), 500, origin);
   }
 }
 
