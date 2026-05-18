@@ -115,6 +115,7 @@ export default {
     // boolean for whether the backend has all three VAPID secrets set.
     if (url.pathname === "/push/vapid-public-key" && request.method === "GET") {
       return json({
+        ok: true,
         key: env.VAPID_PUBLIC_KEY || null,
         enabled: !!(env.VAPID_PUBLIC_KEY && env.VAPID_PRIVATE_KEY && env.VAPID_SUBJECT),
       }, 200, respOrigin);
@@ -404,7 +405,7 @@ async function sha256hex(s) {
 async function handleEnroll(request, env, origin) {
   const body = await request.json().catch(() => ({}));
   const userId = String(body.userId || "").trim();
-  if (!/^u_[A-Za-z0-9_-]+$/.test(userId)) return json({ error: "invalid userId" }, 400, origin);
+  if (!/^u_[A-Za-z0-9_-]+$/.test(userId)) return json({ error: "invalid userId", code: "validation_error" }, 400, origin);
 
   // Mint the per-device secret server-side so the worker (not the client)
   // controls the entropy of every issued credential. 32 bytes = 256 bits,
@@ -444,7 +445,7 @@ async function handleLinkToken(env, userId, origin) {
   // POST ITEM_ERROR / PENDING_EXPIRATION / USER_PERMISSION_REVOKED events here.
   if (env.WEBHOOK_URL) params.webhook = env.WEBHOOK_URL;
   const r = await plaidCall(env, "/link/token/create", params);
-  return json({ link_token: r.link_token, expiration: r.expiration }, 200, origin);
+  return json({ ok: true, link_token: r.link_token, expiration: r.expiration }, 200, origin);
 }
 
 async function handleExchange(request, env, userId, origin) {
@@ -455,7 +456,7 @@ async function handleExchange(request, env, userId, origin) {
   const body = await request.json().catch(() => ({}));
   const publicToken = String(body.public_token || "").trim();
   const institutionName = String(body.institution_name || "Bank").trim();
-  if (!publicToken) return json({ error: "public_token required" }, 400, origin);
+  if (!publicToken) return json({ error: "public_token required", code: "validation_error" }, 400, origin);
 
   const r = await plaidCall(env, "/item/public_token/exchange", { public_token: publicToken });
   const accessToken = r.access_token;
@@ -621,7 +622,7 @@ async function handleItems(env, userId, origin) {
       webhook,
     });
   }
-  return json({ items }, 200, origin);
+  return json({ ok: true, items }, 200, origin);
 }
 
 async function handleRemoveItem(url, env, userId, origin) {
@@ -635,11 +636,11 @@ async function handleRemoveItem(url, env, userId, origin) {
   // confusing internal message.
   let itemId;
   try { itemId = decodeURIComponent(url.pathname.split("/").pop() || ""); }
-  catch { return json({ error: "malformed itemId" }, 400, origin); }
-  if (!itemId) return json({ error: "itemId required" }, 400, origin);
+  catch { return json({ error: "malformed itemId", code: "validation_error" }, 400, origin); }
+  if (!itemId) return json({ error: "itemId required", code: "validation_error" }, 400, origin);
   // Tighten to the format Plaid actually uses (the audit was right that we
   // were passing arbitrary URL fragments into KV keys).
-  if (!/^[A-Za-z0-9_\-]{1,80}$/.test(itemId)) return json({ error: "invalid itemId format" }, 400, origin);
+  if (!/^[A-Za-z0-9_\-]{1,80}$/.test(itemId)) return json({ error: "invalid itemId format", code: "validation_error" }, 400, origin);
 
   const raw = await env.ASCEND_KV.get(itemKey(userId, itemId));
   if (raw) {
@@ -880,7 +881,7 @@ async function handleInvestmentTransactions(request, env, userId, origin) {
   // Validate ISO YYYY-MM-DD
   const dateRe = /^\d{4}-\d{2}-\d{2}$/;
   if (!dateRe.test(startDate) || !dateRe.test(endDate)) {
-    return json({ error: "start_date and end_date must be YYYY-MM-DD" }, 400, origin);
+    return json({ error: "start_date and end_date must be YYYY-MM-DD", code: "validation_error" }, 400, origin);
   }
 
   const itemIds = await getItemIndex(env, userId);
@@ -931,7 +932,7 @@ async function handleInvestmentTransactions(request, env, userId, origin) {
 
 async function handleAnthropic(request, env, userId, origin) {
   if (!env.ANTHROPIC_KEY) {
-    return json({ error: "AI insights not configured on this backend" }, 503, origin);
+    return json({ error: "AI insights not configured on this backend", code: "ai_disabled" }, 503, origin);
   }
 
   // Reject oversized request bodies before parsing — protects the worker's
@@ -939,7 +940,7 @@ async function handleAnthropic(request, env, userId, origin) {
   // 200KB is comfortably above the messages-array clamp below (20 msgs × 40KB).
   const contentLength = parseInt(request.headers.get("content-length") || "0", 10);
   if (contentLength > 1_000_000) {
-    return json({ error: "request body too large" }, 413, origin);
+    return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   }
 
   const body = await request.json().catch(() => ({}));
@@ -947,7 +948,7 @@ async function handleAnthropic(request, env, userId, origin) {
   const model = String(body.model || "claude-haiku-4-5-20251001").slice(0, 80);
   const maxTokens = Math.min(parseInt(body.max_tokens, 10) || 800, 2000);
   const messages = Array.isArray(body.messages) ? body.messages.slice(0, 20) : [];
-  if (!messages.length) return json({ error: "messages required" }, 400, origin);
+  if (!messages.length) return json({ error: "messages required", code: "validation_error" }, 400, origin);
   // Optional system prompt — Anthropic accepts a top-level `system` string.
   // Forwarded only if the caller provided one (the AI onboarding flow does;
   // the insights flow does not). Capped to keep costs predictable.
@@ -1063,7 +1064,7 @@ async function handleAuditList(env, userId, origin) {
   if (limited) return limited;
   const raw = await env.ASCEND_KV.get(`u:${userId}:audit`);
   const events = raw ? JSON.parse(raw) : [];
-  return json({ events }, 200, origin);
+  return json({ ok: true, events }, 200, origin);
 }
 
 // ============ Plaid webhook receiver ============
@@ -1504,7 +1505,7 @@ async function _userRateGate(env, userId, bucket, perHourCap, origin, perDayCap)
 
 async function handlePushSubscribe(request, env, userId, origin) {
   if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) {
-    return json({ error: "Push not configured on this backend (missing VAPID_*)" }, 503, origin);
+    return json({ error: "Push not configured on this backend (missing VAPID_*)", code: "push_disabled" }, 503, origin);
   }
   // Subscribe is effectively a one-time user action (rotated when the SW
   // push subscription expires or the user re-grants permission). 5/hour
@@ -1515,20 +1516,20 @@ async function handlePushSubscribe(request, env, userId, origin) {
   const body = await request.json().catch(() => ({}));
   const sub = body.subscription;
   if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
-    return json({ error: "invalid subscription" }, 400, origin);
+    return json({ error: "invalid subscription", code: "validation_error" }, 400, origin);
   }
   // Endpoint must be a known push service — no SSRF target of operator's choosing.
   if (!_isAllowedPushEndpoint(sub.endpoint)) {
-    return json({ error: "subscription endpoint not on push-service allowlist" }, 400, origin);
+    return json({ error: "subscription endpoint not on push-service allowlist", code: "validation_error" }, 400, origin);
   }
   // Cap key/secret sizes so an enrolled attacker can't bloat KV records.
   // Real p256dh is 65 bytes (88 b64), auth is 16 bytes (24 b64). 200 / 64
   // are generous ceilings that still constrain memory.
   if (typeof sub.keys.p256dh !== "string" || sub.keys.p256dh.length > 200) {
-    return json({ error: "p256dh too long" }, 400, origin);
+    return json({ error: "p256dh too long", code: "validation_error" }, 400, origin);
   }
   if (typeof sub.keys.auth !== "string" || sub.keys.auth.length > 64) {
-    return json({ error: "auth too long" }, 400, origin);
+    return json({ error: "auth too long", code: "validation_error" }, 400, origin);
   }
   // schedule = [{ hhmm: "08:00", body: "Optional body" }] — sent by frontend
   // when reminderTimes change. Body is optional; backend uses a generic
@@ -1565,7 +1566,7 @@ async function handlePushTest(env, userId, origin) {
   const limited = await _userRateGate(env, userId, "test", 3, origin);
   if (limited) return limited;
   const raw = await env.ASCEND_KV.get(pushKey(userId));
-  if (!raw) return json({ error: "not subscribed" }, 400, origin);
+  if (!raw) return json({ error: "not subscribed", code: "not_subscribed" }, 400, origin);
   const rec = JSON.parse(raw);
   try {
     await sendWebPush(env, rec.subscription, {
@@ -1618,7 +1619,7 @@ async function handlePushSend(request, env, userId, origin) {
   const limited = await _userRateGate(env, userId, "send", 30, origin, 50);
   if (limited) return limited;
   const raw = await env.ASCEND_KV.get(pushKey(userId));
-  if (!raw) return json({ error: "not subscribed" }, 400, origin);
+  if (!raw) return json({ error: "not subscribed", code: "not_subscribed" }, 400, origin);
   const body = await request.json().catch(() => ({}));
   const rec = JSON.parse(raw);
   const payload = {
