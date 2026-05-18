@@ -2562,9 +2562,12 @@ function _rotateBackup() {
     if (cur !== prevBak) localStorage.setItem(SK_BAK, cur);
   } catch { /* quota or DOMException — primary save still proceeds */ }
 }
-// Once-per-session flag — quota errors fire on every save attempt once
-// the user is full, so we'd spam toasts without this guard.
+// Once-per-session flags — these errors fire on every save attempt once
+// localStorage is hostile (full, disabled, blocked by private browsing),
+// so we'd spam toasts without these guards. Separate flags so a quota
+// warning and a security-error warning each get their own one-shot.
 let _quotaWarned = false;
+let _storageBlockedWarned = false;
 function _isQuotaError(e) {
   return !!(e && (e.name === "QuotaExceededError" || e.code === 22 || e.code === 1014 ||
                   /quota/i.test(String(e.message || ""))));
@@ -2580,12 +2583,34 @@ function _maybeWarnQuota(e) {
   }, 0);
 }
 
+// E5: non-quota storage failures (Safari private mode SecurityError,
+// disabled localStorage, blocked by extension, etc.) used to be
+// swallowed silently — saves appeared to succeed while data never hit
+// disk. Now surface once per session with the action the user can take.
+// Suppressed thereafter for that session so a frozen-storage state
+// doesn't spam a toast on every keystroke save.
+function _maybeWarnStorageBlocked(e) {
+  if (_isQuotaError(e) || _storageBlockedWarned) return;
+  if (!e) return;
+  _storageBlockedWarned = true;
+  setTimeout(() => {
+    if (typeof toast === "function") {
+      toast("Storage full or blocked. Export and reset from Settings.");
+    }
+  }, 0);
+}
+
 function save() {
   try {
     sanitizeDb();
     _rotateBackup();
     localStorage.setItem(SK, JSON.stringify(DB));
-  } catch (e) { _maybeWarnQuota(e); }
+  } catch (e) {
+    // Quota path: dedicated specific message. Other failures: generic
+    // "blocked" warning (Safari private mode, disabled storage, etc.).
+    _maybeWarnQuota(e);
+    _maybeWarnStorageBlocked(e);
+  }
 }
 
 DB = load();
@@ -2959,10 +2984,14 @@ save = async function() {
     }
   } catch (e) {
     // Surface quota errors (data loss risk) via a one-shot toast so the
-    // user knows their writes aren't landing. Other failures stay silent
-    // — surfacing them would leak DB serialization details to anything
-    // reading the console.
+    // user knows their writes aren't landing. E5: also surface non-quota
+    // storage failures (Safari private mode SecurityError, blocked
+    // localStorage, extension interference) once per session with the
+    // "export + reset" action message. Both warnings are deduped per
+    // session so a frozen-storage state can't spam the user on every
+    // keystroke save.
     _maybeWarnQuota(e);
+    _maybeWarnStorageBlocked(e);
   }
 };
 
@@ -2997,6 +3026,25 @@ window.addEventListener("pagehide", flushPendingSave);
 window.addEventListener("beforeunload", flushPendingSave);
 document.addEventListener("visibilitychange", () => { if (document.hidden) flushPendingSave(); });
 
+// E6: cross-tab conflict warning. If the user opens Ascend in two tabs and
+// edits in both, the second tab's save() overwrites the first's silently
+// (last-write-wins). The `storage` event fires in every OTHER tab when
+// localStorage is written, so we can detect the conflict and warn the
+// user before more edits land on top. Once-per-session, with an action
+// (reload to pick up the other tab's changes). We don't auto-reload —
+// that would discard whatever the user has in flight on this tab.
+let _xtabConflictWarned = false;
+window.addEventListener("storage", (e) => {
+  if (e.key !== SK || _xtabConflictWarned) return;
+  // The other tab just wrote to our key. Our DB is now stale.
+  _xtabConflictWarned = true;
+  setTimeout(() => {
+    if (typeof toast === "function") {
+      toast("Edited in another tab. Reload to merge or this tab will overwrite.");
+    }
+  }, 0);
+});
+
 /* ---------- Submit-button mutex (E1) ----------
    Async save handlers run `await save()` then `closeSheet()` then `render()`.
    The encrypted save path is async and can take a few hundred ms; during
@@ -3010,6 +3058,27 @@ function _lockSubmit(btn) {
   if (!btn || btn.disabled) return false;
   btn.disabled = true;
   return true;
+}
+
+/* ---------- Safe money-input parsing (E4 + E7) ----------
+   Number("Infinity"), Number("$100"), Number("1e308"), Number("  ") all
+   surprise the caller in different ways. This single helper:
+     - strips currency symbols, commas, and surrounding whitespace
+     - rejects non-finite results (NaN, Infinity) → returns null
+     - clamps to a sane range to keep downstream aggregates safe
+   Returns a finite number or null. Callers decide whether 0 is valid in
+   their context (e.g. spend amount = 0 is invalid; goal target = 0 is
+   "no target yet" and valid). */
+function _safeMoneyInput(raw, opts) {
+  const o = opts || {};
+  const max = o.max != null ? +o.max : 1e9;
+  const min = o.min != null ? +o.min : -1e9;
+  if (raw == null) return null;
+  const cleaned = String(raw).replace(/[$,\s]/g, "");
+  if (cleaned === "" || cleaned === "-") return null;
+  const n = Number(cleaned);
+  if (!Number.isFinite(n)) return null;
+  return Math.max(min, Math.min(max, n));
 }
 
 async function setPassphrase(pass) {
@@ -4731,8 +4800,11 @@ function addSavingSheet(existing) {
     if (!name) { toast("Add a name"); btn.disabled = false; return; }
     const emoji = $$(".emoji-pick.sel", $("#s-emoji"))[0]?.dataset.e || "💰";
     const color = $$(".color-pick.sel", $("#s-color"))[0]?.dataset.c || COLORS[1];
-    const current = Number($("#s-cur").value)||0;
-    const target  = Number($("#s-tar").value)||0;
+    // E4+E7: bucket current/target are dollar amounts, must be non-negative
+    // finite numbers. Fall back to 0 (the prior behavior) on bad input so
+    // an accidental paste doesn't block save, but never let Infinity through.
+    const current = _safeMoneyInput($("#s-cur").value, { min: 0, max: 1e12 }) ?? 0;
+    const target  = _safeMoneyInput($("#s-tar").value, { min: 0, max: 1e12 }) ?? 0;
     if (isEdit) {
       Object.assign(s, { name, emoji, color, current, target });
     } else {
@@ -4762,8 +4834,11 @@ function logSavingSheet(id) {
   $("#ls-save").addEventListener("click", async (e) => {
     const btn = e.currentTarget;
     if (!_lockSubmit(btn)) return;
-    const a = Number($("#ls-amt").value);
-    if (!a) { toast("Enter amount"); btn.disabled = false; return; }
+    // E4+E7: strip $/commas before parse, reject Infinity/NaN, clamp.
+    // Negative is allowed here intentionally (it's a "subtract from bucket").
+    const a = _safeMoneyInput($("#ls-amt").value, { min: -1e9, max: 1e9 });
+    if (a === null) { toast("Enter a valid amount"); btn.disabled = false; return; }
+    if (a === 0) { toast("Enter amount"); btn.disabled = false; return; }
     s.current = Math.max(0, (+s.current||0) + a);
     s.log.push({ date: todayKey(), amount: a, note: $("#ls-note").value.trim() });
     const flipped = _autoCompletePlans();
@@ -11339,7 +11414,7 @@ function renderMoney() {
           <input id="sp-note" placeholder="Note (optional)" oninput="suggestSpendCategory(this.value)" />
         </div>
         <div id="sp-suggest" style="display:none;font-size:11px;color:var(--t3);margin-top:-4px;padding:0 2px"></div>
-        <button class="btn" onclick="(()=>{const a=Number($('#sp-amt').value);if(!a){toast('Amount?');return;}addSpend(a,$('#sp-cat').value,$('#sp-note').value);renderMoney();toast('Logged '+fmt$0(a));})()">Log expense</button>
+        <button class="btn" onclick="(()=>{const raw=$('#sp-amt').value;const a=_safeMoneyInput(raw);if(a===null){toast('Enter a valid amount');return;}if(a===0){toast('Amount?');return;}addSpend(a,$('#sp-cat').value,$('#sp-note').value);renderMoney();toast('Logged '+fmt$0(a));})()">Log expense</button>
       </div>
       <div class="section-h"><span class="lbl">Recent</span><span class="muted" style="font-size:12px">${filteredSpend().length}${(DB.spendSearch||"").trim()?` of ${DB.spend.length}`:""} total</span></div>
       <input placeholder="Search transactions" maxlength="${TEXT_MAX}" value="${esc(DB.spendSearch||"")}"
@@ -37302,7 +37377,15 @@ function addRecurringSheet(existing) {
     const amount = Number($("#rc-amt").value) || 0;
     const cadence = $("#rc-cad").value;
     const kind = $("#rc-kind").value;
-    const dayOfMonth = Math.max(1, Math.min(31, Number($("#rc-dom").value) || 1));
+    // E8: clamp day-of-month to 28 when cadence is monthly. Days 29/30/31
+    // roll into the next month in JS Date math (Feb 31 → Mar 3), which
+    // silently mispredicts due dates for any bill set on those days. 28 is
+    // the largest day that always exists. Yearly bills keep the full range
+    // since their date is anchored to createdAt anyway.
+    const rawDom = Number($("#rc-dom").value) || 1;
+    const dayOfMonth = cadence === "monthly"
+      ? Math.max(1, Math.min(28, rawDom))
+      : Math.max(1, Math.min(31, rawDom));
     const category = $("#rc-cat").value.trim() || "Other";
     if (isEdit) Object.assign(r, { name, amount, cadence, kind, dayOfMonth, category });
     else (DB.recurring = DB.recurring || []).push({ id: uid(), name, amount, cadence, kind, dayOfMonth, category, createdAt: Date.now() });
@@ -37489,9 +37572,12 @@ function quickAddSpendSheet(prefilled) {
       });
     });
   });
-  $("#qs-save").addEventListener("click", async () => {
-    const amt = Number($("#qs-amt").value);
-    if (!amt || amt <= 0) { toast("Enter an amount"); return; }
+  $("#qs-save").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    if (!_lockSubmit(btn)) return;
+    const amt = _safeMoneyInput($("#qs-amt").value);
+    if (amt === null) { toast("Enter a valid amount"); btn.disabled = false; return; }
+    if (amt <= 0) { toast("Enter an amount"); btn.disabled = false; return; }
     const cat = $("#qs-cat").value;
     const note = $("#qs-note").value.trim();
     const date = $("#qs-date").value || todayKey();
