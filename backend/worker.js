@@ -475,9 +475,22 @@ function _bodyTooLarge(request, maxBytes = 10_000) {
   return false;
 }
 
+// Lightweight content-type guard. Empty content-type passes (curl/native
+// clients commonly omit it); only reject if a content-type is set AND
+// it's not application/json. CF Workers' request.json() is lenient about
+// content-type so this is a hint, not a hard contract — but it surfaces
+// "wrong-content-type" as a clean 415 instead of letting a non-JSON body
+// silently parse to {} and trigger downstream validation errors.
+function _wrongContentType(request) {
+  const ct = (request.headers.get("Content-Type") || "").toLowerCase();
+  if (!ct) return false;
+  return !ct.includes("application/json");
+}
+
 // ============ Endpoint handlers ============
 
 async function handleEnroll(request, env, origin) {
+  if (_wrongContentType(request)) return json({ error: "Content-Type must be application/json", code: "wrong_content_type" }, 415, origin);
   if (_bodyTooLarge(request)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const body = await request.json().catch(() => ({}));
   const userId = String(body.userId || "").trim();
@@ -540,6 +553,7 @@ async function handleExchange(request, env, userId, origin) {
   // retries on flaky links without enabling a stolen-secret abuse loop.
   const limited = await _userRateGate(env, userId, "exchange", 5, origin, 20);
   if (limited) return limited;
+  if (_wrongContentType(request)) return json({ error: "Content-Type must be application/json", code: "wrong_content_type" }, 415, origin);
   if (_bodyTooLarge(request)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const body = await request.json().catch(() => ({}));
   const publicToken = String(body.public_token || "").trim();
@@ -982,6 +996,7 @@ async function handleRecurring(env, userId, origin) {
 async function handleInvestmentTransactions(request, env, userId, origin) {
   const limited = await _userRateGate(env, userId, "investment_transactions", 10, origin, 60);
   if (limited) return limited;
+  if (_wrongContentType(request)) return json({ error: "Content-Type must be application/json", code: "wrong_content_type" }, 415, origin);
   if (_bodyTooLarge(request)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const body = await request.json().catch(() => ({}));
   const today = new Date();
@@ -1049,6 +1064,7 @@ async function handleAnthropic(request, env, userId, origin) {
     return json({ error: "AI insights not configured on this backend", code: "ai_disabled" }, 503, origin);
   }
 
+  if (_wrongContentType(request)) return json({ error: "Content-Type must be application/json", code: "wrong_content_type" }, 415, origin);
   // Reject oversized request bodies before parsing — protects the worker's
   // CPU budget against an attacker who can ship 100MB JSON to one POST.
   // 200KB is comfortably above the messages-array clamp below (20 msgs × 40KB).
@@ -1740,6 +1756,7 @@ async function handlePushSubscribe(request, env, userId, origin) {
   if (limited) return limited;
   // 20KB ceiling — a schedule with 8 slots × 200-char bodies plus subscription
   // keys (~100 bytes each) is well under 5KB. 20KB leaves headroom.
+  if (_wrongContentType(request)) return json({ error: "Content-Type must be application/json", code: "wrong_content_type" }, 415, origin);
   if (_bodyTooLarge(request, 20_000)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const body = await request.json().catch(() => ({}));
   const sub = body.subscription;
@@ -1861,6 +1878,7 @@ async function handlePushSend(request, env, userId, origin) {
   // Anthropic proxy cap) bounds sustained abuse over 24h.
   const limited = await _userRateGate(env, userId, "send", 30, origin, 50);
   if (limited) return limited;
+  if (_wrongContentType(request)) return json({ error: "Content-Type must be application/json", code: "wrong_content_type" }, 415, origin);
   if (_bodyTooLarge(request, 5_000)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const raw = await env.ASCEND_KV.get(pushKey(userId));
   if (!raw) return json({ error: "Subscribe to push first via POST /push/subscribe", code: "not_subscribed" }, 400, origin);
