@@ -24,7 +24,20 @@
  *     issued credentials so a malicious client can't choose a low-entropy or pre-known value.
  *   - All other endpoints require `Authorization: Bearer <userId>:<clientSecret>`. Worker derives the
  *     userId from the auth header, ignoring any userId in the request body (prevents spoofing).
- *   - Audit log is written to u:<userId>:audit (capped JSON array of recent events).
+ *   - Audit log is written to u:<userId>:audit (capped JSON array of recent events). Audit entries
+ *     include a 12-char SHA-256 prefix of the requesting IP + truncated UA so a user can spot
+ *     "this didn't come from my device" without the operator storing raw PII.
+ *
+ * Recovery model (intentional limitation):
+ *   - There is NO server-side recovery for a lost clientSecret. The worker stores only its
+ *     SHA-256; it cannot regenerate the original. If a user loses the secret on every device,
+ *     they re-enroll, get a new userId+secret, and the new userId has no link to the old one.
+ *     The old userId's KV entries (encrypted Plaid access tokens, audit log, etc.) orphan
+ *     until the operator manually cleans them up — they are NOT visible from the new account.
+ *   - To rotate a compromised secret while still possessing it: call /account DELETE (revokes
+ *     Plaid items + nukes KV), then /enroll again.
+ *   - To migrate to a new device while keeping bank links: export the secret out-of-band (the
+ *     frontend offers an "Export device key" flow under Settings → Bank sync).
  */
 
 const PLAID_HOSTS = {
@@ -131,6 +144,18 @@ export default {
     const _t0 = Date.now();
     let _loggedUserId = null;
 
+    // Pre-compute the audit-meta bag for this request. IP is hashed (PII),
+    // UA is truncated. Audit entries that need device-correlation get this
+    // appended; entries that don't (e.g., enrollment) skip it. Computed once
+    // per request to avoid hashing the same IP on every audited() call.
+    const _ip = (request.headers.get("CF-Connecting-IP")
+              || request.headers.get("X-Real-IP")
+              || (request.headers.get("X-Forwarded-For") || "").split(",")[0]
+              || "").trim().slice(0, 64);
+    const _ipHash = _ip ? await sha256hex(_ip).then(h => h.slice(0, 12)).catch(() => "") : "";
+    const _ua = (request.headers.get("User-Agent") || "").slice(0, 60);
+    const _reqMeta = (_ipHash || _ua) ? { ipHash: _ipHash, ua: _ua } : undefined;
+
     // Inner dispatcher returns a Response; outer wrapper logs and returns.
     let response;
     try {
@@ -158,38 +183,38 @@ export default {
 
         if (url.pathname === "/link/token" && request.method === "POST") {
           return await audited(env, userId, "link_token",
-            () => handleLinkToken(env, userId, respOrigin));
+            () => handleLinkToken(env, userId, respOrigin), _reqMeta);
         }
         if (url.pathname === "/exchange" && request.method === "POST") {
           return await audited(env, userId, "exchange",
-            () => handleExchange(request, env, userId, respOrigin));
+            () => handleExchange(request, env, userId, respOrigin), _reqMeta);
         }
         if (url.pathname === "/sync" && request.method === "POST") {
           return await audited(env, userId, "sync",
-            () => handleSync(env, userId, respOrigin));
+            () => handleSync(env, userId, respOrigin), _reqMeta);
         }
         if (url.pathname === "/holdings" && request.method === "POST") {
           return await audited(env, userId, "holdings",
-            () => handleHoldings(env, userId, respOrigin));
+            () => handleHoldings(env, userId, respOrigin), _reqMeta);
         }
         if (url.pathname === "/liabilities" && request.method === "POST") {
           return await audited(env, userId, "liabilities",
-            () => handleLiabilities(env, userId, respOrigin));
+            () => handleLiabilities(env, userId, respOrigin), _reqMeta);
         }
         if (url.pathname === "/recurring" && request.method === "POST") {
           return await audited(env, userId, "recurring",
-            () => handleRecurring(env, userId, respOrigin));
+            () => handleRecurring(env, userId, respOrigin), _reqMeta);
         }
         if (url.pathname === "/investment-transactions" && request.method === "POST") {
           return await audited(env, userId, "investment_transactions",
-            () => handleInvestmentTransactions(request, env, userId, respOrigin));
+            () => handleInvestmentTransactions(request, env, userId, respOrigin), _reqMeta);
         }
         if (url.pathname === "/items" && request.method === "GET") {
           return await handleItems(env, userId, respOrigin);
         }
         if (url.pathname.startsWith("/item/") && request.method === "DELETE") {
           return await audited(env, userId, "item_remove",
-            () => handleRemoveItem(url, env, userId, respOrigin));
+            () => handleRemoveItem(url, env, userId, respOrigin), _reqMeta);
         }
         if (url.pathname === "/anthropic/messages" && request.method === "POST") {
           return await handleAnthropic(request, env, userId, respOrigin);
@@ -205,19 +230,19 @@ export default {
         // frontend can probe push availability before enrolling.)
         if (url.pathname === "/push/subscribe" && request.method === "POST") {
           return await audited(env, userId, "push_subscribe",
-            () => handlePushSubscribe(request, env, userId, respOrigin));
+            () => handlePushSubscribe(request, env, userId, respOrigin), _reqMeta);
         }
         if (url.pathname === "/push/unsubscribe" && request.method === "POST") {
           return await audited(env, userId, "push_unsubscribe",
-            () => handlePushUnsubscribe(env, userId, respOrigin));
+            () => handlePushUnsubscribe(env, userId, respOrigin), _reqMeta);
         }
         if (url.pathname === "/push/test" && request.method === "POST") {
           return await audited(env, userId, "push_test",
-            () => handlePushTest(env, userId, respOrigin));
+            () => handlePushTest(env, userId, respOrigin), _reqMeta);
         }
         if (url.pathname === "/push/send" && request.method === "POST") {
           return await audited(env, userId, "push_send",
-            () => handlePushSend(request, env, userId, respOrigin));
+            () => handlePushSend(request, env, userId, respOrigin), _reqMeta);
         }
         return json({ error: "not found", code: "not_found" }, 404, respOrigin);
       })();
@@ -1229,23 +1254,33 @@ async function handleDeleteAccount(env, userId, origin) {
 
 // ============ Audit log ============
 
-async function audited(env, userId, action, fn) {
+async function audited(env, userId, action, fn, meta) {
   const res = await fn();
   // fn() always returns a Response, which always has .status. Tag as
   // *_error for any non-2xx so the audit log distinguishes successful
   // actions from rate-limited / validation-failed / 5xx attempts.
   const tag = res.status < 400 ? action : action + "_error";
-  try { await appendAudit(env, userId, tag); }
+  try { await appendAudit(env, userId, tag, meta); }
   catch (e) { try { console.warn(`[audit_tag_failed] uid=${userId} tag=${tag}`); } catch {} }
   return res;
 }
 
-async function appendAudit(env, userId, action) {
+async function appendAudit(env, userId, action, meta) {
+  // meta is an optional small object — { ipHash?, ua? } — already truncated/
+  // hashed by the caller. We never store raw IPs (PII / GDPR) — only a
+  // 12-char SHA-256 prefix that a user can compare against their other audit
+  // entries to spot "this came from a different device than mine" without
+  // letting an audit-log reader fingerprint individuals.
   try {
     const key = `u:${userId}:audit`;
     const raw = await env.ASCEND_KV.get(key);
     const arr = raw ? JSON.parse(raw) : [];
-    arr.unshift({ t: new Date().toISOString(), a: action });
+    const entry = { t: new Date().toISOString(), a: action };
+    if (meta && typeof meta === "object") {
+      if (typeof meta.ipHash === "string") entry.ip = meta.ipHash.slice(0, 12);
+      if (typeof meta.ua === "string") entry.ua = meta.ua.slice(0, 60);
+    }
+    arr.unshift(entry);
     if (arr.length > AUDIT_KEEP) arr.length = AUDIT_KEEP;
     await env.ASCEND_KV.put(key, JSON.stringify(arr));
   } catch (e) {
@@ -1524,6 +1559,10 @@ function _isAllowedPushEndpoint(url) {
 // boundary against mass-enrollment abuse. Caps:
 //   - 5 enrollments per IP per hour (normal users enroll once per device)
 //   - 25 per IP per day (covers device upgrades, family/friend testing, etc.)
+//   - GLOBAL cap of 500 enrollments per UTC day across all IPs — a
+//     defense-in-depth against a botnet that stays under the per-IP cap.
+//     Tuned for a single-operator app (you, your friends, ~handful of beta
+//     users); bump if your install base outgrows it.
 // Source IP is taken from CF-Connecting-IP (Cloudflare-set), falling back to
 // X-Real-IP, then the leftmost X-Forwarded-For — Cloudflare overwrites this
 // header at the edge, so it can't be spoofed by the client.
@@ -1537,8 +1576,17 @@ async function _enrollRateGate(request, env, origin) {
   const iso = new Date().toISOString();
   const hourKey = `enroll:rl:${ipKey}:${iso.slice(0, 13)}`;
   const dayKey  = `enroll:rl:${ipKey}:day:${iso.slice(0, 10)}`;
+  const globalKey = `enroll:rl:global:day:${iso.slice(0, 10)}`;
   const HOUR_CAP = 5;
   const DAY_CAP  = 25;
+  const GLOBAL_DAY_CAP = parseInt(env.ENROLL_GLOBAL_DAY_CAP || "500", 10) || 500;
+
+  // Global cap first — cheap KV read; protects against the botnet case.
+  const curGlobal = parseInt(await env.ASCEND_KV.get(globalKey) || "0", 10) || 0;
+  if (curGlobal >= GLOBAL_DAY_CAP) {
+    try { console.warn(`[enroll_global_cap_hit] day_count=${curGlobal}`); } catch {}
+    return json({ error: `Enrollment temporarily unavailable. Try again tomorrow.`, code: "rate_limit_global" }, 429, origin);
+  }
   const curHour = parseInt(await env.ASCEND_KV.get(hourKey) || "0", 10) || 0;
   if (curHour >= HOUR_CAP) {
     return json({ error: `Too many enrollments from this network. Try again in an hour.`, code: "rate_limit" }, 429, origin);
@@ -1548,8 +1596,9 @@ async function _enrollRateGate(request, env, origin) {
     return json({ error: `Daily enrollment limit reached from this network. Try again tomorrow.`, code: "rate_limit_daily" }, 429, origin);
   }
   // Reserve before doing the work; TTLs cover clock skew (~70 min / ~26 h).
-  await env.ASCEND_KV.put(hourKey, String(curHour + 1), { expirationTtl: 70 * 60 });
-  await env.ASCEND_KV.put(dayKey,  String(curDay + 1),  { expirationTtl: 26 * 60 * 60 });
+  await env.ASCEND_KV.put(hourKey,   String(curHour + 1),   { expirationTtl: 70 * 60 });
+  await env.ASCEND_KV.put(dayKey,    String(curDay + 1),    { expirationTtl: 26 * 60 * 60 });
+  await env.ASCEND_KV.put(globalKey, String(curGlobal + 1), { expirationTtl: 26 * 60 * 60 });
   return null;
 }
 
