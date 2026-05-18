@@ -267,7 +267,21 @@ export default {
       // wrangler tail / dashboard) and returns a generic message to the
       // client. Never echo upstream Plaid/Anthropic messages — they leak
       // endpoint paths, request IDs, and in rare 401 variants secret tails.
-      response = json(safeError(err, { route: url.pathname, method: request.method }), 500, respOrigin);
+      //
+      // If the thrown error has a .status (set by plaidCall + sendWebPush on
+      // upstream non-2xx), translate to a more accurate worker status:
+      //   - Plaid 4xx with err.plaid set → 502 plaid_upstream_error
+      //     (it's not the client's fault that Plaid rejected; client can't
+      //     fix it. 502 honestly tells them "the bank API broke, retry.")
+      //   - Plaid 5xx → 502 plaid_upstream_error
+      //   - everything else → 500 server_error (default)
+      let status = 500, code = "server_error", msg = "Something went wrong. Try again or contact support if it persists.";
+      if (err && err.plaid && typeof err.status === "number") {
+        status = 502;
+        code = "plaid_upstream_error";
+        msg = "Bank data provider returned an error. Try syncing again in a moment.";
+      }
+      response = json(safeError(err, { route: url.pathname, method: request.method, upstreamStatus: err?.status }, code, msg), status, respOrigin);
     }
 
     // Emit one structured access log line per request. Logging must never
@@ -467,7 +481,12 @@ async function handleEnroll(request, env, origin) {
   if (_bodyTooLarge(request)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const body = await request.json().catch(() => ({}));
   const userId = String(body.userId || "").trim();
-  if (!/^u_[A-Za-z0-9_-]+$/.test(userId)) return json({ error: "invalid userId", code: "validation_error" }, 400, origin);
+  if (!/^u_[A-Za-z0-9_-]+$/.test(userId)) {
+    return json({
+      error: "userId must match pattern u_[A-Za-z0-9_-]+ (frontend's ensureUserId generates this)",
+      code: "validation_error",
+    }, 400, origin);
+  }
 
   // Mint the per-device secret server-side so the worker (not the client)
   // controls the entropy of every issued credential. 32 bytes = 256 bits,
@@ -1058,7 +1077,12 @@ async function handleAnthropic(request, env, userId, origin) {
     else continue;
     messages.push({ role, content });
   }
-  if (!messages.length) return json({ error: "messages required", code: "validation_error" }, 400, origin);
+  if (!messages.length) {
+    return json({
+      error: "messages must be a non-empty array of { role: 'user'|'assistant', content: string | array }",
+      code: "validation_error",
+    }, 400, origin);
+  }
   // Optional system prompt — Anthropic accepts a top-level `system` string.
   // Forwarded only if the caller provided one (the AI onboarding flow does;
   // the insights flow does not). Capped to keep costs predictable.
@@ -1149,9 +1173,31 @@ async function handleAnthropic(request, env, userId, origin) {
   const text = await r.text();
   let parsed;
   try { parsed = JSON.parse(text); } catch { parsed = null; }
+
+  // Translate upstream status to client-visible status. 401 from Anthropic
+  // means OUR ANTHROPIC_KEY is bad — that's an operator config issue, not the
+  // client's fault. Surface as 503 + ai_disabled so the frontend can show
+  // "AI temporarily unavailable" instead of treating it as a user-auth fail
+  // and clearing the device enrollment.
+  let clientStatus = r.status;
+  let clientCode = null;
+  if (r.status === 401 || r.status === 403) {
+    clientStatus = 503;
+    clientCode = "ai_disabled";
+    try { console.error(`[anthropic_auth_failed] upstream=${r.status} — check ANTHROPIC_KEY`); } catch {}
+  } else if (r.status === 429) {
+    clientCode = "ai_upstream_rate_limit"; // distinct from our own rate_limit_*
+  } else if (r.status >= 500) {
+    clientCode = "ai_upstream_error";
+    clientStatus = 502;
+  } else if (!r.ok) {
+    clientCode = "ai_upstream_error";
+  }
+
   let safe;
   if (r.ok && parsed && typeof parsed === "object") {
     safe = {
+      ok: true,
       id: typeof parsed.id === "string" ? parsed.id.slice(0, 120) : undefined,
       type: typeof parsed.type === "string" ? parsed.type.slice(0, 40) : undefined,
       role: typeof parsed.role === "string" ? parsed.role.slice(0, 40) : undefined,
@@ -1164,19 +1210,21 @@ async function handleAnthropic(request, env, userId, origin) {
         output_tokens: +parsed.usage.output_tokens || 0,
       } : undefined,
     };
-  } else if (parsed && parsed.error && typeof parsed.error === "object") {
-    safe = {
-      error: {
-        type: typeof parsed.error.type === "string" ? parsed.error.type.slice(0, 64) : "upstream_error",
-        message: typeof parsed.error.message === "string" ? parsed.error.message.slice(0, 300) : "Upstream AI service returned an error.",
-      },
-    };
   } else {
-    // Couldn't parse — generic message, don't leak the raw upstream body.
-    safe = { error: { type: "upstream_error", message: r.ok ? "Empty response from AI" : `Upstream returned HTTP ${r.status}` } };
+    // Error path — never echo upstream error.message to the client (could
+    // leak request_id or API-key tails in rare 401 bodies). Generic message
+    // keyed by our translated code.
+    const msg = clientCode === "ai_disabled"
+      ? "AI service temporarily unavailable. Try again later."
+      : clientCode === "ai_upstream_rate_limit"
+      ? "AI service is busy. Try again in a moment."
+      : clientCode === "ai_upstream_error"
+      ? "AI service returned an error. Try again."
+      : "AI request failed.";
+    safe = { error: msg, code: clientCode || "ai_upstream_error" };
   }
   return new Response(JSON.stringify(safe), {
-    status: r.status,
+    status: clientStatus,
     headers: { "Content-Type": "application/json", ...corsHeaders(origin) },
   });
 }
@@ -1187,7 +1235,12 @@ async function handleAuditList(env, userId, origin) {
   if (limited) return limited;
   const raw = await env.ASCEND_KV.get(`u:${userId}:audit`);
   const events = raw ? JSON.parse(raw) : [];
-  return json({ ok: true, events }, 200, origin);
+  // The audit ring buffer caps at AUDIT_KEEP entries (currently 200), so this
+  // endpoint always returns at most that many. There is no pagination —
+  // appendAudit() drops the oldest entry once the cap is hit. Returning the
+  // current cap in the response so the frontend can show "showing last N of
+  // up to MAX events" without hardcoding the number.
+  return json({ ok: true, events, cap: AUDIT_KEEP }, 200, origin);
 }
 
 // ============ Plaid webhook receiver ============
@@ -1691,7 +1744,10 @@ async function handlePushSubscribe(request, env, userId, origin) {
   const body = await request.json().catch(() => ({}));
   const sub = body.subscription;
   if (!sub || !sub.endpoint || !sub.keys || !sub.keys.p256dh || !sub.keys.auth) {
-    return json({ error: "invalid subscription", code: "validation_error" }, 400, origin);
+    return json({
+      error: "subscription must be { endpoint: string, keys: { p256dh: string, auth: string } }",
+      code: "validation_error",
+    }, 400, origin);
   }
   // Endpoint must be a known push service — no SSRF target of operator's choosing.
   if (!_isAllowedPushEndpoint(sub.endpoint)) {
@@ -1741,7 +1797,7 @@ async function handlePushTest(env, userId, origin) {
   const limited = await _userRateGate(env, userId, "test", 3, origin);
   if (limited) return limited;
   const raw = await env.ASCEND_KV.get(pushKey(userId));
-  if (!raw) return json({ error: "not subscribed", code: "not_subscribed" }, 400, origin);
+  if (!raw) return json({ error: "Subscribe to push first via POST /push/subscribe", code: "not_subscribed" }, 400, origin);
   const rec = JSON.parse(raw);
   try {
     await sendWebPush(env, rec.subscription, {
@@ -1752,7 +1808,19 @@ async function handlePushTest(env, userId, origin) {
     });
     return json({ ok: true }, 200, origin);
   } catch (e) {
-    return json(safeError(e, { route: "/push/test", userId, pushStatus: e.status }, "push_failed", "Could not send test push. Check your subscription and try again."), 500, origin);
+    // Push test failures are usually subscription-side (404/410 = dead).
+    // 502 Bad Gateway is the honest status for any other upstream push-
+    // service failure since we're a proxy here.
+    const dead = (e.status === 404 || e.status === 410);
+    if (dead) {
+      await env.ASCEND_KV.delete(pushKey(userId));
+      await _removeFromPushIndex(env, userId);
+    }
+    const code = dead ? "push_subscription_expired" : "push_failed";
+    const msg  = dead
+      ? "Your push subscription has expired. Re-enable notifications to fix it."
+      : "Could not send test push. The push service returned an error.";
+    return json(safeError(e, { route: "/push/test", userId, pushStatus: e.status }, code, msg), dead ? 410 : 502, origin);
   }
 }
 
@@ -1795,7 +1863,7 @@ async function handlePushSend(request, env, userId, origin) {
   if (limited) return limited;
   if (_bodyTooLarge(request, 5_000)) return json({ error: "request body too large", code: "payload_too_large" }, 413, origin);
   const raw = await env.ASCEND_KV.get(pushKey(userId));
-  if (!raw) return json({ error: "not subscribed", code: "not_subscribed" }, 400, origin);
+  if (!raw) return json({ error: "Subscribe to push first via POST /push/subscribe", code: "not_subscribed" }, 400, origin);
   const body = await request.json().catch(() => ({}));
   const rec = JSON.parse(raw);
   // Type-check each field so a non-string (e.g. {a:1}) doesn't slide through
@@ -1811,6 +1879,8 @@ async function handlePushSend(request, env, userId, origin) {
     return json({ ok: true }, 200, origin);
   } catch (e) {
     // 404/410 means the subscription is dead — clean it up so we stop trying.
+    // Surface as 410 Gone so the frontend can distinguish "permanently can't
+    // deliver to this subscription" from "transient delivery failure".
     const dead = (e.status === 404 || e.status === 410);
     if (dead) {
       await env.ASCEND_KV.delete(pushKey(userId));
@@ -1820,7 +1890,7 @@ async function handlePushSend(request, env, userId, origin) {
     const msg  = dead
       ? "Your push subscription has expired. Re-enable notifications to fix it."
       : "Could not deliver push. Try again or re-subscribe.";
-    return json(safeError(e, { route: "/push/send", userId, pushStatus: e.status }, code, msg), 500, origin);
+    return json(safeError(e, { route: "/push/send", userId, pushStatus: e.status }, code, msg), dead ? 410 : 502, origin);
   }
 }
 
