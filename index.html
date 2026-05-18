@@ -3550,7 +3550,7 @@ function shareWithPartnerSheet() {
     <label>Pairing code</label>
     <textarea id="pair-token-out" readonly style="width:100%;min-height:120px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:11px;background:var(--bg-elev);border:0.5px solid var(--sep);border-radius:8px;padding:10px;color:var(--t1);word-break:break-all">${esc(token)}</textarea>
     <div style="display:flex;gap:8px;margin-top:10px">
-      <button class="btn" style="flex:1" onclick="(()=>{const el=document.getElementById('pair-token-out');el.select();el.setSelectionRange(0,99999);try{navigator.clipboard.writeText(el.value).then(()=>toast('Copied — send to your partner privately'));}catch(_){document.execCommand('copy');toast('Copied');}})()">Copy code</button>
+      <button class="btn" style="flex:1" onclick="(()=>{const el=document.getElementById('pair-token-out');el.select();el.setSelectionRange(0,99999);try{navigator.clipboard.writeText(el.value).then(()=>toast('Copied, send to your partner privately'));}catch(_){document.execCommand('copy');toast('Copied');}})()">Copy code</button>
       ${typeof navigator.share === "function" ? `<button class="btn secondary" style="flex:1" onclick="(()=>{try{navigator.share({title:'Ascend pairing',text:document.getElementById('pair-token-out').value});}catch(_){}})()">Share…</button>` : ""}
     </div>
     <p class="muted" style="font-size:11.5px;margin-top:14px">On your partner's phone: Settings → 🤝 Pair with partner → paste this code.</p>
@@ -3895,7 +3895,7 @@ function keyboardShortcutsSheet() {
   const kbd = (k) => `<kbd style="background:var(--bg-elev);border:0.5px solid var(--sep);border-radius:6px;padding:2px 8px;font-size:12px;font-family:ui-monospace,Menlo,Consolas,monospace;color:var(--t1);min-width:22px;display:inline-block;text-align:center;font-weight:600">${esc(k)}</kbd>`;
   openSheet(`
     <h2 style="margin-bottom:4px">Keyboard shortcuts</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Tap inputs are blocked from intercepting these — you can type freely in any field.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Tap inputs are blocked from intercepting these, you can type freely in any field.</p>
     <div class="list">
       ${rows.map(r => `
         <div class="row">
@@ -4391,7 +4391,7 @@ function habitDetailSheet(id) {
               <div style="font-size:20px">⏸</div>
               <div style="flex:1;min-width:0">
                 <div style="font-size:13px;font-weight:600">Paused ${esc(endLabel)}</div>
-                <div style="font-size:11.5px;color:var(--t3);margin-top:2px">Streak intact while paused — days don't count for or against</div>
+                <div style="font-size:11.5px;color:var(--t3);margin-top:2px">Streak intact while paused, days don't count for or against</div>
               </div>
               <button class="btn sm" style="font-size:11.5px;padding:6px 14px;flex-shrink:0" onclick="resumeHabit(${jsAttr(h.id)});closeSheet();">Resume</button>
             </div>
@@ -4400,7 +4400,7 @@ function habitDetailSheet(id) {
       }
       const freezesLeft = _freezesAvailable(h);
       const freezeBtn = freezesLeft > 0
-        ? `<button class="btn secondary sm" style="flex:1;min-width:120px;font-size:12px;padding:8px 6px;color:#7DD3FC;border-color:rgba(125,211,252,0.4)" onclick="freezeStreakToday(${jsAttr(h.id)});closeSheet();" title="One free skip per habit per month — preserves your streak">❄️ Freeze today (1 left)</button>`
+        ? `<button class="btn secondary sm" style="flex:1;min-width:120px;font-size:12px;padding:8px 6px;color:#7DD3FC;border-color:rgba(125,211,252,0.4)" onclick="freezeStreakToday(${jsAttr(h.id)});closeSheet();" title="One free skip per habit per month, preserves your streak">❄️ Freeze today (1 left)</button>`
         : `<div style="flex:1;min-width:120px;background:var(--bg-elev);border-radius:8px;padding:8px 10px;font-size:11px;color:var(--t3);text-align:center">❄️ Freeze used this month</div>`;
       return `
         <div style="display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap">
@@ -5067,7 +5067,7 @@ function _commitSplit(parentId) {
       date: parent.date,
       category: r.category,
       amount: sign * (+r.amount || 0),
-      note: parent.note ? `${parent.note} — ${r.category}` : r.category,
+      note: parent.note ? `${parent.note} (${r.category})` : r.category,
       source: parent.source || "manual",
       _splitParentId: parent.id,
     });
@@ -6628,7 +6628,7 @@ function sendFeedbackSheet() {
   ].join("\n");
   openSheet(`
     <h2 style="margin-bottom:4px">Send feedback</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Copy the message below, then paste it into an email or message. The first lines describe your setup so a bug can be reproduced — review and edit if you'd rather not include any of it.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Copy the message below, then paste it into an email or message. The first lines describe your setup so a bug can be reproduced, review and edit if you'd rather not include any of it.</p>
     <textarea id="fb-msg" style="background:var(--card);border:1px solid var(--sep);border-radius:var(--r2);padding:12px 14px;font-size:13px;width:100%;min-height:200px;box-sizing:border-box;color:var(--t1);font-family:ui-monospace,Menlo,Consolas,monospace;resize:vertical">${esc(snapshot)}</textarea>
     <div class="actions">
       <button class="btn secondary" onclick="(async () => { try { await navigator.clipboard.writeText(document.getElementById('fb-msg').value); toast('Copied to clipboard'); closeSheet(); } catch (e) { toast('Select the text and copy manually'); } })()">Copy to clipboard</button>
@@ -7185,7 +7185,7 @@ function renderToday() {
       <div class="body"><div class="t1">${esc(w.text)}</div></div>
       <button class="del-x" onclick="deleteWin('${w.id}')">×</button>
     </div>
-  `).join("") : `<div class="empty" style="padding:18px"><div class="e-sub">Capture small wins as they happen — they add up.</div></div>`;
+  `).join("") : `<div class="empty" style="padding:18px"><div class="e-sub">Capture small wins as they happen, they add up.</div></div>`;
 
   // Safe-to-spend snapshot (only shown when user has at least an income or any recurring set)
   const sts = safeToSpend();
@@ -7196,7 +7196,7 @@ function renderToday() {
       <div class="sts-big" data-priv="amount">${fmt$0(sts.perDay)}</div>
       <div class="sts-sub">${sts.onTrack
         ? `<span data-priv="amount">${fmt$0(sts.remaining)}</span> left across ${sts.daysLeft} day${sts.daysLeft===1?'':'s'} this month`
-        : `Spent <span data-priv="amount">${fmt$0(sts.mtd)}</span> of <span data-priv="amount">${fmt$0(sts.income)}</span> — pull back where you can`}</div>
+        : `Spent <span data-priv="amount">${fmt$0(sts.mtd)}</span> of <span data-priv="amount">${fmt$0(sts.income)}</span>, pull back where you can`}</div>
       <div class="sts-meta">
         <div><span>In</span> <span data-priv="amount">${fmt$0(sts.income)}</span>/mo</div>
         <div><span>Out</span> <span data-priv="amount">${fmt$0(sts.fixedRecurring + sts.fixedBudget)}</span> fixed</div>
@@ -7210,7 +7210,7 @@ function renderToday() {
       <div class="wr-emoji">📝</div>
       <div class="wr-body">
         <div class="wr-t1">Weekly review</div>
-        <div class="wr-t2">5 minutes — what worked, what didn't, what's next</div>
+        <div class="wr-t2">5 minutes, what worked, what didn't, what's next</div>
       </div>
       <div class="wr-cta">Start →</div>
     </div>
@@ -7423,7 +7423,7 @@ function renderToday() {
             <div style="flex:1;min-width:0">
               <div style="font-size:10.5px;font-weight:700;color:var(--t3);text-transform:uppercase;letter-spacing:0.08em;margin-bottom:2px">Wealth Score</div>
               <div style="font-size:18px;font-weight:800;color:${lbl.color};line-height:1.1;letter-spacing:-0.02em;margin-bottom:6px">${lbl.word}${deltaStr ? ` <span style="font-size:13px;font-weight:600;color:${deltaColor};margin-left:6px">${esc(deltaStr)} wk</span>` : ''}</div>
-              <div style="font-size:12.5px;color:var(--t2);line-height:1.4">${r.topGap ? esc(r.topGap.suggest) : "Strong across the board — keep compounding."}</div>
+              <div style="font-size:12.5px;color:var(--t2);line-height:1.4">${r.topGap ? esc(r.topGap.suggest) : "Strong across the board, keep compounding."}</div>
               <div style="display:inline-flex;align-items:center;gap:4px;color:var(--purple);font-size:11.5px;font-weight:600;margin-top:8px">See breakdown <span style="font-size:13px">→</span></div>
             </div>
           </div>
@@ -7460,7 +7460,7 @@ function renderToday() {
           style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid var(--blue);border-radius:var(--r);padding:14px;margin-bottom:14px;cursor:pointer;display:flex;align-items:center;gap:12px">
           <div style="width:32px;height:32px;border-radius:50%;background:rgba(47,111,235,0.12);display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0">📊</div>
           <div style="flex:1;min-width:0">
-            <div style="font-size:13px;color:var(--t1);font-weight:600;line-height:1.2">It's Sunday — recap your week with Cornileus</div>
+            <div style="font-size:13px;color:var(--t1);font-weight:600;line-height:1.2">It's Sunday, recap your week with Cornileus</div>
             <div style="font-size:11.5px;color:var(--t3);margin-top:2px">${habitDone}/${habitPoss} habits · ${winsW} wins · <span data-priv="amount">${fmt$0(spendW)}</span> spent</div>
           </div>
           <div style="font-size:18px;color:var(--t3)">›</div>
@@ -7499,11 +7499,11 @@ function renderToday() {
       <div class="h-eyebrow">Today's progress</div>
       ${p.total ? `
         <div class="h-big">${p.done} / ${p.total} habits</div>
-        <div class="h-sub">${p.pct===100 ? "All done — keep the streak alive 🔥" : "You've got this."}</div>
+        <div class="h-sub">${p.pct===100 ? "All done, keep the streak alive 🔥" : "You've got this."}</div>
         <div class="h-bar"><div class="h-fill" style="width:${p.pct}%"></div></div>
       ` : `
         <div class="h-big" style="font-size:22px;line-height:1.2">Pick your first habit</div>
-        <div class="h-sub" style="margin-bottom:0">Tap a starter below or roll your own — small wins compound.</div>
+        <div class="h-sub" style="margin-bottom:0">Tap a starter below or roll your own, small wins compound.</div>
       `}
       <div class="daychips">
         ${days.map(d=>{
@@ -7796,7 +7796,7 @@ function renderToday() {
       const message = pct >= 1
         ? `<b style="color:var(--red)">Over cap by ${fmt$0(today - cap)}</b>`
         : pct >= 0.9
-          ? `<b style="color:var(--orange)">${fmt$0(remaining)} left — slow down</b>`
+          ? `<b style="color:var(--orange)">${fmt$0(remaining)} left, slow down</b>`
           : `<b style="color:var(--t1)" data-priv="amount">${fmt$0(remaining)} left</b> · ${(pct * 100).toFixed(0)}% used`;
       return `
         <div onclick="showTab('settings');setTimeout(()=>{const el=document.querySelector('input[oninput*=dailySpendCap]');if(el){el.scrollIntoView({behavior:'smooth',block:'center'});el.focus();}},300)" role="button" tabindex="0" style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${color};border-radius:var(--r);padding:12px 16px;margin-bottom:14px;cursor:pointer">
@@ -8019,7 +8019,7 @@ function renderGoals() {
 
   $("#page-goals").innerHTML = `
     <div class="lg-title">Goals</div>
-    <div class="muted" style="margin:-12px 0 18px;font-size:14px">What you're chasing — daily, this quarter, and life-tier.</div>
+    <div class="muted" style="margin:-12px 0 18px;font-size:14px">What you're chasing, daily, this quarter, and life-tier.</div>
     ${overviewHtml}
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
       <button class="add-row" style="margin:0" onclick="addGoalSheet()"><span class="plus">+</span> New goal</button>
@@ -8974,7 +8974,7 @@ function renderPlanning() {
       <div style="font-size:28px;flex-shrink:0">💳</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:14px;font-weight:700;margin-bottom:2px">Credit card matches</div>
-        <div style="font-size:12px;color:var(--t3);line-height:1.4">Cards picked for your spending — see net rewards across ${CURATED_CARDS.length} curated options.</div>
+        <div style="font-size:12px;color:var(--t3);line-height:1.4">Cards picked for your spending, see net rewards across ${CURATED_CARDS.length} curated options.</div>
       </div>
       <div style="font-size:18px;color:var(--t3);flex-shrink:0">›</div>
     </div>
@@ -9073,7 +9073,7 @@ function renderPlanning() {
 
   page.innerHTML = `
     <div class="lg-title">Plan</div>
-    <div class="muted" style="margin:-12px 0 18px;font-size:14px">Where you're headed — and how close you are.</div>
+    <div class="muted" style="margin:-12px 0 18px;font-size:14px">Where you're headed, and how close you are.</div>
     ${planHealthCardHtml()}
     ${counselorCta}
     ${renderRoadmapsSection()}
@@ -9263,7 +9263,7 @@ function whatIfCardHtml() {
       </div>
       <div class="whatif-port-totalrow">
         <span>Total allocated: <strong>${port.rows.reduce((s,r)=>s+(+r.alloc||0),0)}%</strong></span>
-        <span class="muted">Crypto rate is volatile — treat as a wide range, not a promise.</span>
+        <span class="muted">Crypto rate is volatile, treat as a wide range, not a promise.</span>
       </div>
     </div>
   ` : "";
@@ -9304,13 +9304,13 @@ function whatIfCardHtml() {
             <div class="whatif-math-block">
               <div class="whatif-math-head">Future value</div>
               <ul>
-                <li><b>Starting balance:</b> ${fmt$0(b.invested)} — sum of your investment accounts (Plaid brokerage/retirement + manual investments + crypto).</li>
-                <li><b>Monthly contribution:</b> ${fmt$0(b.baseMonthly)} base + slider — your retirement contribution from Settings, or your monthly savings target if that's unset.</li>
-                <li><b>Annual return:</b> ${b.annualReturn.toFixed(1)}% — <span class="muted">nominal</span> (before inflation). Computed as a weighted blend of your mix:
+                <li><b>Starting balance:</b> ${fmt$0(b.invested)}, sum of your investment accounts (Plaid brokerage/retirement + manual investments + crypto).</li>
+                <li><b>Monthly contribution:</b> ${fmt$0(b.baseMonthly)} base + slider, your retirement contribution from Settings, or your monthly savings target if that's unset.</li>
+                <li><b>Annual return:</b> ${b.annualReturn.toFixed(1)}%, <span class="muted">nominal</span> (before inflation). Computed as a weighted blend of your mix:
                   ${port.rows.filter(r => +r.alloc > 0).map(r => `<code>${r.alloc}%×${r.rate}%</code>`).join(" + ")}
                   ÷ ${port.rows.reduce((s,r)=>s+(+r.alloc||0),0)}%.
                   Defaults — S&amp;P 500 ~11%, bonds ~4%, HYSA ~4.5%, crypto highly variable. Edit any cell to use your own number.</li>
-                <li><b>Formula:</b> balance compounds monthly — each month grows by <code>1 + (annual_return / 12)</code>, then contribution is added.</li>
+                <li><b>Formula:</b> balance compounds monthly, each month grows by <code>1 + (annual_return / 12)</code>, then contribution is added.</li>
                 <li><b>Inflation:</b> not subtracted here. $1M in 20 years is worth less than $1M today. A rough rule of thumb: subtract 3% from the blended rate to estimate "real" purchasing power.</li>
               </ul>
             </div>
@@ -9320,13 +9320,13 @@ function whatIfCardHtml() {
               <div class="whatif-math-head">Debt payoff</div>
               <ul>
                 <li><b>Total debt:</b> ${fmt$0(totalDebt)} across all credit cards, loans, and manual liabilities.</li>
-                <li><b>Strategy:</b> <code>${debtStrategy === "avalanche" ? "avalanche" : "snowball"}</code> — ${debtStrategy === "avalanche" ? "extra payment goes to highest-APR debt first (saves the most interest)." : "extra payment goes to smallest balance first (faster psychological wins)."} Switch in <button onclick="debtSettingsSheet&&debtSettingsSheet()" class="whatif-inline-btn">Debt settings</button>.</li>
+                <li><b>Strategy:</b> <code>${debtStrategy === "avalanche" ? "avalanche" : "snowball"}</code>, ${debtStrategy === "avalanche" ? "extra payment goes to highest-APR debt first (saves the most interest)." : "extra payment goes to smallest balance first (faster psychological wins)."} Switch in <button onclick="debtSettingsSheet&&debtSettingsSheet()" class="whatif-inline-btn">Debt settings</button>.</li>
                 <li><b>Each month:</b> we pay minimums on every debt + the slider's extra dollars on the target debt, accrue APR on remaining balances, repeat until everything's zero.</li>
                 <li><b>Interest saved</b> compares total interest paid in the baseline (minimums only) vs with the slider extra.</li>
               </ul>
             </div>
           ` : ""}
-          <div class="whatif-math-disclaim">Educational projection — not a guarantee. Real returns swing year-to-year; this assumes a smooth long-run average. Past performance isn't future performance.</div>
+          <div class="whatif-math-disclaim">Educational projection, not a guarantee. Real returns swing year-to-year; this assumes a smooth long-run average. Past performance isn't future performance.</div>
         </div>
       </details>
     </div>
@@ -9900,7 +9900,7 @@ function renderMoney() {
   const overlapBanner = overlap.length ? `
     <div style="background:rgba(255,149,0,0.08);border:1px solid rgba(255,149,0,0.30);border-radius:12px;padding:12px 14px;margin-bottom:12px;font-size:12.5px;line-height:1.5">
       <div style="color:var(--orange);font-weight:700;margin-bottom:3px">⚠ Duplicate holdings detected</div>
-      <div style="color:var(--t2)">${overlap.length === 1 ? "<b>" + esc(overlap[0]) + "</b> is" : "<b>" + esc(overlap.slice(0,3).join(", ")) + (overlap.length>3?" +"+(overlap.length-3):"") + "</b> are"} tracked in both your synced brokerage AND the Stocks tab. Net worth uses the synced value — the manual entry is being ignored to prevent double-counting.</div>
+      <div style="color:var(--t2)">${overlap.length === 1 ? "<b>" + esc(overlap[0]) + "</b> is" : "<b>" + esc(overlap.slice(0,3).join(", ")) + (overlap.length>3?" +"+(overlap.length-3):"") + "</b> are"} tracked in both your synced brokerage AND the Stocks tab. Net worth uses the synced value, the manual entry is being ignored to prevent double-counting.</div>
       <div style="color:var(--t3);font-size:11px;margin-top:5px">Fix: remove the manual entry on the Stocks tab if these are the same positions, or use only one source per ticker.</div>
     </div>
   ` : "";
@@ -9918,7 +9918,7 @@ function renderMoney() {
         ${liabOverlap.length ? liabOverlap.map(o => `<div style="margin:3px 0">"<b>${esc(o.manual.name)}</b>" (debt, ${fmt$0(+o.manual.balance||0)}) looks like "<b>${esc(o.account.name)}</b>" (synced, ${fmt$0(+o.account.balance_current||0)})</div>`).join("") : ""}
         ${assetOverlap.length ? assetOverlap.map(o => `<div style="margin:3px 0">"<b>${esc(o.manual.name)}</b>" (asset, ${fmt$0(+o.manual.value||0)}) looks like "<b>${esc(o.account.name)}</b>" (synced, ${fmt$0(+o.account.balance_current||0)})</div>`).join("") : ""}
       </div>
-      <div style="color:var(--t3);font-size:11px;margin-top:5px">Net worth is counting both. Remove whichever you don't need — the synced version is usually canonical.</div>
+      <div style="color:var(--t3);font-size:11px;margin-top:5px">Net worth is counting both. Remove whichever you don't need, the synced version is usually canonical.</div>
     </div>
   ` : "";
   const counselorTeaser = `
@@ -9927,7 +9927,7 @@ function renderMoney() {
       <div style="width:32px;height:32px;border-radius:50%;background:rgba(137,87,217,0.12);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0;color:var(--purple);margin-right:10px">✨</div>
       <div class="body">
         <div class="t1" style="margin:0;font-size:13.5px">Talk to Cornileus</div>
-        <div class="t2" style="font-size:11.5px">Your financial counselor — budget, debt, investing</div>
+        <div class="t2" style="font-size:11.5px">Your financial counselor, budget, debt, investing</div>
       </div>
       <div class="trail chev"></div>
     </div>
@@ -9951,7 +9951,7 @@ function renderMoney() {
       <div style="font-size:24px;flex-shrink:0">🏦</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:13.5px;font-weight:600;color:var(--t1)">Tired of typing transactions?</div>
-        <div style="font-size:11.5px;color:var(--t2);margin-top:2px">Connect a bank — your spend, balances, holdings, and APRs sync automatically.</div>
+        <div style="font-size:11.5px;color:var(--t2);margin-top:2px">Connect a bank, your spend, balances, holdings, and APRs sync automatically.</div>
       </div>
       <button class="del-x" onclick="event.stopPropagation();DB.settings._dismissedBankCTA=true;save();render();" title="Dismiss">×</button>
     </div>
@@ -10195,7 +10195,7 @@ function renderMoney() {
 
       ${milestonesHtml}
 
-      <div class="section-h"><span class="lbl">Savings goals — time to target</span>${savingsForecasts.length ? `<button class="act" style="font-size:11.5px;color:var(--purple)" onclick="openCounselor(${jsAttr(`Looking at my savings goals: ${savingsForecasts.map(f => `${f.name} (${fmt$0(f.remaining)} to go)`).join("; ")}. Which should I prioritize and why?`)})">✨ Ask</button>` : ""}</div>
+      <div class="section-h"><span class="lbl">Savings goals, time to target</span>${savingsForecasts.length ? `<button class="act" style="font-size:11.5px;color:var(--purple)" onclick="openCounselor(${jsAttr(`Looking at my savings goals: ${savingsForecasts.map(f => `${f.name} (${fmt$0(f.remaining)} to go)`).join("; ")}. Which should I prioritize and why?`)})">✨ Ask</button>` : ""}</div>
       ${savingsForecasts.length ? `
         <div class="list">
           ${savingsForecasts.map(f => `
@@ -10296,7 +10296,7 @@ function renderMoney() {
       .sort((a, b) => b.pct - a.pct);
     const totalSpent = planVsActual.reduce((a, r) => a + r.actual, 0);
     const pvaHtml = planVsActual.length ? `
-      <div class="section-h"><span class="lbl">This month — spent vs budget</span><span class="muted" style="font-size:12px"><span data-priv="amount">${fmt$0(totalSpent)}</span> of <span data-priv="amount">${fmt$0(tot)}</span></span></div>
+      <div class="section-h"><span class="lbl">This month, spent vs budget</span><span class="muted" style="font-size:12px"><span data-priv="amount">${fmt$0(totalSpent)}</span> of <span data-priv="amount">${fmt$0(tot)}</span></span></div>
       <div style="background:var(--card);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
         ${planVsActual.map((r, i) => {
           const color = r.pct >= 100 ? "var(--red)" : r.pct >= 90 ? "var(--orange)" : r.pct >= 60 ? "var(--yellow)" : "var(--green)";
@@ -10346,7 +10346,7 @@ function renderMoney() {
           <div onclick="addExpenseInline()" role="button" tabindex="0" style="background:var(--bg-elev);border:0.5px dashed var(--sep);border-radius:var(--r);padding:18px 14px;text-align:center;cursor:pointer">
             <div style="font-size:28px;margin-bottom:6px">📂</div>
             <div style="font-size:13.5px;font-weight:600;color:var(--t1);margin-bottom:4px">Set up your budget categories</div>
-            <div style="font-size:11.5px;color:var(--t3);line-height:1.45">Rent, groceries, eating out, subscriptions, fun money — whatever you actually spend on.</div>
+            <div style="font-size:11.5px;color:var(--t3);line-height:1.45">Rent, groceries, eating out, subscriptions, fun money, whatever you actually spend on.</div>
             <div style="font-size:11.5px;color:var(--blue);font-weight:600;margin-top:8px">+ Add first category</div>
           </div>
         `}
@@ -10851,7 +10851,7 @@ function renderMoney() {
             <div class="lead">💼</div>
             <div class="body">
               <div class="t1">Income strategies</div>
-              <div class="t2">${INCOME_STRATEGIES.length} ways to grow earnings — the other half of wealth</div>
+              <div class="t2">${INCOME_STRATEGIES.length} ways to grow earnings, the other half of wealth</div>
             </div>
             <div class="trail chev"></div>
           </div>
@@ -10996,7 +10996,7 @@ function renderMoney() {
                 <div class="lead">🪣</div>
                 <div class="body">
                   <div class="t1">Smooth out irregular bills</div>
-                  <div class="t2">Car insurance, gifts, vacation — monthly savings toward annual lumps</div>
+                  <div class="t2">Car insurance, gifts, vacation, monthly savings toward annual lumps</div>
                 </div>
                 <div class="trail chev"></div>
               </div>
@@ -11093,7 +11093,7 @@ function renderMoney() {
               <div class="trail" style="font-weight:600;color:var(--t1)" data-priv="amount">${fmt$0(a.value)}</div>
             </div>
           `;
-        }).join("") : `<div class="row"><div class="body"><div class="t2 muted">No manual assets yet — track your home, car, crypto, and other things not in your bank.</div></div></div>`}
+        }).join("") : `<div class="row"><div class="body"><div class="t2 muted">No manual assets yet, track your home, car, crypto, and other things not in your bank.</div></div></div>`}
       </div>
 
       <div class="section-h"><span class="lbl">Debts (manual)</span><button class="act" onclick="liabilitySheet()">+ Add</button></div>
@@ -11110,7 +11110,7 @@ function renderMoney() {
               <div class="trail" style="font-weight:600;color:var(--red)" data-priv="amount">${fmt$0(l.balance)}</div>
             </div>
           `;
-        }).join("") : `<div class="row"><div class="body"><div class="t2 muted">No manual debts yet — student loans, money owed to family, etc.</div></div></div>`}
+        }).join("") : `<div class="row"><div class="body"><div class="t2 muted">No manual debts yet, student loans, money owed to family, etc.</div></div></div>`}
       </div>
 
       ${(DB.liabilities||[]).length ? `
@@ -11482,7 +11482,7 @@ function renderMoney() {
         const today3 = new Date();
         const next5 = bills.slice().sort((a,b) => a.days - b.days).slice(0, 5);
         return `
-          <div class="section-h"><span class="lbl">Bills · next 30 days</span><span style="display:flex;gap:10px;align-items:center"><span class="muted" style="font-size:12px">${bills.length} · <span data-priv="amount">${fmt$0(totalSum)}</span></span><button class="act" style="font-size:11.5px;color:var(--purple)" onclick="openCounselor(${jsAttr(`I have ${bills.length} bills coming up in the next 30 days totaling $${Math.round(totalSum)}. Biggest: ${next5.map(b => `${b.merchant} $${Math.round(b.amount)} (in ${b.days}d)`).join("; ")}. Help me plan cash flow — which should I prepay, batch, or negotiate?`)})">✨ Ask</button></span></div>
+          <div class="section-h"><span class="lbl">Bills · next 30 days</span><span style="display:flex;gap:10px;align-items:center"><span class="muted" style="font-size:12px">${bills.length} · <span data-priv="amount">${fmt$0(totalSum)}</span></span><button class="act" style="font-size:11.5px;color:var(--purple)" onclick="openCounselor(${jsAttr(`I have ${bills.length} bills coming up in the next 30 days totaling $${Math.round(totalSum)}. Biggest: ${next5.map(b => `${b.merchant} $${Math.round(b.amount)} (in ${b.days}d)`).join("; ")}. Help me plan cash flow, which should I prepay, batch, or negotiate?`)})">✨ Ask</button></span></div>
           <div style="background:var(--card);border-radius:var(--r);padding:16px 18px;margin-bottom:14px;border:0.5px solid var(--sep);box-shadow:var(--sh-1)">
             <div style="display:flex;gap:2px;height:48px;align-items:flex-end">
               ${cells.map((c, i) => {
@@ -11532,7 +11532,7 @@ function renderMoney() {
                 <div style="font-size:12px;color:var(--t3)">Annual subscription cost</div>
                 <div style="font-size:20px;font-weight:700;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${fmt$0(totalYearly)}/yr</div>
               </div>
-              <div style="font-size:11.5px;color:var(--t3);margin-top:4px;margin-bottom:10px">≈ <b style="color:var(--t1)" data-priv="amount">${fmt$0(tenYear)}</b> over 10 years — every cancellation compounds</div>
+              <div style="font-size:11.5px;color:var(--t3);margin-top:4px;margin-bottom:10px">≈ <b style="color:var(--t1)" data-priv="amount">${fmt$0(tenYear)}</b> over 10 years, every cancellation compounds</div>
               <button onclick="openCounselor(${jsAttr(`My subscriptions cost $${Math.round(totalMonthly)}/mo, $${Math.round(totalYearly)}/yr, ~$${Math.round(tenYear).toLocaleString()} over 10 years. Active subscriptions: ${visible.filter(s => s.status === "active").map(s => `${s.merchant} ($${Math.round(s.monthly_cost)}/mo)`).join(", ")}. Which 1-2 should I cancel and why? Be honest.`)})" style="background:rgba(137,87,217,0.12);border:0.5px solid var(--purple);color:var(--purple);padding:6px 10px;border-radius:var(--r-pill,999px);font-size:11.5px;cursor:pointer;font-weight:600">✨ Which should I cancel?</button>
             </div>
           ` : ""}
@@ -12164,9 +12164,9 @@ function renderStats() {
             <div style="font-size:11px;color:var(--t4);margin-top:8px">${last.date} · ${esc(last.model||"")}</div>
             <button class="btn" style="width:100%;margin-top:12px;background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;border:none;font-size:13px" onclick="openCounselor()">✨ Talk to Cornileus</button>
           ` : `
-            <div style="font-size:13.5px;color:var(--t1);line-height:1.5;margin-bottom:10px">Get a candid review of your spending, goals, and next moves — like a fee-only planner who knows your numbers.</div>
+            <div style="font-size:13.5px;color:var(--t1);line-height:1.5;margin-bottom:10px">Get a candid review of your spending, goals, and next moves, like a fee-only planner who knows your numbers.</div>
             <button class="btn" style="width:100%;background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;border:none" onclick="openCounselor()">✨ Talk to Cornileus</button>
-            <div style="font-size:11px;color:var(--t4);margin-top:8px;text-align:center">Educational guidance — not licensed advice</div>
+            <div style="font-size:11px;color:var(--t4);margin-top:8px;text-align:center">Educational guidance, not licensed advice</div>
           `}
         </div>
       `;
@@ -12403,7 +12403,7 @@ function renderStats() {
         ? "Plenty of room to capture more wins."
         : "No wins yet this month — log one in the Today tab when something good happens.";
       return `
-        <div class="section-h"><span class="lbl">Wins — last 28 days</span><span class="muted" style="font-size:12px">${daysWithWins}/${days} days · ${totalWins} total</span></div>
+        <div class="section-h"><span class="lbl">Wins, last 28 days</span><span class="muted" style="font-size:12px">${daysWithWins}/${days} days · ${totalWins} total</span></div>
         <div style="background:var(--card);border-radius:var(--r);padding:18px;border:0.5px solid var(--sep);box-shadow:var(--sh-1);margin-bottom:14px">
           <div style="display:grid;grid-template-columns:repeat(7,1fr);gap:5px">
             ${cells.map(c => `
@@ -12514,7 +12514,7 @@ function renderStocks() {
 
     <!-- Quick add + browse + scan -->
     <div style="display:flex;gap:6px;margin-bottom:12px">
-      <input id="stk-add-input" placeholder="Add ticker — e.g. AAPL" autocapitalize="characters" autocorrect="off"
+      <input id="stk-add-input" placeholder="Add ticker, e.g. AAPL" autocapitalize="characters" autocorrect="off"
         style="flex:1;background:var(--card);padding:11px 14px;border-radius:var(--r3, 10px);font-size:14px;border:0.5px solid var(--sep);color:var(--t1);box-sizing:border-box;min-width:0"
         onkeydown="if(event.key==='Enter'){event.preventDefault();_stocksAddTicker(this.value);}" />
       <button class="btn secondary" style="font-size:13px;padding:10px 12px;flex-shrink:0" onclick="tickerQuickSearchSheet()" aria-label="Browse popular tickers" title="Browse">🔍</button>
@@ -12562,7 +12562,7 @@ function renderStocks() {
       </div>
       <div class="row tappable" onclick="marketScanSheet()" role="button" tabindex="0">
         <div class="lead">🔍</div>
-        <div class="body"><div class="t1">Market scan</div><div class="t2">Scan S&amp;P 500, ETFs, REITs — find buys/sells across hundreds of tickers</div></div>
+        <div class="body"><div class="t1">Market scan</div><div class="t2">Scan S&amp;P 500, ETFs, REITs, find buys/sells across hundreds of tickers</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="stockScreenerSheet()" role="button" tabindex="0">
@@ -12577,7 +12577,7 @@ function renderStocks() {
       </div>
       <div class="row tappable" onclick="startInvestingSheet()" role="button" tabindex="0" style="background:linear-gradient(135deg,rgba(14,165,233,0.10),rgba(124,58,237,0.06));border-left:3px solid #0ea5e9">
         <div class="lead">🚀</div>
-        <div class="body"><div class="t1">Start investing — guided</div><div class="t2">Pick a starter portfolio · risk quiz · compound interest visualizer</div></div>
+        <div class="body"><div class="t1">Start investing, guided</div><div class="t2">Pick a starter portfolio · risk quiz · compound interest visualizer</div></div>
         <div class="trail chev"></div>
       </div>
       ${DB.settings._stocksShowAllTools ? `
@@ -12613,7 +12613,7 @@ function renderStocks() {
       </div>
       <div class="row tappable" onclick="learnLibrarySheet()" role="button" tabindex="0">
         <div class="lead">🎓</div>
-        <div class="body"><div class="t1">Learn the basics</div><div class="t2">P/E, beta, RSI, dividends — explained plainly</div></div>
+        <div class="body"><div class="t1">Learn the basics</div><div class="t2">P/E, beta, RSI, dividends, explained plainly</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="compoundVisualSheet()" role="button" tabindex="0">
@@ -12633,7 +12633,7 @@ function renderStocks() {
       </div>
       <div class="row tappable" onclick="performanceAttributionSheet()" role="button" tabindex="0">
         <div class="lead">📊</div>
-        <div class="body"><div class="t1">Performance attribution</div><div class="t2">Who's driving your P&amp;L — contributors and detractors</div></div>
+        <div class="body"><div class="t1">Performance attribution</div><div class="t2">Who's driving your P&amp;L, contributors and detractors</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="taxLossHarvestSheet()" role="button" tabindex="0">
@@ -12653,7 +12653,7 @@ function renderStocks() {
       </div>
       <div class="row tappable" onclick="portfolioForecastSheet()" role="button" tabindex="0">
         <div class="lead">🔮</div>
-        <div class="body"><div class="t1">Portfolio forecast</div><div class="t2">Where your money could be in 1/5/10/30 years — bear/base/bull bands</div></div>
+        <div class="body"><div class="t1">Portfolio forecast</div><div class="t2">Where your money could be in 1/5/10/30 years, bear/base/bull bands</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="planPresetsSheet()" role="button" tabindex="0">
@@ -12663,7 +12663,7 @@ function renderStocks() {
       </div>
       <div class="row tappable" onclick="importStocksCsvSheet()" role="button" tabindex="0">
         <div class="lead">📥</div>
-        <div class="body"><div class="t1">Import holdings (CSV)</div><div class="t2">Paste ticker,shares,cost — bulk add positions</div></div>
+        <div class="body"><div class="t1">Import holdings (CSV)</div><div class="t2">Paste ticker,shares,cost, bulk add positions</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="exportStocksCsv()" role="button" tabindex="0">
@@ -12991,7 +12991,7 @@ function _stocksRenderPortfolio() {
       </div>
       <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
         <div style="font-size:32px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums;letter-spacing:-0.02em" data-priv="amount">${fmt$2(mkt)}</div>
-        <div style="font-size:28px;line-height:1" title="Portfolio mood — today's % move">${moodEmoji}</div>
+        <div style="font-size:28px;line-height:1" title="Portfolio mood, today's % move">${moodEmoji}</div>
       </div>
       <div style="display:flex;gap:14px;font-size:12.5px;margin-top:4px;flex-wrap:wrap;font-variant-numeric:tabular-nums">
         <div><span style="color:var(--t3)">Today</span> <b style="color:${dayColor}" data-priv="amount">${dayChange >= 0 ? "+" : "-"}${fmt$2(Math.abs(dayChange))}</b> <span style="color:${dayColor}">(${dayChange >= 0 ? "+" : ""}${(dayChangePct * 100).toFixed(2)}%)</span></div>
@@ -13468,7 +13468,7 @@ function taxLossHarvestSheet() {
           </div>
         </div>
       `).join("")}
-    ` : `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:13px;font-style:italic">No unrealized losses — every position is in the green.</div>`}
+    ` : `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:13px;font-style:italic">No unrealized losses, every position is in the green.</div>`}
     <div style="background:var(--bg-elev);border-radius:10px;padding:10px 12px;margin-top:12px;font-size:11.5px;color:var(--t2);line-height:1.5">
       ⚠️ <b style="color:var(--t1)">Wash-sale rule</b> — if you sell at a loss and buy the same (or "substantially identical") security within 30 days before or after, the IRS disallows the loss. Wait at least 31 days, or buy a similar-but-not-identical replacement.
     </div>
@@ -13582,7 +13582,7 @@ const PLAN_PRESETS = [
 function planPresetsSheet() {
   openSheet(`
     <h2 style="margin-bottom:4px">📐 Plan presets</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Common goals with realistic defaults — tap one to load it.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Common goals with realistic defaults, tap one to load it.</p>
     ${PLAN_PRESETS.map(p => `
       <div onclick="_stocksLoadPreset(${jsAttr(p.id)})" role="button" tabindex="0" style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:12px 14px;margin-bottom:6px;cursor:pointer">
         <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:3px">
@@ -13700,7 +13700,7 @@ function startInvestingSheet() {
   }
   openSheet(`
     <h2 style="margin-bottom:4px">🚀 Start investing</h2>
-    <p class="muted" style="font-size:13px;margin-bottom:14px;line-height:1.5">Pick a starter portfolio. You don't have to know what each ticker does — we'll explain. Tap one to load it into your watchlist + see the math.</p>
+    <p class="muted" style="font-size:13px;margin-bottom:14px;line-height:1.5">Pick a starter portfolio. You don't have to know what each ticker does, we'll explain. Tap one to load it into your watchlist + see the math.</p>
     <button class="btn" style="width:100%;margin-bottom:12px;font-size:13px;padding:11px;background:var(--grad-cornileus);color:#fff;border:none" onclick="riskToleranceQuizSheet()">🧭 Take the 4-question risk quiz first</button>
     <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Starter portfolios</div>
     ${STK_STARTER_PORTFOLIOS.map(p => `
@@ -13718,7 +13718,7 @@ function startInvestingSheet() {
         </div>
       </div>
     `).join("")}
-    <button class="btn secondary" style="width:100%;margin-top:8px;font-size:12.5px;padding:9px" onclick="compoundVisualSheet()">📈 See how $X/mo compounds — interactive</button>
+    <button class="btn secondary" style="width:100%;margin-top:8px;font-size:12.5px;padding:9px" onclick="compoundVisualSheet()">📈 See how $X/mo compounds, interactive</button>
     <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
   `);
 }
@@ -14029,7 +14029,7 @@ async function portfolioForecastSheet() {
   const monthlyContrib = retire.monthlyContribution || (DB.profile && DB.profile.monthlySavingsTarget) || 0;
   openSheet(`
     <h2 style="margin-bottom:4px">🔮 Portfolio forecast</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:12px">Where your investments could be over time — based on each holding's own history and a monthly contribution.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:12px">Where your investments could be over time, based on each holding's own history and a monthly contribution.</p>
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:10px">
       <div>
         <label style="font-size:11px">Monthly contribution ($)</label>
@@ -14183,7 +14183,7 @@ function _stocksPortfolioForecast() {
         Today's portfolio <b style="color:var(--t1)" data-priv="amount">${fmt(totalNow)}</b>${monthly > 0 ? ` + ${monthly.toFixed(0)}/mo × ${months}mo = <b data-priv="amount">${fmt(totalContrib)}</b> contributed (total in: <b data-priv="amount">${fmt(totalIn)}</b>)` : ""}.
         ${endBase > totalIn ? `Compound growth adds <b style="color:var(--green)" data-priv="amount">${fmt(endBase - totalIn)}</b> in the base case.` : ""}
       </div>
-      <div style="font-size:10.5px;color:var(--t3);margin-top:8px;line-height:1.4;font-style:italic">Aggregated per-ticker GBM. Each holding uses its own 5y drift/vol — concentration shows up. Doesn't model correlation, rebalancing, dividends, or tax.</div>
+      <div style="font-size:10.5px;color:var(--t3);margin-top:8px;line-height:1.4;font-style:italic">Aggregated per-ticker GBM. Each holding uses its own 5y drift/vol, concentration shows up. Doesn't model correlation, rebalancing, dividends, or tax.</div>
     </div>
   `;
 }
@@ -14886,7 +14886,7 @@ async function cornileusAdvisorSheet() {
   const fresh = last && last.date === today && last.parsed;
   openSheet(`
     <h2 style="margin-bottom:4px">✨ Cornileus as your advisor</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Reads everything — net worth, income, debts, holdings, goals — and tells you exactly what to do next.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">Reads everything, net worth, income, debts, holdings, goals — and tells you exactly what to do next.</p>
     <div id="adv-result">${fresh ? _stocksRenderAdvisor(last.parsed) : `<div style="text-align:center;padding:30px 14px;color:var(--t3);font-size:13px">📊 Cornileus is reading your complete financial picture…</div>`}</div>
     <div class="actions">
       <button class="btn secondary" onclick="DB.stocks.lastAdvisorReview=null;cornileusAdvisorSheet()">↻ Regenerate</button>
@@ -15257,7 +15257,7 @@ async function weeklyDigestSheet() {
   const fresh = last && last.date === today && last.parsed;
   openSheet(`
     <h2 style="margin-bottom:4px">📰 Weekly digest</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px">${esc(today)} — Cornileus' read on your week.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">${esc(today)}, Cornileus' read on your week.</p>
     <div id="dig-result">${fresh ? _stocksRenderDigest(last.parsed) : `<div style="text-align:center;padding:30px 14px;color:var(--t3);font-size:13px">📊 Reading your portfolio + the market…</div>`}</div>
     <div class="actions">
       <button class="btn secondary" onclick="DB.stocks.lastWeeklyDigest=null;weeklyDigestSheet()">↻ Regenerate</button>
@@ -15487,7 +15487,7 @@ async function _stocksLoadEtf(tk) {
     const data = await r.json();
     if (!r.ok || data.error) throw new Error(data.error || "HTTP " + r.status);
     if (!data.etf) {
-      out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px;color:var(--t3);font-size:13px;text-align:center">${esc(tk)} isn't an ETF or mutual fund — no inside-the-fund data.</div>`;
+      out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px;color:var(--t3);font-size:13px;text-align:center">${esc(tk)} isn't an ETF or mutual fund, no inside-the-fund data.</div>`;
       return;
     }
     out.innerHTML = _stocksRenderEtf(data);
@@ -16694,7 +16694,7 @@ function cornileusFollowupsSheet() {
       ${cornAvatarHtml(44, false, "curious")}
       <div style="flex:1;min-width:0">
         <h2 style="margin:0">📋 Followups</h2>
-        <div class="muted" style="font-size:12.5px;margin-top:2px">Things Cornileus suggested — did you do them?</div>
+        <div class="muted" style="font-size:12.5px;margin-top:2px">Things Cornileus suggested, did you do them?</div>
       </div>
     </div>
     <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px;margin-top:12px;margin-bottom:14px">
@@ -16907,7 +16907,7 @@ function hoursOfLifeSetupSheet() {
   const cur = DB.hoursOfLifeRate || null;
   openSheet(`
     <h2 style="margin-bottom:4px">⏳ Hours of your life</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Set your effective hourly wage (after-tax). Every dollar amount in the app will optionally show "= X hours of your life" — your time priced honestly.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Set your effective hourly wage (after-tax). Every dollar amount in the app will optionally show "= X hours of your life", your time priced honestly.</p>
     <label>Effective hourly wage ($/hr after-tax)</label>
     <input id="hol-rate" type="number" inputmode="decimal" min="0" step="0.5" value="${esc(cur || "")}" placeholder="e.g. 35 (annual ÷ 2080)"
       style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:14px;box-sizing:border-box" />
@@ -17128,7 +17128,7 @@ function cornileusRulesSheet() {
         <div style="flex:1;font-size:12.5px;color:var(--t1);line-height:1.45">${esc(r.rule)}</div>
         <button onclick="_rulesRemove(${jsAttr(r.id)})" style="background:transparent;border:0;color:var(--red);font-size:14px;padding:0 2px;cursor:pointer;flex-shrink:0" aria-label="Remove">×</button>
       </div>
-    `).join("") : `<div style="text-align:center;padding:18px 14px;color:var(--t3);font-size:12.5px;font-style:italic">No rules yet. Add your own financial commandments — Cornileus checks every reply against them.</div>`}
+    `).join("") : `<div style="text-align:center;padding:18px 14px;color:var(--t3);font-size:12.5px;font-style:italic">No rules yet. Add your own financial commandments, Cornileus checks every reply against them.</div>`}
     <div style="background:var(--bg-elev);border-radius:10px;padding:10px 12px;margin-top:14px;font-size:11px;color:var(--t2);line-height:1.5">
       <b style="color:var(--t1)">Examples:</b> "Never finance depreciating assets" · "Always negotiate annual contracts" · "Sell when P/E &gt; 35" · "Cash position never below 3 months expenses" · "Max retirement accounts before taxable investing" · "Donate 10% of income annually".
     </div>
@@ -17560,7 +17560,7 @@ function skillTreeSheet() {
       </div>
     </div>
     ${totalTiers.map(t => `
-      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:14px 0 6px">Tier ${t} — ${esc(tierLabels[t] || "")}</div>
+      <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin:14px 0 6px">Tier ${t}, ${esc(tierLabels[t] || "")}</div>
       <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:6px">
         ${tiers[t].map(n => {
           const isEarned = earned[n.id];
@@ -17820,7 +17820,7 @@ function moneyMoodPatternsSheet() {
   if (!tagged.length) {
     openSheet(`
       <h2 style="margin-bottom:4px">😶 Money mood</h2>
-      <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">No mood-tagged transactions yet. When you log a transaction, optionally pick the emotion driving it — patterns emerge fast.</p>
+      <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">No mood-tagged transactions yet. When you log a transaction, optionally pick the emotion driving it, patterns emerge fast.</p>
       <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
     `);
     return;
@@ -17996,7 +17996,7 @@ function wishlistSheet() {
             ${w.url ? `<div style="font-size:10.5px;color:var(--t3);margin-bottom:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><a href="${esc(w.url)}" target="_blank" rel="noopener" style="color:var(--blue);text-decoration:none">${esc(w.url)} ↗</a></div>` : ""}
             <div style="display:flex;gap:6px">
               <button onclick="_wlDecide(${jsAttr(w.id)}, 'buy')" ${ready ? "" : "disabled"} style="flex:1;background:${ready?'var(--green)':'var(--bg-elev)'};color:${ready?'#fff':'var(--t3)'};border:0;border-radius:6px;padding:6px 8px;font-size:11.5px;font-weight:700;cursor:${ready?'pointer':'not-allowed'};opacity:${ready?1:0.5}">✓ Bought it</button>
-              <button onclick="_wlDecide(${jsAttr(w.id)}, 'skip')" style="flex:1;background:var(--bg-elev);color:var(--t1);border:0.5px solid var(--sep);border-radius:6px;padding:6px 8px;font-size:11.5px;font-weight:600;cursor:pointer">✗ Skip — don't want anymore</button>
+              <button onclick="_wlDecide(${jsAttr(w.id)}, 'skip')" style="flex:1;background:var(--bg-elev);color:var(--t1);border:0.5px solid var(--sep);border-radius:6px;padding:6px 8px;font-size:11.5px;font-weight:600;cursor:pointer">✗ Skip, don't want anymore</button>
               <button onclick="_wlRemove(${jsAttr(w.id)})" style="background:transparent;color:var(--t3);border:0;font-size:14px;padding:0 6px;cursor:pointer">×</button>
             </div>
           </div>
@@ -18239,7 +18239,7 @@ function paperTradingSheet() {
     </div>
     <input id="pt-price" type="number" placeholder="Price per share"
       style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;margin-bottom:6px;box-sizing:border-box" />
-    <input id="pt-note" placeholder="Note — why you're doing this (optional)"
+    <input id="pt-note" placeholder="Note, why you're doing this (optional)"
       style="background:var(--bg-elev);padding:10px 12px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:13px;margin-bottom:10px;box-sizing:border-box" />
     <button class="btn" style="width:100%;margin-bottom:14px" onclick="_ptAdd()">+ Log paper trade</button>
     ${openPositions.length ? `
@@ -18272,7 +18272,7 @@ function paperTradingSheet() {
           <button onclick="_ptRemove(${jsAttr(t.id)})" style="background:transparent;border:0;color:var(--t3);font-size:13px;padding:0 4px;cursor:pointer">×</button>
         </div>
       `).join("")}
-    ` : `<div style="text-align:center;padding:18px 14px;color:var(--t3);font-size:12.5px;font-style:italic;background:var(--bg-elev);border-radius:10px;line-height:1.5">No paper trades yet. Log your first hypothetical buy above — see if your conviction holds up before risking real money.</div>`}
+    ` : `<div style="text-align:center;padding:18px 14px;color:var(--t3);font-size:12.5px;font-style:italic;background:var(--bg-elev);border-radius:10px;line-height:1.5">No paper trades yet. Log your first hypothetical buy above, see if your conviction holds up before risking real money.</div>`}
     <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
   `);
   setTimeout(() => { const el = document.getElementById("pt-ticker"); if (el) el.focus(); }, 60);
@@ -18475,7 +18475,7 @@ function fuMoneySheet() {
   const fmt = (v) => v >= 1e6 ? "$" + (v/1e6).toFixed(2) + "M" : v >= 1e3 ? "$" + (v/1e3).toFixed(0) + "K" : "$" + Math.round(v);
   openSheet(`
     <h2 style="margin-bottom:4px">💸 FU money</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">"Fuck You money" — the amount that gives you optionality. Five tiers. Built from your real annual expenses <span data-priv="amount">($${(annualExpense).toLocaleString()})</span>.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">"Fuck You money", the amount that gives you optionality. Five tiers. Built from your real annual expenses <span data-priv="amount">($${(annualExpense).toLocaleString()})</span>.</p>
     ${currentNW > 0 ? `
       <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:10px;padding:11px 13px;margin-bottom:14px;text-align:center">
         <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Your current net worth</div>
@@ -18625,7 +18625,7 @@ function _r72Recompute() {
           <span style="font-size:13.5px;color:var(--t1);font-weight:700" data-priv="amount">${fmt(p.value)}</span>
         </div>
       `).join("")}
-      <div style="font-size:11.5px;color:var(--t2);margin-top:10px;line-height:1.5;text-align:center">${fmt(start)} doubles to <b style="color:var(--green)" data-priv="amount">${fmt(points[points.length-1].value)}</b> after ${points[points.length-1].years} years — that's <b style="color:var(--t1)">${Math.round(points[points.length-1].value / start)}×</b> from a single decision today.</div>
+      <div style="font-size:11.5px;color:var(--t2);margin-top:10px;line-height:1.5;text-align:center">${fmt(start)} doubles to <b style="color:var(--green)" data-priv="amount">${fmt(points[points.length-1].value)}</b> after ${points[points.length-1].years} years, that's <b style="color:var(--t1)">${Math.round(points[points.length-1].value / start)}×</b> from a single decision today.</div>
     </div>
   `;
 }
@@ -18704,7 +18704,7 @@ async function _prRate(spendId, score, label, cost, boughtAt) {
     boughtAt, ratedAt: Date.now(), regretScore: +score,
   });
   await save();
-  toast(score >= 4 ? "Noted — that one stung" : score <= 2 ? "✓ Money well spent" : "Recorded");
+  toast(score >= 4 ? "Noted, that one stung" : score <= 2 ? "✓ Money well spent" : "Recorded");
   purchaseRegretSheet();
 }
 
@@ -18821,7 +18821,7 @@ function _clRecompute() {
         </tbody>
       </table>
       <div style="font-size:11px;color:var(--t2);margin-top:12px;line-height:1.5">
-        Same $${fmt(start)}, three different rates, five different time horizons. <b>The biggest compounding gains aren't from finding a higher rate — they're from buying more decades.</b>
+        Same $${fmt(start)}, three different rates, five different time horizons. <b>The biggest compounding gains aren't from finding a higher rate, they're from buying more decades.</b>
       </div>
     </div>
   `;
@@ -19027,7 +19027,7 @@ function charitableSheet() {
   const allLog = DB.charitable.log.slice().reverse();
   openSheet(`
     <h2 style="margin-bottom:4px">🌍 Charitable giving</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Intentional giving — pick a % of income and track it. The point isn't just deduction. It's deciding now who you want to be.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Intentional giving, pick a % of income and track it. The point isn't just deduction. It's deciding now who you want to be.</p>
     <label>Target % of income to give annually</label>
     <input id="ch-pct" type="number" min="0" max="50" step="0.5" value="${esc(target)}"
       style="background:var(--bg-elev);padding:11px 14px;border-radius:10px;width:100%;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;margin-bottom:10px;box-sizing:border-box" />
@@ -19065,7 +19065,7 @@ function charitableSheet() {
           <button onclick="_chRemove(${jsAttr(g.id)})" style="background:transparent;border:0;color:var(--t3);font-size:14px;padding:0 6px;cursor:pointer;margin-left:6px">×</button>
         </div>
       `).join("")}
-    ` : `<div style="text-align:center;padding:18px 14px;color:var(--t3);font-size:12.5px;font-style:italic;background:var(--bg-elev);border-radius:10px;line-height:1.5">No donations logged yet. Log one above — even small. The act of writing it down changes how you see your money.</div>`}
+    ` : `<div style="text-align:center;padding:18px 14px;color:var(--t3);font-size:12.5px;font-style:italic;background:var(--bg-elev);border-radius:10px;line-height:1.5">No donations logged yet. Log one above, even small. The act of writing it down changes how you see your money.</div>`}
     <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
   `);
 }
@@ -19195,7 +19195,7 @@ function assetClassBreakdownSheet() {
         </div>
       </div>
     ` : ""}
-    <div style="font-size:10.5px;color:var(--t3);line-height:1.5;font-style:italic">Classification is heuristic from ticker symbols + account types — not perfect. Manually tag assets if needed. Real estate excludes mortgage; subtract that from net worth separately.</div>
+    <div style="font-size:10.5px;color:var(--t3);line-height:1.5;font-style:italic">Classification is heuristic from ticker symbols + account types, not perfect. Manually tag assets if needed. Real estate excludes mortgage; subtract that from net worth separately.</div>
     <div class="actions"><button class="btn" onclick="closeSheet()">Close</button></div>
   `);
 }
@@ -19208,7 +19208,7 @@ function insuranceAuditSheet() {
   const pct = Math.round((done / total) * 100);
   openSheet(`
     <h2 style="margin-bottom:4px">☂️ Insurance audit</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">6 categories of insurance. Each has plain-English "you need this if…" guidance. Educational — not licensed insurance advice.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">6 categories of insurance. Each has plain-English "you need this if…" guidance. Educational, not licensed insurance advice.</p>
     <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${pct === 100 ? 'var(--green)' : pct >= 50 ? 'var(--lime)' : 'var(--orange)'};border-radius:var(--r);padding:14px;margin-bottom:14px">
       <div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:6px">
         <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700">Coverage status</div>
@@ -19280,7 +19280,7 @@ function cornileusMemoriesSheet() {
         <div class="muted" style="font-size:12.5px;margin-top:2px">Facts Cornileus references in every conversation.</div>
       </div>
     </div>
-    <p style="font-size:12.5px;color:var(--t2);line-height:1.5;margin-bottom:12px">Things you tell Cornileus to remember about you — they show up in every system prompt, so he doesn't forget context across conversations.</p>
+    <p style="font-size:12.5px;color:var(--t2);line-height:1.5;margin-bottom:12px">Things you tell Cornileus to remember about you, they show up in every system prompt, so he doesn't forget context across conversations.</p>
     <label style="font-size:11px">Add a memory</label>
     <div style="display:flex;gap:6px;margin-bottom:14px">
       <input id="corn-mem-input" placeholder="e.g. I'm getting married in October 2026"
@@ -19296,7 +19296,7 @@ function cornileusMemoriesSheet() {
           <button onclick="_cornileusRemoveMemory(${jsAttr(m.id)})" style="background:transparent;border:0;color:var(--red);font-size:14px;padding:0 2px;cursor:pointer;flex-shrink:0" aria-label="Remove memory">×</button>
         </div>
       `).join("")}
-    ` : `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:12.5px;font-style:italic">No memories yet. Add things Cornileus should always remember about you — life events, preferences, constraints.</div>`}
+    ` : `<div style="text-align:center;padding:20px 14px;color:var(--t3);font-size:12.5px;font-style:italic">No memories yet. Add things Cornileus should always remember about you, life events, preferences, constraints.</div>`}
     <div style="background:var(--bg-elev);border-radius:8px;padding:10px 12px;margin-top:14px;font-size:11px;color:var(--t2);line-height:1.5">
       <b style="color:var(--t1)">Good memories to add:</b> "I'm self-employed, income varies", "Wedding in Oct 2026", "Targeting FIRE by 50", "Conservative — avoid leverage", "Wife and I split bills 60/40", "Two kids in 529s", "I prefer dividend ETFs to growth".
     </div>
@@ -19401,7 +19401,7 @@ function cornileusKnowsSheet() {
         return section("Memories (pinned)", `
           <div onclick="closeSheet();setTimeout(()=>cornileusMemoriesSheet(),120)" role="button" tabindex="0" style="background:var(--bg-elev);border-radius:8px;padding:11px 13px;cursor:pointer">
             <div style="font-size:12.5px;color:var(--t1);font-weight:600">+ Add a memory</div>
-            <div style="font-size:11px;color:var(--t3);margin-top:2px">No memories pinned yet — facts Cornileus should always know.</div>
+            <div style="font-size:11px;color:var(--t3);margin-top:2px">No memories pinned yet, facts Cornileus should always know.</div>
           </div>
         `);
       }
@@ -19481,7 +19481,7 @@ async function cornileusMorningBriefingSheet() {
       ${cornAvatarHtml(48, false, "happy")}
       <div style="flex:1;min-width:0">
         <h2 style="margin:0">☀️ Morning briefing</h2>
-        <div class="muted" style="font-size:12.5px;margin-top:2px">${esc(today)} — Cornileus' read on what matters today.</div>
+        <div class="muted" style="font-size:12.5px;margin-top:2px">${esc(today)}, Cornileus' read on what matters today.</div>
       </div>
     </div>
     <div id="brief-result" style="margin-top:10px">${fresh ? _cornileusRenderBriefing(last.text, last.date) : `<div style="text-align:center;padding:30px 14px;color:var(--t3);font-size:13px">🌅 Cornileus is preparing your briefing…</div>`}</div>
@@ -19804,7 +19804,7 @@ function taxEstimationSheet() {
   const lossOffsetCap = Math.min(3000, Math.abs(onlyLosses));
   openSheet(`
     <h2 style="margin-bottom:4px">🧾 Tax estimation</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Rough estimate of what you'd owe if you closed every position today. Educational — verify with your actual tax situation.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.5">Rough estimate of what you'd owe if you closed every position today. Educational, verify with your actual tax situation.</p>
     <div style="background:var(--card);border:0.5px solid var(--sep);border-left:3px solid ${totalGain >= 0 ? 'var(--orange)' : 'var(--green)'};border-radius:var(--r);padding:14px;margin-bottom:10px">
       <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Net unrealized gain</div>
       <div style="font-size:28px;font-weight:800;color:var(--t1);font-variant-numeric:tabular-nums" data-priv="amount">${totalGain >= 0 ? "+" : "-"}${fmt(totalGain)}</div>
@@ -19825,7 +19825,7 @@ function taxEstimationSheet() {
     ${onlyLosses < 0 ? `
       <div style="background:rgba(0,122,255,0.07);border:0.5px solid rgba(0,122,255,0.30);border-radius:10px;padding:11px 13px;margin-bottom:10px">
         <div style="font-size:10.5px;color:var(--blue);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Loss-offset opportunity</div>
-        <div style="font-size:12.5px;color:var(--t1);line-height:1.45">You have <b>${fmt(Math.abs(onlyLosses))}</b> of unrealized losses. Selling them could offset your <b>${fmt(onlyGains)}</b> of gains — bringing your taxable gain to <b style="color:var(--green)">${fmt(Math.max(0, totalGain))}</b>. Plus up to $${lossOffsetCap.toFixed(0)} more can offset ordinary income.</div>
+        <div style="font-size:12.5px;color:var(--t1);line-height:1.45">You have <b>${fmt(Math.abs(onlyLosses))}</b> of unrealized losses. Selling them could offset your <b>${fmt(onlyGains)}</b> of gains, bringing your taxable gain to <b style="color:var(--green)">${fmt(Math.max(0, totalGain))}</b>. Plus up to $${lossOffsetCap.toFixed(0)} more can offset ordinary income.</div>
         <button class="btn secondary" style="width:100%;margin-top:8px;font-size:12px" onclick="closeSheet();setTimeout(()=>taxLossHarvestSheet(),120)">Open tax-loss harvesting →</button>
       </div>
     ` : ""}
@@ -20130,8 +20130,8 @@ function _stocksRenderWatchlist() {
       <div style="background:linear-gradient(135deg,rgba(14,165,233,0.10),rgba(124,58,237,0.06));border:0.5px solid rgba(14,165,233,0.30);border-left:3px solid #0ea5e9;border-radius:var(--r);padding:18px;text-align:center">
         <div style="font-size:30px;margin-bottom:6px">🚀</div>
         <div style="font-size:15px;font-weight:700;color:var(--t1);margin-bottom:4px">New to investing?</div>
-        <div style="font-size:12.5px;color:var(--t3);margin-bottom:12px;line-height:1.5">Pick a starter portfolio — 3 to 5 ETFs that cover the whole market. We'll explain each one and load them into your watchlist.</div>
-        <button class="btn" style="width:100%;background:var(--grad-cornileus-cool);color:#fff;border:none;font-size:13px;padding:11px" onclick="startInvestingSheet()">🚀 Start investing — guided</button>
+        <div style="font-size:12.5px;color:var(--t3);margin-bottom:12px;line-height:1.5">Pick a starter portfolio, 3 to 5 ETFs that cover the whole market. We'll explain each one and load them into your watchlist.</div>
+        <button class="btn" style="width:100%;background:var(--grad-cornileus-cool);color:#fff;border:none;font-size:13px;padding:11px" onclick="startInvestingSheet()">🚀 Start investing, guided</button>
         <button class="btn secondary" style="width:100%;margin-top:6px;font-size:12.5px;padding:9px" onclick="compoundVisualSheet()">📈 See compound interest in action first</button>
       </div>
     `;
@@ -20654,7 +20654,7 @@ async function _stocksNewsBriefing(tk) {
     if (!r.ok || data.error) throw new Error(data.error || "HTTP " + r.status);
     const items = data.news || [];
     if (!items.length) {
-      out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px;color:var(--t3);font-size:13px;text-align:center">No recent news for ${esc(tk)} — try again in a few hours.</div>`;
+      out.innerHTML = `<div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px;color:var(--t3);font-size:13px;text-align:center">No recent news for ${esc(tk)}, try again in a few hours.</div>`;
       return;
     }
     // 2. Cache for the rendered card so user can re-read sources
@@ -21093,7 +21093,7 @@ function _stocksRenderDetail(q) {
           </div>
           ${q.target_low != null && q.target_high != null ? `
             <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-top:2px">
-              <span>Range</span><span data-priv="amount">$${(+q.target_low).toFixed(0)} — $${(+q.target_high).toFixed(0)}</span>
+              <span>Range</span><span data-priv="amount">$${(+q.target_low).toFixed(0)}, $${(+q.target_high).toFixed(0)}</span>
             </div>
           ` : ""}
         ` : ""}
@@ -21231,7 +21231,7 @@ function _stocksRenderDetail(q) {
       <button onclick="_stocksDcaSheet(${jsAttr(q.ticker)})" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">📆 DCA simulator</button>
       <button onclick="_stocksLoadForecast(${jsAttr(q.ticker)}, 24)" id="stk-fc-btn" class="btn" style="width:100%;margin-bottom:6px;font-size:13px;background:var(--grad-cornileus);color:#fff;border:none">🔮 Forecast 2 years</button>
       <div id="stk-fc-result"></div>
-      <button onclick="_stocksAddHoldingSheet(${jsAttr(q.ticker)})" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">💼 I own this — track P&amp;L</button>
+      <button onclick="_stocksAddHoldingSheet(${jsAttr(q.ticker)})" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">💼 I own this, track P&amp;L</button>
       <button onclick="_stocksLoadHolders(${jsAttr(q.ticker)})" id="stk-holders-btn" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">🏛️ Show holders + insiders</button>
       <div id="stk-holders-result"></div>
       <button onclick="_stocksLoadEtf(${jsAttr(q.ticker)})" id="stk-etf-btn" class="btn secondary" style="width:100%;margin-bottom:6px;font-size:13px">📦 Inside the fund</button>
@@ -21263,7 +21263,7 @@ async function _stocksLoadPeers(tk) {
     } else {
       out.innerHTML = `
         <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:10px">
-          <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Peers — ${esc(data.industry || data.sector || "")}</div>
+          <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:8px">Peers, ${esc(data.industry || data.sector || "")}</div>
           ${peers.map(p => `
             <div onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(p.ticker)}),120)" role="button" tabindex="0" style="display:flex;align-items:center;gap:9px;padding:9px 10px;background:var(--bg-elev);border-radius:8px;margin-bottom:5px;cursor:pointer">
               ${_stkTickerAvatar(p.ticker, 26)}
@@ -21570,9 +21570,9 @@ function compareTickersSheet() {
     <h2 style="margin-bottom:4px">Compare tickers</h2>
     <p class="muted" style="font-size:12.5px;margin-bottom:14px">Pick two tickers to compare key metrics side-by-side.</p>
     <div style="display:flex;gap:8px;margin-bottom:12px">
-      <input id="cmp-a" placeholder="Ticker A — AAPL" autocapitalize="characters" autocorrect="off"
+      <input id="cmp-a" placeholder="Ticker A, AAPL" autocapitalize="characters" autocorrect="off"
         style="flex:1;background:var(--bg-elev);padding:11px 14px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;box-sizing:border-box" />
-      <input id="cmp-b" placeholder="Ticker B — MSFT" autocapitalize="characters" autocorrect="off"
+      <input id="cmp-b" placeholder="Ticker B, MSFT" autocapitalize="characters" autocorrect="off"
         style="flex:1;background:var(--bg-elev);padding:11px 14px;border-radius:10px;border:0.5px solid var(--sep);color:var(--t1);font-size:14px;box-sizing:border-box" />
     </div>
     <button id="cmp-go" class="btn" style="width:100%;background:var(--grad-cornileus-cool);color:#fff;border:none" onclick="_stocksRunCompare()">⚖️ Compare</button>
@@ -21667,7 +21667,7 @@ function _stocksRenderCompare(a, b) {
     </div>
     <div style="background:var(--bg-elev);border-radius:10px;padding:10px 12px;margin-bottom:10px;text-align:center">
       <div style="font-size:10.5px;color:var(--t3);text-transform:uppercase;letter-spacing:0.06em;font-weight:700;margin-bottom:4px">Head-to-head wins</div>
-      <div style="font-size:15px;font-weight:800">${esc(a.ticker)} ${winsA} — ${winsB} ${esc(b.ticker)}</div>
+      <div style="font-size:15px;font-weight:800">${esc(a.ticker)} ${winsA}, ${winsB} ${esc(b.ticker)}</div>
       <div style="font-size:11px;color:var(--t3);margin-top:2px">Across ${rows.filter(r => r.hi(a,b) !== null).length} comparable metrics. Lower P/E and lower debt/equity count as wins.</div>
     </div>
   `;
@@ -22261,7 +22261,7 @@ function calendarDaySheet(dateKey) {
       if (!earningsOnDay.length && !exDivOnDay.length) return "";
       const rows = [];
       for (const [tk] of earningsOnDay) {
-        rows.push(`<div class="row tappable" onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(tk)}),120)"><div class="lead">📊</div><div class="body"><div class="t1">${esc(tk)} earnings</div><div class="t2">Tap to open research — implied vol typically rises into the print</div></div><div class="trail chev"></div></div>`);
+        rows.push(`<div class="row tappable" onclick="closeSheet();setTimeout(()=>_stocksOpenDetail(${jsAttr(tk)}),120)"><div class="lead">📊</div><div class="body"><div class="t1">${esc(tk)} earnings</div><div class="t2">Tap to open research, implied vol typically rises into the print</div></div><div class="trail chev"></div></div>`);
       }
       for (const [tk, info] of exDivOnDay) {
         const h = holdings[tk];
@@ -22829,7 +22829,7 @@ function renderSettings() {
     <div style="display:flex;align-items:center;justify-content:space-between;background:var(--card);border:0.5px solid var(--sep);border-radius:12px;padding:10px 14px;margin:0 0 14px;gap:10px">
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;color:var(--t1);line-height:1.2">${compactMode ? "Compact view" : "Full view"}</div>
-        <div style="font-size:11.5px;color:var(--t3);margin-top:2px">${compactMode ? "Each section is collapsed — tap a header to expand" : "All settings expanded — toggle to collapse into groups"}</div>
+        <div style="font-size:11.5px;color:var(--t3);margin-top:2px">${compactMode ? "Each section is collapsed, tap a header to expand" : "All settings expanded — toggle to collapse into groups"}</div>
       </div>
       <input type="checkbox" ${compactMode ? "checked" : ""} onchange="toggleCompactSettings(this.checked)" style="width:50px;height:30px;flex-shrink:0" />
     </div>
@@ -22865,13 +22865,13 @@ function renderSettings() {
       </div>
       <div class="row tappable" onclick="profileSheet()">
         <div class="lead">👤</div>
-        <div class="body"><div class="t1">About you</div><div class="t2">${DB.profile?.age ? `Age ${DB.profile.age}${DB.profile.state?` · ${esc(DB.profile.state)}`:""}${DB.profile.employerMatch?" · 401k match":""}${DB.profile.hsaEligible?" · HSA":""}` : "Optional — sharpens recommendations"}</div></div>
+        <div class="body"><div class="t1">About you</div><div class="t2">${DB.profile?.age ? `Age ${DB.profile.age}${DB.profile.state?` · ${esc(DB.profile.state)}`:""}${DB.profile.employerMatch?" · 401k match":""}${DB.profile.hsaEligible?" · HSA":""}` : "Optional, sharpens recommendations"}</div></div>
         <div class="trail chev"></div>
       </div>
       ${Object.keys(DB.dismissedPlays || {}).length ? `
         <div class="row tappable" onclick="if(confirm('Reset all dismissed Smart Plays?'))resetDismissedPlays()">
           <div class="lead">↺</div>
-          <div class="body"><div class="t1">Reset dismissed plays</div><div class="t2">${Object.keys(DB.dismissedPlays).length} dismissed — un-hide them all</div></div>
+          <div class="body"><div class="t1">Reset dismissed plays</div><div class="t2">${Object.keys(DB.dismissedPlays).length} dismissed, un-hide them all</div></div>
           <div class="trail chev"></div>
         </div>
       ` : ""}
@@ -22881,7 +22881,7 @@ function renderSettings() {
         return count > 0 ? `
           <div class="row tappable" onclick="resetDismissedLeaks()">
             <div class="lead">↺</div>
-            <div class="body"><div class="t1">Reset dismissed spending leaks</div><div class="t2">${count} dismissed — re-surface them all</div></div>
+            <div class="body"><div class="t1">Reset dismissed spending leaks</div><div class="t2">${count} dismissed, re-surface them all</div></div>
             <div class="trail chev"></div>
           </div>
         ` : "";
@@ -23034,7 +23034,7 @@ function renderSettings() {
       ${(_hasHostedBackend() && !DB.settings._useCustomBackend) ? `
       <div class="row">
         <div class="lead">✅</div>
-        <div class="body"><div class="t1">Bank sync ready</div><div class="t2">${DB.user.clientSecret ? "This device is enrolled — tap Connect a bank below." : "Powered by Ascend's hosted backend. No setup needed. Your access token is AES-GCM encrypted on the server, isolated per device."}</div></div>
+        <div class="body"><div class="t1">Bank sync ready</div><div class="t2">${DB.user.clientSecret ? "This device is enrolled, tap Connect a bank below." : "Powered by Ascend's hosted backend. No setup needed. Your access token is AES-GCM encrypted on the server, isolated per device."}</div></div>
       </div>
       ` : `
       <div class="row">
@@ -23046,7 +23046,7 @@ function renderSettings() {
       </div>
       <div class="row">
         <div class="lead">🔑</div>
-        <div class="body"><div class="t1">Enrollment Key</div><div class="t2">${DB.user.clientSecret ? "✓ Device enrolled — key no longer in use" : "Used once to register this device. Same value as the Worker's ENROLLMENT_KEY (or legacy API_KEY) secret."}</div></div>
+        <div class="body"><div class="t1">Enrollment Key</div><div class="t2">${DB.user.clientSecret ? "✓ Device enrolled, key no longer in use" : "Used once to register this device. Same value as the Worker's ENROLLMENT_KEY (or legacy API_KEY) secret."}</div></div>
         <input type="password" style="background:var(--bg-elev);padding:8px 10px;border-radius:8px;width:170px;text-align:right;font-size:11px"
           value="${esc(DB.settings.apiKey||"")}" placeholder="paste here"
           oninput="DB.settings.apiKey=this.value.replace(/[\x00-\x1F\x7F]/g,'').trim();saveDebounced()" onblur="flushPendingSave()" maxlength="500" />
@@ -23055,7 +23055,7 @@ function renderSettings() {
       ${_hasHostedBackend() ? `
       <div class="row">
         <div class="lead">🛠️</div>
-        <div class="body"><div class="t1">Use a custom backend</div><div class="t2">Self-host your own Cloudflare Worker instead of Ascend's hosted backend. Requires deploying backend/worker.js — see DEPLOY.md.</div></div>
+        <div class="body"><div class="t1">Use a custom backend</div><div class="t2">Self-host your own Cloudflare Worker instead of Ascend's hosted backend. Requires deploying backend/worker.js, see DEPLOY.md.</div></div>
         <input type="checkbox" ${DB.settings._useCustomBackend?'checked':''}
           onchange="DB.settings._useCustomBackend=this.checked;if(!this.checked){DB.user.clientSecret='';DB.settings.backendUrl='';DB.settings.apiKey='';}save();render()" style="width:50px;height:30px" />
       </div>
@@ -23102,7 +23102,7 @@ function renderSettings() {
           <div class="lead">🪄</div>
           <div class="body">
             <div class="t1">Plaid detected recurring <span style="background:var(--purple);color:#fff;border-radius:999px;padding:2px 8px;font-size:10px;margin-left:6px;font-weight:700">${((DB.plaidRecurringSuggestions || {}).inflows || []).length + ((DB.plaidRecurringSuggestions || {}).outflows || []).length}</span></div>
-            <div class="t2">Paychecks + subscriptions Plaid found — tap to add them as recurring</div>
+            <div class="t2">Paychecks + subscriptions Plaid found, tap to add them as recurring</div>
           </div>
           <div class="trail chev"></div>
         </div>
@@ -23180,7 +23180,7 @@ function renderSettings() {
             <button class="del-x" onclick="if(confirm('Delete rule?'))deleteAllocationRule('${a.id}')">×</button>
           </div>
         `;
-      }).join("") : `<div class="row"><div class="body"><div class="t2 muted">No rules yet — paychecks will just appear in transactions.</div></div></div>`}
+      }).join("") : `<div class="row"><div class="body"><div class="t2 muted">No rules yet, paychecks will just appear in transactions.</div></div></div>`}
     </div>
 
     <div id="sec-cornileus"></div>
@@ -23219,7 +23219,7 @@ function renderSettings() {
       </div>
       <div class="row tappable" onclick="cornileusKnowsSheet()" role="button" tabindex="0">
         <div class="lead">🔍</div>
-        <div class="body"><div class="t1">What Cornileus knows about you</div><div class="t2">Inspect every data point Cornileus sees — full transparency</div></div>
+        <div class="body"><div class="t1">What Cornileus knows about you</div><div class="t2">Inspect every data point Cornileus sees, full transparency</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="cornileusMemoriesSheet()" role="button" tabindex="0">
@@ -23240,7 +23240,7 @@ function renderSettings() {
       </div>
       <div class="row tappable" onclick="cornileusMorningBriefingSheet()" role="button" tabindex="0">
         <div class="lead">☀️</div>
-        <div class="body"><div class="t1">Morning briefing</div><div class="t2">Today's portfolio, top concern, one focus — generated daily</div></div>
+        <div class="body"><div class="t1">Morning briefing</div><div class="t2">Today's portfolio, top concern, one focus, generated daily</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="cornileusAnnualReviewSheet()" role="button" tabindex="0">
@@ -23250,12 +23250,12 @@ function renderSettings() {
       </div>
       <div class="row tappable" onclick="closeSheet&&closeSheet();openCounselor()">
         <div class="lead">✨</div>
-        <div class="body"><div class="t1">Talk to Cornileus</div><div class="t2">Your financial counselor — budget, debt, investing, life decisions</div></div>
+        <div class="body"><div class="t1">Talk to Cornileus</div><div class="t2">Your financial counselor, budget, debt, investing, life decisions</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="runAiInsight()">
         <div class="lead">📊</div>
-        <div class="body"><div class="t1">Run monthly insight</div><div class="t2">Quick monthly review — counts against your daily AI cap</div></div>
+        <div class="body"><div class="t1">Run monthly insight</div><div class="t2">Quick monthly review, counts against your daily AI cap</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="cornileusInsightsSheet()">
@@ -23270,7 +23270,7 @@ function renderSettings() {
     <div class="list">
       <div class="row tappable" onclick="exportBillsIcs()">
         <div class="lead">📅</div>
-        <div class="body"><div class="t1">Export bills to calendar</div><div class="t2">Download .ics — opens in iPhone Calendar with reminders</div></div>
+        <div class="body"><div class="t1">Export bills to calendar</div><div class="t2">Download .ics, opens in iPhone Calendar with reminders</div></div>
         <div class="trail chev"></div>
       </div>
     </div>
@@ -23290,7 +23290,7 @@ function renderSettings() {
         </div>
         <div class="row">
           <div class="lead">+</div>
-          <div class="body"><div class="t1">Extra payment / month</div><div class="t2">Beyond minimums — accelerates payoff</div></div>
+          <div class="body"><div class="t1">Extra payment / month</div><div class="t2">Beyond minimums, accelerates payoff</div></div>
           <input type="number" inputmode="numeric" value="${DB.settings.debtExtraPayment||0}"
             oninput="DB.settings.debtExtraPayment=Number(this.value)||0;saveDebounced();render()" onblur="flushPendingSave()"
             style="background:var(--bg-elev);padding:8px;border-radius:8px;width:80px;text-align:right" />
@@ -23304,7 +23304,7 @@ function renderSettings() {
         `).join("")}
         <div class="row tappable" onclick="debtConsolidationSheet()" role="button" tabindex="0">
           <div class="lead">🧮</div>
-          <div class="body"><div class="t1">Try consolidation</div><div class="t2">Compare one loan vs. your current debts — monthly + total interest</div></div>
+          <div class="body"><div class="t1">Try consolidation</div><div class="t2">Compare one loan vs. your current debts, monthly + total interest</div></div>
           <div class="trail chev"></div>
         </div>
       </div>
@@ -23336,7 +23336,7 @@ function renderSettings() {
           </div>
           <button class="del-x" onclick="event.stopPropagation();if(confirm('Delete?'))deleteRecurring(${jsAttr(r.id)})">×</button>
         </div>
-      `).join("") : `<div class="row"><div class="body"><div class="t2 muted">Add rent, subscriptions, paycheck, etc. — used to compute Safe-to-spend.</div></div></div>`}
+      `).join("") : `<div class="row"><div class="body"><div class="t2 muted">Add rent, subscriptions, paycheck, etc., used to compute Safe-to-spend.</div></div></div>`}
     </div>
     ` : ""}
 
@@ -23345,7 +23345,7 @@ function renderSettings() {
     <div class="list">
       <div class="row">
         <div class="lead">👁</div>
-        <div class="body"><div class="t1">Privacy mode</div><div class="t2">Blur dollar amounts everywhere — tap any to peek</div></div>
+        <div class="body"><div class="t1">Privacy mode</div><div class="t2">Blur dollar amounts everywhere, tap any to peek</div></div>
         <input type="checkbox" ${DB.settings.privacyMode?'checked':''}
           onchange="DB.settings.privacyMode=this.checked;save();applyPrivacyMode();render()" style="width:50px;height:30px" />
       </div>
@@ -23411,7 +23411,7 @@ function renderSettings() {
     <div class="list">
       <div class="row tappable" onclick="shareWithRoommateSheet()">
         <div class="lead">👥</div>
-        <div class="body"><div class="t1">Invite a friend to Ascend</div><div class="t2">Share the install link. They get their own separate account — nothing is connected. (For couples sharing finances, see "🤝 Share with partner" in Bank sync.)</div></div>
+        <div class="body"><div class="t1">Invite a friend to Ascend</div><div class="t2">Share the install link. They get their own separate account, nothing is connected. (For couples sharing finances, see "🤝 Share with partner" in Bank sync.)</div></div>
         <div class="trail chev"></div>
       </div>
     </div>
@@ -23494,7 +23494,7 @@ function renderSettings() {
     <div class="list">
       <div class="row tappable" onclick="exploreAscendSheet()">
         <div class="lead">🧰</div>
-        <div class="body"><div class="t1">Explore Ascend</div><div class="t2">Feature catalog — every capability in one place, tappable</div></div>
+        <div class="body"><div class="t1">Explore Ascend</div><div class="t2">Feature catalog, every capability in one place, tappable</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row tappable" onclick="startTutorial()">
@@ -23528,7 +23528,7 @@ function renderSettings() {
     <div class="list">
       <div class="row tappable" onclick="dataSafetySheet()" role="button" tabindex="0">
         <div class="lead">🛡️</div>
-        <div class="body"><div class="t1">Privacy &amp; Security</div><div class="t2">How your data — including bank info — is protected</div></div>
+        <div class="body"><div class="t1">Privacy &amp; Security</div><div class="t2">How your data, including bank info — is protected</div></div>
         <div class="trail chev"></div>
       </div>
       <div class="row"><div class="lead">★</div><div class="body"><div class="t1">Ascend · Goals made easy</div><div class="t2">v3.0 · ${DB.items?.length ? `${DB.items.length} bank${DB.items.length===1?"":"s"} connected` : "saved on this device"}</div></div></div>
@@ -23842,7 +23842,7 @@ function notificationSettingsSheet() {
       <div class="lead">🔔</div>
       <div class="body">
         <div class="t1">Notifications</div>
-        <div class="t2">${on ? `Active — ${times.length} time${times.length===1?'':'s'} per day + smart triggers` : "Off — toggle on to enable"}</div>
+        <div class="t2">${on ? `Active, ${times.length} time${times.length===1?'':'s'} per day + smart triggers` : "Off — toggle on to enable"}</div>
       </div>
       <input type="checkbox" ${on?'checked':''} ${supported && perm !== "denied" ? "" : "disabled"} onchange="toggleNotifications(this.checked);setTimeout(()=>notificationSettingsSheet(),120)" style="width:50px;height:30px" />
     </div>
@@ -24407,7 +24407,7 @@ async function exportData() {
   // to every other surface.
   openSheet(`
     <h2 style="margin-bottom:4px">💾 Export backup</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:14px">A copy of all your data — habits, transactions, savings, goals, accounts. Restore later by importing it.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:14px">A copy of all your data, habits, transactions, savings, goals, accounts. Restore later by importing it.</p>
     <div class="onb-choice-card" style="margin-bottom:8px" onclick="closeSheet();setTimeout(()=>_exportEncrypted(),120)">
       <div class="ct">🔒 Encrypted backup</div>
       <div class="cs">Recommended. Requires a passphrase to restore. Safe to store anywhere.</div>
@@ -24962,7 +24962,7 @@ function _cashflowForecastHtml() {
         <span>${totalEvents} event${totalEvents === 1 ? '' : 's'} modeled</span>
       </div>
       ${overdraftWarning}
-      ${!hasIncomeForecast ? `<div style="font-size:10.5px;color:var(--t3);margin-top:8px;line-height:1.4;font-style:italic">No recurring income detected — add paychecks under Settings → Recurring for a fuller picture.</div>` : ""}
+      ${!hasIncomeForecast ? `<div style="font-size:10.5px;color:var(--t3);margin-top:8px;line-height:1.4;font-style:italic">No recurring income detected, add paychecks under Settings → Recurring for a fuller picture.</div>` : ""}
     </div>
   `;
 }
@@ -25492,9 +25492,9 @@ function debtConsolidationSheet() {
       <b>Before signing:</b>
       <ul style="margin:6px 0 0 16px;padding:0">
         <li>Confirm the APR is <b>fixed</b>, not an introductory teaser rate</li>
-        <li>Check for prepayment penalties — paying early should be free</li>
+        <li>Check for prepayment penalties, paying early should be free</li>
         <li>Don't run the cards back up after the consolidation hits (the #1 trap)</li>
-        <li>Origination fees are baked into the math above — make sure your real offer matches</li>
+        <li>Origination fees are baked into the math above, make sure your real offer matches</li>
       </ul>
       <div style="margin-top:8px">Educational tool, not financial advice. Compare a few real offers and read the fine print.</div>
     </div>
@@ -26901,7 +26901,7 @@ function counselorRender() {
         ${cornAvatarHtml(56, true, "happy")}
         <div class="corn-greeting-bubble">
           ${esc(greetingText)}
-          <div style="font-size:11px;color:var(--t4);margin-top:6px">Educational guidance — not licensed financial advice.</div>
+          <div style="font-size:11px;color:var(--t4);margin-top:6px">Educational guidance, not licensed financial advice.</div>
         </div>
       </div>
     </div>
@@ -28634,7 +28634,7 @@ function deleteNwAnnotation(id) {
 function setupPassphraseSheet() {
   openSheet(`
     <h2>Set a passphrase</h2>
-    <p class="muted" style="margin-bottom:14px;font-size:13px">Encrypts all data on this phone. If you forget it, your data is unrecoverable — there's no reset link. Make it memorable.</p>
+    <p class="muted" style="margin-bottom:14px;font-size:13px">Encrypts all data on this phone. If you forget it, your data is unrecoverable, there's no reset link. Make it memorable.</p>
     <label>Passphrase</label>
     <input id="pp-1" type="password" placeholder="At least 10 characters" autofocus />
     <label>Confirm</label>
@@ -28668,10 +28668,10 @@ function manageEncryption() {
 function disableEncryptionSheet() {
   openSheet(`
     <h2 style="margin-bottom:4px">⚠ Disable encryption?</h2>
-    <p class="muted" style="font-size:13px;margin-bottom:14px;line-height:1.55">Your data will be stored as plain text in this browser. Anyone with access to this device or a malicious browser extension can read everything — bank balances, transactions, all of it.</p>
+    <p class="muted" style="font-size:13px;margin-bottom:14px;line-height:1.55">Your data will be stored as plain text in this browser. Anyone with access to this device or a malicious browser extension can read everything, bank balances, transactions, all of it.</p>
     <p class="muted" style="font-size:12.5px;margin-bottom:14px;line-height:1.55"><b style="color:var(--t1)">Only do this if you understand the trade-off.</b> You can re-enable encryption any time from Settings.</p>
     <div class="actions">
-      <button class="btn secondary" onclick="closeSheet()">Cancel — keep encrypted</button>
+      <button class="btn secondary" onclick="closeSheet()">Cancel, keep encrypted</button>
       <button class="btn danger" onclick="disablePassphrase();closeSheet();render();toast('Encryption disabled — data is now plain text')">Disable encryption</button>
     </div>
   `);
@@ -29236,7 +29236,7 @@ function yearReviewSheet() {
   if (r.roadmapPhasesDone > 0) moneyCells.push(`<div class="kpi"><div class="v">${r.roadmapPhasesDone}</div><div class="l">Roadmap phases</div></div>`);
 
   const moodLine = r.moodCount > 0
-    ? `<div style="font-size:13px;color:var(--t2);margin:6px 0">Logged your mood <b style="color:var(--t1)">${r.moodCount}</b> day${r.moodCount===1?'':'s'}${r.moodTop ? ` — most-common: ${r.moodTop.emoji} (${r.moodTop.pct}%)` : ""}.</div>`
+    ? `<div style="font-size:13px;color:var(--t2);margin:6px 0">Logged your mood <b style="color:var(--t1)">${r.moodCount}</b> day${r.moodCount===1?'':'s'}${r.moodTop ? `, most-common: ${r.moodTop.emoji} (${r.moodTop.pct}%)` : ""}.</div>`
     : "";
   const otherLine = (r.reflectionsCount + r.achievementsCount + r.lessonsCount + r.booksCount) > 0 ? `
     <div style="font-size:13px;color:var(--t2);margin:6px 0;line-height:1.6">
@@ -29895,7 +29895,7 @@ function onboardingStep1() {
     <button class="btn" style="width:100%;background:linear-gradient(135deg, var(--corn-from), var(--corn-to));color:#fff;border:none" onclick="(()=>{const n=$('#onb-name').value.trim();_onbState.name=n;closeSheet();aiOnboardingStart({name:n,fromOnboarding:true});})()">✨ Set up with Cornileus (chat)</button>
     <button class="btn secondary" style="width:100%;margin-top:8px" onclick="(()=>{_onbState.name=$('#onb-name').value.trim();onboardingStep2();})()">Pick from a list (faster)</button>
     <div style="text-align:center;margin-top:14px">
-      <button onclick="closeSheet();setTimeout(importData,120)" style="background:none;border:none;color:var(--t3);font-size:12.5px;cursor:pointer;text-decoration:underline;padding:6px;font-weight:500">I have a backup file — restore</button>
+      <button onclick="closeSheet();setTimeout(importData,120)" style="background:none;border:none;color:var(--t3);font-size:12.5px;cursor:pointer;text-decoration:underline;padding:6px;font-weight:500">I have a backup file, restore</button>
     </div>
   `);
 }
@@ -29977,7 +29977,7 @@ function onboardingStep5() {
     }</p>
     ${supported && !granted && !denied ? `
       <div class="onb-choice-card" onclick="(()=>{const b=event.currentTarget;b.style.opacity='0.6';Notification.requestPermission().then(p=>{if(p==='granted'){DB.settings.notifications=true;DB.settings.reminderTimes=['08:00','20:00'];save();if(typeof scheduleReminder==='function')scheduleReminder();onboardingStep5();}else{onboardingStep5();}});})()">
-        <div class="ct">🔔 Yes — turn on reminders</div>
+        <div class="ct">🔔 Yes, turn on reminders</div>
         <div class="cs">Asks for browser permission. You can change times + categories anytime.</div>
       </div>
       <div class="onb-choice-card" onclick="(()=>{DB.settings.notifications=false;save();onboardingStep5();})()">
@@ -29988,13 +29988,13 @@ function onboardingStep5() {
     ${granted ? `
       <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:12px 14px;margin:8px 0;font-size:13px;line-height:1.5">
         <div style="font-weight:600;margin-bottom:6px">Default times</div>
-        <div style="color:var(--t2)">• 8:00 AM — morning check-in</div>
-        <div style="color:var(--t2)">• 8:00 PM — evening review</div>
-        <div style="font-size:11.5px;color:var(--t3);margin-top:6px">Plus smart triggers — fire only when something actually needs your attention.</div>
+        <div style="color:var(--t2)">• 8:00 AM, morning check-in</div>
+        <div style="color:var(--t2)">• 8:00 PM, evening review</div>
+        <div style="font-size:11.5px;color:var(--t3);margin-top:6px">Plus smart triggers, fire only when something actually needs your attention.</div>
       </div>
     ` : ""}
   `, `
-    <button class="btn" style="width:100%" onclick="finishOnboarding()">${granted ? "Finish setup" : "Skip — finish setup"}</button>
+    <button class="btn" style="width:100%" onclick="finishOnboarding()">${granted ? "Finish setup" : "Skip, finish setup"}</button>
   `);
 }
 
@@ -30058,7 +30058,7 @@ function _onboardingCelebrationSheet(snap) {
     <div style="text-align:center;padding:8px 4px 14px">
       <div style="font-size:48px;margin-bottom:6px;line-height:1">🎉</div>
       <h2 style="margin:0 0 4px;font-size:22px">${greeting}</h2>
-      <div style="color:var(--t3);font-size:13px">You're all set — here's what's ready to go</div>
+      <div style="color:var(--t3);font-size:13px">You're all set, here's what's ready to go</div>
     </div>
     <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px 16px;margin-bottom:14px;font-size:13.5px;line-height:1.7;color:var(--t2)">
       ${bullets.map(b => `<div style="margin:6px 0">${b}</div>`).join("")}
@@ -31677,7 +31677,7 @@ function smartPlaysSheet() {
       <div style="font-size:20px;flex-shrink:0">👤</div>
       <div style="flex:1;min-width:0">
         <div style="font-size:13px;font-weight:600;color:var(--t1)">Sharper plays in 30 seconds</div>
-        <div style="font-size:11.5px;color:var(--t2);margin-top:2px">Add your age + filing status + 401k match — recommendations get noticeably better. Tap to open.</div>
+        <div style="font-size:11.5px;color:var(--t2);margin-top:2px">Add your age + filing status + 401k match, recommendations get noticeably better. Tap to open.</div>
       </div>
       <div class="trail chev" style="margin-top:2px"></div>
     </div>
@@ -32083,7 +32083,7 @@ function retirementSheet() {
             <span>10th %ile: <b data-priv="amount" style="color:var(--t2)">${fmt$0(mc.p10[mc.p10.length-1])}</b></span>
             <span>90th %ile: <b data-priv="amount" style="color:var(--t2)">${fmt$0(mc.p90[mc.p90.length-1])}</b></span>
           </div>
-          <div style="font-size:10.5px;color:var(--t3);margin-top:4px;line-height:1.45">${mc.sims} simulations · 16% volatility (long-run S&amp;P stdev). Real markets aren't smooth — the band shows roughly where you might land.</div>
+          <div style="font-size:10.5px;color:var(--t3);margin-top:4px;line-height:1.45">${mc.sims} simulations · 16% volatility (long-run S&amp;P stdev). Real markets aren't smooth, the band shows roughly where you might land.</div>
         ` : `
           ${retirementChart(points, 300, 110)}
           <div style="display:flex;justify-content:space-between;font-size:11px;color:var(--t3);margin-top:6px">
@@ -32096,13 +32096,13 @@ function retirementSheet() {
 
   openSheet(`
     <h2>🏖️ Retirement projection</h2>
-    <p class="muted" style="font-size:12px;margin-bottom:14px">Compound-interest math on your invested balance. Educational — real returns vary. Adjust the assumptions to see how the picture changes.</p>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Compound-interest math on your invested balance. Educational, real returns vary. Adjust the assumptions to see how the picture changes.</p>
     <div id="ret-output">${renderProjection(target, initialMonthly, initialReturn, initialWithdrawal)}</div>
     <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-top:12px">
       <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Assumptions</div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
         <span>Current age</span>
-        <span style="font-weight:600">${currentAge}${profile.age ? "" : ' <span class="muted" style="font-weight:400;font-size:11px">(default — set in profile)</span>'}</span>
+        <span style="font-weight:600">${currentAge}${profile.age ? "" : ' <span class="muted" style="font-weight:400;font-size:11px">(default, set in profile)</span>'}</span>
       </div>
       <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;font-size:13px">
         <span>Current invested</span>
@@ -32124,7 +32124,7 @@ function retirementSheet() {
         <label for="ret-withdrawal">Safe withdrawal (%)</label>
         <input id="ret-withdrawal" type="number" min="2" max="8" step="0.25" value="${initialWithdrawal}" style="background:var(--card);padding:6px 10px;border-radius:6px;width:80px;text-align:right" />
       </div>
-      <p class="muted" style="font-size:11px;margin-top:10px;line-height:1.5">7% is the long-term real (post-inflation) return for a diversified US stock portfolio. The 4% rule comes from the Trinity Study — withdrawing 4% annually has historically lasted 30+ years.</p>
+      <p class="muted" style="font-size:11px;margin-top:10px;line-height:1.5">7% is the long-term real (post-inflation) return for a diversified US stock portfolio. The 4% rule comes from the Trinity Study, withdrawing 4% annually has historically lasted 30+ years.</p>
     </div>
     <div class="actions">
       <button class="btn secondary" onclick="closeSheet()">Close</button>
@@ -32374,7 +32374,7 @@ function wealthHealthSheet() {
       return `
         <div onclick="closeSheet();setTimeout(()=>showTab('stocks'),120)" role="button" tabindex="0" style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:14px;cursor:pointer">
           <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:6px">Stock portfolio impact</div>
-          <div style="font-size:13.5px;color:var(--t1);line-height:1.5">Your live stock portfolio is worth <b data-priv="amount">${fmt$0(mkt)}</b>${invPct != null ? ` — that's <b>${invPct}%</b> of your Investments bucket` : ""}. Wealth Score updates as the market moves your portfolio.</div>
+          <div style="font-size:13.5px;color:var(--t1);line-height:1.5">Your live stock portfolio is worth <b data-priv="amount">${fmt$0(mkt)}</b>${invPct != null ? `, that's <b>${invPct}%</b> of your Investments bucket` : ""}. Wealth Score updates as the market moves your portfolio.</div>
           <div style="display:inline-flex;align-items:center;gap:4px;color:var(--blue);font-size:12px;font-weight:600;margin-top:6px">Open Stocks <span style="font-size:13px">→</span></div>
         </div>
       `;
@@ -32481,7 +32481,7 @@ function refinanceSheet() {
 
   openSheet(`
     <h2>🔄 Refinance calculator</h2>
-    <p class="muted" style="font-size:12px;margin-bottom:14px">Should you refinance? Compares your current loan to a hypothetical new loan. Educational — get actual quotes from 3+ lenders before committing. Refi rules of thumb: rate drop of 0.75%+ usually justifies it; break-even under 24 months is great.</p>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Should you refinance? Compares your current loan to a hypothetical new loan. Educational, get actual quotes from 3+ lenders before committing. Refi rules of thumb: rate drop of 0.75%+ usually justifies it; break-even under 24 months is great.</p>
     <div id="rf-output">${render(s)}</div>
 
     <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
@@ -32648,7 +32648,7 @@ function charitableGivingSheet() {
   `).join("");
   openSheet(`
     <h2>❤️ Charitable giving strategies</h2>
-    <p class="muted" style="font-size:12px;margin-bottom:14px">Tax-efficient structures for giving. The right approach can multiply your impact while reducing tax — same charity gets more, you keep more.</p>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Tax-efficient structures for giving. The right approach can multiply your impact while reducing tax, same charity gets more, you keep more.</p>
     <div class="list">${html}</div>
     <p class="muted" style="font-size:11px;margin-top:14px;line-height:1.5">
       <b>The frame:</b> If you're giving anyway, give in the most efficient structure. The amount going to charity stays the same or grows — only the tax efficiency improves. Talk to a CPA for your specific situation. Anything above \$5,000-\$10,000/yr in giving probably justifies dedicated planning.
@@ -32906,14 +32906,14 @@ function moneyPersonalityIntroSheet() {
   }
   openSheet(`
     <h2>🎭 Money personality quiz</h2>
-    <p class="muted" style="font-size:12px;margin-bottom:14px">9 quick questions about your relationship with money. No right answers — the goal is awareness. Takes about 2 minutes.</p>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">9 quick questions about your relationship with money. No right answers, the goal is awareness. Takes about 2 minutes.</p>
 
     <div style="background:var(--card);border-radius:var(--r);padding:14px;margin-bottom:12px">
       <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">The 6 types</div>
       ${Object.entries(MONEY_TYPES).map(([k,t]) => `
         <div style="display:flex;align-items:center;gap:8px;padding:4px 0;font-size:12px">
           <div style="width:20px;text-align:center">${t.emoji}</div>
-          <div><b>${esc(t.name.replace("The ",""))}</b> — ${esc(t.desc.split(".")[0])}</div>
+          <div><b>${esc(t.name.replace("The ",""))}</b>, ${esc(t.desc.split(".")[0])}</div>
         </div>
       `).join("")}
     </div>
@@ -33219,7 +33219,7 @@ function moneyPromptSheet() {
   // Compose a default reflection date stamp for the journal
   openSheet(`
     <h2>💭 Money reflection</h2>
-    <p class="muted" style="font-size:12px;margin-bottom:14px">Different from "what should I do with money" — this is "what's my relationship with money." Most financial decisions are emotional first, rational second.</p>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Different from "what should I do with money", this is "what's my relationship with money." Most financial decisions are emotional first, rational second.</p>
 
     <div style="background:var(--card);border-radius:var(--r);padding:18px;margin-bottom:14px;border-left:3px solid var(--blue)">
       <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Today's prompt</div>
@@ -33532,7 +33532,7 @@ function plaidRecurringSheet() {
     <div class="empty" style="padding:30px 14px">
       <div class="e-emoji">🪄</div>
       <div class="e-title">${sug.lastSyncAt ? "All caught up" : "Sync first"}</div>
-      <div class="e-sub">${sug.lastSyncAt ? "Nothing new detected from your bank — Plaid auto-finds paychecks + subscriptions across all your linked accounts." : "Connect a bank in Settings → Bank sync, then tap Sync. Plaid finds your paychecks and subscriptions automatically."}</div>
+      <div class="e-sub">${sug.lastSyncAt ? "Nothing new detected from your bank, Plaid auto-finds paychecks + subscriptions across all your linked accounts." : "Connect a bank in Settings → Bank sync, then tap Sync. Plaid finds your paychecks and subscriptions automatically."}</div>
       ${_backendReady() ? `<button class="btn" style="margin-top:14px" onclick="closeSheet();syncRecurring().then(()=>setTimeout(()=>plaidRecurringSheet(),200))">↻ Pull from bank now</button>` : ""}
     </div>
   ` : "";
@@ -33994,7 +33994,7 @@ function collegePlannerSheet() {
       <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
         <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Projected savings in ${r.yearsUntilStart} years</div>
         <div style="font-size:28px;font-weight:700;letter-spacing:-.5px;margin:6px 0;color:${onTrack?"var(--green)":"var(--orange)"}" data-priv="amount">${fmt$0(r.projectedSavings)}</div>
-        <div style="font-size:13px;color:var(--t2)">${onTrack ? `✓ ${fmt$0(r.projectedSavings - r.fundingTarget)} above target — overfunded` : `Gap: <b style="color:var(--red)" data-priv="amount">${fmt$0(r.gap)}</b>`}</div>
+        <div style="font-size:13px;color:var(--t2)">${onTrack ? `✓ ${fmt$0(r.projectedSavings - r.fundingTarget)} above target, overfunded` : `Gap: <b style="color:var(--red)" data-priv="amount">${fmt$0(r.gap)}</b>`}</div>
         <div style="font-size:12px;color:var(--t3);margin-top:8px;padding-top:8px;border-top:1px solid var(--sep)">
           To hit ${(+s.fundPct||100)}% of target: contribute <b data-priv="amount">${fmt$0(r.suggestedMonthly)}/mo</b>
         </div>
@@ -34004,7 +34004,7 @@ function collegePlannerSheet() {
 
   openSheet(`
     <h2>🎓 College / education planner</h2>
-    <p class="muted" style="font-size:12px;margin-bottom:14px">Project the cost of college 18 years out and the savings needed to fund some or all of it. College costs have historically inflated ~5%/yr — higher than general inflation. Educational, not advice.</p>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Project the cost of college 18 years out and the savings needed to fund some or all of it. College costs have historically inflated ~5%/yr, higher than general inflation. Educational, not advice.</p>
     <div id="cp-output">${render(state)}</div>
 
     <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
@@ -34459,7 +34459,7 @@ function insuranceChecklistSheet() {
   `).join("");
   openSheet(`
     <h2>🛡️ Insurance checklist</h2>
-    <p class="muted" style="font-size:12px;margin-bottom:14px">Wealth PROTECTION is the often-skipped half of building wealth. One uninsured catastrophe can erase decades of saving. Educational — get quotes from licensed agents.</p>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Wealth PROTECTION is the often-skipped half of building wealth. One uninsured catastrophe can erase decades of saving. Educational, get quotes from licensed agents.</p>
     <div class="list">${html}</div>
     <p class="muted" style="font-size:11px;margin-top:14px;line-height:1.5">
       <b>Order of priority:</b> Health (always) → Term life (if dependents) → LTD (if income-dependent) → Auto/Home (required) → Umbrella (as net worth grows). The total cost of doing this right is typically 3-7% of income — far less than the cost of one uncovered event.
@@ -35052,7 +35052,7 @@ function rentalPropertySheet() {
 
   openSheet(`
     <h2>🏘️ Rental property analyzer</h2>
-    <p class="muted" style="font-size:12px;margin-bottom:14px">Underwrite an investment property: cap rate, cash-on-cash return, monthly cash flow. Different math from primary-residence affordability — here the property must pay for itself plus return.</p>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Underwrite an investment property: cap rate, cash-on-cash return, monthly cash flow. Different math from primary-residence affordability, here the property must pay for itself plus return.</p>
     <div id="rp-output">${render(state)}</div>
 
     <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
@@ -35449,7 +35449,7 @@ function inflationSheet() {
       <div style="background:var(--card);border-radius:var(--r);padding:16px;margin-bottom:12px">
         <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px">Real take-home</div>
         <div style="font-size:13px;color:var(--t2);line-height:1.6;margin-top:4px">
-          A salary of <b>${fmt$0(vals.amount)}</b> today is equivalent to <b data-priv="amount">${fmt$0(r.futureValue)}</b> in ${vals.years} years — if it doesn't grow at least ${vals.rate}%/yr, you're getting a real pay cut every year.<br><br>
+          A salary of <b>${fmt$0(vals.amount)}</b> today is equivalent to <b data-priv="amount">${fmt$0(r.futureValue)}</b> in ${vals.years} years, if it doesn't grow at least ${vals.rate}%/yr, you're getting a real pay cut every year.<br><br>
           The reverse: <b data-priv="amount">${fmt$0(r.pastEquivalent)}</b> ${vals.years} years ago bought what <b>${fmt$0(vals.amount)}</b> does today.
         </div>
       </div>
@@ -35750,7 +35750,7 @@ function realEstateSheet() {
 
   openSheet(`
     <h2>🏠 Home affordability</h2>
-    <p class="muted" style="font-size:12px;margin-bottom:14px">Max home price under the 28/36 rule (housing ≤ 28% of income, total debt ≤ 36%). Educational — your bank may approve more, but the rule keeps you from being house-poor.</p>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Max home price under the 28/36 rule (housing ≤ 28% of income, total debt ≤ 36%). Educational, your bank may approve more, but the rule keeps you from being house-poor.</p>
     <div id="re-output">${render(initial)}</div>
 
     <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
@@ -35898,7 +35898,7 @@ function investingPlanSheet() {
 
   openSheet(`
     <h2>📊 Asset Allocation</h2>
-    <p class="muted" style="font-size:12px;margin-bottom:14px">The canonical 3-fund index portfolio, adapted to your age and risk tolerance. Boring. Effective. Not a recommendation for any specific security — examples only.</p>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">The canonical 3-fund index portfolio, adapted to your age and risk tolerance. Boring. Effective. Not a recommendation for any specific security, examples only.</p>
     <div id="alloc-output">${renderPlan(risk)}</div>
 
     <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-bottom:12px">
@@ -36044,7 +36044,7 @@ function milestonesSheet() {
           </div>
           <div style="font-size:11px;color:var(--t3);margin-top:4px">${r.progress.toFixed(0)}% from last milestone</div>
         </div>
-      ` : `<div style="font-size:13px;color:var(--green);margin-top:6px">🪐 Off the chart — beyond the highest tracked milestone</div>`}
+      ` : `<div style="font-size:13px;color:var(--green);margin-top:6px">🪐 Off the chart, beyond the highest tracked milestone</div>`}
     </div>
     <div>${rows}</div>
     <div class="actions" style="margin-top:14px">
@@ -36287,7 +36287,7 @@ function cardRecommendationsSheet() {
 
   openSheet(`
     <h2>💳 Credit card recommendations</h2>
-    <p class="muted" style="font-size:12px;margin-bottom:14px">Curated cards matched to your spending. ${totalSpend > 0 ? `Estimated $${Math.round(totalSpend)}/mo total spend.` : "Enter your typical monthly spend below."} Educational — terms change; verify before applying.</p>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Curated cards matched to your spending. ${totalSpend > 0 ? `Estimated $${Math.round(totalSpend)}/mo total spend.` : "Enter your typical monthly spend below."} Educational, terms change; verify before applying.</p>
     <div id="card-recs">${renderRecs()}</div>
     <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-top:12px">
       <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:8px">Your monthly spend ($)</div>
@@ -36422,7 +36422,7 @@ function fireSheet() {
 
   openSheet(`
     <h2>🔥 FIRE Calculator</h2>
-    <p class="muted" style="font-size:12px;margin-bottom:14px">Financial Independence Retire Early: when does your investment income cover your expenses indefinitely? Educational — actual paths vary.</p>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Financial Independence Retire Early: when does your investment income cover your expenses indefinitely? Educational, actual paths vary.</p>
     <div id="fire-output">${render(initialExpenses, monthly0, return0, withdrawal0)}</div>
     <div style="background:var(--bg-elev);border-radius:var(--r);padding:14px;margin-top:12px">
       <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Inputs</div>
@@ -36804,7 +36804,7 @@ function taxPlanningSheet() {
 
   openSheet(`
     <h2>🧾 Tax planning</h2>
-    <p class="muted" style="font-size:12px;margin-bottom:14px">Federal income tax estimate with marginal vs effective rate and tax-saving impact of contributions. 2024 brackets — close enough for ${new Date().getFullYear()} planning. State taxes not included.</p>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Federal income tax estimate with marginal vs effective rate and tax-saving impact of contributions. 2024 brackets, close enough for ${new Date().getFullYear()} planning. State taxes not included.</p>
     <div id="tax-output">${renderBody(income, filing)}</div>
     <div style="background:var(--card);border-radius:var(--r);padding:14px">
       <div style="font-size:12px;color:var(--t3);font-weight:600;text-transform:uppercase;letter-spacing:.4px;margin-bottom:10px">Inputs</div>
@@ -37006,7 +37006,7 @@ function priorityPyramidSheet() {
         </div>
         <div style="flex:1;min-width:0">
           <div style="font-weight:600;font-size:14px">${s.emoji} ${esc(s.title)}</div>
-          <div style="font-size:12px;color:${colorFor(s.status)};font-weight:600;margin-top:2px">${s.status === "complete" ? "Complete" : s.status === "active" ? "Active — focus here" : "Up next"}</div>
+          <div style="font-size:12px;color:${colorFor(s.status)};font-weight:600;margin-top:2px">${s.status === "complete" ? "Complete" : s.status === "active" ? "Active, focus here" : "Up next"}</div>
         </div>
         ${s.toggleable ? `<input type="checkbox" ${s.done ? "checked" : ""} onchange="togglePyramidFlag(${jsAttr(s.flagKey)})" style="width:24px;height:24px;flex-shrink:0" />` : ""}
       </div>
@@ -37063,7 +37063,7 @@ function dataSafetySheet() {
     </div>`;
   openSheet(`
     <h2 style="margin-bottom:4px">🛡️ Privacy &amp; Security</h2>
-    <p class="muted" style="font-size:12.5px;margin-bottom:12px">No accounts, no analytics, no ad networks. Your data is yours — here's exactly where it lives and what (if anything) ever leaves your device.</p>
+    <p class="muted" style="font-size:12.5px;margin-bottom:12px">No accounts, no analytics, no ad networks. Your data is yours, here's exactly where it lives and what (if anything) ever leaves your device.</p>
 
     <div style="display:flex;flex-wrap:wrap;gap:6px;margin-bottom:14px">
       ${pill("✓ Local-first", "var(--green)")}
@@ -37078,7 +37078,7 @@ function dataSafetySheet() {
         ? `Your local data is AES-GCM encrypted at rest. The key is derived from your passphrase via PBKDF2-SHA256 (600,000 iterations) and held only in memory while you're using the app. <strong>If you forget the passphrase, your data is unrecoverable by design</strong> — there is no backdoor.`
         : `Set a passphrase in Settings → Security to AES-GCM encrypt everything in localStorage. Key derived via PBKDF2-SHA256 (600k iterations), held only in memory. <strong>If you forget the passphrase, your data is unrecoverable by design</strong>. Auto-lock can re-prompt after an idle period.`)}
 
-    ${card("🏦", "Bank sync (Plaid)", `When you tap "Connect a bank", your <strong>credentials go directly to Plaid</strong> — Ascend never sees them. Plaid returns an access token to Ascend's Cloudflare Worker, which AES-GCM encrypts it with a server-side key before writing to Cloudflare KV. Per-device enrollment isolates every user's token in their own KV namespace — no other Ascend user can read your data. Plaid's "reconnect bank" webhooks are <strong>cryptographically signed (ES256 JWT)</strong> and verified server-side before any in-app prompt — no one can spoof a fake reconnect notice. Disconnect any bank anytime in Settings — the encrypted token is deleted. Power users can self-host (Settings → "Use a custom backend") to keep tokens on infrastructure they fully control.`)}
+    ${card("🏦", "Bank sync (Plaid)", `When you tap "Connect a bank", your <strong>credentials go directly to Plaid</strong>, Ascend never sees them. Plaid returns an access token to Ascend's Cloudflare Worker, which AES-GCM encrypts it with a server-side key before writing to Cloudflare KV. Per-device enrollment isolates every user's token in their own KV namespace — no other Ascend user can read your data. Plaid's "reconnect bank" webhooks are <strong>cryptographically signed (ES256 JWT)</strong> and verified server-side before any in-app prompt — no one can spoof a fake reconnect notice. Disconnect any bank anytime in Settings — the encrypted token is deleted. Power users can self-host (Settings → "Use a custom backend") to keep tokens on infrastructure they fully control.`)}
 
     ${card("✨", "Cornileus (AI counselor)", `When you send Cornileus a message, your text + a snapshot of your financial situation (≤18 KB) is forwarded to Anthropic via your backend proxy. The Anthropic API key lives only on the backend. Per <a href="https://www.anthropic.com" target="_blank" rel="noopener noreferrer" style="color:var(--purple);text-decoration:underline">Anthropic's API terms</a>, inputs aren't used to train their models. Chat auto-clears when you close the counselor (you can pin to keep). Daily call cap (default 50) bounds runaway cost.`)}
 
@@ -37114,7 +37114,7 @@ function bankConnectTrustSheet() {
     <div style="text-align:center;margin-bottom:14px">
       <div style="font-size:42px;line-height:1;margin-bottom:6px">🏦</div>
       <h2 style="margin:0 0 4px;font-size:20px">Before we connect your bank</h2>
-      <div class="muted" style="font-size:12.5px">Here's exactly what happens — and what doesn't.</div>
+      <div class="muted" style="font-size:12.5px">Here's exactly what happens, and what doesn't.</div>
     </div>
 
     <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:12px 14px;margin-bottom:14px">
@@ -37365,7 +37365,7 @@ function financialCalendarSheet() {
 
   openSheet(`
     <h2>📅 Financial calendar</h2>
-    <p class="muted" style="font-size:12px;margin-bottom:14px">Tax & contribution deadlines, goal targets, custom dates — 18-month horizon.</p>
+    <p class="muted" style="font-size:12px;margin-bottom:14px">Tax & contribution deadlines, goal targets, custom dates, 18-month horizon.</p>
     ${body}
     <button class="btn" style="width:100%;margin-top:14px" onclick="closeSheet();addCalendarDateSheet()">+ Add custom date</button>
     ${dismissedCount > 0 ? `<button class="btn secondary" style="width:100%;margin-top:8px;font-size:12px" onclick="resetCalendarBuiltins();closeSheet();financialCalendarSheet()">Restore ${dismissedCount} hidden built-in${dismissedCount===1?"":"s"}</button>` : ""}
@@ -37712,7 +37712,7 @@ function quickAddSpendSheet(prefilled) {
       '<span style="font-size:20px">📷</span>' +
       '<span style="flex:1;text-align:left">' +
         '<div style="font-weight:700">Scan a receipt</div>' +
-        '<div style="font-size:11px;opacity:.85">Snap a photo — AI fills the form</div>' +
+        '<div style="font-size:11px;opacity:.85">Snap a photo, AI fills the form</div>' +
       '</span>' +
       '<span style="font-size:18px;opacity:.85">→</span>' +
     '</button>' +
@@ -37727,7 +37727,7 @@ function quickAddSpendSheet(prefilled) {
     '</select>' +
     '<label>Note (optional)</label>' +
     '<input id="qs-note" placeholder="e.g. Coffee at the corner" value="' + esc(pre.note || "") + '" />' +
-    '<label style="margin-top:12px;display:block">What was driving this? <span style="color:var(--t3);font-weight:400;font-size:11px">(optional — surfaces patterns)</span></label>' +
+    '<label style="margin-top:12px;display:block">What was driving this? <span style="color:var(--t3);font-weight:400;font-size:11px">(optional, surfaces patterns)</span></label>' +
     '<div id="qs-mood-row" style="display:flex;flex-wrap:wrap;gap:5px;margin-bottom:8px">' +
       MOOD_EMOJIS.map(m => '<button type="button" data-mood="' + m.e + '" class="qs-mood-pick" style="background:var(--bg-elev);border:0.5px solid var(--sep);color:var(--t2);border-radius:999px;padding:5px 11px;font-size:12px;cursor:pointer">' + m.e + ' ' + esc(m.lbl) + '</button>').join("") +
     '</div>' +
@@ -38296,7 +38296,7 @@ const GOAL_TEMPLATES = [
 function goalTemplatesSheet() {
   openSheet(
     '<h2>Pick a goal template</h2>' +
-    '<p class="muted" style="font-size:13px;margin-bottom:6px">One tap seeds the life goal, this month\'s milestone, and daily actions — all linked.</p>' +
+    '<p class="muted" style="font-size:13px;margin-bottom:6px">One tap seeds the life goal, this month\'s milestone, and daily actions, all linked.</p>' +
     '<div class="tpl-grid">' +
       GOAL_TEMPLATES.map((t, i) =>
         '<div class="tpl-card" onclick="applyGoalTemplate(' + i + ')">' +
@@ -38410,17 +38410,17 @@ function maybeShowWhatsNew() {
 }
 function whatsNewSheet() {
   openSheet(
-    '<h2>What\'s new — Ascend v3.8</h2>' +
+    '<h2>What\'s new, Ascend v3.8</h2>' +
     '<p class="muted" style="font-size:13px;margin-bottom:14px">Polish round: 18 quality-of-life features. Cornileus learned to speak, your portfolio learned to compare to the market, your settings learned to collapse, and the rest of the app learned to feel more alive.</p>' +
     '<div class="list">' +
-      '<div class="row"><div class="lead">\u{1F509}</div><div class="body"><div class="t1">Cornileus voice mode</div><div class="t2">Tap the speaker chip in chat — Cornileus reads replies aloud with the best system voice.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F509}</div><div class="body"><div class="t1">Cornileus voice mode</div><div class="t2">Tap the speaker chip in chat, Cornileus reads replies aloud with the best system voice.</div></div></div>' +
       '<div class="row"><div class="lead">\u{2702}\u{FE0F}</div><div class="body"><div class="t1">Split transactions</div><div class="t2">One Walmart charge → groceries + home + gift. Children inherit categories without double-counting the parent.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4C8}</div><div class="body"><div class="t1">Portfolio vs S&P 500</div><div class="t2">"Are you beating the market?" line on the Stocks portfolio hero — YTD comparison with a delta badge.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4C8}</div><div class="body"><div class="t1">Portfolio vs S&P 500</div><div class="t2">"Are you beating the market?" line on the Stocks portfolio hero, YTD comparison with a delta badge.</div></div></div>' +
       '<div class="row"><div class="lead">\u{1F1FA}\u{1F1F8}</div><div class="body"><div class="t1">US federal holidays on Calendar</div><div class="t2">All 10 federal holidays marked (with weekend-observed shifts). Toggle off in Settings if non-US.</div></div></div>' +
       '<div class="row"><div class="lead">\u{1F4F8}</div><div class="body"><div class="t1">Year-in-review shareable image</div><div class="t2">Year Review → "Share year" → 1080×1920 PNG with your stats, ready for Stories/Reels.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{2744}\u{FE0F}</div><div class="body"><div class="t1">Streak freeze</div><div class="t2">1 free skip per habit per month. Sick day, travel day, life day — streak intact.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{2744}\u{FE0F}</div><div class="body"><div class="t1">Streak freeze</div><div class="t2">1 free skip per habit per month. Sick day, travel day, life day, streak intact.</div></div></div>' +
       '<div class="row"><div class="lead">\u{1F4B5}</div><div class="body"><div class="t1">30-day cash flow forecast</div><div class="t2">Projects your bank balance forward from recurring bills + paychecks. Flags overdraft risk.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4CA}</div><div class="body"><div class="t1">Spending heatmap (day × hour)</div><div class="t2">Find your peak spend windows — Friday night, Saturday 2pm. 7×24 grid on Stats.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4CA}</div><div class="body"><div class="t1">Spending heatmap (day × hour)</div><div class="t2">Find your peak spend windows, Friday night, Saturday 2pm. 7×24 grid on Stats.</div></div></div>' +
       '<div class="row"><div class="lead">\u{1F3AF}</div><div class="body"><div class="t1">Next milestone projection</div><div class="t2">"At this rate, $100k in 14 months." Uses your net-worth trend to project when you hit the next round number.</div></div></div>' +
       '<div class="row"><div class="lead">\u{1F6D1}</div><div class="body"><div class="t1">Daily spend cap</div><div class="t2">Set a daily limit in Settings → Safe-to-spend. Today shows a progress bar, push fires at 90%.</div></div></div>' +
       '<div class="row"><div class="lead">\u{1F517}</div><div class="body"><div class="t1">Plaid reconnect + bills-today push</div><div class="t2">Bank stops syncing → red banner + push. Bill due today → 9am notification.</div></div></div>' +
@@ -38436,13 +38436,13 @@ function whatsNewSheet() {
 // from a deep link or debug console. Not surfaced anywhere in the UI.
 function whatsNewSheetV37() {
   openSheet(
-    '<h2>What\'s new — Ascend v3.7</h2>' +
+    '<h2>What\'s new, Ascend v3.7</h2>' +
     '<p class="muted" style="font-size:13px;margin-bottom:14px">The biggest update ever. Two parallel tracks merged: full account sync + the largest set of behavioral-science features ever in a personal-finance app.</p>' +
     '<div class="list">' +
-      '<div class="row"><div class="lead">\u{1F3E6}</div><div class="body"><div class="t1">Liabilities + investments sync</div><div class="t2">Credit card APRs, due dates, statements, mortgage terms, brokerage transactions — all pulled automatically. No more typing it in.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F3E6}</div><div class="body"><div class="t1">Liabilities + investments sync</div><div class="t2">Credit card APRs, due dates, statements, mortgage terms, brokerage transactions, all pulled automatically. No more typing it in.</div></div></div>' +
       '<div class="row"><div class="lead">\u{1F4F2}</div><div class="body"><div class="t1">Background push + smart reminders</div><div class="t2">11-category reminders, multiple daily times, per-habit reminders, background push when the app is closed (iOS 16.4+ Home-Screen PWA, Android, desktop).</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F52E}</div><div class="body"><div class="t1">Lifestyle + reverse life math</div><div class="t2">"What if I went part-time when the kids are born?" live sliders. Or backsolve: "Retire at 55 on $7K/mo — what does my path look like?"</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F9E0}</div><div class="body"><div class="t1">Behavioral bias diagnostic + interruptions</div><div class="t2">10 questions → your bias profile. Selling at a loss? Cornileus interrupts in real time: "Your loss-aversion is 8/10 — has the business changed, or just the price?"</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F52E}</div><div class="body"><div class="t1">Lifestyle + reverse life math</div><div class="t2">"What if I went part-time when the kids are born?" live sliders. Or backsolve: "Retire at 55 on $7K/mo, what does my path look like?"</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F9E0}</div><div class="body"><div class="t1">Behavioral bias diagnostic + interruptions</div><div class="t2">10 questions → your bias profile. Selling at a loss? Cornileus interrupts in real time: "Your loss-aversion is 8/10, has the business changed, or just the price?"</div></div></div>' +
       '<div class="row"><div class="lead">\u{1F4DC}</div><div class="body"><div class="t1">Money identity + rules engine</div><div class="t2">"I\'m someone who saves before spending" + your own financial commandments. Both injected into every Cornileus chat.</div></div></div>' +
       '<div class="row"><div class="lead">\u{1F510}</div><div class="body"><div class="t1">Pre-commitment + 30-day wishlist</div><div class="t2">Lock future commitments with optional stake. Add wants to a wishlist; can\'t buy for 30 days. Real friction.</div></div></div>' +
       '<div class="row"><div class="lead">\u{23F3}</div><div class="body"><div class="t1">Time-context tools</div><div class="t2">Hours of your life (every $ as time worked). Time-remaining viz (your life in weeks). Letter from your 80-year-old self.</div></div></div>' +
@@ -38453,7 +38453,7 @@ function whatsNewSheetV37() {
       '<div class="row"><div class="lead">\u{2600}\u{FE0F}</div><div class="body"><div class="t1">Cornileus relationship</div><div class="t2">Morning briefing, 4 tone options, full transparency on what he knows, memory (pinned facts), followups (did you do it?), annual review.</div></div></div>' +
       '<div class="row"><div class="lead">\u{26A0}\u{FE0F}</div><div class="body"><div class="t1">Anomaly detection</div><div class="t2">After every bank sync, scans for transactions ≥3× your usual category amount. "Restaurants $240 = 7× your average." Catches fraud + lifestyle drift fast.</div></div></div>' +
       '<div class="row"><div class="lead">\u{1F91D}</div><div class="body"><div class="t1">Couples / household mode</div><div class="t2">Pair two phones with a code → both see the same bank accounts, transactions, and holdings. Habits + Cornileus stay personal to each device.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4C5}</div><div class="body"><div class="t1">Calendar agenda view + life events</div><div class="t2">Third toggle on Calendar shows the next 60 days as a list — bills, plans, important dates. Mark life events (got married, bought house) on your net-worth chart for context.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4C5}</div><div class="body"><div class="t1">Calendar agenda view + life events</div><div class="t2">Third toggle on Calendar shows the next 60 days as a list, bills, plans, important dates. Mark life events (got married, bought house) on your net-worth chart for context.</div></div></div>' +
       '<div class="row"><div class="lead">\u{1F3B2}</div><div class="body"><div class="t1">Honest retirement forecast</div><div class="t2">500-simulation Monte Carlo with 16% volatility. See the 10th–90th percentile range, not a fake-precise single line.</div></div></div>' +
       '<div class="row"><div class="lead">\u{2728}</div><div class="body"><div class="t1">Setup health check</div><div class="t2">Settings → Help → Setup health shows every feature with its status. One-tap to configure anything you haven\'t set up yet.</div></div></div>' +
     '</div>' +
