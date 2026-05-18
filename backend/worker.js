@@ -377,6 +377,11 @@ async function handleEnroll(request, env, origin) {
 }
 
 async function handleLinkToken(env, userId, origin) {
+  // /link/token is the start of a Plaid Link flow. Users rarely launch this
+  // more than a couple times per session; a stolen secret looping it would
+  // burn Plaid's link-creation quota.
+  const limited = await _userRateGate(env, userId, "link_token", 10, origin, 30);
+  if (limited) return limited;
   const params = {
     user: { client_user_id: userId },
     client_name: "Ascend",
@@ -400,6 +405,10 @@ async function handleLinkToken(env, userId, origin) {
 }
 
 async function handleExchange(request, env, userId, origin) {
+  // /exchange happens once per institution-link. 5/hour leaves room for
+  // retries on flaky links without enabling a stolen-secret abuse loop.
+  const limited = await _userRateGate(env, userId, "exchange", 5, origin, 20);
+  if (limited) return limited;
   const body = await request.json().catch(() => ({}));
   const publicToken = String(body.public_token || "").trim();
   const institutionName = String(body.institution_name || "Bank").trim();
@@ -432,6 +441,13 @@ async function handleExchange(request, env, userId, origin) {
 const SYNC_PLAID_CALL_BUDGET = 40;
 
 async function handleSync(env, userId, origin) {
+  // /sync is the hottest Plaid endpoint — each call can do up to 40 upstream
+  // Plaid API calls (SYNC_PLAID_CALL_BUDGET) across all linked items. A
+  // stolen secret looping /sync would burn the operator's Plaid quota fast.
+  // 10/hour leaves slack for foreground+background refreshes; 60/day caps
+  // sustained abuse. Normal users sync 1-3x per app-open.
+  const limited = await _userRateGate(env, userId, "sync", 10, origin, 60);
+  if (limited) return limited;
   const itemIds = await getItemIndex(env, userId);
   const allTx = [];
   const allAccounts = [];
@@ -537,6 +553,10 @@ async function handleSync(env, userId, origin) {
 }
 
 async function handleItems(env, userId, origin) {
+  // /items doesn't hit Plaid, just reads KV — cheap. But a stolen secret
+  // polling it tightly would still be wasteful. 60/hour ≈ once per minute.
+  const limited = await _userRateGate(env, userId, "items", 60, origin);
+  if (limited) return limited;
   const itemIds = await getItemIndex(env, userId);
   const items = [];
   for (const itemId of itemIds) {
@@ -562,6 +582,11 @@ async function handleItems(env, userId, origin) {
 }
 
 async function handleRemoveItem(url, env, userId, origin) {
+  // Item removal is rare (user disconnects a bank) but irreversible from the
+  // backend's perspective (the encrypted access token is gone). 5/hour gives
+  // slack for retries without enabling rapid-fire data loss.
+  const limited = await _userRateGate(env, userId, "item_remove", 5, origin, 20);
+  if (limited) return limited;
   // decodeURIComponent throws URIError on malformed escapes like "%FF" —
   // surface as a 400 instead of letting it bubble into a 500 with a
   // confusing internal message.
@@ -589,6 +614,8 @@ async function handleRemoveItem(url, env, userId, origin) {
 }
 
 async function handleHoldings(env, userId, origin) {
+  const limited = await _userRateGate(env, userId, "holdings", 10, origin, 60);
+  if (limited) return limited;
   const itemIds = await getItemIndex(env, userId);
   const allHoldings = [];
   const allSecurities = {};
@@ -633,6 +660,8 @@ async function handleHoldings(env, userId, origin) {
 // that item, no error. Frontend pre-populates DB.debtMeta so the user
 // doesn't have to type APRs.
 async function handleLiabilities(env, userId, origin) {
+  const limited = await _userRateGate(env, userId, "liabilities", 10, origin, 60);
+  if (limited) return limited;
   const itemIds = await getItemIndex(env, userId);
   const credit = [], mortgage = [], student = [];
 
@@ -742,6 +771,8 @@ async function handleLiabilities(env, userId, origin) {
 // surfaces these as "Plaid spotted these — accept to add as recurring?" so
 // the user doesn't have to type Netflix, Spotify, rent, paycheck, etc.
 async function handleRecurring(env, userId, origin) {
+  const limited = await _userRateGate(env, userId, "recurring", 10, origin, 60);
+  if (limited) return limited;
   const itemIds = await getItemIndex(env, userId);
   const inflows = [], outflows = [];
 
@@ -796,6 +827,8 @@ async function handleRecurring(env, userId, origin) {
 // basis tracking and realized P&L. Requires start_date and end_date; we
 // accept them from the request or default to the last 90 days.
 async function handleInvestmentTransactions(request, env, userId, origin) {
+  const limited = await _userRateGate(env, userId, "investment_transactions", 10, origin, 60);
+  if (limited) return limited;
   const body = await request.json().catch(() => ({}));
   const today = new Date();
   const ninetyAgo = new Date(today); ninetyAgo.setDate(today.getDate() - 90);
@@ -982,6 +1015,9 @@ async function handleAnthropic(request, env, userId, origin) {
 }
 
 async function handleAuditList(env, userId, origin) {
+  // Cheap KV read but worth bounding — frontend doesn't need to poll this.
+  const limited = await _userRateGate(env, userId, "audit", 30, origin);
+  if (limited) return limited;
   const raw = await env.ASCEND_KV.get(`u:${userId}:audit`);
   const events = raw ? JSON.parse(raw) : [];
   return json({ events }, 200, origin);
@@ -1328,15 +1364,24 @@ async function _enrollRateGate(request, env, origin) {
   return null;
 }
 
-async function _pushRateGate(env, userId, bucket, perHourCap, origin, perDayCap) {
+// Generic per-user rate gate. Bucket is a short string (e.g. "sync", "test",
+// "send") so different routes get isolated counters. Caller picks an hourly
+// cap; the daily cap is optional and stacked on top.
+//
+// KV writes are sloppy / racy by design — two parallel requests can both read
+// curHour=N (cap N+1), both reserve, both succeed. Acceptable at this app's
+// scale; documented here so a future contributor doesn't "fix" it by reaching
+// for Durable Objects without first measuring the slop. If the slop ever
+// matters: move counters to a Durable Object keyed by userId.
+async function _userRateGate(env, userId, bucket, perHourCap, origin, perDayCap) {
   const iso = new Date().toISOString();
-  const hourKey = `u:${userId}:push:${bucket}:${iso.slice(0, 13)}`; // YYYY-MM-DDTHH
+  const hourKey = `u:${userId}:rl:${bucket}:${iso.slice(0, 13)}`; // YYYY-MM-DDTHH
   const curHour = parseInt(await env.ASCEND_KV.get(hourKey) || "0", 10) || 0;
   if (curHour >= perHourCap) {
     return json({ error: `Rate limit: ${perHourCap}/hour for ${bucket}. Slow down.`, code: "rate_limit" }, 429, origin);
   }
   if (perDayCap) {
-    const dayKey = `u:${userId}:push:${bucket}:day:${iso.slice(0, 10)}`;
+    const dayKey = `u:${userId}:rl:${bucket}:day:${iso.slice(0, 10)}`;
     const curDay = parseInt(await env.ASCEND_KV.get(dayKey) || "0", 10) || 0;
     if (curDay >= perDayCap) {
       return json({ error: `Daily limit: ${perDayCap}/day for ${bucket}. Try again tomorrow.`, code: "rate_limit_daily" }, 429, origin);
@@ -1356,7 +1401,7 @@ async function handlePushSubscribe(request, env, userId, origin) {
   // push subscription expires or the user re-grants permission). 5/hour
   // gives slack for the rare permission-flip cycle without enabling a
   // misbehaving client to churn KV records.
-  const limited = await _pushRateGate(env, userId, "subscribe", 5, origin);
+  const limited = await _userRateGate(env, userId, "subscribe", 5, origin);
   if (limited) return limited;
   const body = await request.json().catch(() => ({}));
   const sub = body.subscription;
@@ -1408,7 +1453,7 @@ async function handlePushTest(env, userId, origin) {
   // Test is user-initiated ("send me a test push to verify delivery"). A
   // healthy user taps it once. Tightened from 10/hour to 3/hour — a stolen
   // device-secret can't use this to spam the device.
-  const limited = await _pushRateGate(env, userId, "test", 3, origin);
+  const limited = await _userRateGate(env, userId, "test", 3, origin);
   if (limited) return limited;
   const raw = await env.ASCEND_KV.get(pushKey(userId));
   if (!raw) return json({ error: "not subscribed" }, 400, origin);
@@ -1461,7 +1506,7 @@ async function handlePushSend(request, env, userId, origin) {
   // frontend calls it sparingly, but a compromised clientSecret could spam
   // the device. Hourly cap bounds burst; daily cap (50/day, matching the
   // Anthropic proxy cap) bounds sustained abuse over 24h.
-  const limited = await _pushRateGate(env, userId, "send", 30, origin, 50);
+  const limited = await _userRateGate(env, userId, "send", 30, origin, 50);
   if (limited) return limited;
   const raw = await env.ASCEND_KV.get(pushKey(userId));
   if (!raw) return json({ error: "not subscribed" }, 400, origin);
