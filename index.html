@@ -2660,7 +2660,7 @@ function _maybeWarnQuota(e) {
   // Defer toast() — save() runs before the UI is mounted on first load.
   setTimeout(() => {
     if (typeof toast === "function") {
-      toast("Storage full — export + delete old data to keep saving");
+      toast("Storage full. Export + delete old data to keep saving");
     }
   }, 0);
 }
@@ -2966,7 +2966,7 @@ async function pinQuoteToToday() {
   // Enforce the same 500-char cap saveCalendarNote uses, otherwise this path
   // can silently exceed the limit and next save truncates older content.
   if (combined.length > 500) {
-    toast("Note is full — clear some space first");
+    toast("Note is full. Clear some space first");
     return;
   }
   // Snapshot prior value so a failed encryption save can roll back the
@@ -2980,7 +2980,7 @@ async function pinQuoteToToday() {
   } catch (e) {
     if (prior === undefined) delete DB.calendarNotes[k];
     else DB.calendarNotes[k] = prior;
-    toast("Couldn't save — please try again");
+    toast("Couldn't save. Please try again");
     return;
   }
   if (activeTab === "calendar") renderCalendar();
@@ -3609,7 +3609,7 @@ function unpairFromHouseholdSheet() {
   DB.plaidRecurringSuggestions = { inflows: [], outflows: [], lastSyncAt: null };
   DB.investmentTransactions = [];
   save(); render();
-  toast("Unpaired — local shared data cleared");
+  toast("Unpaired. Local shared data cleared");
 }
 
 async function connectBank() {
@@ -3646,7 +3646,7 @@ async function _openPlaidLink() {
   // success or timeout. Replaces the dead-end "try again" message that
   // gave users no actual recourse.
   if (!window.Plaid) {
-    toast("Loading bank connect — one second…");
+    toast("Loading bank connect. One second…");
     const start = Date.now();
     while (!window.Plaid && Date.now() - start < 8000) {
       await new Promise(r => setTimeout(r, 250));
@@ -3666,7 +3666,7 @@ async function _openPlaidLink() {
     onSuccess: async (public_token, metadata) => {
       try {
         await backendExchange(public_token, metadata?.institution?.name || "Bank");
-        toast("Connected — syncing…");
+        toast("Connected. Syncing…");
         const s = await backendSync();
         toast(`Synced ${s.added} new transaction${s.added===1?"":"s"}`);
         render();
@@ -4158,13 +4158,13 @@ async function freezeStreakToday(id) {
   const k = todayKey();
   // Already done today? Pointless to freeze.
   const done = h.type === "count" ? (+h.log[k] || 0) >= (+h.target || 1) : !!h.log[k];
-  if (done) { toast("Already done today — no freeze needed"); return; }
+  if (done) { toast("Already done today. No freeze needed"); return; }
   if (_isFrozen(h, k)) { toast("Today is already frozen"); return; }
   if (!Array.isArray(h.frozenDates)) h.frozenDates = [];
   h.frozenDates.push(k);
   await save();
   try { haptic("light"); } catch {}
-  try { toast(`❄️ ${h.name} frozen for today — streak preserved`); } catch {}
+  try { toast(`❄️ ${h.name} frozen for today. Streak preserved`); } catch {}
   render();
 }
 
@@ -4484,7 +4484,7 @@ async function toggleHabitForDate(id, dateKey) {
     await save();
   } catch (e) {
     if (prior === undefined) delete h.log[dateKey]; else h.log[dateKey] = prior;
-    toast("Couldn't save — please try again");
+    toast("Couldn't save. Please try again");
     return;
   }
   toast(nowDone ? `✓ ${h.name}` : `Cleared ${h.name}`);
@@ -5655,7 +5655,7 @@ async function addStarterHabit(name, emoji, group, isCount, target, unit) {
     toast(`✓ ${name} added`);
   } catch (e) {
     DB.habits.pop();
-    toast("Couldn't save — please try again");
+    toast("Couldn't save. Please try again");
     return;
   }
   render();
@@ -5741,7 +5741,7 @@ async function addWinForDate(dateKey, text) {
     await save();
     toast("Win added");
   } catch (e) {
-    toast("Couldn't save win — please try again");
+    toast("Couldn't save win. Please try again");
     // Roll back so DB matches what's persisted.
     DB.wins.shift();
     return;
@@ -5891,7 +5891,7 @@ async function toggleTodaySection(id) {
   const idx = list.indexOf(id);
   if (idx >= 0) list.splice(idx, 1);
   else list.push(id);
-  try { await save(); } catch (e) { toast("Couldn't save — please try again"); return; }
+  try { await save(); } catch (e) { toast("Couldn't save. Please try again"); return; }
   // Re-render the customize sheet so the toggle state updates, and re-render
   // Today if it's the active tab.
   if (activeTab === "today") renderToday();
@@ -5900,7 +5900,7 @@ async function toggleTodaySection(id) {
 async function showAllTodaySections() {
   if (!DB.settings) DB.settings = {};
   DB.settings.hiddenTodaySections = [];
-  try { await save(); } catch (e) { toast("Couldn't save — please try again"); return; }
+  try { await save(); } catch (e) { toast("Couldn't save. Please try again"); return; }
   toast("All sections restored");
   if (activeTab === "today") renderToday();
   customizeTodaySheet();
@@ -5964,7 +5964,7 @@ function startNoteVoice() {
     for (let i = e.resultIndex; i < e.results.length; i++) txt += e.results[i][0].transcript;
     if (ta) ta.value = initial + (initial && !initial.endsWith(" ") ? " " : "") + txt;
   };
-  r.onerror = () => { _stopNoteRecognition(); toast("Voice input error — try again"); };
+  r.onerror = () => { _stopNoteRecognition(); toast("Voice input error. Try again"); };
   r.onend = () => _stopNoteRecognition();
   _noteRecognition = r;
   r.start();
@@ -5995,7 +5995,7 @@ function startWinVoice() {
     const input = document.getElementById("win-input");
     if (input) input.value = txt;
   };
-  r.onerror = () => { _stopWinRecognition(); toast("Voice input error — try again"); };
+  r.onerror = () => { _stopWinRecognition(); toast("Voice input error. Try again"); };
   r.onend = () => _stopWinRecognition();
   _winRecognition = r;
   r.start();
@@ -6011,7 +6011,7 @@ async function _saveWinFromSheet() {
   _stopWinRecognition();
   if (!DB.wins) DB.wins = [];
   DB.wins.unshift({ id: uid(), date: todayKey(), text });
-  try { await save(); toast("Win added ⭐"); } catch (e) { DB.wins.shift(); toast("Couldn't save — please try again"); return; }
+  try { await save(); toast("Win added ⭐"); } catch (e) { DB.wins.shift(); toast("Couldn't save. Please try again"); return; }
   closeSheet();
   render();
 }
@@ -6650,7 +6650,7 @@ function applyAccent() {
 async function setAccentColor(hex) {
   if (!DB.settings) DB.settings = {};
   DB.settings.accentColor = hex || "";
-  try { await save(); } catch (e) { toast("Couldn't save — please try again"); return; }
+  try { await save(); } catch (e) { toast("Couldn't save. Please try again"); return; }
   applyAccent();
   if (activeTab === "settings") renderSettings();
 }
@@ -6686,14 +6686,14 @@ async function toggleTabVisibility(id) {
   const idx = list.indexOf(id);
   if (idx >= 0) list.splice(idx, 1);
   else list.push(id);
-  try { await save(); } catch (e) { toast("Couldn't save — please try again"); return; }
+  try { await save(); } catch (e) { toast("Couldn't save. Please try again"); return; }
   applyHiddenTabs();
   customizeTabsSheet();
 }
 async function showAllTabs() {
   if (!DB.settings) DB.settings = {};
   DB.settings.hiddenTabs = [];
-  try { await save(); } catch (e) { toast("Couldn't save — please try again"); return; }
+  try { await save(); } catch (e) { toast("Couldn't save. Please try again"); return; }
   toast("All tabs restored");
   applyHiddenTabs();
   customizeTabsSheet();
@@ -8817,7 +8817,7 @@ function createBlankRoadmap() {
   });
   save(); render();
   setTimeout(() => roadmapSheet(id), 200);
-  toast("Roadmap created — tap each phase to fill it in");
+  toast("Roadmap created. Tap each phase to fill it in");
 }
 
 // Manage a single roadmap — view all phases expanded, mark phases done,
@@ -18576,7 +18576,7 @@ async function _mvSave() {
   DB.moneyValues = { ranked, takenAt: Date.now() };
   await save();
   closeSheet();
-  toast("🎯 Values saved — Cornileus will frame advice through these");
+  toast("🎯 Values saved. Cornileus will frame advice through these");
 }
 
 /* ---------- 22. Rule of 72 doubling-time visualizer ----------
@@ -19311,7 +19311,7 @@ async function _cornileusAddMemory(text) {
   if (!DB.counselor) DB.counselor = { thread: [] };
   if (!Array.isArray(DB.counselor.memories)) DB.counselor.memories = [];
   if (DB.counselor.memories.length >= 30) {
-    toast("Memory limit reached (30 max) — remove some first");
+    toast("Memory limit reached (30 max). Remove some first");
     return;
   }
   const id = "m_" + Date.now().toString(36) + "_" + Math.random().toString(36).slice(2, 6);
@@ -22009,7 +22009,7 @@ async function setDayMood(dateKey, emoji) {
   try {
     await save();
   } catch (e) {
-    toast("Couldn't save mood — please try again");
+    toast("Couldn't save mood. Please try again");
     return;
   }
   toast(wasCleared ? "Mood cleared" : `Mood set ${emoji}`);
@@ -22055,7 +22055,7 @@ async function saveCalendarNote(dateKey) {
     await save();
     toast(text ? "Note saved" : "Note cleared");
   } catch (e) {
-    toast("Couldn't save — please try again");
+    toast("Couldn't save. Please try again");
     return;
   }
   closeSheet();
@@ -23756,7 +23756,7 @@ async function sendTestPush() {
   if (!DB.settings.pushSubscription) { toast("Enable background push first"); return; }
   try {
     await api("/push/test", { method: "POST", body: JSON.stringify({ userId: ensureUserId() }) });
-    toast("Test push sent — check your notification tray");
+    toast("Test push sent. Check your notification tray");
   } catch (e) {
     toast("Test push failed: " + e.message);
   }
@@ -23799,7 +23799,7 @@ async function sendPushNow(title, body, url) {
 function sendTestNotification() {
   if (typeof Notification === "undefined") { toast("Not supported on this browser"); return; }
   if (Notification.permission !== "granted") {
-    toast("Permission not granted yet — toggle reminders on first");
+    toast("Permission not granted yet. Toggle reminders on first");
     return;
   }
   try {
@@ -23809,7 +23809,7 @@ function sendTestNotification() {
       tag: "ascend-test",
     });
   } catch (e) {
-    toast("Test notification failed — " + (e.message || "permission may be blocked"));
+    toast("Test notification failed. " + (e.message || "permission may be blocked"));
   }
 }
 
@@ -24426,7 +24426,7 @@ async function _exportPlaintext() {
   if (!saved) return; // user cancelled the share sheet
   DB.lastExportAt = Date.now();
   try { save(); } catch {}
-  toast("Backup saved — keep it somewhere safe");
+  toast("Backup saved. Keep it somewhere safe");
 }
 
 async function _exportEncrypted() {
@@ -24449,7 +24449,7 @@ async function _exportEncrypted() {
 
 async function _doExportEncrypted() {
   const pass = String(($("#exp-pp") || {}).value || "");
-  if (pass.length < 8) { toast("Passphrase too short — min 8 characters"); return; }
+  if (pass.length < 8) { toast("Passphrase too short. Min 8 characters"); return; }
   try {
     const salt = newSalt();
     const key = await deriveKey(pass, salt, CRYPTO_V_CURRENT);
@@ -24465,9 +24465,9 @@ async function _doExportEncrypted() {
     if (!saved) return; // user cancelled the share sheet
     DB.lastExportAt = Date.now();
     try { save(); } catch {}
-    toast("Encrypted backup saved — keep the passphrase safe");
+    toast("Encrypted backup saved. Keep the passphrase safe");
   } catch (e) {
-    toast("Export failed — " + (e.message || "try again"));
+    toast("Export failed. " + (e.message || "try again"));
   }
 }
 function importData() {
@@ -24493,7 +24493,7 @@ function importData() {
           const key = await deriveKey(String(pass), obj.salt, obj.v);
           obj = await decryptObject({ iv: obj.iv, ct: obj.ct }, key);
         } catch {
-          toast("Couldn't decrypt — wrong passphrase or corrupt file");
+          toast("Couldn't decrypt. Wrong passphrase or corrupt file");
           return;
         }
         if (!obj || typeof obj !== "object" || Array.isArray(obj)) throw new Error("bad file");
@@ -27113,7 +27113,7 @@ async function _copyInsightText(id) {
     await navigator.clipboard.writeText(found.text);
     toast("Copied to clipboard");
   } catch {
-    toast("Couldn't copy — try selecting manually");
+    toast("Couldn't copy. Try selecting manually");
   }
 }
 
@@ -27152,7 +27152,7 @@ function counselorToggleKeep() {
 async function counselorNewChat() {
   if (!DB.counselor) DB.counselor = { thread: [], lastOpenedAt: 0, hideLauncher: false };
   if (_counselorState && _counselorState.busy) {
-    toast("Hold on — Cornileus is still thinking");
+    toast("Hold on. Cornileus is still thinking");
     return;
   }
   DB.counselor.thread = [];
@@ -27686,7 +27686,7 @@ function counselorVoiceToggle() {
     _voiceRecognizer = r;
     _voiceListening = true;
     if (micBtn) { micBtn.textContent = "⏹"; micBtn.classList.add("listening"); }
-    toast("Listening — tap mic again to stop");
+    toast("Listening. Tap mic again to stop");
   } catch (err) {
     toast("Mic failed to start");
   }
@@ -28186,7 +28186,7 @@ function acceptDetectedRecurring(streamId, kind) {
     ? (DB.plaidRecurringSuggestions && DB.plaidRecurringSuggestions.inflows) || []
     : (DB.plaidRecurringSuggestions && DB.plaidRecurringSuggestions.outflows) || [];
   const s = list.find(x => x.stream_id === streamId);
-  if (!s) { toast("Stream not found — re-sync"); return; }
+  if (!s) { toast("Stream not found. Re-sync"); return; }
   // Plaid frequencies → app vocabulary. Default to monthly for unknown so
   // unrecognized cadences (every-2-months, irregular) at least don't crash.
   const cadence = ({
@@ -28828,7 +28828,7 @@ function showLockScreen() {
       localStorage.clear();
       location.reload();
     } else if (typed != null) {
-      toast("Cancelled — type DELETE exactly to confirm reset");
+      toast("Cancelled. Type DELETE exactly to confirm reset");
     }
   });
 
@@ -29483,7 +29483,7 @@ async function shareYearReviewImage() {
     a.href = url; a.download = filename;
     document.body.appendChild(a); a.click(); a.remove();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
-    toast("Image downloaded — share it from your gallery");
+    toast("Image downloaded. Share it from your gallery");
   }, "image/png", 0.95);
 }
 
@@ -30617,7 +30617,7 @@ function tutorialFinish() {
   // Celebrate full completions; quiet skip acknowledgement otherwise.
   if (wasOnLast) {
     _tourConfetti();
-    if (typeof toast === "function") toast("You're set — start playing 🎉");
+    if (typeof toast === "function") toast("You're set. Start playing 🎉");
   } else {
     if (typeof toast === "function") toast("Tour closed");
   }
@@ -31063,7 +31063,7 @@ async function aiOnbAcceptPlan() {
   _aiOnb = null;
   _lockSheet = false;
   closeSheet();
-  toast("Plan added — welcome to Ascend!");
+  toast("Plan added. Welcome to Ascend!");
   applyTheme();
   render();
   maybeStartTutorial();
@@ -33320,7 +33320,7 @@ async function dismissSpendingLeak(category) {
   }
   await save();
   render();
-  toast(`Dismissed ${category} leak alert for this month — undo from Settings`);
+  toast(`Dismissed ${category} leak alert for this month. Undo from Settings`);
 }
 
 // Reset dismissed leak alerts so they can resurface. Mirrors the pattern
@@ -35396,7 +35396,7 @@ function resetSinkingFund(id) {
   f.current = 0;
   f.lastReset = Date.now();
   save();
-  toast(`${f.name} reset — fund used`);
+  toast(`${f.name} reset. Fund used`);
 }
 
 function deleteSinkingFund(id) {
@@ -36001,7 +36001,7 @@ function checkNetWorthMilestones() {
   const m = r.uncelebrated[r.uncelebrated.length - 1];
   DB._pendingMilestone = { title: m.title, emoji: m.emoji, value: m.value };
   save();
-  toast(`🎉 ${m.title} — ${m.quote.split(".")[0]}!`);
+  toast(`🎉 ${m.title}. ${m.quote.split(".")[0]}!`);
   try { celebrate(1.2); } catch {}
   try { haptic("success"); } catch {}
   // Fire a server-side push too so the user gets it even when the app's
@@ -38768,7 +38768,7 @@ function init() {
   if (_loadedFromBackup) {
     // Surface so the user knows recovery happened — silent recovery would
     // hide a problem (e.g. a flaky storage backend) that they need to see.
-    setTimeout(() => toast("Recovered from backup — primary save was corrupt"), 1500);
+    setTimeout(() => toast("Recovered from backup. Primary save was corrupt"), 1500);
   }
 
   if (DB.settings.autoSyncOnOpen && _backendReady() && (DB.items||[]).length > 0) {
