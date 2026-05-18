@@ -34,10 +34,14 @@ const PLAID_HOSTS = {
 };
 
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
-const AUDIT_KEEP = 200;          // last N audit events per user
-const DEFAULT_LLM_CAP = 50;      // calls per user per day (per feature)
-const DEFAULT_LLM_BURST = 10;    // calls per user per minute (global across features)
-const WEBHOOK_KEEP_DAYS = 30;    // Plaid webhook events expire after N days
+const AUDIT_KEEP = 200;                    // last N audit events per user
+const DEFAULT_LLM_DAILY_CAP_PER_FEATURE = 50;  // calls per user per day, per `feature` tag
+const DEFAULT_LLM_BURST_CAP_PER_MIN = 10;      // calls per user per minute, across all features
+const WEBHOOK_KEEP_DAYS = 30;              // Plaid webhook events expire after N days
+
+// Back-compat alias — keep until any external reference is removed.
+const DEFAULT_LLM_CAP = DEFAULT_LLM_DAILY_CAP_PER_FEATURE;
+const DEFAULT_LLM_BURST = DEFAULT_LLM_BURST_CAP_PER_MIN;
 
 export default {
   // ============ Scheduled handler ============
@@ -248,9 +252,15 @@ async function checkAuth(request, env, url) {
   if (!m) return { error: "unauthorized", status: 401 };
   const token = m[1];
 
-  // Enrollment key (back-compat: accept either ENROLLMENT_KEY or legacy API_KEY)
+  // Enrollment key. Prefer ENROLLMENT_KEY; accept legacy API_KEY as a
+  // deprecated alias and warn so the operator notices and migrates.
+  // (Removing API_KEY entirely would break existing deployments that
+  // haven't been re-secret-set with the new name.)
   const enrollKey = env.ENROLLMENT_KEY || env.API_KEY || "";
   if (enrollKey && timingSafeEqStr(token, enrollKey)) {
+    if (!env.ENROLLMENT_KEY && env.API_KEY) {
+      try { console.warn("[deprecated_secret] API_KEY is deprecated — rename to ENROLLMENT_KEY"); } catch {}
+    }
     return { mode: "enrollment" };
   }
 
@@ -1221,11 +1231,12 @@ async function handleDeleteAccount(env, userId, origin) {
 
 async function audited(env, userId, action, fn) {
   const res = await fn();
-  // Only log if response looks successful
-  try {
-    if (res && res.status < 400) await appendAudit(env, userId, action);
-    else await appendAudit(env, userId, action + "_error");
-  } catch {}
+  // fn() always returns a Response, which always has .status. Tag as
+  // *_error for any non-2xx so the audit log distinguishes successful
+  // actions from rate-limited / validation-failed / 5xx attempts.
+  const tag = res.status < 400 ? action : action + "_error";
+  try { await appendAudit(env, userId, tag); }
+  catch (e) { try { console.warn(`[audit_tag_failed] uid=${userId} tag=${tag}`); } catch {} }
   return res;
 }
 
