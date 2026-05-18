@@ -715,8 +715,13 @@ async function handleHoldings(env, userId, origin) {
   const itemIds = await getItemIndex(env, userId);
   const allHoldings = [];
   const allSecurities = {};
+  // Per-invocation Plaid-call budget — mirror handleSync's pattern so a user
+  // with many linked institutions can't blow the CPU budget.
+  let plaidCalls = 0;
+  let truncated = false;
 
   for (const itemId of itemIds) {
+    if (plaidCalls >= SYNC_PLAID_CALL_BUDGET) { truncated = true; break; }
     const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!recRaw) continue;
     const rec = JSON.parse(recRaw);
@@ -725,6 +730,7 @@ async function handleHoldings(env, userId, origin) {
     catch { continue; }
 
     try {
+      plaidCalls++;
       const r = await plaidCall(env, "/investments/holdings/get", { access_token: accessToken });
       for (const sec of (r.securities || [])) allSecurities[sec.security_id] = sec;
       for (const h of (r.holdings || [])) {
@@ -747,7 +753,7 @@ async function handleHoldings(env, userId, origin) {
     } catch (e) { continue; }
   }
 
-  return json({ ok: true, holdings: allHoldings }, 200, origin);
+  return json({ ok: true, holdings: allHoldings, truncated }, 200, origin);
 }
 
 // Liabilities — pulls credit card APRs/min payments/statement balances, plus
@@ -760,8 +766,11 @@ async function handleLiabilities(env, userId, origin) {
   if (limited) return limited;
   const itemIds = await getItemIndex(env, userId);
   const credit = [], mortgage = [], student = [];
+  let plaidCalls = 0;
+  let truncated = false;
 
   for (const itemId of itemIds) {
+    if (plaidCalls >= SYNC_PLAID_CALL_BUDGET) { truncated = true; break; }
     const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!recRaw) continue;
     const rec = JSON.parse(recRaw);
@@ -770,6 +779,7 @@ async function handleLiabilities(env, userId, origin) {
     catch { continue; }
 
     try {
+      plaidCalls++;
       const r = await plaidCall(env, "/liabilities/get", { access_token: accessToken });
       const liab = r.liabilities || {};
       for (const c of (liab.credit || [])) {
@@ -858,7 +868,7 @@ async function handleLiabilities(env, userId, origin) {
     }
   }
 
-  return json({ ok: true, credit, mortgage, student }, 200, origin);
+  return json({ ok: true, credit, mortgage, student, truncated }, 200, origin);
 }
 
 // Recurring transactions — Plaid's pattern-detection across the user's
@@ -871,8 +881,12 @@ async function handleRecurring(env, userId, origin) {
   if (limited) return limited;
   const itemIds = await getItemIndex(env, userId);
   const inflows = [], outflows = [];
+  let plaidCalls = 0;
+  let truncated = false;
 
   for (const itemId of itemIds) {
+    // Each item costs 2 Plaid calls here, so check budget conservatively.
+    if (plaidCalls + 2 > SYNC_PLAID_CALL_BUDGET) { truncated = true; break; }
     const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!recRaw) continue;
     const rec = JSON.parse(recRaw);
@@ -883,12 +897,14 @@ async function handleRecurring(env, userId, origin) {
     // Need account_ids for /transactions/recurring/get. Pull them inline.
     let acctIds = [];
     try {
+      plaidCalls++;
       const a = await plaidCall(env, "/accounts/get", { access_token: accessToken });
       acctIds = (a.accounts || []).map(x => x.account_id);
     } catch { continue; }
     if (!acctIds.length) continue;
 
     try {
+      plaidCalls++;
       const r = await plaidCall(env, "/transactions/recurring/get", {
         access_token: accessToken,
         account_ids: acctIds,
@@ -916,7 +932,7 @@ async function handleRecurring(env, userId, origin) {
     } catch (e) { continue; }
   }
 
-  return json({ ok: true, inflows, outflows }, 200, origin);
+  return json({ ok: true, inflows, outflows, truncated }, 200, origin);
 }
 
 // Investment transactions — buys, sells, dividends, fees. Useful for cost
@@ -939,8 +955,11 @@ async function handleInvestmentTransactions(request, env, userId, origin) {
 
   const itemIds = await getItemIndex(env, userId);
   const transactions = [];
+  let plaidCalls = 0;
+  let truncated = false;
 
   for (const itemId of itemIds) {
+    if (plaidCalls >= SYNC_PLAID_CALL_BUDGET) { truncated = true; break; }
     const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!recRaw) continue;
     const rec = JSON.parse(recRaw);
@@ -949,6 +968,7 @@ async function handleInvestmentTransactions(request, env, userId, origin) {
     catch { continue; }
 
     try {
+      plaidCalls++;
       const r = await plaidCall(env, "/investments/transactions/get", {
         access_token: accessToken,
         start_date: startDate,
@@ -980,7 +1000,7 @@ async function handleInvestmentTransactions(request, env, userId, origin) {
     } catch (e) { continue; }
   }
 
-  return json({ ok: true, start_date: startDate, end_date: endDate, transactions }, 200, origin);
+  return json({ ok: true, start_date: startDate, end_date: endDate, transactions, truncated }, 200, origin);
 }
 
 async function handleAnthropic(request, env, userId, origin) {
