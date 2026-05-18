@@ -3634,6 +3634,18 @@ $("#content").addEventListener("scroll", () => {
 document.addEventListener("keydown", (e) => {
   const tag = (document.activeElement && document.activeElement.tagName) || "";
   const inField = tag === "INPUT" || tag === "TEXTAREA" || (document.activeElement && document.activeElement.isContentEditable);
+  // A1: Escape closes any open sheet. Listed first so it preempts the other
+  // shortcuts and runs even when focus is in a field (the natural escape
+  // behavior every iOS / desktop user expects). The keyboard-shortcuts
+  // overlay claimed this was built-in; now it actually is.
+  if (e.key === "Escape") {
+    const sheet = document.getElementById("sheet");
+    if (sheet && sheet.classList.contains("show")) {
+      e.preventDefault();
+      try { closeSheet(); } catch {}
+      return;
+    }
+  }
   // Cmd/Ctrl+K — global search
   if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
     if (inField) return;
@@ -3704,15 +3716,79 @@ function toast(msg) {
 
 /* ================ SHEET ================ */
 let _lockSheet = false;  // when true, scrim taps + closeSheet() are no-ops (used during onboarding)
+// A2/A3: focus management for sheets. Remember the element that triggered
+// the sheet so closeSheet can restore focus there (where keyboard users
+// expect to land after dismissing a dialog). Also marks the sheet as a
+// dialog with a label for screen readers.
+let _sheetTriggerEl = null;
 function openSheet(html) {
   const sheet = $("#sheet");
-  sheet.innerHTML = `<div class="grabber"></div>${html}`;
+  // Capture the focused element BEFORE we overwrite the sheet markup so
+  // closeSheet can return focus to where the user came from.
+  _sheetTriggerEl = (document.activeElement && document.activeElement !== document.body)
+    ? document.activeElement
+    : null;
+  sheet.innerHTML = `<div class="grabber" aria-hidden="true"></div>${html}`;
+  // A3: surface the sheet as a real dialog. aria-labelledby pulls from the
+  // injected h2 (every sheet starts with one). We mint a unique id so
+  // nested h2s don't collide.
+  sheet.setAttribute("role", "dialog");
+  sheet.setAttribute("aria-modal", "true");
+  const h2 = sheet.querySelector("h2");
+  if (h2) {
+    if (!h2.id) h2.id = "sheet-title-" + Date.now().toString(36);
+    sheet.setAttribute("aria-labelledby", h2.id);
+  } else {
+    sheet.removeAttribute("aria-labelledby");
+  }
   sheet.classList.add("show");
   $("#scrim").classList.add("show");
   // Reset scroll position — a long previous sheet shouldn't leave the next
   // one opened halfway down.
   try { sheet.scrollTop = 0; } catch {}
   _ensureSheetSwipeToClose();
+  _ensureSheetFocusTrap();
+  // A2: move focus into the sheet on next tick so the browser's own
+  // focus-restore (after innerHTML wipe) doesn't fight us. Prefer the first
+  // interactive control that isn't a Cancel/Close button (less surprising
+  // tab-on-then-tab-back loop), else any focusable, else the h2 itself.
+  setTimeout(() => {
+    if (!sheet.classList.contains("show")) return;
+    const focusables = sheet.querySelectorAll('input, select, textarea, button:not([disabled]), [tabindex]:not([tabindex="-1"])');
+    let preferred = null;
+    for (const el of focusables) {
+      const txt = (el.textContent || "").trim().toLowerCase();
+      if (txt === "cancel" || txt === "close" || el.classList.contains("grabber")) continue;
+      preferred = el; break;
+    }
+    const target = preferred || focusables[0] || (h2 && h2.setAttribute("tabindex", "-1"), h2);
+    if (target && typeof target.focus === "function") {
+      try { target.focus({ preventScroll: true }); } catch {}
+    }
+  }, 30);
+}
+
+// Focus trap: keep Tab cycling inside the sheet while it's open. One-shot
+// wiring (same pattern as _sheetSwipeWired) since #sheet is reused.
+let _sheetFocusTrapWired = false;
+function _ensureSheetFocusTrap() {
+  if (_sheetFocusTrapWired) return;
+  const sheet = document.getElementById("sheet");
+  if (!sheet) return;
+  sheet.addEventListener("keydown", (e) => {
+    if (e.key !== "Tab" || !sheet.classList.contains("show")) return;
+    const focusables = Array.from(sheet.querySelectorAll('input:not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled]), [tabindex]:not([tabindex="-1"])'))
+      .filter(el => el.offsetParent !== null);
+    if (!focusables.length) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    if (e.shiftKey && document.activeElement === first) {
+      e.preventDefault(); last.focus();
+    } else if (!e.shiftKey && document.activeElement === last) {
+      e.preventDefault(); first.focus();
+    }
+  });
+  _sheetFocusTrapWired = true;
 }
 
 // Wires swipe-down-to-close on the sheet. Attached once globally so reused
@@ -3808,6 +3884,13 @@ function closeSheet() {
   }
   sheet.classList.remove("show");
   $("#scrim").classList.remove("show");
+  // A2: return focus to the element that opened the sheet so keyboard
+  // users don't get dumped at the top of the document. Guarded against
+  // the trigger having been removed from the DOM in the meantime.
+  if (_sheetTriggerEl && document.body.contains(_sheetTriggerEl)) {
+    try { _sheetTriggerEl.focus({ preventScroll: true }); } catch {}
+  }
+  _sheetTriggerEl = null;
 }
 
 /* ================ HEADER ================ */
@@ -26617,7 +26700,7 @@ function counselorRender() {
   ` : `
     <div style="display:flex;gap:8px;align-items:flex-end;padding-top:8px;border-top:1px solid var(--sep)">
       <textarea id="cns-input" rows="1" placeholder="Ask anything about your money…"
-        style="flex:1;background:var(--bg-elev);padding:10px 14px;border-radius:18px;font-size:15px;border:none;outline:none;color:var(--t1);resize:none;max-height:120px;line-height:1.4;font-family:inherit"
+        style="flex:1;background:var(--bg-elev);padding:10px 14px;border-radius:18px;font-size:15px;border:none;color:var(--t1);resize:none;max-height:120px;line-height:1.4;font-family:inherit"
         oninput="this.style.height='auto';this.style.height=Math.min(120,this.scrollHeight)+'px'"
         onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();const v=this.value;this.value='';this.style.height='auto';counselorSend(v);}"></textarea>
       ${voiceSupported ? `
@@ -30434,7 +30517,7 @@ function aiOnboardingRender() {
       ${chips ? `<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px">${chips}</div>` : ""}
       <div style="display:flex;gap:8px;align-items:center">
         <input id="ai-onb-input" placeholder="Type your answer…"
-          style="flex:1;background:var(--bg-elev);padding:11px 14px;border-radius:24px;font-size:16px;border:none;outline:none;color:var(--t1)"
+          style="flex:1;background:var(--bg-elev);padding:11px 14px;border-radius:24px;font-size:16px;border:none;color:var(--t1)"
           onkeydown="if(event.key==='Enter'){event.preventDefault();aiOnbSend(this.value);this.value='';}" />
         <button class="btn" style="border-radius:50%;width:44px;height:44px;padding:0;flex-shrink:0;font-size:18px"
           onclick="(()=>{const v=$('#ai-onb-input').value;$('#ai-onb-input').value='';aiOnbSend(v);})()">→</button>
