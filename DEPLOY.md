@@ -66,15 +66,16 @@ Cost: $0/month for personal use. Plaid Dev tier free for 100 connected items, Cl
 3. Confirm the email Plaid sends you.
 4. You'll land in the dashboard. Pick **United States** as the country and skip any "what are you building" prompts (you can fill them later — defaults are fine for dev).
 5. Go to **Team Settings → Keys** in the left nav (or `https://dashboard.plaid.com/developers/keys`).
-6. You'll see three environments: **Sandbox**, **Development**, **Production**.
-   - **Sandbox**: fake banks for testing — use this for the first run-through.
-   - **Development**: real banks, real data, free up to 100 items — switch to this when you're ready to connect your actual bank.
-7. Copy these three values into a safe note:
+6. Plaid (as of late 2024) ships new accounts with two environments:
+   - **Sandbox**: fake banks for testing — use this for the first run-through. The Sandbox secret is visible immediately on signup.
+   - **Production**: real banks. Gated behind a one-time security questionnaire — click "Apply for Production access" or "Request Production access" in the dashboard. Approval is usually same-day for personal-finance apps. Once approved, a Production secret appears in the dashboard. Free up to 100 connected items.
+   (Plaid used to have a "Development" middle tier; it's been retired for new accounts. You go straight from Sandbox to Production.)
+7. Copy these two values into a safe note:
    - `client_id`
    - `Sandbox secret` (you'll start here)
-   - Later, `Development secret` when you switch to real banks
+   - Later, `Production secret` once Plaid approves your application
 
-> **Tip**: Always use Sandbox first. Connect a fake bank, see your transactions populate, confirm everything works. Then swap the secret to Development to use real banks.
+> **Tip**: Always use Sandbox first. Connect a fake bank (First Platypus, Tartan Bank, etc.) with credentials `user_good` / `pass_good`, see your transactions populate, confirm everything works. Then swap the secret to Production once Plaid approves real-bank access.
 
 ---
 
@@ -178,10 +179,10 @@ wrangler secret put PLAID_CLIENT_ID
 # paste your Plaid client_id
 
 wrangler secret put PLAID_SECRET
-# paste your Plaid Sandbox secret (or Development later)
+# paste your Plaid Sandbox secret (or Production later)
 
 wrangler secret put PLAID_ENV
-# type: sandbox    (or "development" / "production" later)
+# type: sandbox    (or "production" later, once Plaid approves real-bank access)
 
 wrangler secret put ENROLLMENT_KEY
 # paste the ENROLLMENT_KEY you generated in Step 6
@@ -250,7 +251,7 @@ Now go back and update the `ALLOWED_ORIGIN` secret on the Worker to match the Ne
 6. Tap **Connect a bank**.
 7. Plaid Link opens. Pick a bank.
    - In **Sandbox**: any of the listed banks. Use username `user_good`, password `pass_good` (Plaid's test creds).
-   - In **Development**: log in with your real bank credentials. Plaid handles the OAuth.
+   - In **Production**: log in with your real bank credentials. Plaid handles the OAuth — your password goes straight to your bank, never to Ascend or the backend.
 8. After auth, Plaid closes. Toast says "Synced X transactions". Go to **Money → Spend** to see them.
 
 ---
@@ -265,20 +266,23 @@ This wraps your local data with AES-GCM. After enabling, every cold open of the 
 
 ---
 
-## Switching from Sandbox → Development (real banks)
+## Switching from Sandbox → Production (real banks)
 
-Once you've confirmed the flow works with fake banks:
-1. In Plaid dashboard, copy your **Development** secret.
+Once you've confirmed the flow works with fake banks AND Plaid has approved your Production access (you'll see a Production row appear in the dashboard):
+
+1. In Plaid dashboard, reveal + copy your **Production** secret.
 2. Run:
    ```bash
    wrangler secret put PLAID_SECRET
-   # paste Development secret
+   # paste Production secret
    wrangler secret put PLAID_ENV
-   # type: development
+   # type: production
    wrangler deploy
    ```
-3. In the app: **Settings → Connect a bank** again. This time use real bank credentials.
-4. Old Sandbox connections won't work anymore — disconnect them in Settings.
+3. In the app: **Settings → Bank sync** → disconnect any sandbox bank connections (their access tokens are environment-specific and won't work after the swap).
+4. Tap **Connect a bank** again. This time use real bank credentials — Plaid's OAuth flow handles them, your password never reaches us.
+
+> Plaid retired the "Development" middle tier. Sandbox and Production are the only two environments for new accounts; the Production application is gated behind a one-time security questionnaire (~5 min, usually approved same-day for personal apps).
 
 ---
 
@@ -301,7 +305,7 @@ Once you've confirmed the flow works with fake banks:
 
 **"Plaid /link/token/create failed"**: usually missing PLAID_CLIENT_ID or wrong PLAID_ENV. Check `wrangler secret list`.
 
-**Transactions don't appear**: Plaid's sandbox sometimes returns empty transactions for new test accounts. Use Plaid's [Sandbox Override](https://plaid.com/docs/sandbox/test-credentials/) to seed transactions, or just switch to Development with a real bank.
+**Transactions don't appear**: Plaid's sandbox sometimes returns empty transactions for new test accounts. Use Plaid's [Sandbox Override](https://plaid.com/docs/sandbox/test-credentials/) to seed transactions, or switch to Production with a real bank once Plaid approves your access.
 
 **App freezes on the lock screen**: type your passphrase. If you forgot it, tap "Reset and start over" — wipes the encrypted blob, app comes back empty.
 
