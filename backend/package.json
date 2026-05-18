@@ -10,6 +10,6 @@
     "kv:create": "wrangler kv namespace create ASCEND_KV"
   },
   "devDependencies": {
-    "wrangler": "^3.78.0"
+    "wrangler": "4.92.0"
   }
 }
