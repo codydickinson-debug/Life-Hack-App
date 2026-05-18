@@ -3126,6 +3126,17 @@ function _safeMoneyInput(raw, opts) {
   return Math.max(min, Math.min(max, n));
 }
 
+/* Grapheme-safe slice. .slice(0,200) on a string splits surrogate pairs
+   when a multi-codepoint emoji (flags, family) lands at the boundary —
+   the orphaned half then renders as the replacement character U+FFFD.
+   Array.from() iterates by codepoint so flags / variant selectors stay
+   intact. Use for any user-typed string saved with a length cap. */
+function _safeSlice(s, n) {
+  if (s == null) return "";
+  const arr = Array.from(String(s));
+  return arr.length <= n ? arr.join("") : arr.slice(0, n).join("");
+}
+
 async function setPassphrase(pass) {
   // 8-char floor: 4-char passphrases (even at PBKDF2 600k) are
   // offline-brute-forceable on a GPU in minutes. 8 chars of mixed
@@ -4680,10 +4691,12 @@ function deleteGoal(id) {
   save(); render();
 }
 function addStepInline(gid) {
+  const g = DB.goals.find(x => x.id === gid); if (!g) return;
+  // Match the addGoalSheet cap so the inline path can't exceed 8 steps.
+  if ((g.steps || []).length >= 8) { toast("Max 8 milestones per goal"); return; }
   const text = prompt("New step");
   if (!text || !text.trim()) return;
-  const g = DB.goals.find(x => x.id === gid); if (!g) return;
-  g.steps.push({ id: uid(), text: text.trim(), done: false });
+  g.steps.push({ id: uid(), text: _safeSlice(text.trim(), 120), done: false });
   save(); render();
 }
 function deleteStep(gid, sid) {
@@ -5560,9 +5573,9 @@ function spendTrendChartHtml() {
 function addWin(text) {
   const t = (text || "").trim();
   if (!t) return;
-  // Cap at 200 chars to match addWinForDate so the same field has the same
-  // limit no matter which entry path the user takes.
-  DB.wins.unshift({ id: uid(), date: todayKey(), text: t.slice(0, 200) });
+  // Cap at 200 graphemes (not UTF-16 code units) so an emoji at the
+  // 199-200 boundary doesn't get split into an orphan surrogate U+FFFD.
+  DB.wins.unshift({ id: uid(), date: todayKey(), text: _safeSlice(t, 200) });
   try { haptic("success"); } catch {}
   save(); render();
 }
@@ -5674,8 +5687,8 @@ function allWinsSheet() {
 async function addWinForDate(dateKey, text) {
   const t = (text || "").trim();
   if (!t) return;
-  // Cap at 200 chars for sanity.
-  const clean = t.slice(0, 200);
+  // Cap at 200 graphemes (surrogate-safe — see addWin above).
+  const clean = _safeSlice(t, 200);
   if (!DB.wins) DB.wins = [];
   DB.wins.unshift({ id: uid(), date: dateKey, text: clean });
   try {
@@ -8187,7 +8200,10 @@ function deletePlan(id) {
 function updatePlanProgress(id, amount) {
   const p = planById(id);
   if (!p) return;
-  p.current_amount = Math.max(0, +amount || 0);
+  // Math.max(0, +amount || 0) accepts Infinity (Infinity > 0). Without
+  // the finite check, a pasted "1e308" auto-completes the plan.
+  const n = +amount;
+  p.current_amount = Number.isFinite(n) ? Math.max(0, Math.min(1e12, n)) : 0;
   if (p.target_amount && _planLiveCurrent(p) >= p.target_amount && !p.completed) {
     p.completed = true;
     p.completedAt = Date.now();
@@ -8297,9 +8313,12 @@ function addPlanSheet(opts = {}) {
           const p = planById(${jsAttr(existing ? existing.id : "")});
           if (p) {
             p.title = sanitizeText(fields.title, ${TEXT_MAX});
-            p.emoji = (fields.emoji || '✨').slice(0,4);
+            p.emoji = _safeSlice(fields.emoji || '✨', 2);
             p.tier = newTier;
-            p.target_amount = +fields.target_amount || 0;
+            // Clamp target_amount: pasted Infinity/NaN/huge would otherwise
+            // poison plan progress math and any aggregate that sums plans.
+            const _ta = _safeMoneyInput(fields.target_amount, { min: 0, max: 1e12 });
+            p.target_amount = _ta === null ? 0 : _ta;
             p.target_date = fields.target_date || '';
             p.note = sanitizeText(fields.note, ${NOTE_MAX});
             p.linkedSavingsIds = linked;
@@ -11472,7 +11491,7 @@ function renderMoney() {
         <input id="sp-amt" type="number" inputmode="decimal" placeholder="Amount $" />
         <div class="grid2">
           <select id="sp-cat">${cats.map(c=>`<option>${esc(c)}</option>`).join("")}</select>
-          <input id="sp-note" placeholder="Note (optional)" oninput="suggestSpendCategory(this.value)" />
+          <input id="sp-note" maxlength="${NOTE_MAX}" placeholder="Note (optional)" oninput="suggestSpendCategory(this.value)" />
         </div>
         <div id="sp-suggest" style="display:none;font-size:11px;color:var(--t3);margin-top:-4px;padding:0 2px"></div>
         <button class="btn" onclick="(()=>{const raw=$('#sp-amt').value;const a=_safeMoneyInput(raw);if(a===null){toast('Enter a valid amount');return;}if(a===0){toast('Amount?');return;}addSpend(a,$('#sp-cat').value,$('#sp-note').value);renderMoney();toast('Logged '+fmt$0(a));})()">Log expense</button>
@@ -18039,10 +18058,13 @@ async function _leAdd() {
   if (!date || !/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast("Pick a date"); return; }
   if (!label) { toast("What happened?"); return; }
   if (!Array.isArray(DB.lifeEvents)) DB.lifeEvents = [];
+  // E15: clamp impact so a pasted 1e20 doesn't poison net-worth math.
+  // ±$1B is more than any plausible life event.
+  const safeImpact = (Number.isFinite(impact) && Math.abs(impact) <= 1e9) ? impact : null;
   DB.lifeEvents.push({
     id: "le_" + Date.now().toString(36),
-    date, kind, label: label.slice(0, 240),
-    dollarImpact: isFinite(impact) ? impact : null,
+    date, kind, label: _safeSlice(label, 240),
+    dollarImpact: safeImpact,
   });
   await save();
   toast("📅 Event added");
@@ -20145,7 +20167,9 @@ async function _stocksRefreshAll() {
 }
 
 async function _stocksAddTicker(raw) {
-  const tk = (raw || "").trim().toUpperCase().replace(/[^A-Z.\-]/g, "");
+  // Aligned with the other 4 ticker sanitizers (e.g. _stocksSaveHolding).
+  // Was [^A-Z.\-] which stripped digits and mangled tickers like 1810.HK.
+  const tk = (raw || "").trim().toUpperCase().replace(/[^A-Z0-9.-]/g, "");
   if (!tk) { toast("Enter a ticker"); return; }
   if (!DB.stocks) DB.stocks = {};
   if (!Array.isArray(DB.stocks.watchlist)) DB.stocks.watchlist = [];
@@ -21951,9 +21975,9 @@ async function setDayMood(dateKey, emoji) {
 async function saveCalendarNote(dateKey) {
   const ta = document.getElementById("cal-note-input");
   if (!ta) return;
-  // Cap at 500 chars to match the textarea maxlength even if the user pastes
-  // a larger blob in. Sanitize whitespace-only as a clear.
-  const raw = (ta.value || "").slice(0, 500);
+  // Cap at 500 graphemes (surrogate-safe) so an emoji on the boundary
+  // doesn't get split into a lone surrogate that renders as U+FFFD.
+  const raw = _safeSlice(ta.value || "", 500);
   const text = raw.trim();
   if (!DB.calendarNotes) DB.calendarNotes = {};
   if (text) DB.calendarNotes[dateKey] = text;
@@ -24451,6 +24475,11 @@ function _backendReady() {
 }
 async function syncNow() {
   if (!_backendReady()) { toast("Configure backend in Settings first"); return; }
+  // E17: window.syncNow is exposed and several action handlers call it
+  // directly. If one of those fires while a sync is already in flight, the
+  // duplicate round-trip double-counts new transactions (rare race).
+  // Re-entry guard preempts that.
+  if (DB._syncing) { toast("Sync already running"); return; }
   toast("Syncing…");
   // Set a transient flag so Money / Wealth renderers can show skeleton
   // placeholders for accounts/holdings/transactions while the round-trip
@@ -37317,6 +37346,10 @@ function addCalendarDateSheet(existingId) {
     if (!title) { toast("Add a title"); btn.disabled = false; return; }
     const date = $("#cd-date").value;
     if (!date) { toast("Pick a date"); btn.disabled = false; return; }
+    // E16: same shape check the life-events path uses. Date pickers
+    // normally enforce this, but autofill quirks / DevTools paste can
+    // land "abc" in the value attribute.
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { toast("Bad date format"); btn.disabled = false; return; }
     const icon = $("#cd-icon").value.trim() || "📌";
     const note = $("#cd-note").value.trim();
     if (isEdit) {
