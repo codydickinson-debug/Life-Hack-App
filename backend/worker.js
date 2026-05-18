@@ -63,8 +63,26 @@ export default {
   // pushes whose target HH:MM has arrived in the user's local clock window.
   // Idles cheaply when nothing's due.
   async scheduled(event, env, ctx) {
-    try { await deliverScheduledPushes(env); }
-    catch (e) { console.error("scheduled push delivery failed:", e && e.stack || e); }
+    const t0 = Date.now();
+    let delivered = 0, errors = 0;
+    try {
+      const out = await deliverScheduledPushes(env);
+      delivered = out?.delivered || 0;
+      errors = out?.errors || 0;
+    } catch (e) {
+      console.error("scheduled push delivery failed:", e && e.stack || e);
+      errors++;
+    }
+    // One structured log line per cron tick so the operator can see "did
+    // scheduled push fire today?" + latency without enabling tail.
+    try {
+      console.log(JSON.stringify({
+        t: new Date().toISOString(),
+        cron: "deliver_scheduled_pushes",
+        ms: Date.now() - t0,
+        delivered, errors,
+      }));
+    } catch {}
   },
 
   async fetch(request, env, ctx) {
@@ -80,14 +98,12 @@ export default {
     const allowed = (env.ALLOWED_ORIGIN && env.ALLOWED_ORIGIN.trim()) || DEFAULT_ALLOWED;
     const reqOrigin = request.headers.get("Origin") || "";
 
-    // For ACAO header purposes: if the request's Origin matches the
-    // operator's allowlist (single value today; could become a Set), echo it
-    // back. Otherwise echo the operator's canonical origin. Never echo a
-    // foreign origin wholesale — that's what "Allow-Origin: *" used to do
-    // and it's the worst of both worlds (no isolation, no auth headers).
-    const respOrigin = (allowed === "*")
-      ? (reqOrigin || "*")
-      : (reqOrigin && reqOrigin === allowed ? allowed : allowed);
+    // For ACAO header purposes: when wildcard, echo the request's Origin if
+    // it sent one (browsers always do; curl might not). When non-wildcard,
+    // always echo the canonical allowed origin — never the request's, so
+    // a rejected cross-origin request can't trick us into Allow-Origin'ing
+    // a foreign host.
+    const respOrigin = (allowed === "*") ? (reqOrigin || "*") : allowed;
 
     // CORS preflight
     if (request.method === "OPTIONS") {
@@ -472,6 +488,12 @@ async function handleLinkToken(env, userId, origin) {
   // burn Plaid's link-creation quota.
   const limited = await _userRateGate(env, userId, "link_token", 10, origin, 30);
   if (limited) return limited;
+  // Fail early with a clear message when Plaid creds aren't set, instead
+  // of dispatching to plaidCall which would 400 from Plaid with a less
+  // helpful "missing client_id" body.
+  if (!env.PLAID_CLIENT_ID || !env.PLAID_SECRET) {
+    return json({ error: "Plaid not configured on this backend", code: "plaid_disabled" }, 503, origin);
+  }
   const params = {
     user: { client_user_id: userId },
     client_name: "Ascend",
@@ -1276,10 +1298,12 @@ async function handleDeleteAccount(env, userId, origin) {
 
 async function audited(env, userId, action, fn, meta) {
   const res = await fn();
-  // fn() always returns a Response, which always has .status. Tag as
-  // *_error for any non-2xx so the audit log distinguishes successful
-  // actions from rate-limited / validation-failed / 5xx attempts.
-  const tag = res.status < 400 ? action : action + "_error";
+  // Tag the audit entry based on the response. Distinguish rate-limit from
+  // generic error so the user/operator can spot "I'm getting throttled"
+  // separately from "something is broken".
+  const tag = res.status < 400 ? action
+            : res.status === 429 ? action + "_rate_limited"
+            : action + "_error";
   try { await appendAudit(env, userId, tag, meta); }
   catch (e) { try { console.warn(`[audit_tag_failed] uid=${userId} tag=${tag}`); } catch {} }
   return res;
@@ -1802,12 +1826,15 @@ async function handlePushSend(request, env, userId, origin) {
 
 // ----- Scheduled delivery -----
 async function deliverScheduledPushes(env) {
-  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) return;
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) {
+    return { delivered: 0, errors: 0 };
+  }
   const userIds = await _getPushIndex(env);
-  if (!userIds.length) return;
+  if (!userIds.length) return { delivered: 0, errors: 0 };
   const now = new Date();
   const nowMs = now.getTime();
   const deadSubs = [];
+  let delivered = 0, errors = 0;
 
   for (const userId of userIds) {
     try {
@@ -1836,7 +1863,9 @@ async function deliverScheduledPushes(env) {
           });
           slot.lastFiredKey = fireKey;
           modified = true;
+          delivered++;
         } catch (e) {
+          errors++;
           if (e.status === 404 || e.status === 410) { deadSubs.push(userId); break; }
           // Other errors: leave lastFiredKey untouched so next cron retries.
         }
@@ -1853,6 +1882,7 @@ async function deliverScheduledPushes(env) {
     await env.ASCEND_KV.delete(pushKey(u));
     await _removeFromPushIndex(env, u);
   }
+  return { delivered, errors };
 }
 
 // HH:MM in the user's local timezone is within `windowMin` minutes of slot.
