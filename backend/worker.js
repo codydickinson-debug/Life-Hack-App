@@ -47,14 +47,10 @@ const PLAID_HOSTS = {
 };
 
 const ANTHROPIC_API = "https://api.anthropic.com/v1/messages";
-const AUDIT_KEEP = 200;                    // last N audit events per user
+const AUDIT_KEEP = 200;                        // last N audit events per user
 const DEFAULT_LLM_DAILY_CAP_PER_FEATURE = 50;  // calls per user per day, per `feature` tag
 const DEFAULT_LLM_BURST_CAP_PER_MIN = 10;      // calls per user per minute, across all features
-const WEBHOOK_KEEP_DAYS = 30;              // Plaid webhook events expire after N days
-
-// Back-compat alias — keep until any external reference is removed.
-const DEFAULT_LLM_CAP = DEFAULT_LLM_DAILY_CAP_PER_FEATURE;
-const DEFAULT_LLM_BURST = DEFAULT_LLM_BURST_CAP_PER_MIN;
+const WEBHOOK_KEEP_DAYS = 30;                  // Plaid webhook events expire after N days
 
 export default {
   // ============ Scheduled handler ============
@@ -1117,8 +1113,8 @@ async function handleAnthropic(request, env, userId, origin) {
   // ---- Rate limiting: per-feature daily cap + global per-minute burst ----
   // The daily cap protects against quiet long-tail abuse; the burst cap stops
   // a runaway client from emptying the daily quota in seconds.
-  const dailyCap = parseInt(env.ANTHROPIC_DAILY_CAP || `${DEFAULT_LLM_CAP}`, 10) || DEFAULT_LLM_CAP;
-  const burstCap = parseInt(env.ANTHROPIC_BURST_CAP || `${DEFAULT_LLM_BURST}`, 10) || DEFAULT_LLM_BURST;
+  const dailyCap = parseInt(env.ANTHROPIC_DAILY_CAP || `${DEFAULT_LLM_DAILY_CAP_PER_FEATURE}`, 10) || DEFAULT_LLM_DAILY_CAP_PER_FEATURE;
+  const burstCap = parseInt(env.ANTHROPIC_BURST_CAP || `${DEFAULT_LLM_BURST_CAP_PER_MIN}`, 10) || DEFAULT_LLM_BURST_CAP_PER_MIN;
   const day = new Date().toISOString().slice(0, 10);
   const min = new Date().toISOString().slice(0, 16); // YYYY-MM-DDTHH:MM
   const dailyKey = `u:${userId}:llm:${feature}:${day}`;
@@ -1811,6 +1807,9 @@ async function handlePushTest(env, userId, origin) {
   // Test is user-initiated ("send me a test push to verify delivery"). A
   // healthy user taps it once. Tightened from 10/hour to 3/hour — a stolen
   // device-secret can't use this to spam the device.
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) {
+    return json({ error: "Push not configured on this backend (missing VAPID_*)", code: "push_disabled" }, 503, origin);
+  }
   const limited = await _userRateGate(env, userId, "test", 3, origin);
   if (limited) return limited;
   const raw = await env.ASCEND_KV.get(pushKey(userId));
@@ -1876,6 +1875,9 @@ async function handlePushSend(request, env, userId, origin) {
   // frontend calls it sparingly, but a compromised clientSecret could spam
   // the device. Hourly cap bounds burst; daily cap (50/day, matching the
   // Anthropic proxy cap) bounds sustained abuse over 24h.
+  if (!env.VAPID_PUBLIC_KEY || !env.VAPID_PRIVATE_KEY || !env.VAPID_SUBJECT) {
+    return json({ error: "Push not configured on this backend (missing VAPID_*)", code: "push_disabled" }, 503, origin);
+  }
   const limited = await _userRateGate(env, userId, "send", 30, origin, 50);
   if (limited) return limited;
   if (_wrongContentType(request)) return json({ error: "Content-Type must be application/json", code: "wrong_content_type" }, 415, origin);
