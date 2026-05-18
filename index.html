@@ -2995,6 +2995,21 @@ window.addEventListener("pagehide", flushPendingSave);
 window.addEventListener("beforeunload", flushPendingSave);
 document.addEventListener("visibilitychange", () => { if (document.hidden) flushPendingSave(); });
 
+/* ---------- Submit-button mutex (E1) ----------
+   Async save handlers run `await save()` then `closeSheet()` then `render()`.
+   The encrypted save path is async and can take a few hundred ms; during
+   that window a second tap on the same button (rapid double-tap, slow phone,
+   impatient user) would fire a second handler in parallel, pushing a
+   duplicate row into DB.habits / DB.goals / DB.savings / DB.spend / etc.
+   Pattern: every save handler now starts with `if (!_lockSubmit(btn)) return;`
+   and unlocks on validation-failure early-returns. closeSheet() destroys the
+   button DOM on the success path, so no unlock needed there. */
+function _lockSubmit(btn) {
+  if (!btn || btn.disabled) return false;
+  btn.disabled = true;
+  return true;
+}
+
 async function setPassphrase(pass) {
   // 8-char floor: 4-char passphrases (even at PBKDF2 600k) are
   // offline-brute-forceable on a GPU in minutes. 8 chars of mixed
@@ -4189,6 +4204,13 @@ async function toggleHabitForDate(id, dateKey) {
 }
 function deleteHabit(id) {
   DB.habits = DB.habits.filter(h => h.id !== id);
+  // E2: prune the deleted id from settings.habitOrder so stale ids don't
+  // accumulate across the lifetime of an account. Long-tenured users would
+  // otherwise carry orphan ids in this array indefinitely, slowing every
+  // sort and ballooning the encrypted DB payload.
+  if (DB.settings && Array.isArray(DB.settings.habitOrder)) {
+    DB.settings.habitOrder = DB.settings.habitOrder.filter(x => x !== id);
+  }
   save(); render();
 }
 // Reorder habits sheet — up/down chevrons next to each row. Simpler and
@@ -4305,9 +4327,11 @@ function addHabitSheet(existing) {
     $$(".emoji-pick", $("#h-emoji")).forEach(x => x.classList.remove("sel"));
     b.classList.add("sel");
   });
-  $("#h-save").addEventListener("click", async () => {
+  $("#h-save").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    if (!_lockSubmit(btn)) return;
     const name = $("#h-name").value.trim();
-    if (!name) { toast("Add a name"); return; }
+    if (!name) { toast("Add a name"); btn.disabled = false; return; }
     const emoji = $$(".emoji-pick.sel", $("#h-emoji"))[0]?.dataset.e || "💪";
     const type = $("#h-type").value;
     const target = Number($("#h-target")?.value || 1);
@@ -4484,9 +4508,11 @@ function addGoalSheet(existing) {
     // Focus the new input
     cont.lastElementChild.querySelector("input").focus();
   });
-  $("#g-save").addEventListener("click", async () => {
+  $("#g-save").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    if (!_lockSubmit(btn)) return;
     const title = $("#g-title").value.trim();
-    if (!title) { toast("Add a title"); return; }
+    if (!title) { toast("Add a title"); btn.disabled = false; return; }
     const note = $("#g-note").value.trim();
     const tier = $("#g-tier").value;
     // Collect steps from the DOM
@@ -4591,9 +4617,11 @@ function addSavingSheet(existing) {
     $$(".color-pick", $("#s-color")).forEach(x => x.classList.remove("sel"));
     b.classList.add("sel");
   });
-  $("#s-save").addEventListener("click", async () => {
+  $("#s-save").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    if (!_lockSubmit(btn)) return;
     const name = $("#s-name").value.trim();
-    if (!name) { toast("Add a name"); return; }
+    if (!name) { toast("Add a name"); btn.disabled = false; return; }
     const emoji = $$(".emoji-pick.sel", $("#s-emoji"))[0]?.dataset.e || "💰";
     const color = $$(".color-pick.sel", $("#s-color"))[0]?.dataset.c || COLORS[1];
     const current = Number($("#s-cur").value)||0;
@@ -4624,9 +4652,11 @@ function logSavingSheet(id) {
     </div>
     <p class="muted" style="margin-top:14px;font-size:13px">Current: <b data-priv="amount">${fmt$0(s.current)}</b> of <span data-priv="amount">${fmt$0(s.target)}</span></p>
   `);
-  $("#ls-save").addEventListener("click", async () => {
+  $("#ls-save").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    if (!_lockSubmit(btn)) return;
     const a = Number($("#ls-amt").value);
-    if (!a) { toast("Enter amount"); return; }
+    if (!a) { toast("Enter amount"); btn.disabled = false; return; }
     s.current = Math.max(0, (+s.current||0) + a);
     s.log.push({ date: todayKey(), amount: a, note: $("#ls-note").value.trim() });
     const flipped = _autoCompletePlans();
@@ -12804,16 +12834,20 @@ function _stocksAddHoldingSheet(prefill) {
 }
 
 async function _stocksSaveHolding() {
+  // E1: lock the inline-onclick save button so a rapid double-tap can't push
+  // two duplicate holdings during the await save() window.
+  const saveBtn = document.querySelector('button[onclick="_stocksSaveHolding()"]');
+  if (!_lockSubmit(saveBtn)) return;
   const tkEl = document.getElementById("hold-tk");
   const shEl = document.getElementById("hold-shares");
   const cstEl = document.getElementById("hold-cost");
-  if (!tkEl || !shEl || !cstEl) return;
+  if (!tkEl || !shEl || !cstEl) { if (saveBtn) saveBtn.disabled = false; return; }
   const tk = (tkEl.value || "").trim().toUpperCase().replace(/[^A-Z0-9.-]/g, "");
   const shares = parseFloat(shEl.value);
   const cost = parseFloat(cstEl.value);
-  if (!tk) { toast("Ticker required"); return; }
-  if (!isFinite(shares) || shares <= 0) { toast("Shares must be > 0"); return; }
-  if (!isFinite(cost) || cost <= 0) { toast("Cost basis must be > 0"); return; }
+  if (!tk) { toast("Ticker required"); if (saveBtn) saveBtn.disabled = false; return; }
+  if (!isFinite(shares) || shares <= 0) { toast("Shares must be > 0"); if (saveBtn) saveBtn.disabled = false; return; }
+  if (!isFinite(cost) || cost <= 0) { toast("Cost basis must be > 0"); if (saveBtn) saveBtn.disabled = false; return; }
   if (!DB.stocks) DB.stocks = {};
   if (!DB.stocks.holdings) DB.stocks.holdings = {};
   DB.stocks.holdings[tk] = { shares, cost };
@@ -15825,7 +15859,11 @@ function _stocksHoldingLimitsSheet(tk) {
 }
 
 async function _stocksSaveHoldingLimits(tk) {
-  if (!DB.stocks || !DB.stocks.holdings || !DB.stocks.holdings[tk]) { toast("Holding not found"); return; }
+  // E1: lock the inline save button so a double-tap doesn't append two
+  // duplicate auto-alerts before the first save completes.
+  const saveBtn = document.querySelector(`button[onclick*="_stocksSaveHoldingLimits"]`);
+  if (!_lockSubmit(saveBtn)) return;
+  if (!DB.stocks || !DB.stocks.holdings || !DB.stocks.holdings[tk]) { toast("Holding not found"); if (saveBtn) saveBtn.disabled = false; return; }
   const stop = parseFloat(document.getElementById("lim-stop").value);
   const take = parseFloat(document.getElementById("lim-take").value);
   const h = DB.stocks.holdings[tk];
@@ -24640,7 +24678,9 @@ function reviewIncomeSheet(deposit) {
     `}
   `);
   if (splits.length) {
-    $("#dep-confirm").addEventListener("click", () => {
+    $("#dep-confirm").addEventListener("click", (e) => {
+      const btn = e.currentTarget;
+      if (!_lockSubmit(btn)) return;
       // Apply each split to the savings goal's current balance
       for (const s of splits) {
         const sav = DB.savings.find(x => x.id === s.savingId);
@@ -27947,11 +27987,18 @@ function assetSheet(existing) {
       <button class="btn" id="a-save">${isEdit?'Save':'Add'}</button>
     </div>
   `);
-  $("#a-save").addEventListener("click", () => {
+  $("#a-save").addEventListener("click", (e) => {
+    const btn = e.currentTarget;
+    if (!_lockSubmit(btn)) return;
     const name = $("#a-name").value.trim();
-    if (!name) { toast("Name required"); return; }
+    if (!name) { toast("Name required"); btn.disabled = false; return; }
     const type = $("#a-type").value;
-    const value = +$("#a-val").value || 0;
+    // E3: clamp negative + cap to a sane upper bound. A pasted "-50000" would
+    // otherwise flip net worth sign silently; an "Infinity" would poison
+    // every downstream aggregate.
+    const rawVal = +$("#a-val").value || 0;
+    if (!isFinite(rawVal)) { toast("Value must be a number"); btn.disabled = false; return; }
+    const value = Math.max(0, Math.min(1e12, rawVal));
     const note = $("#a-note").value.trim();
     if (isEdit) updateAsset(a.id, { name, type, value, note });
     else addAsset({ name, type, value, note });
@@ -27989,13 +28036,21 @@ function liabilitySheet(existing) {
       <button class="btn" id="l-save">${isEdit?'Save':'Add'}</button>
     </div>
   `);
-  $("#l-save").addEventListener("click", () => {
+  $("#l-save").addEventListener("click", (e) => {
+    const btn = e.currentTarget;
+    if (!_lockSubmit(btn)) return;
     const name = $("#l-name").value.trim();
-    if (!name) { toast("Name required"); return; }
+    if (!name) { toast("Name required"); btn.disabled = false; return; }
     const type = $("#l-type").value;
-    const balance = +$("#l-bal").value || 0;
-    const apr = +$("#l-apr").value || 0;
-    const minPayment = +$("#l-min").value || 0;
+    // E3: clamp dollar values to non-negative. A pasted negative balance
+    // would otherwise present as a debt that helps your net worth.
+    const rawBal = +$("#l-bal").value || 0;
+    const rawApr = +$("#l-apr").value || 0;
+    const rawMin = +$("#l-min").value || 0;
+    if (![rawBal, rawApr, rawMin].every(isFinite)) { toast("Numbers must be finite"); btn.disabled = false; return; }
+    const balance = Math.max(0, Math.min(1e12, rawBal));
+    const apr = Math.max(0, Math.min(100, rawApr));
+    const minPayment = Math.max(0, Math.min(1e9, rawMin));
     const note = $("#l-note").value.trim();
     if (isEdit) updateLiability(l.id, { name, type, balance, apr, minPayment, note });
     else addLiability({ name, type, balance, apr, minPayment, note });
@@ -36992,11 +37047,13 @@ function addCalendarDateSheet(existingId) {
       <button class="btn" id="cd-save">${isEdit ? "Save" : "Add"}</button>
     </div>
   `);
-  $("#cd-save").addEventListener("click", async () => {
+  $("#cd-save").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    if (!_lockSubmit(btn)) return;
     const title = $("#cd-title").value.trim();
-    if (!title) { toast("Add a title"); return; }
+    if (!title) { toast("Add a title"); btn.disabled = false; return; }
     const date = $("#cd-date").value;
-    if (!date) { toast("Pick a date"); return; }
+    if (!date) { toast("Pick a date"); btn.disabled = false; return; }
     const icon = $("#cd-icon").value.trim() || "📌";
     const note = $("#cd-note").value.trim();
     if (isEdit) {
@@ -37131,8 +37188,10 @@ function addRecurringSheet(existing) {
       '<button class="btn" id="rc-save">' + (isEdit ? 'Save' : 'Add') + '</button>' +
     '</div>'
   );
-  $("#rc-save").addEventListener("click", async () => {
-    const name = $("#rc-name").value.trim(); if (!name) { toast("Add a name"); return; }
+  $("#rc-save").addEventListener("click", async (e) => {
+    const btn = e.currentTarget;
+    if (!_lockSubmit(btn)) return;
+    const name = $("#rc-name").value.trim(); if (!name) { toast("Add a name"); btn.disabled = false; return; }
     const amount = Number($("#rc-amt").value) || 0;
     const cadence = $("#rc-cad").value;
     const kind = $("#rc-kind").value;
