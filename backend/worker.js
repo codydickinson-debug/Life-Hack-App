@@ -120,98 +120,122 @@ export default {
       }, 200, respOrigin);
     }
 
+    // Capture request start for access-log latency. The log line is emitted
+    // once per request below — success, error, or 404 — so every authed
+    // request produces exactly one structured log entry.
+    const _t0 = Date.now();
+    let _loggedUserId = null;
+
+    // Inner dispatcher returns a Response; outer wrapper logs and returns.
+    let response;
     try {
-      const auth = await checkAuth(request, env, url);
-      if (auth.error) return json({ error: auth.error }, auth.status || 401, respOrigin);
+      response = await (async () => {
+        const auth = await checkAuth(request, env, url);
+        if (auth.error) return json({ error: auth.error, code: "unauthorized" }, auth.status || 401, respOrigin);
+        if (auth.mode === "user") _loggedUserId = auth.userId;
 
-      // Enrollment is gated by ENROLLMENT_KEY only. For consumer releases
-      // that ship the key in publicly-served JS, the security boundary is
-      // a per-IP rate limit — a leaked key without abuse capacity can only
-      // create new isolated user records, never read existing ones.
-      if (url.pathname === "/enroll" && request.method === "POST") {
-        if (auth.mode !== "enrollment") return json({ error: "enrollment key required" }, 401, respOrigin);
-        const limited = await _enrollRateGate(request, env, respOrigin);
-        if (limited) return limited;
-        return await handleEnroll(request, env, respOrigin);
-      }
+        // Enrollment is gated by ENROLLMENT_KEY only. For consumer releases
+        // that ship the key in publicly-served JS, the security boundary is
+        // a per-IP rate limit — a leaked key without abuse capacity can only
+        // create new isolated user records, never read existing ones.
+        if (url.pathname === "/enroll" && request.method === "POST") {
+          if (auth.mode !== "enrollment") return json({ error: "enrollment key required", code: "unauthorized" }, 401, respOrigin);
+          const limited = await _enrollRateGate(request, env, respOrigin);
+          if (limited) return limited;
+          return await handleEnroll(request, env, respOrigin);
+        }
 
-      // Everything else needs a real user identity
-      if (auth.mode !== "user") {
-        return json({ error: "user authentication required (enroll first)" }, 401, respOrigin);
-      }
-      const userId = auth.userId;
+        // Everything else needs a real user identity
+        if (auth.mode !== "user") {
+          return json({ error: "user authentication required (enroll first)", code: "unauthorized" }, 401, respOrigin);
+        }
+        const userId = auth.userId;
 
-      if (url.pathname === "/link/token" && request.method === "POST") {
-        return await audited(env, userId, "link_token",
-          () => handleLinkToken(env, userId, respOrigin));
-      }
-      if (url.pathname === "/exchange" && request.method === "POST") {
-        return await audited(env, userId, "exchange",
-          () => handleExchange(request, env, userId, respOrigin));
-      }
-      if (url.pathname === "/sync" && request.method === "POST") {
-        return await audited(env, userId, "sync",
-          () => handleSync(env, userId, respOrigin));
-      }
-      if (url.pathname === "/holdings" && request.method === "POST") {
-        return await audited(env, userId, "holdings",
-          () => handleHoldings(env, userId, respOrigin));
-      }
-      if (url.pathname === "/liabilities" && request.method === "POST") {
-        return await audited(env, userId, "liabilities",
-          () => handleLiabilities(env, userId, respOrigin));
-      }
-      if (url.pathname === "/recurring" && request.method === "POST") {
-        return await audited(env, userId, "recurring",
-          () => handleRecurring(env, userId, respOrigin));
-      }
-      if (url.pathname === "/investment-transactions" && request.method === "POST") {
-        return await audited(env, userId, "investment_transactions",
-          () => handleInvestmentTransactions(request, env, userId, respOrigin));
-      }
-      if (url.pathname === "/items" && request.method === "GET") {
-        return await handleItems(env, userId, respOrigin);
-      }
-      if (url.pathname.startsWith("/item/") && request.method === "DELETE") {
-        return await audited(env, userId, "item_remove",
-          () => handleRemoveItem(url, env, userId, respOrigin));
-      }
-      if (url.pathname === "/anthropic/messages" && request.method === "POST") {
-        return await handleAnthropic(request, env, userId, respOrigin);
-      }
-      if (url.pathname === "/audit" && request.method === "GET") {
-        return await handleAuditList(env, userId, respOrigin);
-      }
-      if (url.pathname === "/account" && request.method === "DELETE") {
-        return await handleDeleteAccount(env, userId, respOrigin);
-      }
-      // ----- Push notifications -----
-      // (vapid-public-key is handled above as a public endpoint so the
-      // frontend can probe push availability before enrolling.)
-      if (url.pathname === "/push/subscribe" && request.method === "POST") {
-        return await audited(env, userId, "push_subscribe",
-          () => handlePushSubscribe(request, env, userId, respOrigin));
-      }
-      if (url.pathname === "/push/unsubscribe" && request.method === "POST") {
-        return await audited(env, userId, "push_unsubscribe",
-          () => handlePushUnsubscribe(env, userId, respOrigin));
-      }
-      if (url.pathname === "/push/test" && request.method === "POST") {
-        return await audited(env, userId, "push_test",
-          () => handlePushTest(env, userId, respOrigin));
-      }
-      if (url.pathname === "/push/send" && request.method === "POST") {
-        return await audited(env, userId, "push_send",
-          () => handlePushSend(request, env, userId, respOrigin));
-      }
-      return json({ error: "not found" }, 404, respOrigin);
+        if (url.pathname === "/link/token" && request.method === "POST") {
+          return await audited(env, userId, "link_token",
+            () => handleLinkToken(env, userId, respOrigin));
+        }
+        if (url.pathname === "/exchange" && request.method === "POST") {
+          return await audited(env, userId, "exchange",
+            () => handleExchange(request, env, userId, respOrigin));
+        }
+        if (url.pathname === "/sync" && request.method === "POST") {
+          return await audited(env, userId, "sync",
+            () => handleSync(env, userId, respOrigin));
+        }
+        if (url.pathname === "/holdings" && request.method === "POST") {
+          return await audited(env, userId, "holdings",
+            () => handleHoldings(env, userId, respOrigin));
+        }
+        if (url.pathname === "/liabilities" && request.method === "POST") {
+          return await audited(env, userId, "liabilities",
+            () => handleLiabilities(env, userId, respOrigin));
+        }
+        if (url.pathname === "/recurring" && request.method === "POST") {
+          return await audited(env, userId, "recurring",
+            () => handleRecurring(env, userId, respOrigin));
+        }
+        if (url.pathname === "/investment-transactions" && request.method === "POST") {
+          return await audited(env, userId, "investment_transactions",
+            () => handleInvestmentTransactions(request, env, userId, respOrigin));
+        }
+        if (url.pathname === "/items" && request.method === "GET") {
+          return await handleItems(env, userId, respOrigin);
+        }
+        if (url.pathname.startsWith("/item/") && request.method === "DELETE") {
+          return await audited(env, userId, "item_remove",
+            () => handleRemoveItem(url, env, userId, respOrigin));
+        }
+        if (url.pathname === "/anthropic/messages" && request.method === "POST") {
+          return await handleAnthropic(request, env, userId, respOrigin);
+        }
+        if (url.pathname === "/audit" && request.method === "GET") {
+          return await handleAuditList(env, userId, respOrigin);
+        }
+        if (url.pathname === "/account" && request.method === "DELETE") {
+          return await handleDeleteAccount(env, userId, respOrigin);
+        }
+        // ----- Push notifications -----
+        // (vapid-public-key is handled above as a public endpoint so the
+        // frontend can probe push availability before enrolling.)
+        if (url.pathname === "/push/subscribe" && request.method === "POST") {
+          return await audited(env, userId, "push_subscribe",
+            () => handlePushSubscribe(request, env, userId, respOrigin));
+        }
+        if (url.pathname === "/push/unsubscribe" && request.method === "POST") {
+          return await audited(env, userId, "push_unsubscribe",
+            () => handlePushUnsubscribe(env, userId, respOrigin));
+        }
+        if (url.pathname === "/push/test" && request.method === "POST") {
+          return await audited(env, userId, "push_test",
+            () => handlePushTest(env, userId, respOrigin));
+        }
+        if (url.pathname === "/push/send" && request.method === "POST") {
+          return await audited(env, userId, "push_send",
+            () => handlePushSend(request, env, userId, respOrigin));
+        }
+        return json({ error: "not found", code: "not_found" }, 404, respOrigin);
+      })();
     } catch (err) {
       // safeError logs the full context + stack to console.error (visible in
       // wrangler tail / dashboard) and returns a generic message to the
       // client. Never echo upstream Plaid/Anthropic messages — they leak
       // endpoint paths, request IDs, and in rare 401 variants secret tails.
-      return json(safeError(err, { route: url.pathname, method: request.method }), 500, respOrigin);
+      response = json(safeError(err, { route: url.pathname, method: request.method }), 500, respOrigin);
     }
+
+    // Emit one structured access log line per request. Logging must never
+    // affect the response — if it throws somehow, we still return the response.
+    try {
+      await _accessLog(env, {
+        userId: _loggedUserId,
+        route: url.pathname,
+        method: request.method,
+        status: response.status,
+        elapsedMs: Date.now() - _t0,
+      });
+    } catch { /* swallow */ }
+    return response;
   },
 };
 
@@ -1274,6 +1298,49 @@ function b64ToBytes(b64) {
 }
 
 // ============ HTTP helpers ============
+
+// Hash a userId to a 12-char prefix so logs can correlate requests from the
+// same device without leaking the actual userId (which is high-cardinality
+// but stable and would let a log reader fingerprint individual users). SHA-256
+// hex is overkill for size; truncate to 12 chars (~48 bits) — enough to
+// distinguish among the operator's expected user base, not enough to brute-
+// force back to a userId.
+async function _hashUid(uid) {
+  if (!uid) return "none";
+  try {
+    const h = await sha256hex(uid);
+    return h.slice(0, 12);
+  } catch { return "err"; }
+}
+
+// One structured log line per authenticated request — captured by
+// wrangler tail and Cloudflare's observability pipeline. Format chosen to
+// be greppable AND parseable. Never include:
+//   - raw userId (use _hashUid)
+//   - any Authorization header content
+//   - request body
+//   - Plaid response data
+//   - access tokens, ciphertext
+// `outcome` is "ok" | "client_error" | "server_error" | "rate_limited" |
+// "unauthorized" — bucketed for SLO dashboards.
+async function _accessLog(env, { userId, route, method, status, elapsedMs, code }) {
+  try {
+    const uidHash = await _hashUid(userId);
+    const outcome = status < 400 ? "ok"
+                  : status === 401 || status === 403 ? "unauthorized"
+                  : status === 429 ? "rate_limited"
+                  : status < 500 ? "client_error"
+                  : "server_error";
+    // One-line JSON keeps wrangler tail readable AND lets log-shippers parse.
+    console.log(JSON.stringify({
+      t: new Date().toISOString(),
+      uid: uidHash,
+      route, method, status, outcome,
+      ms: elapsedMs,
+      ...(code ? { code } : {}),
+    }));
+  } catch { /* logging must never throw */ }
+}
 
 // Log a server-side error with full context, return a sanitized client-safe
 // payload. Use everywhere an upstream/internal error could otherwise leak
