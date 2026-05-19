@@ -87,12 +87,21 @@
   <h2>2. What leaves your device (only if you opt in)</h2>
 
   <h3>2.1 Plaid bank sync</h3>
-  <p>If you tap "Connect a bank" and complete the flow, Ascend talks to a Cloudflare Worker backend that Ascend operates, and to Plaid:</p>
+  <p>If you tap "Connect a bank" and complete the flow, Ascend talks to a Cloudflare Worker backend that Ascend operates, and to <a href="https://plaid.com" target="_blank" rel="noopener noreferrer">Plaid</a>. Your use of Plaid through Ascend is also governed by <a href="https://plaid.com/legal/#end-user-privacy-policy" target="_blank" rel="noopener noreferrer">Plaid's End User Privacy Policy</a>, which we recommend reading.</p>
   <ul>
     <li><strong>Sent to Plaid:</strong> the bank account credentials you enter into Plaid Link (these are never seen by Ascend or by the backend — they go directly to Plaid).</li>
     <li><strong>Sent to Ascend's backend:</strong> a per-device user identifier and the Plaid public token, which is exchanged for an access token. The access token is AES-GCM encrypted with a server-side key before being written to Cloudflare KV. Each device enrolls separately and receives its own credentials — no other Ascend user can read your tokens or transactions.</li>
     <li><strong>Synced to your device:</strong> account balances, transactions, and account metadata. Stored only on your device.</li>
   </ul>
+  <p><strong>Plaid products used.</strong> Ascend uses the following Plaid products to power its features. Each is only invoked when you trigger the corresponding action in the app:</p>
+  <ul>
+    <li><strong>Transactions</strong> — recent transaction history and categorization (Money tab, spend analytics).</li>
+    <li><strong>Auth</strong> — account and routing numbers for the bank accounts you connect (account list, balances).</li>
+    <li><strong>Identity</strong> — name on the account, for matching deposits to paychecks (Money tab paycheck detection).</li>
+    <li><strong>Liabilities</strong> — APR, balance, and minimum payment on credit cards, student loans, and mortgages (debt payoff planner).</li>
+    <li><strong>Investments (Holdings + Investment Transactions)</strong> — portfolio positions and trades (Stocks tab integration with linked brokerage accounts).</li>
+  </ul>
+  <p><strong>Data retention.</strong> Your encrypted access token is retained in Cloudflare KV for as long as you have an active bank connection. When you disconnect a bank (Settings → Bank sync → Disconnect), the encrypted token is removed from the backend within minutes and we instruct Plaid to revoke the underlying item. If your device has had no activity for 12 consecutive months, we may proactively delete your enrolled device record and any associated encrypted tokens; you can re-enroll at any time. Transaction data synced to your device lives only on your device — clearing browser data, uninstalling, or tapping Settings → "Reset everything" erases it locally with no server-side copy to recover.</p>
   <p>You can disconnect a bank at any time from Settings → Bank sync, which removes the encrypted token from the backend immediately. You can also opt to self-host the Worker (Settings → "Use a custom backend") so tokens live on infrastructure you fully control — same code, your servers.</p>
   <p><strong>Webhook signature verification.</strong> When Plaid notifies Ascend's backend of an item event (re-auth needed, permission revoked, etc.), every webhook is signed by Plaid with an ES256 JWT. The backend verifies the signature against Plaid's published key set, checks that the body hash matches the signed claim, and enforces a 5-minute replay window before accepting the event. Unverified or replayed events are rejected — no in-app "reconnect your bank" prompt can be spoofed.</p>
 
@@ -107,7 +116,11 @@
   <h3>2.3 Stock quotes & market data</h3>
   <p>The Stocks tab fetches live quotes, market scans, and news headlines from a Python backend that proxies <a href="https://finance.yahoo.com" target="_blank" rel="noopener noreferrer">Yahoo Finance</a>. Only the tickers you query are sent — no personal information.</p>
 
-  <h2>3. What we never collect</h2>
+  <h2>3. Who operates Ascend</h2>
+  <p>Ascend is operated by <strong>Cody Dickinson</strong>, an individual based in the United States. The hosted Cloudflare Worker backend (described in §2.1) runs under this operator's Cloudflare account. The web app is hosted on Vercel.</p>
+  <p>For any privacy questions, data requests, or security reports, email <a href="mailto:codydickinson@autopalsusa.com">codydickinson@autopalsusa.com</a>.</p>
+
+  <h2>4. What we never collect</h2>
   <ul>
     <li>No analytics or telemetry of any kind. No Google Analytics, no Mixpanel, no PostHog, no Sentry.</li>
     <li>No ad networks, no third-party tracking pixels, no Meta/TikTok pixels.</li>
@@ -116,7 +129,7 @@
     <li>No cookies for tracking. The site uses no cookies at all.</li>
   </ul>
 
-  <h2>4. Your controls</h2>
+  <h2>5. Your controls</h2>
   <ul>
     <li><strong>Privacy mode</strong> (eye icon, top-right) blurs every dollar amount across the app for screen-sharing.</li>
     <li><strong>Encryption</strong> (Settings → Privacy & encryption) AES-encrypts everything at rest behind a passphrase.</li>
@@ -126,16 +139,29 @@
     <li><strong>Disconnect a bank</strong> (Settings → Bank sync) removes the encrypted access token from your backend.</li>
   </ul>
 
-  <h2>5. Children</h2>
+  <h2>6. Your privacy rights (CCPA, GDPR, and similar)</h2>
+  <p>Because Ascend stores your data on your device by default, most data-subject rights are exercised directly through the in-app controls in §5 — you don't need to send us a request to access, correct, or delete data we don't hold. That said:</p>
+  <ul>
+    <li><strong>Right to know / access:</strong> tap Settings → Export data to download a complete JSON backup of everything Ascend stores about you.</li>
+    <li><strong>Right to correct:</strong> every field in Ascend is editable in-app. There is no separate operator-held copy to correct.</li>
+    <li><strong>Right to delete / erasure:</strong> tap Settings → Reset everything to erase local data. If you have a connected bank, also tap Settings → Bank sync → Disconnect to remove the encrypted access token from the backend. If you want any residual device-enrollment records purged, email the operator (§3) and they will be removed within 30 days.</li>
+    <li><strong>Right to restrict processing:</strong> do not connect a bank, do not use Cornileus, and do not use the Stocks tab — Ascend will operate as a fully local app with no third-party calls.</li>
+    <li><strong>Right to object to automated decision-making:</strong> Ascend does not make automated decisions about you in the GDPR sense. Cornileus produces educational responses; it does not classify, score, or take action on your behalf.</li>
+    <li><strong>Right to portability:</strong> the JSON export is in a standard, machine-readable format.</li>
+    <li><strong>Non-discrimination (CCPA):</strong> we do not change your access to Ascend based on whether you exercise these rights.</li>
+  </ul>
+  <p>We do not sell personal information. We have no advertising, no data brokers, and no third-party analytics. There is no opt-out to set because there is no sale or share to opt out of.</p>
+
+  <h2>7. Children</h2>
   <p>Ascend is not directed at children under 13. We do not knowingly collect data from anyone (children or adults) — see "What we never collect" above.</p>
 
-  <h2>6. Changes to this policy</h2>
+  <h2>8. Changes to this policy</h2>
   <p>If anything here changes, we'll update the date below and call out the change in the in-app "What's new" sheet on your next visit.</p>
 
-  <h2>7. Contact</h2>
-  <p>Questions, security reports, or requests: open an issue on <a href="https://github.com/codydickinson-debug/Life-Hack-App" target="_blank" rel="noopener noreferrer">GitHub</a> or email the address in <a href="/.well-known/security.txt">/.well-known/security.txt</a>.</p>
+  <h2>9. Contact</h2>
+  <p>For privacy questions, data requests, or security reports, email <a href="mailto:codydickinson@autopalsusa.com">codydickinson@autopalsusa.com</a>. You can also open a non-sensitive issue on <a href="https://github.com/codydickinson-debug/Life-Hack-App" target="_blank" rel="noopener noreferrer">GitHub</a> or use the contact details in <a href="/.well-known/security.txt">/.well-known/security.txt</a> for coordinated vulnerability disclosure.</p>
 
-  <p class="updated">Last updated: 2026-05-15</p>
+  <p class="updated">Last updated: 2026-05-18</p>
 
   <footer>
     <a href="/">← Back to Ascend</a> &nbsp;·&nbsp;
