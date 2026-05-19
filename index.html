@@ -474,6 +474,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .tab.active .ic { opacity: 1; transform: translateY(-1px); }
 .tab:active .ic { transform: scale(.88); }
 
+/* Per-tab accent colors when active — gives the bottom nav wayfinding
+   color without literally tinting backgrounds. Each tab picks a hue that
+   matches the surface it leads to: today/money green (fresh, growth),
+   calendar warm orange, goals aspirational purple, planning strategic
+   blue, stocks market blue, stats vibrant pink. Text stays --t1 for
+   contrast; only the icon picks up the hue so the label stays legible
+   for color-blind users. */
+.tab.active[data-tab="today"]    .ic { color: var(--green);  }
+.tab.active[data-tab="calendar"] .ic { color: var(--orange); }
+.tab.active[data-tab="goals"]    .ic { color: var(--purple); }
+.tab.active[data-tab="planning"] .ic { color: var(--blue);   }
+.tab.active[data-tab="money"]    .ic { color: var(--green);  }
+.tab.active[data-tab="stocks"]   .ic { color: var(--blue);   }
+.tab.active[data-tab="stats"]    .ic { color: var(--pink);   }
+
 /* ================ TYPOGRAPHY / SECTIONS ================ */
 .lg-title {
   font-size: 34px;
@@ -493,7 +508,29 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: var(--t2);
   text-transform: none;
   letter-spacing: -0.005em;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
+/* Tiny accent dot leading every section label — adds color rhythm down
+   each tab without competing with content. Color is set per-page so each
+   tab carries its own visual signature. */
+.section-h .lbl::before {
+  content: "";
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--accent);
+  flex-shrink: 0;
+}
+#page-today    .section-h .lbl::before { background: var(--green); }
+#page-calendar .section-h .lbl::before { background: var(--orange); }
+#page-goals    .section-h .lbl::before { background: var(--purple); }
+#page-planning .section-h .lbl::before { background: var(--blue); }
+#page-money    .section-h .lbl::before { background: var(--green); }
+#page-stocks   .section-h .lbl::before { background: var(--blue); }
+#page-stats    .section-h .lbl::before { background: var(--pink); }
+/* The settings-compact tap-to-expand headers already have their own ::after
+   chevron and shouldn't get the leading dot — would clash. */
+.settings-compact .section-h .lbl::before { display: none; }
 .section-h .act {
   font-size: 13px;
   color: var(--blue);
@@ -698,6 +735,46 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border: 0.5px solid rgba(255,255,255,0.06);
   box-shadow: var(--sh-hero);
 }
+/* Per-page hero tints. Overrides the default green radial so the same
+   .hero component reads as visually distinct depending on which tab
+   you're on. Adds a second radial from the opposite corner for depth.
+   Tints are kept under 18% opacity so text contrast stays AA-compliant. */
+#page-money .hero {
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(94,224,160,0.16) 0%, rgba(94,224,160,0) 55%),
+    radial-gradient(100% 70% at 0% 100%, rgba(47,111,235,0.10) 0%, rgba(47,111,235,0) 60%),
+    linear-gradient(180deg, #181C1A 0%, #0F1210 100%);
+}
+#page-stocks .hero {
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(47,111,235,0.16) 0%, rgba(47,111,235,0) 55%),
+    radial-gradient(100% 70% at 0% 100%, rgba(94,224,160,0.10) 0%, rgba(94,224,160,0) 60%),
+    linear-gradient(180deg, #181A1C 0%, #0F1012 100%);
+}
+#page-goals .hero {
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(137,87,217,0.18) 0%, rgba(137,87,217,0) 55%),
+    radial-gradient(100% 70% at 0% 100%, rgba(230,65,120,0.10) 0%, rgba(230,65,120,0) 60%),
+    linear-gradient(180deg, #1A181C 0%, #110F12 100%);
+}
+#page-planning .hero {
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(47,111,235,0.18) 0%, rgba(47,111,235,0) 55%),
+    radial-gradient(100% 70% at 0% 100%, rgba(137,87,217,0.10) 0%, rgba(137,87,217,0) 60%),
+    linear-gradient(180deg, #181A1C 0%, #0F1012 100%);
+}
+#page-stats .hero {
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(230,65,120,0.16) 0%, rgba(230,65,120,0) 55%),
+    radial-gradient(100% 70% at 0% 100%, rgba(137,87,217,0.10) 0%, rgba(137,87,217,0) 60%),
+    linear-gradient(180deg, #1C181A 0%, #120F11 100%);
+}
+#page-calendar .hero {
+  background:
+    radial-gradient(120% 80% at 100% 0%, rgba(237,139,34,0.16) 0%, rgba(237,139,34,0) 55%),
+    radial-gradient(100% 70% at 0% 100%, rgba(230,65,120,0.10) 0%, rgba(230,65,120,0) 60%),
+    linear-gradient(180deg, #1C1A18 0%, #12110F 100%);
+}
 .hero::before {
   content: "";
   position: absolute;
@@ -729,6 +806,8 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border: 0.5px solid var(--sep);
   box-shadow: var(--sh-1);
   transition: transform .15s ease;
+  position: relative;
+  overflow: hidden;
 }
 .kpi:active { transform: scale(.99); }
 .kpi .v {
@@ -742,6 +821,19 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .kpi .l { font-size: 11.5px; color: var(--t3); margin-top: 4px; font-weight: 600; letter-spacing: 0.01em; }
 .kpi .ic { font-size: 14px; opacity: 0.6; }
 .kpi .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; color: var(--t3); font-size: 11px; font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; }
+/* KPI tonal variety. The grid is 2-up so the eye reads in a Z-pattern;
+   alternating accent colors give the grid life without overwhelming it.
+   We tint via a 2px top-edge stripe + matching icon color, leaving the
+   value text white for readability. Position-based so no render changes
+   needed. */
+.kpi-grid .kpi:nth-child(4n+1)::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--green); opacity: 0.85; }
+.kpi-grid .kpi:nth-child(4n+2)::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--orange); opacity: 0.85; }
+.kpi-grid .kpi:nth-child(4n+3)::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--purple); opacity: 0.85; }
+.kpi-grid .kpi:nth-child(4n+4)::before { content: ""; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: var(--blue); opacity: 0.85; }
+.kpi-grid .kpi:nth-child(4n+1) .ic { color: var(--green);  opacity: 0.9; }
+.kpi-grid .kpi:nth-child(4n+2) .ic { color: var(--orange); opacity: 0.9; }
+.kpi-grid .kpi:nth-child(4n+3) .ic { color: var(--purple); opacity: 0.9; }
+.kpi-grid .kpi:nth-child(4n+4) .ic { color: var(--blue);   opacity: 0.9; }
 
 /* ================ PROGRESS / SAVINGS CARDS ================ */
 .sav-card {
@@ -1091,14 +1183,28 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   box-shadow: var(--sh-1);
 }
 .empty .e-emoji {
-  font-size: 36px; margin-bottom: 14px; opacity: .85;
+  font-size: 36px;
+  /* Soft accent halo behind the emoji — gives the otherwise-flat empty
+     state a focal point with color. The radial fades to transparent so
+     it blends into the card bg without a hard edge. */
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 88px; height: 88px;
+  border-radius: 50%;
+  background: radial-gradient(circle at center,
+    color-mix(in srgb, var(--accent) 22%, transparent) 0%,
+    color-mix(in srgb, var(--accent) 8%, transparent) 45%,
+    transparent 70%);
+  margin: 0 auto 16px;
+  opacity: .92;
   /* Empty states are rare (one per blank-slate per session), so a single
      gentle pop on enter adds delight without becoming repetitive. */
   animation: empty-emoji-pop .55s cubic-bezier(.34,1.56,.64,1) both;
 }
 @keyframes empty-emoji-pop {
   0%   { opacity: 0; transform: scale(0.85) translateY(4px); }
-  100% { opacity: .85; transform: none; }
+  100% { opacity: .92; transform: none; }
 }
 .empty .e-title { font-size: 17px; font-weight: 700; color: var(--t1); margin-bottom: 6px; letter-spacing: -0.015em; }
 .empty .e-sub { font-size: 14px; line-height: 1.45; max-width: 280px; margin: 0 auto; }
