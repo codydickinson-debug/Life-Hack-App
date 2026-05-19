@@ -328,13 +328,18 @@ input::placeholder, textarea::placeholder { color: var(--t4); }
   top: 0;
   z-index: 5;
   border-bottom: .5px solid transparent;
-  transition: border-color .2s, background .2s;
+  /* Add padding to the transition so the compact-on-scroll motion is
+     coordinated with the background/border fade — feels like one move. */
+  transition: border-color .2s, background .2s, padding .24s var(--ease-out);
 }
 #topbar.scrolled {
   border-bottom-color: var(--sep);
   background: rgba(247,247,245,0.78);
   -webkit-backdrop-filter: saturate(180%) blur(20px);
   backdrop-filter: saturate(180%) blur(20px);
+  /* Subtle compaction on scroll so the content gets a touch more breathing
+     room. Keep the bottom padding the same so the border line doesn't jump. */
+  padding-top: calc(var(--sa-top) + 8px);
 }
 @media (prefers-color-scheme: dark) {
   :root.theme-auto #topbar.scrolled { background: rgba(10,10,12,0.78); }
@@ -378,6 +383,16 @@ input::placeholder, textarea::placeholder { color: var(--t4); }
 .page { display: none; padding: 0 20px 100px; } /* bottom padding gives the FAB + tabbar clearance so CTAs at the page bottom aren't covered */
 .page.active { display: block; animation: fadeIn .28s cubic-bezier(.32,.72,.34,1); }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(6px);} to { opacity: 1; transform: none; } }
+
+/* Directional slide for tab-switches initiated by horizontal swipe. Set by
+   showTab(name, dir) — the destination page slides in from the direction
+   the user's finger was traveling, replacing the default fade. Distance is
+   intentionally short (12px) so it reads as "the next tab arriving" rather
+   than a full page transition. */
+@keyframes slideInFromRight { from { opacity: 0; transform: translateX(12px); } to { opacity: 1; transform: none; } }
+@keyframes slideInFromLeft  { from { opacity: 0; transform: translateX(-12px); } to { opacity: 1; transform: none; } }
+.page.active.swipe-from-right { animation: slideInFromRight .28s var(--ease-out); }
+.page.active.swipe-from-left  { animation: slideInFromLeft  .28s var(--ease-out); }
 
 /* Row stagger on tab-switch only. The `.fresh-mount` class is added by
    showTab() and removed ~500ms later so in-tab re-renders (which happen
@@ -936,11 +951,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   z-index: 50;
   opacity: 0;
   pointer-events: none;
-  transition: opacity .28s ease;
-  -webkit-backdrop-filter: blur(2px);
-  backdrop-filter: blur(2px);
+  /* Backdrop blur ramps in alongside opacity so the page softening reads as
+     a single motion rather than the dim and blur landing at different times. */
+  transition: opacity .28s ease, -webkit-backdrop-filter .32s ease, backdrop-filter .32s ease;
+  -webkit-backdrop-filter: blur(0px);
+  backdrop-filter: blur(0px);
 }
-.scrim.show { opacity: 1; pointer-events: auto; }
+.scrim.show {
+  opacity: 1; pointer-events: auto;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+}
 
 .sheet {
   position: fixed;
@@ -975,10 +996,18 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 /* Sheet content fades in slightly behind the slide-up so the sheet "lands"
    with content instead of arriving fully-formed mid-air. Skips the grabber
-   so the pull-handle stays present throughout the motion. */
+   so the pull-handle stays present throughout the motion. Children stagger
+   by ~25ms so the form reads top-to-bottom instead of arriving as a single
+   block — keeps total time under 250ms so it never feels slow. */
 .sheet.show > *:not(.grabber) {
   animation: sheet-content-in .26s cubic-bezier(.32,.72,.34,1) .08s both;
 }
+.sheet.show > *:not(.grabber):nth-child(2) { animation-delay: .08s; }
+.sheet.show > *:not(.grabber):nth-child(3) { animation-delay: .11s; }
+.sheet.show > *:not(.grabber):nth-child(4) { animation-delay: .14s; }
+.sheet.show > *:not(.grabber):nth-child(5) { animation-delay: .17s; }
+.sheet.show > *:not(.grabber):nth-child(6) { animation-delay: .20s; }
+.sheet.show > *:not(.grabber):nth-child(n+7) { animation-delay: .23s; }
 @keyframes sheet-content-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: none; }
@@ -1054,7 +1083,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border: 0.5px solid var(--sep);
   box-shadow: var(--sh-1);
 }
-.empty .e-emoji { font-size: 36px; margin-bottom: 14px; opacity: .85; }
+.empty .e-emoji {
+  font-size: 36px; margin-bottom: 14px; opacity: .85;
+  /* Empty states are rare (one per blank-slate per session), so a single
+     gentle pop on enter adds delight without becoming repetitive. */
+  animation: empty-emoji-pop .55s cubic-bezier(.34,1.56,.64,1) both;
+}
+@keyframes empty-emoji-pop {
+  0%   { opacity: 0; transform: scale(0.85) translateY(4px); }
+  100% { opacity: .85; transform: none; }
+}
 .empty .e-title { font-size: 17px; font-weight: 700; color: var(--t1); margin-bottom: 6px; letter-spacing: -0.015em; }
 .empty .e-sub { font-size: 14px; line-height: 1.45; max-width: 280px; margin: 0 auto; }
 
@@ -1304,7 +1342,14 @@ body.priv-on [data-priv="amount"]:active { filter: blur(0); }
 .tb-priv:active { transform: scale(.92); }
 body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(--blue) 14%, var(--bg-elev)); }
 
-/* Floating action button (Quick Add Spend) */
+/* Floating action button (Quick Add Spend). Pops in 250ms after page boot
+   so it doesn't compete with the topbar/content fade for attention. The
+   .9 start keeps it physical — nothing in the real world appears from
+   nothing, per Emil. */
+@keyframes fab-in {
+  0%   { opacity: 0; transform: scale(0.85) translateY(8px); }
+  100% { opacity: 1; transform: none; }
+}
 #fab {
   position: fixed;
   right: max(20px, env(safe-area-inset-right));
@@ -1318,6 +1363,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   z-index: 6;
   display: flex; align-items: center; justify-content: center;
   transition: transform .12s ease, background .15s ease;
+  animation: fab-in .42s var(--ease-out) .25s both;
 }
 #fab:active { transform: scale(.92); }
 #fab:hover { background: var(--blue); color: #fff; }
@@ -1338,9 +1384,28 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   display: flex; align-items: center; justify-content: center;
   border: none; cursor: pointer;
   transition: transform .12s ease, box-shadow .15s ease;
+  /* Slightly later than the spend FAB so the two pop in sequence (FAB then
+     Cornileus) — establishes the primary/secondary hierarchy through motion. */
+  animation: fab-in .42s var(--ease-out) .4s both;
 }
 #counselor-fab:active { transform: scale(.9); }
 #counselor-fab:hover { box-shadow: 0 6px 24px color-mix(in srgb, var(--corn-from) 45%, transparent); }
+/* Attention pulse — fires once per browser session (gated by a sessionStorage
+   check in init()) so first-time and returning users see Cornileus draw the
+   eye briefly, but not on every navigation. Aura uses a pseudo-element so the
+   shadow doesn't fight the FAB's own box-shadow. */
+@keyframes cornileus-attention {
+  0%   { box-shadow: 0 0 0 0 color-mix(in srgb, var(--corn-from) 55%, transparent); }
+  60%  { box-shadow: 0 0 0 14px color-mix(in srgb, var(--corn-from) 0%, transparent); }
+  100% { box-shadow: 0 0 0 0 transparent; }
+}
+#counselor-fab[data-attention="1"]::after {
+  content: "";
+  position: absolute; inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  animation: cornileus-attention 1.8s var(--ease-out) 1.2s 2;
+}
 #counselor-fab.hidden { display: none; }
 .cornileus-badge {
   position: absolute; top: -2px; right: -2px;
@@ -1408,7 +1473,12 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 .heat-cell.l2 { background: color-mix(in srgb, var(--green) 45%, var(--bg-elev)); }
 .heat-cell.l3 { background: color-mix(in srgb, var(--green) 70%, var(--bg-elev)); }
 .heat-cell.l4 { background: var(--green); }
-.heat-cell:hover { transform: scale(1.4); }
+/* Gate the scale-up to actual hover-capable pointers. On touch devices,
+   :hover fires for ~300ms after every tap, which would leave the cell
+   stuck at 1.4× scale — visibly broken. */
+@media (hover: hover) and (pointer: fine) {
+  .heat-cell:hover { transform: scale(1.4); }
+}
 
 /* Daily action context badge */
 .action-context {
@@ -3757,7 +3827,7 @@ try { BUILD_DATE = new Date(document.lastModified).toLocaleString(undefined, { d
 
 /* ================ TABS ================ */
 var activeTab = "today";
-function showTab(name) {
+function showTab(name, swipeDir) {
   activeTab = name;
   // A5: keep aria-selected in sync with the .active class so screen
   // readers announce which tab is selected.
@@ -3766,16 +3836,27 @@ function showTab(name) {
     t.classList.toggle("active", isActive);
     t.setAttribute("aria-selected", isActive ? "true" : "false");
   });
-  $$(".page").forEach(p => p.classList.toggle("active", p.id === "page-" + name));
-  // Mark the page as freshly-mounted so list rows fade-in with a short
-  // stagger via CSS. Removed after the stagger chain completes so subsequent
-  // in-tab re-renders (which fire dozens of times per session as the user
-  // taps things) don't re-animate.
+  // Clear any prior swipe-direction class from every page so only the
+  // destination carries it (otherwise old direction classes would still
+  // match on the next show-tap and the animation would be wrong).
+  $$(".page").forEach(p => {
+    p.classList.remove("swipe-from-right", "swipe-from-left");
+    p.classList.toggle("active", p.id === "page-" + name);
+  });
   const activePage = $("#page-" + name);
   if (activePage) {
+    // Mark the page as freshly-mounted so list rows fade-in with a short
+    // stagger via CSS. Removed after the stagger chain completes so subsequent
+    // in-tab re-renders (which fire dozens of times per session as the user
+    // taps things) don't re-animate.
     activePage.classList.add("fresh-mount");
     clearTimeout(showTab._mountT);
     showTab._mountT = setTimeout(() => activePage.classList.remove("fresh-mount"), 500);
+    // Directional slide overrides the default fadeIn when the user actually
+    // swiped — tab-tap callers omit swipeDir and get the standard fade.
+    if (swipeDir === "left" || swipeDir === "right") {
+      activePage.classList.add(swipeDir === "left" ? "swipe-from-right" : "swipe-from-left");
+    }
   }
   try { $("#content").scrollTo({ top: 0, behavior: "instant" }); } catch {}
   render();
@@ -3861,8 +3942,8 @@ $("#content").addEventListener("scroll", () => {
     if (i < 0) return;
     // Visual feedback — a tiny flash of the new tab's pill so the user
     // knows the gesture registered before the page re-renders.
-    if (dx < 0 && i < visible.length - 1) { try { haptic("light"); } catch {} showTab(visible[i + 1]); }
-    else if (dx > 0 && i > 0) { try { haptic("light"); } catch {} showTab(visible[i - 1]); }
+    if (dx < 0 && i < visible.length - 1) { try { haptic("light"); } catch {} showTab(visible[i + 1], "left"); }
+    else if (dx > 0 && i > 0) { try { haptic("light"); } catch {} showTab(visible[i - 1], "right"); }
   }, { passive: true });
 })();
 // Keyboard shortcut: Cmd/Ctrl + K opens global search (when not already in an
@@ -38810,6 +38891,20 @@ function init() {
   // user's color choice instead of flashing the default blue first.
   applyAccent();
   render();
+  // Once-per-browser-session attention pulse on the Cornileus FAB: a soft
+  // aura ring fires twice over ~3s so first-time and returning users notice
+  // the secondary action without it pulsing on every tab switch. Gated by
+  // sessionStorage so it only fires on the first paint of each visit.
+  try {
+    if (!sessionStorage.getItem("ascend_corn_pulsed")) {
+      sessionStorage.setItem("ascend_corn_pulsed", "1");
+      const cfab = document.getElementById("counselor-fab");
+      if (cfab) {
+        cfab.setAttribute("data-attention", "1");
+        setTimeout(() => cfab.removeAttribute("data-attention"), 5200);
+      }
+    }
+  } catch {}
   // Apply user's hidden-tabs preference after initial render so the bottom
   // nav reflects their customization choices.
   applyHiddenTabs();
