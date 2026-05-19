@@ -8242,7 +8242,7 @@ function renderToday() {
       <div class="h-eyebrow">Today's progress</div>
       ${p.total ? `
         <div class="h-big">${p.done} / ${p.total} habits</div>
-        <div class="h-sub">${p.pct===100 ? "All done, keep the streak alive 🔥" : "You've got this."}</div>
+        <div class="h-sub">${p.pct===100 ? "All done, keep the streak alive 🔥" : (p.done === 0 ? "Pick the first one." : `${p.total - p.done} left for today.`)}</div>
         <div class="h-bar"><div class="h-fill" style="width:${p.pct}%"></div></div>
       ` : `
         <div class="h-big" style="font-size:22px;line-height:1.2">Pick your first habit</div>
