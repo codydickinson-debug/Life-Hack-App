@@ -474,6 +474,35 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .tab.active .ic { opacity: 1; transform: translateY(-1px); }
 .tab:active .ic { transform: scale(.88); }
 
+/* Soft accent pill behind the active tab's icon. Uses a pseudo-element
+   so existing tab markup doesn't need touching. The pill fades in when
+   .active is added (transition on opacity), giving a subtle "you are
+   here" landing spot per tab. Per-tab color set below. */
+.tab { position: relative; }
+.tab::before {
+  content: "";
+  position: absolute;
+  top: 6px; left: 50%;
+  width: 38px; height: 26px;
+  border-radius: 999px;
+  transform: translateX(-50%) scale(0.85);
+  background: var(--tab-pill-color, var(--accent));
+  opacity: 0;
+  transition: opacity .22s var(--ease-out), transform .22s var(--ease-out);
+  z-index: 0;
+  pointer-events: none;
+}
+.tab .ic, .tab > span:not(.ic) { position: relative; z-index: 1; }
+.tab.active::before { opacity: 0.18; transform: translateX(-50%) scale(1); }
+/* Per-tab pill color — matches the active-icon hue established earlier. */
+.tab[data-tab="today"]    { --tab-pill-color: var(--green);  }
+.tab[data-tab="calendar"] { --tab-pill-color: var(--orange); }
+.tab[data-tab="goals"]    { --tab-pill-color: var(--purple); }
+.tab[data-tab="planning"] { --tab-pill-color: var(--blue);   }
+.tab[data-tab="money"]    { --tab-pill-color: var(--green);  }
+.tab[data-tab="stocks"]   { --tab-pill-color: var(--blue);   }
+.tab[data-tab="stats"]    { --tab-pill-color: var(--pink);   }
+
 /* Per-tab accent colors when active — gives the bottom nav wayfinding
    color without literally tinting backgrounds. Each tab picks a hue that
    matches the surface it leads to: today/money green (fresh, growth),
@@ -719,13 +748,38 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   display: inline-flex; align-items: center; gap: 4px;
   border: 0.5px solid rgba(237,139,34,0.18);
   font-variant-numeric: tabular-nums;
+  /* Gentle orange aura that breathes — streak is a celebration moment, the
+     pill should feel warm not static. Long 3.6s cycle so it reads as
+     ambient glow rather than attention-grabbing strobe. */
+  animation: streak-glow 3.6s ease-in-out infinite;
+}
+@keyframes streak-glow {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(237,139,34,0.0); }
+  50%      { box-shadow: 0 0 14px 0 rgba(237,139,34,0.32); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .streak-pill { animation: none; }
 }
 
 /* ================ HERO / TODAY FOCUS ================ */
+/* Drifting mesh gradient — three radial blobs that slowly orbit, producing
+   a constantly-shifting color field. Way more "alive" than a static gradient.
+   Uses background-size+position trick so the animation is GPU-cheap (no
+   continuous repaints of the gradient stops themselves). */
+@keyframes hero-mesh-drift {
+  0%   { background-position: 0% 0%, 100% 100%, 50% 50%; }
+  50%  { background-position: 100% 30%, 0% 70%, 30% 100%; }
+  100% { background-position: 0% 0%, 100% 100%, 50% 50%; }
+}
 .hero {
   background:
-    radial-gradient(120% 80% at 100% 0%, rgba(94,224,160,0.12) 0%, rgba(94,224,160,0) 50%),
+    radial-gradient(38% 50% at 0% 0%,    rgba(94,224,160,0.22) 0%, rgba(94,224,160,0) 70%),
+    radial-gradient(42% 55% at 100% 100%,rgba(124,58,237,0.18) 0%, rgba(124,58,237,0) 70%),
+    radial-gradient(48% 60% at 50% 50%,  rgba(236,72,153,0.10) 0%, rgba(236,72,153,0) 70%),
     linear-gradient(180deg, #18181C 0%, #0F0F12 100%);
+  background-size: 180% 180%, 180% 180%, 180% 180%, 100% 100%;
+  background-position: 0% 0%, 100% 100%, 50% 50%, 0% 0%;
+  animation: hero-mesh-drift 28s ease-in-out infinite;
   color: #F5F5F7;
   border-radius: var(--r);
   padding: 24px 22px 26px;
@@ -735,45 +789,60 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border: 0.5px solid rgba(255,255,255,0.06);
   box-shadow: var(--sh-hero);
 }
-/* Per-page hero tints. Overrides the default green radial so the same
-   .hero component reads as visually distinct depending on which tab
-   you're on. Adds a second radial from the opposite corner for depth.
-   Tints are kept under 18% opacity so text contrast stays AA-compliant. */
+@media (prefers-reduced-motion: reduce) {
+  .hero { animation: none; }
+}
+/* Per-page hero mesh tints. Each tab gets its own 3-blob color identity
+   inheriting the drift animation from .hero above. Background-size +
+   background-position values match so the drift animation works on each
+   variant the same way. */
 #page-money .hero {
   background:
-    radial-gradient(120% 80% at 100% 0%, rgba(94,224,160,0.16) 0%, rgba(94,224,160,0) 55%),
-    radial-gradient(100% 70% at 0% 100%, rgba(47,111,235,0.10) 0%, rgba(47,111,235,0) 60%),
+    radial-gradient(38% 50% at 0% 0%,     rgba(94,224,160,0.26) 0%, rgba(94,224,160,0) 70%),
+    radial-gradient(42% 55% at 100% 100%, rgba(47,111,235,0.18)  0%, rgba(47,111,235,0)  70%),
+    radial-gradient(48% 60% at 50% 50%,   rgba(94,224,160,0.10)  0%, rgba(94,224,160,0)  70%),
     linear-gradient(180deg, #181C1A 0%, #0F1210 100%);
+  background-size: 180% 180%, 180% 180%, 180% 180%, 100% 100%;
 }
 #page-stocks .hero {
   background:
-    radial-gradient(120% 80% at 100% 0%, rgba(47,111,235,0.16) 0%, rgba(47,111,235,0) 55%),
-    radial-gradient(100% 70% at 0% 100%, rgba(94,224,160,0.10) 0%, rgba(94,224,160,0) 60%),
+    radial-gradient(38% 50% at 0% 0%,     rgba(47,111,235,0.26)  0%, rgba(47,111,235,0)  70%),
+    radial-gradient(42% 55% at 100% 100%, rgba(94,224,160,0.18) 0%, rgba(94,224,160,0) 70%),
+    radial-gradient(48% 60% at 50% 50%,   rgba(124,58,237,0.10)  0%, rgba(124,58,237,0)  70%),
     linear-gradient(180deg, #181A1C 0%, #0F1012 100%);
+  background-size: 180% 180%, 180% 180%, 180% 180%, 100% 100%;
 }
 #page-goals .hero {
   background:
-    radial-gradient(120% 80% at 100% 0%, rgba(137,87,217,0.18) 0%, rgba(137,87,217,0) 55%),
-    radial-gradient(100% 70% at 0% 100%, rgba(230,65,120,0.10) 0%, rgba(230,65,120,0) 60%),
+    radial-gradient(38% 50% at 0% 0%,     rgba(137,87,217,0.28) 0%, rgba(137,87,217,0) 70%),
+    radial-gradient(42% 55% at 100% 100%, rgba(236,72,153,0.20) 0%, rgba(236,72,153,0) 70%),
+    radial-gradient(48% 60% at 50% 50%,   rgba(47,111,235,0.10) 0%, rgba(47,111,235,0) 70%),
     linear-gradient(180deg, #1A181C 0%, #110F12 100%);
+  background-size: 180% 180%, 180% 180%, 180% 180%, 100% 100%;
 }
 #page-planning .hero {
   background:
-    radial-gradient(120% 80% at 100% 0%, rgba(47,111,235,0.18) 0%, rgba(47,111,235,0) 55%),
-    radial-gradient(100% 70% at 0% 100%, rgba(137,87,217,0.10) 0%, rgba(137,87,217,0) 60%),
+    radial-gradient(38% 50% at 0% 0%,     rgba(47,111,235,0.28)  0%, rgba(47,111,235,0)  70%),
+    radial-gradient(42% 55% at 100% 100%, rgba(137,87,217,0.20)  0%, rgba(137,87,217,0)  70%),
+    radial-gradient(48% 60% at 50% 50%,   rgba(94,224,160,0.10)  0%, rgba(94,224,160,0)  70%),
     linear-gradient(180deg, #181A1C 0%, #0F1012 100%);
+  background-size: 180% 180%, 180% 180%, 180% 180%, 100% 100%;
 }
 #page-stats .hero {
   background:
-    radial-gradient(120% 80% at 100% 0%, rgba(230,65,120,0.16) 0%, rgba(230,65,120,0) 55%),
-    radial-gradient(100% 70% at 0% 100%, rgba(137,87,217,0.10) 0%, rgba(137,87,217,0) 60%),
+    radial-gradient(38% 50% at 0% 0%,     rgba(236,72,153,0.26) 0%, rgba(236,72,153,0) 70%),
+    radial-gradient(42% 55% at 100% 100%, rgba(137,87,217,0.20) 0%, rgba(137,87,217,0) 70%),
+    radial-gradient(48% 60% at 50% 50%,   rgba(237,139,34,0.10) 0%, rgba(237,139,34,0) 70%),
     linear-gradient(180deg, #1C181A 0%, #120F11 100%);
+  background-size: 180% 180%, 180% 180%, 180% 180%, 100% 100%;
 }
 #page-calendar .hero {
   background:
-    radial-gradient(120% 80% at 100% 0%, rgba(237,139,34,0.16) 0%, rgba(237,139,34,0) 55%),
-    radial-gradient(100% 70% at 0% 100%, rgba(230,65,120,0.10) 0%, rgba(230,65,120,0) 60%),
+    radial-gradient(38% 50% at 0% 0%,     rgba(237,139,34,0.26) 0%, rgba(237,139,34,0) 70%),
+    radial-gradient(42% 55% at 100% 100%, rgba(236,72,153,0.18) 0%, rgba(236,72,153,0) 70%),
+    radial-gradient(48% 60% at 50% 50%,   rgba(94,224,160,0.10) 0%, rgba(94,224,160,0) 70%),
     linear-gradient(180deg, #1C1A18 0%, #12110F 100%);
+  background-size: 180% 180%, 180% 180%, 180% 180%, 100% 100%;
 }
 .hero::before {
   content: "";
@@ -791,7 +860,21 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   margin-top: 8px;
   line-height: 1.12;
   color: #F5F5F7;
+  /* Gradient text fill — fades from pure white at top-left to a hint of
+     the page's primary hue at bottom-right, so the big number reads as
+     part of the colorful hero rather than a static white block. Each
+     page overrides --hero-num-tint below for its own personality. */
+  background: linear-gradient(135deg, #fff 30%, var(--hero-num-tint, color-mix(in srgb, var(--green) 70%, #fff)) 100%);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
+#page-money    .hero { --hero-num-tint: color-mix(in srgb, var(--green)  78%, #fff); }
+#page-stocks   .hero { --hero-num-tint: color-mix(in srgb, var(--blue)   78%, #fff); }
+#page-goals    .hero { --hero-num-tint: color-mix(in srgb, var(--purple) 78%, #fff); }
+#page-planning .hero { --hero-num-tint: color-mix(in srgb, var(--blue)   78%, #fff); }
+#page-stats    .hero { --hero-num-tint: color-mix(in srgb, var(--pink)   78%, #fff); }
+#page-calendar .hero { --hero-num-tint: color-mix(in srgb, var(--orange) 78%, #fff); }
 .hero .h-sub { font-size: 13.5px; color: rgba(245,245,247,0.66); margin-top: 6px; line-height: 1.4; }
 .hero .h-bar { height: 5px; background: rgba(255,255,255,.10); border-radius: 4px; margin-top: 18px; overflow: hidden; }
 .hero .h-fill { height: 100%; background: linear-gradient(90deg, #2EB875, #5EE0A0); border-radius: 4px; transition: width .7s cubic-bezier(.34,1.56,.64,1); box-shadow: 0 0 12px rgba(94,224,160,0.45); }
@@ -2364,6 +2447,25 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   padding: 14px 14px 12px; margin-bottom: 10px;
   box-shadow: var(--sh-1);
   transition: transform .1s ease, box-shadow .15s ease;
+}
+/* Per-tier card backgrounds — a subtle radial blob in the tier's color at
+   the top-left so each tier section looks visually distinct on the Plan tab.
+   Driven by data-tier="short|mid|long" on the rendered .plan-card.
+   Kept under 10% mix so text legibility stays AA. */
+.plan-card[data-tier="short"] {
+  background:
+    radial-gradient(80% 100% at 0% 0%, color-mix(in srgb, #22c55e 14%, transparent), transparent 65%),
+    var(--card);
+}
+.plan-card[data-tier="mid"] {
+  background:
+    radial-gradient(80% 100% at 0% 0%, color-mix(in srgb, #3b82f6 14%, transparent), transparent 65%),
+    var(--card);
+}
+.plan-card[data-tier="long"] {
+  background:
+    radial-gradient(80% 100% at 0% 0%, color-mix(in srgb, #a855f7 16%, transparent), transparent 65%),
+    var(--card);
 }
 .plan-card:active { transform: scale(.997); }
 .plan-card.done { opacity: 0.6; }
@@ -9362,7 +9464,7 @@ function renderPlanning() {
         ? `<span class="plan-chip" style="background:rgba(236,72,153,0.10);color:#ec4899" title="Completing this plan will finish these goals">🎯 ${esc(linkedGoalsList.slice(0,2).map(g => g.title).join(" · "))}${linkedGoalsList.length>2?` +${linkedGoalsList.length-2}`:""}</span>`
         : "";
       return `
-        <div class="plan-card ${p.completed ? 'done' : ''}" style="border-left-color:${t.color}">
+        <div class="plan-card ${p.completed ? 'done' : ''}" data-tier="${t.id}" style="border-left-color:${t.color}">
           <div class="plan-card-head">
             <button class="plan-check ${p.completed ? 'done' : ''}" onclick="togglePlan(${jsAttr(p.id)})" aria-label="Toggle complete">${p.completed ? '✓' : ''}</button>
             <div class="plan-emoji">${esc(p.emoji || '✨')}</div>
