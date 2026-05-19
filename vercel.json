@@ -11,6 +11,7 @@
     { "source": "/marketing", "destination": "/marketing.html" },
     { "source": "/privacy",   "destination": "/privacy.html" },
     { "source": "/terms",     "destination": "/terms.html" },
+    { "source": "/security",  "destination": "/security.html" },
     { "source": "/support",   "destination": "/support.html" }
   ],
   "functions": {

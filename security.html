@@ -1,0 +1,178 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="theme-color" content="#0a0a0c" />
+<title>Security Overview — Ascend</title>
+<meta name="description" content="How Ascend protects your data: encryption, access controls, vendor posture, and incident response." />
+<link rel="icon" type="image/png" href="icon-192.png" />
+<link rel="apple-touch-icon" href="icon-180.png" />
+<style>
+  :root {
+    --bg: #0a0a0c;
+    --bg-elev: #14141a;
+    --card: #16161c;
+    --sep: #26262e;
+    --t1: #f6f7f9;
+    --t2: #c2c4ca;
+    --t3: #7e8189;
+    --purple: #7c3aed;
+    --green: #34C759;
+    --blue: #0A84FF;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0;
+    background: var(--bg);
+    color: var(--t1);
+    font: 16px/1.65 -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, system-ui, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+  a { color: var(--purple); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 48px 24px 96px; }
+  header { display: flex; align-items: center; gap: 14px; margin-bottom: 36px; padding-bottom: 24px; border-bottom: 1px solid var(--sep); }
+  header img { width: 48px; height: 48px; border-radius: 11px; }
+  header h1 { margin: 0; font-size: 28px; letter-spacing: -0.5px; }
+  header .sub { font-size: 14px; color: var(--t3); margin-top: 4px; }
+  h2 { font-size: 20px; margin: 36px 0 12px; letter-spacing: -0.3px; }
+  h3 { font-size: 15px; margin: 20px 0 8px; color: var(--t2); }
+  p, li { color: var(--t2); }
+  ul { padding-left: 22px; }
+  li { margin-bottom: 6px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; background: rgba(52,199,89,0.12); color: var(--green); }
+  .card { background: var(--card); border: 1px solid var(--sep); border-radius: 14px; padding: 18px 20px; margin: 18px 0; }
+  .updated { font-size: 13px; color: var(--t3); margin-top: 8px; }
+  footer { margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--sep); font-size: 13px; color: var(--t3); }
+  footer a { color: var(--t3); }
+  code { background: var(--bg-elev); padding: 2px 6px; border-radius: 4px; font-size: 13px; color: var(--t1); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  table { width: 100%; border-collapse: collapse; margin: 16px 0; font-size: 14px; }
+  th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--sep); vertical-align: top; }
+  th { color: var(--t1); font-weight: 600; }
+  td { color: var(--t2); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <img src="icon-192.png" alt="Ascend logo" />
+    <div>
+      <h1>Security Overview</h1>
+      <div class="sub">How Ascend protects your data, end to end</div>
+    </div>
+  </header>
+
+  <p><span class="pill">✓ Local-first</span> &nbsp; <span class="pill">✓ Encrypted in transit &amp; at rest</span> &nbsp; <span class="pill">✓ Per-device auth</span></p>
+
+  <p>This page is for anyone who wants to know exactly how Ascend handles your data — security researchers, privacy-minded users, and reviewers from partners like Plaid. It complements the <a href="/privacy">Privacy Policy</a> (which covers what data exists) by explaining how that data is protected.</p>
+
+  <div class="card">
+    <strong>Threat model in one sentence.</strong> Most of your data never leaves your device. The data that does leave (encrypted Plaid access tokens, AI chat snapshots) is gated by per-device authentication, encrypted with keys held only on the server, and transmitted exclusively over TLS to vendors with established security programs.
+  </div>
+
+  <h2>1. Data storage</h2>
+
+  <h3>1.1 On your device</h3>
+  <p>All Ascend application data — habits, goals, plans, transactions, notes, settings — is written to your browser's <code>localStorage</code>. By default it's plaintext (browser-protected). You can opt into client-side AES-GCM encryption with a passphrase: the key is derived via PBKDF2-SHA256 with 600,000 iterations and held only in memory. Auto-lock re-prompts after a configurable idle period. Forgotten passphrase = unrecoverable; there is no backdoor.</p>
+
+  <h3>1.2 On the backend (only if you connect a bank)</h3>
+  <p>When you link a bank via Plaid, the Plaid <strong>access token</strong> is sent to a Cloudflare Worker that Ascend operates. Before being written to Cloudflare KV, the access token is AES-GCM encrypted with a server-side <code>ENCRYPTION_KEY</code> secret. KV records are keyed by your per-device user identifier; no other user can read your records.</p>
+  <p>A KV breach yields ciphertext that is useless without the server-side encryption key. The encryption key is a Cloudflare Worker secret — it is never written to source, KV, logs, or accessible from any HTTP path.</p>
+
+  <h2>2. Encryption in transit</h2>
+  <ul>
+    <li>The web app is served over HTTPS only. <code>Strict-Transport-Security: max-age=63072000; includeSubDomains; preload</code> is set on every response.</li>
+    <li>All backend calls (Cloudflare Worker, Vercel Python API) require HTTPS; HTTP requests are rejected at the edge.</li>
+    <li>Plaid Link runs in an iframe served from <code>plaid.com</code> over TLS 1.2+. Bank credentials you enter never touch Ascend's code or backend — they're transmitted directly from Plaid Link to Plaid.</li>
+  </ul>
+
+  <h2>3. Authentication &amp; access control</h2>
+
+  <h3>3.1 Device enrollment</h3>
+  <p>Each device enrolls separately. On first use, the device calls <code>POST /enroll</code> with a shared enrollment key; the backend mints a per-device <code>clientSecret</code>, stores <code>SHA-256(clientSecret)</code> in KV keyed to the device's user ID, and returns the secret to the device. After enrollment, every subsequent request must carry the device's own <code>Authorization: Bearer &lt;clientSecret&gt;</code>. The shared enrollment key is no longer used.</p>
+  <p>A leaked per-device secret only impersonates one device. The user can revoke from the backend by deleting that device's KV record (Settings → "Revoke this device" — wipes the device's enrollment).</p>
+
+  <h3>3.2 Backend access</h3>
+  <ul>
+    <li>The Cloudflare Worker is deployed exclusively by the operator named on the <a href="/privacy">Privacy Policy</a>. Cloudflare account access is protected by 2FA.</li>
+    <li>KV is reachable only from within the Worker. There is no admin dashboard exposed to the public internet.</li>
+    <li>Source code lives in a public GitHub repository; no production secrets exist anywhere in source. All sensitive values (<code>PLAID_CLIENT_ID</code>, <code>PLAID_SECRET</code>, <code>ENCRYPTION_KEY</code>, <code>ANTHROPIC_KEY</code>, <code>ENROLLMENT_KEY</code>) are Cloudflare Worker secrets, set via <code>wrangler secret put</code>.</li>
+    <li>The Vercel Python backend (which serves the static site and proxies Yahoo Finance + Anthropic) uses environment variables managed in the Vercel dashboard with role-based access.</li>
+  </ul>
+
+  <h2>4. Plaid-specific protections</h2>
+  <ul>
+    <li><strong>Access token encryption at rest:</strong> AES-GCM with a server-held key. See §1.2.</li>
+    <li><strong>Webhook signature verification:</strong> Every Plaid webhook is signed with ES256 JWT. The backend verifies the signature against Plaid's published key set, validates the body hash matches the signed claim, and enforces a 5-minute replay window. Unverified or replayed webhooks are rejected.</li>
+    <li><strong>Per-invocation Plaid call budget:</strong> Each sync request has a cap on outbound Plaid calls to prevent runaway loops from burning Plaid quota.</li>
+    <li><strong>Read-only:</strong> Ascend never invokes any Plaid endpoint that would move money. Bank sync is strictly Transactions / Auth / Identity / Liabilities / Investments read flows.</li>
+    <li><strong>Disconnect is real:</strong> When you disconnect a bank, the encrypted access token is deleted from KV within minutes and the upstream Plaid item is revoked.</li>
+  </ul>
+
+  <h2>5. Logging &amp; monitoring</h2>
+  <ul>
+    <li>The Worker emits structured per-request access logs (route, status code, latency, SHA-256(userId) truncated to 12 chars, hashed IP). User IDs are <strong>hashed</strong> in logs so log access doesn't leak account identifiers.</li>
+    <li>Per-user audit logs (last 200 events) are stored in KV and exposed back to the user via a <code>/audit</code> endpoint — so users can inspect what their own enrolled device has done.</li>
+    <li>No transaction details, dollar amounts, account numbers, or AI chat content are ever logged.</li>
+    <li>Cloudflare's built-in observability tracks request volume and error rates for the operator. Vercel's analytics tracks deployments only — no end-user behavioral analytics.</li>
+  </ul>
+
+  <h2>6. Rate limiting &amp; abuse controls</h2>
+  <ul>
+    <li><strong>/enroll</strong> — 5 enrollments per IP per hour, 25 per IP per day; global cap of 500/day across all IPs (defense in depth against credential-stuffing botnets).</li>
+    <li><strong>Plaid endpoints</strong> — per-user rate limits to bound Plaid quota usage.</li>
+    <li><strong>AI proxy</strong> — per-user daily message cap (default 50), per-minute burst cap (default 10), to bound Anthropic spend.</li>
+    <li><strong>Account deletion</strong> — limited to 2/hour and 3/day per device to prevent accidental mass-wipe scripts.</li>
+  </ul>
+
+  <h2>7. Vendor &amp; subprocessor posture</h2>
+  <table>
+    <thead><tr><th>Vendor</th><th>Purpose</th><th>Compliance</th></tr></thead>
+    <tbody>
+      <tr><td><a href="https://plaid.com/legal/" target="_blank" rel="noopener noreferrer">Plaid</a></td><td>Bank account connectivity (Transactions, Auth, Identity, Liabilities, Investments)</td><td>SOC 2 Type II, ISO 27001, AICPA SOC for Cybersecurity</td></tr>
+      <tr><td><a href="https://www.cloudflare.com/trust-hub/" target="_blank" rel="noopener noreferrer">Cloudflare</a></td><td>Worker compute + KV for encrypted token storage</td><td>SOC 2 Type II, ISO 27001, PCI DSS</td></tr>
+      <tr><td><a href="https://vercel.com/legal/dpa" target="_blank" rel="noopener noreferrer">Vercel</a></td><td>Static-site hosting + Python API runtime</td><td>SOC 2 Type II, ISO 27001</td></tr>
+      <tr><td><a href="https://www.anthropic.com/legal" target="_blank" rel="noopener noreferrer">Anthropic</a></td><td>AI inference for the Cornileus counselor</td><td>SOC 2 Type II; API inputs/outputs not used to train models per API terms</td></tr>
+      <tr><td>Yahoo Finance</td><td>Public stock quote + market data (proxied — no PII forwarded)</td><td>Public-data feed; tickers only</td></tr>
+    </tbody>
+  </table>
+
+  <h2>8. Vulnerability disclosure</h2>
+  <p>If you've found a security issue, please report it privately first.</p>
+  <ul>
+    <li><strong>Preferred:</strong> <a href="https://github.com/codydickinson-debug/Life-Hack-App/security/advisories/new" target="_blank" rel="noopener noreferrer">Open a GitHub Security Advisory</a>. Stays private until we coordinate.</li>
+    <li><strong>Fallback:</strong> Email <a href="mailto:codydickinson@autopalsusa.com">codydickinson@autopalsusa.com</a> with subject prefix <code>[security]</code>.</li>
+    <li><strong>Machine-readable contacts:</strong> <a href="/.well-known/security.txt">/.well-known/security.txt</a> (RFC 9116).</li>
+    <li><strong>Policy detail:</strong> <a href="https://github.com/codydickinson-debug/Life-Hack-App/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a> covers scope, out-of-scope, response timelines, and known design choices.</li>
+  </ul>
+  <p><strong>Response targets:</strong> acknowledgement within 7 days, fix within 30 days for medium severity, within 7 days for high severity.</p>
+
+  <h2>9. Incident response</h2>
+  <p>If a security incident affects user data, the operator will:</p>
+  <ul>
+    <li>Disable the affected code path or revoke the affected credentials within hours of confirmation.</li>
+    <li>Notify affected users within 72 hours via the in-app "What's new" sheet and (where applicable) email.</li>
+    <li>Publish a post-incident write-up in <a href="https://github.com/codydickinson-debug/Life-Hack-App/blob/main/SECURITY.md" target="_blank" rel="noopener noreferrer">SECURITY.md</a> with timeline, root cause, and remediation.</li>
+    <li>Rotate all relevant secrets and re-issue per-device credentials if any were exposed.</li>
+  </ul>
+
+  <h2>10. What we don't claim</h2>
+  <p>We're not SOC 2 certified, ISO 27001 certified, or PCI-DSS compliant. Ascend is operated by an individual, not a company with a dedicated security team. The mitigations above are real — encryption, per-device auth, vendor selection, disclosure process — but they exist within the constraints of a small operation. The vendors that handle the highest-risk data (Plaid for bank credentials, Cloudflare for token storage, Anthropic for AI) carry their own SOC 2 Type II certifications, which transitively covers the riskiest parts of the stack.</p>
+  <p>If you need a counterparty with formal security certifications, Ascend may not be the right fit, and that's fair.</p>
+
+  <h2>11. Changes</h2>
+  <p>Material changes to this overview will be noted with an updated "last updated" date below and called out in the in-app "What's new" sheet on your next visit.</p>
+
+  <p class="updated">Last updated: 2026-05-18</p>
+
+  <footer>
+    <a href="/">← Back to Ascend</a> &nbsp;·&nbsp;
+    <a href="/privacy">Privacy</a> &nbsp;·&nbsp;
+    <a href="/terms">Terms</a> &nbsp;·&nbsp;
+    <a href="/support">Support</a>
+  </footer>
+</div>
+</body>
+</html>
