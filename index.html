@@ -16138,53 +16138,78 @@ async function _stocksLoadBreadth() {
 
 function _stocksRenderBreadth(d) {
   if (!d || d.score == null) return "";
-  const score = d.score | 0;
+  const score = Math.max(0, Math.min(100, d.score | 0));
   const band = d.band || "Neutral";
+  // Active hue per score band — used for the big number's gradient and the
+  // marker dot on the track. Kept inside CSS color variables so dark/light
+  // theme + accent shifts cascade through automatically.
   const color = score < 25 ? "var(--red)"
               : score < 45 ? "var(--orange)"
               : score < 55 ? "var(--t2)"
-              : score < 75 ? "var(--lime)"
+              : score < 75 ? "var(--lime, #84CC16)"
               :              "var(--green)";
-  const W = 260, H = 110, cx = W / 2, cy = H - 12, R = 100;
-  const pct = score / 100;
-  const ang = Math.PI + Math.PI * pct;
-  const nx = cx + (R - 8) * Math.cos(ang), ny = cy + (R - 8) * Math.sin(ang);
+  // Solid-hex equivalents used inside color-mix() (which doesn't accept
+  // CSS variables as the second arg in some Safari versions).
+  const colorHex = score < 25 ? "#FF3B30"
+                 : score < 45 ? "#FF9500"
+                 : score < 55 ? "#9C9CA4"
+                 : score < 75 ? "#84CC16"
+                 :              "#34C759";
   return `
     <div class="section-h" style="margin-top:14px;display:flex;align-items:center;gap:8px">
       <span class="lbl">Market sentiment</span>
-      <div style="background:var(--bg-elev);color:${color};border-radius:999px;padding:2px 10px;font-size:11px;font-weight:700;letter-spacing:0.04em;text-transform:uppercase">${esc(band)}</div>
       <div style="flex:1"></div>
       <button class="act" aria-label="Refresh market breadth" title="Refresh" onclick="DB.stocks.breadthCache=null;_stocksLoadBreadth()" style="font-size:11px">↻</button>
     </div>
-    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:14px;margin-bottom:6px">
-      <div style="display:flex;align-items:center;gap:14px;margin-bottom:10px">
-        <div style="position:relative;flex-shrink:0">
-          <svg viewBox="0 0 ${W} ${H}" style="display:block;width:160px;height:75px">
-            <defs><linearGradient id="brg" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stop-color="#FF3B30"/><stop offset="35%" stop-color="#FF9500"/>
-              <stop offset="55%" stop-color="var(--lime)"/><stop offset="100%" stop-color="#34C759"/>
-            </linearGradient></defs>
-            <path d="M ${cx - R},${cy} A ${R},${R} 0 0 1 ${cx + R},${cy}" fill="none" stroke="url(#brg)" stroke-width="14" stroke-linecap="round" opacity="0.85"/>
-            <line x1="${cx}" y1="${cy}" x2="${nx.toFixed(1)}" y2="${ny.toFixed(1)}" stroke="${color}" stroke-width="3" stroke-linecap="round"/>
-            <circle cx="${cx}" cy="${cy}" r="6" fill="${color}"/>
-            <text x="${cx}" y="${cy - 22}" text-anchor="middle" font-size="32" font-weight="800" fill="var(--t1)">${score}</text>
-          </svg>
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:18px 18px 14px;margin-bottom:6px;box-shadow:var(--sh-1)">
+      <!-- TOP: big gradient score on the left, description on the right -->
+      <div style="display:flex;align-items:center;gap:18px;margin-bottom:16px">
+        <div style="flex-shrink:0;text-align:left">
+          <div style="font-size:54px;font-weight:700;line-height:0.95;letter-spacing:-0.04em;
+            background:linear-gradient(135deg, ${colorHex} 0%, color-mix(in srgb, ${colorHex} 55%, #fff) 100%);
+            -webkit-background-clip:text;background-clip:text;
+            -webkit-text-fill-color:transparent;color:transparent;
+            font-variant-numeric:tabular-nums">${score}</div>
+          <div style="display:inline-flex;align-items:center;gap:5px;margin-top:6px;
+            background:color-mix(in srgb, ${colorHex} 14%, transparent);
+            color:${colorHex};
+            border:0.5px solid color-mix(in srgb, ${colorHex} 32%, transparent);
+            padding:3px 9px;border-radius:999px;
+            font-size:10px;font-weight:700;letter-spacing:0.06em;text-transform:uppercase">${esc(band)}</div>
         </div>
         <div style="flex:1;min-width:0">
-          <div style="font-size:11.5px;color:var(--t3);line-height:1.45">
+          <div style="font-size:11.5px;color:var(--t3);line-height:1.5">
             Composite of S&amp;P 500 trend, momentum, VIX, and 10Y treasury direction. Sourced via SPY / ^VIX / ^TNX.
           </div>
-          ${d.as_of ? `<div style="font-size:10px;color:var(--t3);margin-top:4px">As of ${esc(d.as_of)}</div>` : ""}
+          ${d.as_of ? `<div style="font-size:10px;color:var(--t4);margin-top:4px">As of ${esc(d.as_of)}</div>` : ""}
         </div>
       </div>
+      <!-- TRACK: horizontal gradient bar with score marker -->
+      <div style="position:relative;height:8px;border-radius:999px;
+        background:linear-gradient(90deg,
+          rgba(255,59,48,0.28) 0%,
+          rgba(255,149,0,0.28) 32%,
+          rgba(132,204,22,0.28) 55%,
+          rgba(52,199,89,0.28) 100%);
+        overflow:visible">
+        <div style="position:absolute;left:${score}%;top:50%;transform:translate(-50%,-50%);
+          width:18px;height:18px;border-radius:50%;background:${color};
+          border:3px solid var(--card);
+          box-shadow:0 2px 10px color-mix(in srgb, ${colorHex} 55%, transparent),
+                     0 0 0 0.5px color-mix(in srgb, ${colorHex} 60%, transparent)"></div>
+      </div>
+      <div style="display:flex;justify-content:space-between;margin-top:8px;
+        font-size:9.5px;color:var(--t4);font-weight:700;letter-spacing:0.08em;text-transform:uppercase">
+        <span>Fear</span><span>Neutral</span><span>Greed</span>
+      </div>
       ${(d.signals || []).length ? `
-        <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px">
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:14px">
           ${(d.signals || []).map(s => {
             const sc = s.tone === "bullish" ? "var(--green)"
                      : s.tone === "bearish" ? "var(--red)"
                      : "var(--t2)";
             return `
-              <div style="display:flex;justify-content:space-between;align-items:baseline;background:var(--bg-elev);border-radius:6px;padding:5px 8px;gap:4px">
+              <div style="display:flex;justify-content:space-between;align-items:baseline;background:var(--bg-elev);border-radius:8px;padding:6px 9px;gap:4px">
                 <span style="font-size:10.5px;color:var(--t3);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.label)}</span>
                 <span style="font-size:11px;color:${sc};font-weight:700;font-variant-numeric:tabular-nums;flex-shrink:0">${esc(s.value)}</span>
               </div>
