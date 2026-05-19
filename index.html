@@ -396,6 +396,54 @@ input::placeholder, textarea::placeholder { color: var(--t4); }
 .page.active.swipe-from-right { animation: slideInFromRight .28s var(--ease-out); }
 .page.active.swipe-from-left  { animation: slideInFromLeft  .28s var(--ease-out); }
 
+/* Pull-to-refresh indicator. Rendered into the body once on init by JS;
+   sits below the topbar, slides down + fades in as the user pulls #content
+   past the top edge, locks into a spinning state when a refresh triggers.
+   Lightweight pill, never visible unless the user actively pulls. */
+#ptr-indicator {
+  position: fixed;
+  top: calc(var(--sa-top) + 4px);
+  left: 50%;
+  transform: translate(-50%, -30px);
+  background: var(--bg-elev);
+  color: var(--t2);
+  padding: 6px 14px 6px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 600;
+  border: 0.5px solid var(--sep);
+  box-shadow: var(--sh-pop);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  opacity: 0;
+  transition: opacity .18s ease, transform .26s var(--ease-out);
+  z-index: 200;
+  pointer-events: none;
+  display: flex; gap: 8px; align-items: center;
+  letter-spacing: -0.005em;
+}
+#ptr-indicator.visible {
+  opacity: 1;
+  transform: translate(-50%, calc(var(--sa-top) + 14px));
+}
+#ptr-indicator .ptr-icon {
+  font-size: 13px;
+  line-height: 1;
+  display: inline-block;
+  transition: transform .2s var(--ease-out);
+}
+#ptr-indicator.ready .ptr-icon { transform: rotate(180deg); color: var(--green); }
+#ptr-indicator.spinning .ptr-icon { animation: ptr-spin .8s linear infinite; }
+@keyframes ptr-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  #ptr-indicator { transition: opacity .15s ease; }
+  #ptr-indicator.visible { transform: translate(-50%, calc(var(--sa-top) + 14px)); }
+  #ptr-indicator.spinning .ptr-icon { animation: none; }
+}
+/* The transform on #content while pulling is set inline by the JS handler.
+   When released we want a smooth bounce-back — handled by inline transition
+   the JS sets, then cleared. */
+
 /* Row stagger on tab-switch only. The `.fresh-mount` class is added by
    showTab() and removed ~500ms later so in-tab re-renders (which happen
    on every state mutation) don't replay the cascade. Keep delays short
@@ -473,6 +521,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .tab.active { color: var(--t1); }
 .tab.active .ic { opacity: 1; transform: translateY(-1px); }
 .tab:active .ic { transform: scale(.88); }
+
+/* Tab icon morph pop — one-shot animation when a tab becomes the active
+   tab via showTab. The pulse is brief and slightly playful (overshoot
+   spring) because tab activation is "occasional" frequency per Emil
+   (not the keyboard-shortcut case where any animation feels slow). */
+@keyframes tab-icon-pop {
+  0%   { transform: translateY(-1px) scale(1.0)  rotate(0deg); }
+  30%  { transform: translateY(-3px) scale(1.22) rotate(-8deg); }
+  62%  { transform: translateY(-2px) scale(1.06) rotate(3deg); }
+  100% { transform: translateY(-1px) scale(1.0)  rotate(0deg); }
+}
+.tab.just-activated .ic {
+  animation: tab-icon-pop .42s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
 
 /* Soft accent pill behind the active tab's icon. Uses a pseudo-element
    so existing tab markup doesn't need touching. The pill fades in when
@@ -888,7 +950,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .hero .h-sub { font-size: 13.5px; color: rgba(245,245,247,0.66); margin-top: 6px; line-height: 1.4; }
 .hero .h-bar { height: 5px; background: rgba(255,255,255,.10); border-radius: 4px; margin-top: 18px; overflow: hidden; }
-.hero .h-fill { height: 100%; background: linear-gradient(90deg, #2EB875, #5EE0A0); border-radius: 4px; transition: width .7s cubic-bezier(.34,1.56,.64,1); box-shadow: 0 0 12px rgba(94,224,160,0.45); }
+.hero .h-fill { height: 100%; background: linear-gradient(90deg, #2EB875, #5EE0A0); border-radius: 4px; transition: width .45s var(--ease-out); box-shadow: 0 0 12px rgba(94,224,160,0.45); }
 .hero::after { display: none; }
 
 /* ================ STATS / GRID ================ */
@@ -959,7 +1021,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 }
 .sav-tar { font-size: 13px; color: var(--t3); font-variant-numeric: tabular-nums; }
 .sav-bar { height: 8px; background: var(--bg-elev); border-radius: 100px; overflow: hidden; margin-bottom: 10px; }
-.sav-fill { height: 100%; border-radius: 100px; transition: width .7s cubic-bezier(.34,1.56,.64,1); }
+.sav-fill { height: 100%; border-radius: 100px; transition: width .45s var(--ease-out); }
 .sav-foot { display: flex; align-items: center; justify-content: space-between; font-size: 12px; color: var(--t3); }
 .sav-met { color: var(--green); font-weight: 700; }
 .sav-actions { display: flex; gap: 6px; }
@@ -999,7 +1061,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .goal-note { font-size: 12.5px; color: var(--t3); margin-top: 4px; line-height: 1.45; }
 .goal-prog-row { display: flex; align-items: center; gap: 10px; margin-top: 12px; }
 .goal-prog-bar { flex: 1; height: 5px; background: var(--bg-elev); border-radius: 100px; overflow: hidden; }
-.goal-prog-fill { height: 100%; background: var(--green); border-radius: 100px; transition: width .5s cubic-bezier(.34,1.56,.64,1); }
+.goal-prog-fill { height: 100%; background: var(--green); border-radius: 100px; transition: width .45s var(--ease-out); }
 .goal-prog-lbl { font-size: 12px; color: var(--t3); font-weight: 700; min-width: 32px; text-align: right; font-variant-numeric: tabular-nums; }
 .goal-steps { border-top: .5px solid var(--sep); padding: 6px 16px 10px 50px; }
 .step {
@@ -4141,9 +4203,18 @@ function showTab(name, swipeDir) {
   // A5: keep aria-selected in sync with the .active class so screen
   // readers announce which tab is selected.
   $$(".tab").forEach(t => {
+    const wasActive = t.classList.contains("active");
     const isActive = t.dataset.tab === name;
     t.classList.toggle("active", isActive);
     t.setAttribute("aria-selected", isActive ? "true" : "false");
+    // One-shot "tab icon morph" pulse — fires only on the transition
+    // from inactive→active so re-rendering the same tab doesn't restart
+    // the animation. Class is removed after the animation has played
+    // (520ms covers the .42s keyframe plus a small buffer).
+    if (isActive && !wasActive) {
+      t.classList.add("just-activated");
+      setTimeout(() => t.classList.remove("just-activated"), 520);
+    }
   });
   // Clear any prior swipe-direction class from every page so only the
   // destination carries it (otherwise old direction classes would still
@@ -4169,6 +4240,51 @@ function showTab(name, swipeDir) {
   }
   try { $("#content").scrollTo({ top: 0, behavior: "instant" }); } catch {}
   render();
+  // Number count-up on hero — finds the active page's .hero .h-big after
+  // render() returns (which has populated the DOM) and animates its
+  // numeric portion from 0 to its final value. Scoped to tab-switch only
+  // so the dozens of in-tab re-renders don't replay the count.
+  try {
+    const heroBig = activePage && activePage.querySelector('.hero .h-big');
+    if (heroBig) requestAnimationFrame(() => _heroCountUp(heroBig));
+  } catch {}
+}
+
+/* Hero number count-up. Parses the leading numeric chunk from .h-big's
+   text (handles $1,234.56 / 94 / -42 / 1.2k) and animates from 0 →
+   final over 850ms with ease-out cubic. Preserves whatever prefix/
+   suffix exists (currency symbol, units, "/ 100", etc.) by restoring
+   the exact original text on completion so format quirks survive. */
+function _heroCountUp(el) {
+  if (!el || el._countAnimating) return;
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const text = el.textContent || "";
+  // Capture: optional prefix (currency/sign), the numeric chunk
+  // (with optional thousands commas and decimal), then trailing suffix.
+  const m = text.match(/^([^\d\-]*)(-?\d[\d,]*(?:\.\d+)?)(.*)$/s);
+  if (!m) return;
+  const [, prefix, numStr, suffix] = m;
+  const final = parseFloat(numStr.replace(/,/g, ''));
+  if (!isFinite(final) || Math.abs(final) < 2) return;  // skip "1" / "0" / "—"
+  const hasDecimal = numStr.includes(".");
+  const decimals = hasDecimal ? (numStr.split(".")[1] || "").length : 0;
+  const hadCommas = numStr.includes(",");
+  el._countAnimating = true;
+  const dur = 850;
+  const start = performance.now();
+  function fmt(v) {
+    let s = hasDecimal ? v.toFixed(decimals) : String(Math.round(v));
+    if (hadCommas) s = s.replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+    return prefix + s + suffix;
+  }
+  function frame(t) {
+    const p = Math.min(1, (t - start) / dur);
+    const e = 1 - Math.pow(1 - p, 3);  // ease-out cubic
+    el.textContent = fmt(final * e);
+    if (p < 1) requestAnimationFrame(frame);
+    else { el.textContent = text; el._countAnimating = false; }
+  }
+  requestAnimationFrame(frame);
 }
 // A5: ARIA Authoring Practices for tablist — Left/Right arrows move
 // focus between visible tabs, Home/End jump to first/last. Activation
@@ -4255,6 +4371,122 @@ $("#content").addEventListener("scroll", () => {
     else if (dx > 0 && i > 0) { try { haptic("light"); } catch {} showTab(visible[i - 1], "right"); }
   }, { passive: true });
 })();
+
+// ===== Pull-to-refresh =====
+// iOS-native feel: pulling #content past the top edge reveals a pill
+// indicator + applies rubber-band resistance to the content transform.
+// Releasing past threshold triggers a refresh (syncNow if backend ready,
+// otherwise a render() round-trip with brief delay). Co-exists carefully
+// with the horizontal swipe handler above by ignoring touches that
+// drift more horizontally than vertically.
+(() => {
+  const content = document.getElementById("content");
+  if (!content) return;
+  // One-time indicator element.
+  const ptr = document.createElement("div");
+  ptr.id = "ptr-indicator";
+  ptr.innerHTML = '<span class="ptr-icon">↓</span><span class="ptr-text">Pull to refresh</span>';
+  document.body.appendChild(ptr);
+  const txt = ptr.querySelector(".ptr-text");
+
+  const THRESHOLD = 70;       // px of finger travel needed to trigger
+  const RESISTANCE = 0.45;    // 0..1: how much of the finger movement the content actually follows
+
+  let startY = 0, startX = 0, pulling = false, locked = false, refreshing = false;
+
+  function reset(skipBounce) {
+    ptr.classList.remove("visible", "ready");
+    if (!skipBounce && content.style.transform) {
+      content.style.transition = "transform .32s var(--ease-out)";
+      content.style.transform = "translateY(0)";
+      setTimeout(() => { content.style.transition = ""; content.style.transform = ""; }, 340);
+    }
+    startY = 0; startX = 0; pulling = false; locked = false;
+  }
+
+  content.addEventListener("touchstart", (e) => {
+    if (refreshing) return;
+    if (e.touches.length !== 1) return;
+    // Don't fight an open sheet's drag handler.
+    const sheet = document.getElementById("sheet");
+    if (sheet && sheet.classList.contains("show")) { locked = true; return; }
+    if (content.scrollTop > 0) { locked = true; return; }
+    startY = e.touches[0].clientY;
+    startX = e.touches[0].clientX;
+    pulling = false; locked = false;
+  }, { passive: true });
+
+  content.addEventListener("touchmove", (e) => {
+    if (refreshing || locked || !startY) return;
+    const y = e.touches[0].clientY;
+    const x = e.touches[0].clientX;
+    const dy = y - startY;
+    const dx = Math.abs(x - startX);
+    // If finger drifts horizontally more than vertically, hand the gesture
+    // back to the swipe-between-tabs handler.
+    if (!pulling && dx > Math.abs(dy)) { locked = true; return; }
+    if (dy <= 6) {
+      // Finger moved up or barely down — clear any in-progress pull state.
+      if (pulling) reset();
+      return;
+    }
+    if (content.scrollTop > 0) { locked = true; return; }
+    pulling = true;
+    const dist = dy * RESISTANCE;
+    content.style.transform = `translateY(${dist}px)`;
+    if (dist > 14) ptr.classList.add("visible"); else ptr.classList.remove("visible");
+    if (dist >= THRESHOLD * RESISTANCE) {
+      ptr.classList.add("ready");
+      txt.textContent = "Release to refresh";
+    } else {
+      ptr.classList.remove("ready");
+      txt.textContent = "Pull to refresh";
+    }
+  }, { passive: true });
+
+  content.addEventListener("touchend", () => {
+    if (refreshing || locked || !pulling) { reset(true); return; }
+    const triggered = ptr.classList.contains("ready");
+    if (!triggered) { reset(); return; }
+    // Run the refresh — keep the indicator pinned + spinning during it.
+    refreshing = true;
+    ptr.classList.remove("ready");
+    ptr.classList.add("spinning");
+    txt.textContent = "Refreshing…";
+    // Bounce content back immediately (visual sync); indicator stays.
+    content.style.transition = "transform .32s var(--ease-out)";
+    content.style.transform = "translateY(0)";
+    setTimeout(() => { content.style.transition = ""; content.style.transform = ""; }, 340);
+    try { haptic("light"); } catch {}
+    (async () => {
+      let synced = false;
+      try {
+        if (typeof _backendReady === "function" && _backendReady() &&
+            typeof syncNow === "function" && (DB.items || []).length > 0) {
+          await syncNow();
+          synced = true;
+        }
+      } catch {}
+      // Always re-render the current tab so non-bank state (manual entries,
+      // computed projections) refreshes too.
+      try { render(); } catch {}
+      // Minimum visible time so the spin reads as deliberate work, not a flash.
+      const minVisible = 600;
+      await new Promise(r => setTimeout(r, minVisible));
+      ptr.classList.remove("spinning", "visible");
+      refreshing = false;
+      try { haptic("success"); } catch {}
+      // Tiny confirmation — only if we didn't already syncNow (which toasts itself).
+      if (!synced) toast("Refreshed");
+    })();
+    startY = 0; startX = 0; pulling = false;
+  }, { passive: true });
+
+  // Cancel any pending pull state if the touch is interrupted (e.g.
+  // sheet opens mid-gesture).
+  content.addEventListener("touchcancel", () => { if (!refreshing) reset(); }, { passive: true });
+})();
+
 // Keyboard shortcut: Cmd/Ctrl + K opens global search (when not already in an
 // input). Standard mainstream pattern; no UI hint shown on mobile since most
 // users won't have a physical keyboard, but power-desktop users will discover.
