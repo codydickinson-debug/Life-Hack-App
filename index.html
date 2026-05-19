@@ -357,7 +357,9 @@ input::placeholder, textarea::placeholder { color: var(--t4); }
   border: 0.5px solid var(--sep);
   transition: transform .15s ease, background .15s ease, color .15s ease;
 }
-.tb-btn:hover { color: var(--t1); background: var(--bg-elev2); }
+@media (hover: hover) and (pointer: fine) {
+  .tb-btn:hover { color: var(--t1); background: var(--bg-elev2); }
+}
 .tb-btn:active { transform: scale(.92); background: var(--bg-elev2); }
 .tb-greet { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; max-width: 60%; }
 .tb-hello { font-size: 11px; color: var(--t3); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1037,11 +1039,16 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   border-radius: var(--r2);
   font-size: 16px;
   border: 0.5px solid transparent;
-  transition: background .15s ease, border-color .15s ease;
+  /* box-shadow is the focus ring (cleaner than outline since it respects
+     border-radius without offset hacks). Transition both border and ring
+     together so the focus state lands as one motion. */
+  transition: background .15s ease, border-color .15s ease, box-shadow .18s var(--ease-out);
 }
 .sheet input:focus, .sheet select:focus, .sheet textarea:focus {
   background: var(--card);
-  border-color: var(--sep-2);
+  border-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+  outline: none;
 }
 .sheet textarea { min-height: 80px; resize: vertical; }
 .sheet .actions { display: flex; gap: 10px; margin-top: 20px; }
@@ -1104,7 +1111,7 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   transform: translateX(-50%) translateY(20px);
   background: rgba(20,20,22,.94);
   color: #fff;
-  padding: 11px 18px;
+  padding: 11px 18px 11px 16px;
   border-radius: var(--r-pill);
   font-size: 13.5px;
   font-weight: 600;
@@ -1112,18 +1119,26 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   opacity: 0;
   /* Asymmetric: exit fast (system responding) so the toast clears the way for
      whatever the user does next. Enter timing is overridden in .show below. */
-  transition: opacity .16s var(--ease-out), transform .16s var(--ease-out);
+  transition: opacity .16s var(--ease-out), transform .16s var(--ease-out), box-shadow .2s ease;
   pointer-events: none;
   white-space: nowrap;
   letter-spacing: -0.005em;
   box-shadow: var(--sh-pop);
   border: 0.5px solid rgba(255,255,255,.08);
+  /* Variant accent: 3px left-edge stripe whose color signals the toast's
+     intent. Default (no kind) is a neutral grey. Overridden via data-kind
+     attribute written by toast(). Declared AFTER the border shorthand so
+     it wins the cascade for the left edge only. */
+  border-left: 3px solid rgba(255,255,255,0.22);
   -webkit-backdrop-filter: blur(20px);
   backdrop-filter: blur(20px);
 }
+#toast[data-kind="success"] { border-left-color: var(--green); }
+#toast[data-kind="error"]   { border-left-color: var(--red); }
+#toast[data-kind="info"]    { border-left-color: var(--blue); }
 #toast.show {
   opacity: 1; transform: translateX(-50%) translateY(0);
-  transition: opacity .28s ease, transform .28s ease;
+  transition: opacity .28s ease, transform .28s ease, box-shadow .2s ease;
 }
 
 /* ================ DAY CHIPS (mini week ladder) ================ */
@@ -1366,7 +1381,11 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   animation: fab-in .42s var(--ease-out) .25s both;
 }
 #fab:active { transform: scale(.92); }
-#fab:hover { background: var(--blue); color: #fff; }
+/* Hover gated to real pointers — on touch devices :hover fires ~300ms
+   after every tap, so the FAB would stay blue/white after each press. */
+@media (hover: hover) and (pointer: fine) {
+  #fab:hover { background: var(--blue); color: #fff; }
+}
 
 /* Counselor launcher — sits just above the spend FAB, on every tab.
    Smaller + gradient so it's clearly secondary to the primary action FAB. */
@@ -1389,7 +1408,9 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   animation: fab-in .42s var(--ease-out) .4s both;
 }
 #counselor-fab:active { transform: scale(.9); }
-#counselor-fab:hover { box-shadow: 0 6px 24px color-mix(in srgb, var(--corn-from) 45%, transparent); }
+@media (hover: hover) and (pointer: fine) {
+  #counselor-fab:hover { box-shadow: 0 6px 24px color-mix(in srgb, var(--corn-from) 45%, transparent); }
+}
 /* Attention pulse — fires once per browser session (gated by a sessionStorage
    check in init()) so first-time and returning users see Cornileus draw the
    eye briefly, but not on every navigation. Aura uses a pseudo-element so the
@@ -1574,6 +1595,22 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   animation:
     corn-pop 0.32s var(--ease-out) 0.15s both,
     corn-breathe 4.6s ease-in-out 1.4s infinite;
+}
+/* Monocle glint — only fires on the focal greeting avatar. Long cycle
+   (12s) with a quick visible sweep (~0.8s of the cycle) so it reads as a
+   character moment, not a loop. Other avatars keep the glint band hidden. */
+.cn-monocle-glint { opacity: 0; }
+.corn-greeting .corn-peek .cn-monocle-glint {
+  opacity: 1;
+  animation: cn-glint-sweep 12s linear 2.2s infinite;
+}
+@keyframes cn-glint-sweep {
+  0%   { transform: translateX(-14px); }
+  7%   { transform: translateX(14px); }
+  100% { transform: translateX(14px); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .corn-greeting .corn-peek .cn-monocle-glint { animation: none; opacity: 0; }
 }
 .corn-greeting-wrap { margin: 6px 0 14px; }
 @keyframes corn-greet-in {
@@ -1913,7 +1950,9 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   cursor: pointer; white-space: nowrap;
   transition: color .12s ease, background .12s ease, border-color .12s ease, transform .12s var(--ease-out);
 }
-.savings-add:hover { background: var(--green); color: #fff; border-color: var(--green); }
+@media (hover: hover) and (pointer: fine) {
+  .savings-add:hover { background: var(--green); color: #fff; border-color: var(--green); }
+}
 .savings-add:active { transform: scale(.96); }
 .savings-foot {
   margin-top: 12px; padding-top: 12px;
@@ -1929,7 +1968,9 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   padding: 8px 14px; font-size: 12.5px; font-weight: 700;
   cursor: pointer; white-space: nowrap;
 }
-.savings-ai-btn:hover { box-shadow: 0 4px 14px color-mix(in srgb, var(--corn-from) 40%, transparent); }
+@media (hover: hover) and (pointer: fine) {
+  .savings-ai-btn:hover { box-shadow: 0 4px 14px color-mix(in srgb, var(--corn-from) 40%, transparent); }
+}
 .whatif-math {
   margin-top: 12px;
   border-top: 1px dashed var(--sep);
@@ -2268,7 +2309,9 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   cursor: pointer;
   transition: background .15s ease, color .15s ease, transform .12s ease;
 }
-.plan-log:hover { background: var(--blue); color: #fff; }
+@media (hover: hover) and (pointer: fine) {
+  .plan-log:hover { background: var(--blue); color: #fff; }
+}
 .plan-log:active { transform: scale(.96); }
 .plan-empty {
   background: var(--card); border-radius: var(--r);
@@ -4087,9 +4130,29 @@ function keyboardShortcutsSheet() {
 
 /* ================ TOAST ================ */
 let toastT;
+// Detect toast intent from the leading emoji so existing call sites don't
+// have to change. Convention already present across the codebase:
+//   ✓  → success    (e.g. "✓ Read Bible")
+//   ⚠  → error/warning
+//   🎉/✨ → success-with-celebration
+//   ❌ → error
+//   Anything else  → neutral
+function _toastKind(msg) {
+  const s = (msg || "").trimStart();
+  if (!s) return "";
+  // Common positive markers
+  if (s.startsWith("✓") || s.startsWith("✔") || s.startsWith("🎉") || s.startsWith("✨")) return "success";
+  if (s.startsWith("⚠") || s.startsWith("❌") || s.startsWith("⛔")) return "error";
+  // "Synced N transactions" / "Connected" / "Saved" / "+$X" — positive, no emoji
+  if (/^(synced|connected|saved|updated|done|added|published|copied|restored)\b/i.test(s)) return "success";
+  if (/^\+\$/.test(s)) return "success";
+  return "";
+}
 function toast(msg) {
   const t = $("#toast");
   t.textContent = msg;
+  const kind = _toastKind(msg);
+  if (kind) t.setAttribute("data-kind", kind); else t.removeAttribute("data-kind");
   t.classList.add("show");
   clearTimeout(toastT);
   toastT = setTimeout(() => t.classList.remove("show"), 1600);
@@ -25858,6 +25921,19 @@ function cornileusSvg(mood) {
       <stop offset="0%" stop-color="#e8c98e"/>
       <stop offset="100%" stop-color="#a8804a"/>
     </linearGradient>
+    <!-- Monocle glint: a soft, narrow highlight band that sweeps across the
+         lens. clipPath confines it to the monocle interior so the
+         highlight doesn't escape onto the cheek. Animation is driven from
+         CSS (.cn-monocle-glint) and only "lights up" on the focal
+         greeting avatar — see CSS scope below. -->
+    <clipPath id="cn-mono-clip"><circle cx="40" cy="32" r="3.7"/></clipPath>
+    <linearGradient id="cn-glint" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%"  stop-color="#fff8e0" stop-opacity="0"/>
+      <stop offset="45%" stop-color="#fff8e0" stop-opacity="0"/>
+      <stop offset="50%" stop-color="#fff8e0" stop-opacity="0.9"/>
+      <stop offset="55%" stop-color="#fff8e0" stop-opacity="0"/>
+      <stop offset="100%" stop-color="#fff8e0" stop-opacity="0"/>
+    </linearGradient>
   </defs>
   <!-- Suit shoulders, slightly rounded for warmth -->
   <path d="M10 60 Q22 51 32 51 Q42 51 54 60 L54 64 L10 64 Z" fill="url(#cn-suit)"/>
@@ -25880,6 +25956,11 @@ function cornileusSvg(mood) {
   ${f.eyes}
   <!-- Single gold monocle ring on his right eye — his signature -->
   <circle cx="40" cy="32" r="4.4" fill="rgba(232,201,142,0.06)" stroke="url(#cn-mono-rim)" stroke-width="1.1"/>
+  <!-- Glint band — wider than the monocle so the animation can slide it
+       across; clipPath crops it to the lens interior. -->
+  <g clip-path="url(#cn-mono-clip)">
+    <rect class="cn-monocle-glint" x="32" y="27" width="24" height="10" fill="url(#cn-glint)"/>
+  </g>
   <!-- Monocle chain trailing down -->
   <path d="M43.8 33.6 Q46.2 38 45 43.5" stroke="#a8804a" stroke-width="0.6" fill="none" stroke-linecap="round"/>
   <!-- Mustache: one clean curved shape, no extra strands -->
