@@ -24138,6 +24138,11 @@ function renderSettings() {
           </select>
         </div>
       ` : ""}
+      <div class="row tappable" onclick="dataSafetySheet()" role="button" tabindex="0">
+        <div class="lead">🛡️</div>
+        <div class="body"><div class="t1">How your data is protected</div><div class="t2">Full breakdown: local-first, encryption, bank sync, AI</div></div>
+        <div class="trail chev"></div>
+      </div>
     </div>
 
     ${DB.settings._settingsShowAll ? `
@@ -37997,7 +38002,7 @@ function bankConnectSuccessSheet(institutionName, addedCount) {
 
     <div style="display:flex;gap:8px;align-items:center;background:color-mix(in srgb, var(--green) 8%, transparent);border:0.5px solid color-mix(in srgb, var(--green) 30%, transparent);border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--t2);line-height:1.5">
       <div style="font-size:15px;flex-shrink:0">✓</div>
-      <div>You can revisit this in Settings → "Where your data lives".</div>
+      <div>Full details anytime: Settings → About → Privacy &amp; Security.</div>
     </div>
 
     <button class="btn" style="width:100%;font-size:14px;padding:12px" onclick="closeSheet()">Got it</button>
