@@ -875,6 +875,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 #page-planning .hero { --hero-num-tint: color-mix(in srgb, var(--blue)   78%, #fff); }
 #page-stats    .hero { --hero-num-tint: color-mix(in srgb, var(--pink)   78%, #fff); }
 #page-calendar .hero { --hero-num-tint: color-mix(in srgb, var(--orange) 78%, #fff); }
+
+/* Snappy hero-number scale-in on tab-switch. .fresh-mount is added by
+   showTab and removed ~500ms later, so this fires exactly once per
+   tab-switch — never on the in-tab re-renders that happen all the time. */
+@keyframes hero-num-rise {
+  0%   { opacity: 0; transform: translateY(8px) scale(0.94); }
+  100% { opacity: 1; transform: none; }
+}
+.page.fresh-mount .hero .h-big {
+  animation: hero-num-rise .42s var(--ease-out) .08s both;
+}
 .hero .h-sub { font-size: 13.5px; color: rgba(245,245,247,0.66); margin-top: 6px; line-height: 1.4; }
 .hero .h-bar { height: 5px; background: rgba(255,255,255,.10); border-radius: 4px; margin-top: 18px; overflow: hidden; }
 .hero .h-fill { height: 100%; background: linear-gradient(90deg, #2EB875, #5EE0A0); border-radius: 4px; transition: width .7s cubic-bezier(.34,1.56,.64,1); box-shadow: 0 0 12px rgba(94,224,160,0.45); }
@@ -4338,6 +4349,8 @@ function keyboardShortcutsSheet() {
 
 /* ================ TOAST ================ */
 let toastT;
+let _toastRemaining = 1600;  // ms left on the current dismiss timer; recalculated on pause/resume
+let _toastStartedAt = 0;
 // Detect toast intent from the leading emoji so existing call sites don't
 // have to change. Convention already present across the codebase:
 //   ✓  → success    (e.g. "✓ Read Bible")
@@ -4363,8 +4376,36 @@ function toast(msg) {
   if (kind) t.setAttribute("data-kind", kind); else t.removeAttribute("data-kind");
   t.classList.add("show");
   clearTimeout(toastT);
-  toastT = setTimeout(() => t.classList.remove("show"), 1600);
+  _toastRemaining = 1600;
+  _toastStartedAt = Date.now();
+  toastT = setTimeout(() => t.classList.remove("show"), _toastRemaining);
 }
+// Sonner-style hover-pause. When the user moves a pointer over the toast
+// (or touches it) the auto-dismiss countdown freezes; leaving resumes
+// from the remaining time. Lets a passing toast become a readable one
+// if the user wants to read it.
+(() => {
+  const t = () => document.getElementById("toast");
+  function pause() {
+    if (!toastT) return;
+    clearTimeout(toastT); toastT = null;
+    _toastRemaining = Math.max(400, _toastRemaining - (Date.now() - _toastStartedAt));
+  }
+  function resume() {
+    if (toastT) return;
+    const el = t(); if (!el || !el.classList.contains("show")) return;
+    _toastStartedAt = Date.now();
+    toastT = setTimeout(() => el.classList.remove("show"), _toastRemaining);
+  }
+  document.addEventListener("DOMContentLoaded", () => {
+    const el = t(); if (!el) return;
+    el.style.pointerEvents = "auto";  // overrides the none default in CSS so hover lands
+    el.addEventListener("mouseenter", pause);
+    el.addEventListener("mouseleave", resume);
+    el.addEventListener("touchstart", pause, { passive: true });
+    el.addEventListener("touchend", resume, { passive: true });
+  });
+})();
 
 /* ================ SHEET ================ */
 let _lockSheet = false;  // when true, scrim taps + closeSheet() are no-ops (used during onboarding)
@@ -37958,6 +37999,78 @@ function celebrate(intensity) {
     else cv.remove();
   })();
 }
+
+/* Per-check sparkle burst — small radial particle pop from a tapped
+   checkbox when it transitions from undone → done. Different from
+   `celebrate()` (which is full-screen for milestones); this is a
+   per-tap delight that says "yes, that landed". */
+function _checkBurst(x, y) {
+  if (DB && DB.settings && DB.settings.celebrationsEnabled === false) return;
+  if (window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  const cv = document.createElement("canvas");
+  // pinned to the tap point; ~120px square so we don't paint the whole screen
+  const R = 120;
+  cv.width = R * 2; cv.height = R * 2;
+  cv.style.position = "fixed";
+  cv.style.left = (x - R) + "px";
+  cv.style.top  = (y - R) + "px";
+  cv.style.pointerEvents = "none";
+  cv.style.zIndex = "200";
+  document.body.appendChild(cv);
+  const ctx = cv.getContext("2d");
+  // Warm celebratory palette matching the existing celebrate() colors.
+  const colors = ["#34C759","#FFCC00","#FF9500","#5AC8FA","#AF52DE"];
+  const N = 12;
+  const parts = Array.from({length: N}, (_, i) => {
+    const angle = (Math.PI * 2 * i) / N + Math.random() * 0.4;
+    const speed = 2.2 + Math.random() * 1.8;
+    return {
+      x: R, y: R,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed - 0.4,  // slight upward bias
+      g: 0.18,
+      sz: 3 + Math.random() * 2.5,
+      c: colors[(Math.random() * colors.length) | 0],
+      life: 28 + Math.random() * 10,
+      maxLife: 38,
+    };
+  });
+  let frame = 0;
+  (function tick() {
+    frame++;
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    let alive = false;
+    for (const p of parts) {
+      if (p.life <= 0) continue;
+      alive = true;
+      p.vy += p.g; p.x += p.vx; p.y += p.vy; p.life--;
+      const alpha = Math.max(0, p.life / p.maxLife);
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = p.c;
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, p.sz, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    if (alive && frame < 80) requestAnimationFrame(tick);
+    else cv.remove();
+  })();
+}
+// Document-level capture listener so any check transition triggers the
+// burst at the tap point. Scoped to the check elements that represent
+// real completion (habits, goals, plans, goal-steps) — not the holdings
+// /reminder dots which use the same class. Fires only on the
+// undone→done transition (i.e. the click is about to make it done).
+document.addEventListener("click", (e) => {
+  const el = e.target.closest && e.target.closest(".check, .plan-check");
+  if (!el) return;
+  // Skip if disabled or already done — only the transition is celebrated.
+  if (el.disabled || el.classList.contains("done")) return;
+  const r = el.getBoundingClientRect();
+  // Wait one frame so the JS handler that toggles state has a chance to run,
+  // and we don't fire the burst on something that ends up being a no-op tap.
+  requestAnimationFrame(() => _checkBurst(r.left + r.width/2, r.top + r.height/2));
+}, true);
+
 const STREAK_MILESTONES = new Set([7, 30, 100, 365]);
 
 /* Goal hierarchy helpers */
