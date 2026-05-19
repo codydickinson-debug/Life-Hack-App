@@ -1550,41 +1550,65 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   filter: drop-shadow(0 2px 3px rgba(0,0,0,0.32));
 }
 
-/* Simple scale+fade pop for Cornileus' avatar — no peek, no mask, no
-   idle. Just appears with a small bounce. */
+/* Cornileus avatar entry. Dropped the 1.56 spring overshoot — Emil flags
+   strong bounces as too much for character entrances; a strong ease-out
+   curve still feels alive but lands cleanly without the rubber-band wobble. */
 @keyframes corn-pop {
-  0%   { transform: scale(0.9); opacity: 0; }
-  100% { transform: scale(1);   opacity: 1; }
+  0%   { transform: scale(0.92); opacity: 0; }
+  100% { transform: scale(1);    opacity: 1; }
 }
 .corn-peek {
-  animation: corn-pop 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.3s both;
+  animation: corn-pop 0.32s var(--ease-out) 0.15s both;
   transform-origin: center center;
+}
+/* Idle breathing — runs only on the greeting avatar (the focal "Cornileus
+   is here" moment). The small thread-avatars next to each chat bubble are
+   seen tens of times per session, so per Emil's frequency framework they
+   stay completely still — breathing there would become noise. The greeting
+   one is the Dynamic-Island-style "feels alive" element. */
+@keyframes corn-breathe {
+  0%, 100% { transform: scale(1); }
+  50%      { transform: scale(1.022); }
+}
+.corn-greeting .corn-peek {
+  animation:
+    corn-pop 0.32s var(--ease-out) 0.15s both,
+    corn-breathe 4.6s ease-in-out 1.4s infinite;
 }
 .corn-greeting-wrap { margin: 6px 0 14px; }
 @keyframes corn-greet-in {
-  0%   { transform: translateY(6px) scale(0.96); opacity: 0; }
+  0%   { transform: translateY(6px) scale(0.97); opacity: 0; }
   100% { transform: translateY(0)   scale(1);    opacity: 1; }
 }
 .corn-greeting {
-  animation: corn-greet-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) 0.55s both;
+  animation: corn-greet-in 0.32s var(--ease-out) 0.32s both;
 }
 .corn-greeting-bubble {
   position: relative;
-  background: var(--bg-elev);
+  /* Subtle coral tint inherited from Cornileus' bowtie/hat-band so the
+     bubble feels "his", not just a default bg-elev rectangle. Kept under
+     6% mix so it reads as polish, not branding. */
+  background: linear-gradient(135deg,
+    color-mix(in srgb, var(--corn-from) 5%, var(--bg-elev)),
+    var(--bg-elev) 65%);
   padding: 12px 16px;
   border-radius: 16px;
   border-top-left-radius: 4px;
+  border: 0.5px solid color-mix(in srgb, var(--corn-from) 14%, var(--sep));
   font-size: 14px;
   line-height: 1.5;
   color: var(--t1);
   flex: 1;
   min-width: 0;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.05);
 }
 .corn-greeting-bubble::after {
   content: ""; position: absolute; left: -6px; top: 14px;
   width: 0; height: 0;
   border: 6px solid transparent;
-  border-right-color: var(--bg-elev);
+  /* Match the gradient's top-left start so the tail blends seamlessly into
+     the bubble's tinted corner. */
+  border-right-color: color-mix(in srgb, var(--corn-from) 5%, var(--bg-elev));
   border-left: 0;
 }
 /* Animated dots shown next to the avatar while Cornileus is "thinking". */
@@ -1604,6 +1628,29 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
   0%, 80%, 100% { transform: translateY(0);    opacity: 0.4; }
   40%           { transform: translateY(-3px); opacity: 1; }
 }
+
+/* "Try asking" + "For you, right now" suggestion lists in the empty chat
+   state. Cascade in after the greeting bubble lands so the eye reads
+   Cornileus → his greeting → what you can ask, in sequence. Total chain
+   stays under 400ms — short enough that an impatient user can tap a
+   button mid-cascade without waiting. */
+.cns-suggestion-list > button {
+  animation: rowStaggerIn .26s var(--ease-out) both;
+  transition: transform .14s var(--ease-out), background .15s ease, border-color .15s ease;
+}
+.cns-suggestion-list > button:active { transform: scale(.985); }
+.cns-suggestion-list > button:nth-child(1) { animation-delay: 60ms; }
+.cns-suggestion-list > button:nth-child(2) { animation-delay: 95ms; }
+.cns-suggestion-list > button:nth-child(3) { animation-delay: 130ms; }
+.cns-suggestion-list > button:nth-child(4) { animation-delay: 165ms; }
+.cns-suggestion-list > button:nth-child(5) { animation-delay: 200ms; }
+.cns-suggestion-list > button:nth-child(6) { animation-delay: 235ms; }
+.cns-suggestion-list > button:nth-child(n+7) { animation-delay: 270ms; }
+
+/* Follow-up chips under assistant messages. Hover already styled via
+   inline color; add press feedback so they feel responsive. */
+.cns-followup-chip { transition: transform .14s var(--ease-out), background .15s ease, border-color .15s ease; }
+.cns-followup-chip:active { transform: scale(.97); }
 
 /* Cornileus action confirmation chips — shown under assistant bubbles when
    Cornileus emits <ACTION> blocks that the frontend executed. */
@@ -26933,7 +26980,7 @@ function counselorRender() {
       const followHtml = (isLast && followups.length) ? `
         <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px">
           ${followups.map(t => `
-            <button onclick="counselorSend(${jsAttr(t)})"
+            <button class="cns-followup-chip" onclick="counselorSend(${jsAttr(t)})"
               style="background:color-mix(in srgb, var(--corn-from) 8%, transparent);border:0.5px solid color-mix(in srgb, var(--corn-from) 35%, transparent);color:var(--purple);padding:6px 11px;border-radius:var(--r-pill,999px);font-size:12px;cursor:pointer;font-weight:600;line-height:1.2">${esc(t)}</button>
           `).join("")}
         </div>
@@ -27045,7 +27092,7 @@ function counselorRender() {
         if (!personalized.length) return "";
         return `
           <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--purple);font-weight:700;margin:6px 0 8px">For you, right now</div>
-          <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
+          <div class="cns-suggestion-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:14px">
             ${personalized.map(s => `
               <button onclick="counselorSend(${jsAttr(s.text)})"
                 style="text-align:left;padding:11px 13px;background:linear-gradient(135deg,color-mix(in srgb, var(--corn-from) 10%, transparent),color-mix(in srgb, var(--corn-to) 8%, transparent));border:0.5px solid color-mix(in srgb, var(--corn-from) 35%, transparent);border-radius:12px;color:var(--t1);font-size:13.5px;cursor:pointer;display:flex;gap:10px;align-items:flex-start;line-height:1.4;font-weight:500">
@@ -27058,7 +27105,7 @@ function counselorRender() {
         `;
       })()}
       <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--t3);font-weight:700;margin:6px 0 8px">Try asking</div>
-      <div style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
+      <div class="cns-suggestion-list" style="display:flex;flex-direction:column;gap:6px;margin-bottom:8px">
         ${suggestions.map(s => `
           <button onclick="counselorSend(${jsAttr(s.text)})"
             style="text-align:left;padding:10px 12px;background:var(--bg-elev);border:none;border-radius:12px;color:var(--t1);font-size:13.5px;cursor:pointer;display:flex;gap:10px;align-items:center;line-height:1.35">
