@@ -627,10 +627,10 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: var(--blue);
   font-weight: 600;
   letter-spacing: -0.005em;
-  transition: opacity .15s ease;
+  transition: opacity .15s ease, transform .14s var(--ease-out);
 }
 .section-h .act:hover { opacity: .82; }
-.section-h .act:active { opacity: .55; }
+.section-h .act:active { opacity: .55; transform: scale(.96); }
 
 /* ---------- Settings compact mode ----------
    When .settings-compact is on the page-settings container, every
@@ -1083,9 +1083,9 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   color: var(--blue);
   font-weight: 500;
 }
-.del-x { color: var(--t4); font-size: 20px; padding: 10px 12px; line-height: 1; align-self: flex-start; min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 0; cursor: pointer; }
+.del-x { color: var(--t4); font-size: 20px; padding: 10px 12px; line-height: 1; align-self: flex-start; min-width: 44px; min-height: 44px; display: inline-flex; align-items: center; justify-content: center; background: transparent; border: 0; cursor: pointer; transition: transform .16s var(--ease-out), color .12s ease; }
 .del-x:hover { color: var(--t2); }
-.del-x:active { color: var(--red); }
+.del-x:active { color: var(--red); transform: scale(.92); }
 
 /* ================ MONEY SUB-TABS ================ */
 .sub-tabs {
@@ -1539,8 +1539,10 @@ body.priv-on [data-priv="amount"] {
   cursor: pointer;
   user-select: none;
 }
-body.priv-on [data-priv="amount"]:hover,
 body.priv-on [data-priv="amount"]:active { filter: blur(0); }
+@media (hover: hover) and (pointer: fine) {
+  body.priv-on [data-priv="amount"]:hover { filter: blur(0); }
+}
 
 /* Confetti canvas overlay */
 .confetti-canvas {
@@ -2423,9 +2425,9 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
 .rm-ms-row {
   display: flex; align-items: center; gap: 8px;
   padding: 6px 4px; cursor: pointer; border-radius: 6px;
-  transition: background 0.15s ease;
+  transition: background 0.15s ease, transform .14s var(--ease-out);
 }
-.rm-ms-row:active { background: var(--bg-elev); }
+.rm-ms-row:active { background: var(--bg-elev); transform: scale(.997); }
 .rm-ms-row .check.sm {
   width: 18px; height: 18px; border-radius: 50%;
   border: 1.5px solid var(--sep); background: transparent;
