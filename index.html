@@ -1616,10 +1616,22 @@ body.priv-on [data-priv="amount"]:active { filter: blur(0); }
   width: 44px; height: 44px; border-radius: 50%;
   background: var(--bg-elev); display: inline-flex; align-items: center; justify-content: center;
   font-size: 16px; color: var(--t2); border: 0.5px solid var(--sep); margin-right: 6px;
-  transition: transform .15s ease, color .15s ease;
+  transition: transform .15s ease, color .15s ease, background .25s ease;
+  cursor: pointer;
 }
+.tb-priv .eye { display: inline-block; transform-origin: center; }
 .tb-priv:active { transform: scale(.92); }
 body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(--blue) 14%, var(--bg-elev)); }
+/* Blink the eye when privacy mode toggles — the icon should physically respond. */
+.tb-priv.toggling .eye { animation: priv-blink .34s var(--ease-out); }
+@keyframes priv-blink {
+  0%   { transform: scaleY(1); }
+  38%  { transform: scaleY(0.16); }
+  72%  { transform: scaleY(1); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tb-priv.toggling .eye { animation: none; }
+}
 
 /* Floating action button (Quick Add Spend). Pops in 250ms after page boot
    so it doesn't compete with the topbar/content fade for attention. The
@@ -2616,7 +2628,7 @@ body.priv-on .tb-priv { color: var(--blue); background: color-mix(in srgb, var(-
     </div>
     <div style="display:flex;align-items:center">
       <button class="tb-btn" id="tb-search" title="Search" onclick="globalSearchSheet()" aria-label="Search">🔍</button>
-      <button class="tb-priv" id="tb-priv" title="Privacy mode" onclick="togglePrivacyMode()" aria-label="Privacy mode">👁</button>
+      <button class="tb-priv" id="tb-priv" title="Privacy mode" onclick="togglePrivacyMode()" aria-label="Privacy mode"><span class="eye">👁</span></button>
       <button class="tb-btn" id="tb-action" title="Settings" onclick="openSettings()" aria-label="Settings">⚙︎</button>
     </div>
   </div>
@@ -4145,11 +4157,21 @@ async function _openPlaidLink() {
     token: lt.link_token,
     onSuccess: async (public_token, metadata) => {
       try {
-        await backendExchange(public_token, metadata?.institution?.name || "Bank");
+        const inst = metadata?.institution?.name || "Bank";
+        await backendExchange(public_token, inst);
         toast("Connected. Syncing…");
         const s = await backendSync();
         toast(`Synced ${s.added} new transaction${s.added===1?"":"s"}`);
         render();
+        // First successful connect ever? Show the trust receipt so the
+        // user has a concrete answer to "wait, where did my data go?".
+        // Subsequent connects skip — they've seen it.
+        if (!(DB.user && DB.user.bankConnectSuccessSeen)) {
+          DB.user = DB.user || {};
+          DB.user.bankConnectSuccessSeen = true;
+          await save();
+          setTimeout(() => bankConnectSuccessSheet(inst, s.added), 450);
+        }
       } catch (e) { toast(_friendlyApiError("Bank connect", e)); }
     },
     onExit: (err) => { if (err) toast("Bank connect cancelled"); },
@@ -26547,9 +26569,28 @@ YOUR STYLE:
 - Warm, direct, candid. Like a fee-only planner who has known the user for years. No fluff, no preamble, no "as an AI" disclaimers, no hedging filler.
 - Reference the user's real numbers from the SNAPSHOT below. If they ask about something the snapshot doesn't cover, ask one short clarifying question.
 - Prefer short paragraphs over bullet lists. Use lists only when comparing 3+ options.
-- Plain English. Define jargon the first time (e.g., "expense ratio — the annual % a fund charges").
+- Plain English. Define jargon the first time (e.g., "expense ratio, the annual percent a fund charges").
 - Keep replies under ~220 words unless the user explicitly asks for a deep dive.
 - When you recommend an action, end with a forward-pulling question like "Want me to walk you through the first step?" or "Want to look at how this fits your current goals?".
+
+VOICE ANTI-PATTERNS — never write any of these:
+- "Great question!" / "Awesome!" / "Wonderful!" / "Absolutely!" — Cornileus doesn't applaud questions.
+- "I'd be happy to help!" / "Let me help you with that!" — saying it is filler; you're already helping.
+- "Sounds like a plan!" / "You got this!" / "You've got this!" — empty cheerleading.
+- "Let's dive in!" / "Let's get started!" — useless preamble.
+- "I hope this helps!" — anxious-bot tic.
+- "Feel free to" / "go ahead and" / "as you may know" — bureaucratic filler.
+- "Navigate to" / "circle back" / "leverage" / "utilize" — corporate-speak.
+- Exclamation points at the end of sentences (rare exceptions: actual congratulations on a real milestone).
+- "As an AI" / "as a language model" / "I don't have access to that" — defensive disclaimers. If you don't know, say "I don't know" or ask.
+
+WHAT CORNILEUS SOUNDS LIKE:
+- Starts with the answer or the question. No throat-clearing.
+- Acknowledges difficulty before suggesting action ("A 22% APR is brutal. Here's the order to attack it…").
+- Uses "let's" when you'll work through it together; "you can" when describing options.
+- Calm in every situation. Never panics about a bad week, a missed habit, or a market dip.
+- Quietly confident. Has seen a lot of money situations and doesn't get rattled.
+- Signs off as Cornileus or "— C." only when it lands naturally (intros, big decisions, end of a long session). Never every reply.
 
 ASCEND FEATURES YOU CAN REFER TO (only these — do not invent features):
 - Today tab (habits, daily action, AI insight card)
@@ -27646,12 +27687,12 @@ function counselorRender() {
   // open. Replaces the old plain-text intro paragraph with something that
   // feels like he's actually talking to you.
   const greetingText = ({
-    goals:    "How are you today? Pick a goal to talk through — or tell me what's on your mind.",
-    planning: "How are you today? Want to sketch out a short-, mid-, or long-term plan?",
-    money:    "How are you today? Want me to look at where your money's going this month?",
-    stocks:   "How are you today? Ask me about tickers, ETFs, or where to put your next dollar.",
-    default:  "How are you today? Ask me anything — money, goals, big decisions. I'll be candid.",
-  })[ctx] || "How are you today?";
+    goals:    "Pick a goal to talk through, or tell me what's been on your mind.",
+    planning: "Want to sketch out a short-, mid-, or long-term plan together?",
+    money:    "Want to look at where your money's been going this month?",
+    stocks:   "Ask me about tickers, ETFs, or where to put your next dollar.",
+    default:  "Money, goals, big decisions. I'll be candid. What's on your mind?",
+  })[ctx] || "What's on your mind?";
   // Empty-thread greeting block. Rendered OUTSIDE cns-scroll (the scroll
   // container has overflow:auto which would clip the avatar's slide-in
   // from off-screen-right). The wrapper has overflow:hidden so the slide
@@ -31184,16 +31225,23 @@ function _tourGo() {
     // Scroll the target into view if it's off-screen — without this the
     // spotlight would land on empty space below the fold and the user
     // wouldn't know what to tap.
+    let scrollHappened = false;
     if (s.target) {
       const el = document.querySelector(s.target);
       if (el && typeof el.scrollIntoView === "function") {
         const r = el.getBoundingClientRect();
         const offScreen = r.top < 80 || r.bottom > window.innerHeight - 120;
-        if (offScreen) el.scrollIntoView({ behavior: "smooth", block: "center" });
+        if (offScreen) {
+          el.scrollIntoView({ behavior: "smooth", block: "center" });
+          scrollHappened = true;
+        }
       }
     }
-    // One more frame so the smooth scroll has time to settle before we
-    // measure where the spotlight should land.
+    // Wait for smooth-scroll to settle before measuring, but only when a
+    // scroll actually fired. Subsequent steps where the target is already
+    // in view feel instant — the Emil "skip the delay once you're engaged"
+    // pattern applied to tour transitions.
+    const settleDelay = scrollHappened ? 260 : (s.target ? 60 : 0);
     setTimeout(() => {
       _tourRender();
       _tourPosition();
@@ -31203,7 +31251,7 @@ function _tourGo() {
         const el = document.querySelector(s.target);
         if (el) _tourAttachAdvanceListener(el);
       }
-    }, s.target ? 260 : 0);
+    }, settleDelay);
   }, 90);
 }
 
@@ -31445,7 +31493,7 @@ WHILE LISTENING, capture:
 
 After 4-6 user turns, generate the plan. Don't drag past 7 turns. If they're terse, finish sooner.
 
-VOICE: Warm, brief, curious. Each Cornileus turn is 1-2 sentences MAX. No preamble, no "great, that's helpful", no "as an AI" disclaimers. Lead with the question. Use chips when the answer is bounded; let them type when it's open-ended. If they share something heavy (loss, anxiety, debt), acknowledge in one short line before the next question.
+VOICE: Warm, brief, curious. Each Cornileus turn is 1-2 sentences MAX. Lead with the question. Never write: "Great question!", "Sounds like a plan!", "You got this!", "I'd be happy to help!", "Let's dive in!", "Awesome!", "Wonderful!", "As an AI…", or exclamation-point endings on regular replies. No preamble, no "great, that's helpful", no defensive disclaimers. Use chips when the answer is bounded; let them type when it's open-ended. If they share something heavy (loss, anxiety, debt), acknowledge in one short line before the next question — never minimize, never offer solutions on the first beat.
 
 OUTPUT: STRICT JSON only. No markdown fences, no commentary outside the JSON.
 
@@ -31972,6 +32020,15 @@ function applyPrivacyMode() {
 function togglePrivacyMode() {
   DB.settings.privacyMode = !DB.settings.privacyMode;
   save(); applyPrivacyMode();
+  // Physical feedback: blink the eye icon so the toggle feels intentional.
+  const btn = document.getElementById("tb-priv");
+  if (btn) {
+    btn.classList.remove("toggling");
+    // Force reflow so the next class add restarts the animation.
+    void btn.offsetWidth;
+    btn.classList.add("toggling");
+    setTimeout(() => btn.classList.remove("toggling"), 360);
+  }
   toast(DB.settings.privacyMode ? "Privacy mode on" : "Privacy mode off");
 }
 
@@ -37907,6 +37964,46 @@ function bankConnectTrustSheet() {
   `);
 }
 
+/* ================ POST-PLAID TRUST RECEIPT ================
+   Shown ONCE, immediately after the first successful bank connect. The
+   user just shared bank credentials with Plaid; this is the moment to
+   tell them concretely what's stored, where, and how to undo it. Subsequent
+   connects skip this. Designed to feel like a receipt — short, factual,
+   reassuring without being patronizing.
+*/
+function bankConnectSuccessSheet(institutionName, addedCount) {
+  const name = (institutionName || "Your bank").trim();
+  const txnLine = (typeof addedCount === "number" && addedCount > 0)
+    ? `<strong>${addedCount}</strong> transaction${addedCount === 1 ? "" : "s"} pulled in. They live only on this device.`
+    : `Transactions are syncing now. They'll live only on this device.`;
+  const line = (emoji, text) => `
+    <div style="display:flex;gap:10px;padding:7px 0;font-size:13px;color:var(--t1);line-height:1.5">
+      <div style="font-size:15px;flex-shrink:0;line-height:1.3">${emoji}</div>
+      <div style="flex:1">${text}</div>
+    </div>`;
+  openSheet(`
+    <div style="text-align:center;margin-bottom:12px">
+      <div style="font-size:38px;line-height:1;margin-bottom:6px">🔒</div>
+      <h2 style="margin:0 0 4px;font-size:19px">${esc(name)} is connected</h2>
+      <div class="muted" style="font-size:12.5px">Here's what just happened, on the record.</div>
+    </div>
+
+    <div style="background:var(--card);border:0.5px solid var(--sep);border-radius:var(--r);padding:10px 14px;margin-bottom:12px">
+      ${line("🛡️", "Your access token is <strong>AES-GCM encrypted</strong> with a key only the Ascend Worker holds. The KV record is useless to anyone who breaches the storage.")}
+      ${line("📥", txnLine)}
+      ${line("🚫", "Ascend never saw your bank login. Plaid did the handshake; we only got the token.")}
+      ${line("✂️", "Disconnect anytime: Money → Accounts → tap the bank → Disconnect. The encrypted token is deleted on the Worker.")}
+    </div>
+
+    <div style="display:flex;gap:8px;align-items:center;background:color-mix(in srgb, var(--green) 8%, transparent);border:0.5px solid color-mix(in srgb, var(--green) 30%, transparent);border-radius:var(--r);padding:10px 12px;margin-bottom:12px;font-size:12px;color:var(--t2);line-height:1.5">
+      <div style="font-size:15px;flex-shrink:0">✓</div>
+      <div>You can revisit this in Settings → "Where your data lives".</div>
+    </div>
+
+    <button class="btn" style="width:100%;font-size:14px;padding:12px" onclick="closeSheet()">Got it</button>
+  `);
+}
+
 /* ================ FINANCIAL CALENDAR ================
    Important upcoming dates: federal tax deadlines, IRA/HSA contribution
    cutoffs, estimated tax dates, savings/goal target dates, and any custom
@@ -39243,7 +39340,7 @@ function weeklyReviewSheet() {
 }
 
 /* --- "What's new" sheet (one-time on upgrade) ------------------- */
-const WHATS_NEW_KEY = "v3.8-polish";
+const WHATS_NEW_KEY = "v3.9-cornileus";
 function maybeShowWhatsNew() {
   if (window._suppressWhatsNew) return;
   if ((DB.user || {}).onboardedAt && DB.lastSeenWhatsNew !== WHATS_NEW_KEY) {
@@ -39252,25 +39349,16 @@ function maybeShowWhatsNew() {
 }
 function whatsNewSheet() {
   openSheet(
-    '<h2>What\'s new, Ascend v3.8</h2>' +
-    '<p class="muted" style="font-size:13px;margin-bottom:14px">Polish round: 18 quality-of-life features. Cornileus learned to speak, your portfolio learned to compare to the market, your settings learned to collapse, and the rest of the app learned to feel more alive.</p>' +
+    '<h2>What\'s new, Ascend v3.9</h2>' +
+    '<p class="muted" style="font-size:13px;margin-bottom:14px">A quiet polish round. Cornileus has a voice now. The app feels a little more like itself.</p>' +
     '<div class="list">' +
-      '<div class="row"><div class="lead">\u{1F509}</div><div class="body"><div class="t1">Cornileus voice mode</div><div class="t2">Tap the speaker chip in chat, Cornileus reads replies aloud with the best system voice.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{2702}\u{FE0F}</div><div class="body"><div class="t1">Split transactions</div><div class="t2">One Walmart charge → groceries + home + gift. Children inherit categories without double-counting the parent.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4C8}</div><div class="body"><div class="t1">Portfolio vs S&P 500</div><div class="t2">"Are you beating the market?" line on the Stocks portfolio hero, YTD comparison with a delta badge.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F1FA}\u{1F1F8}</div><div class="body"><div class="t1">US federal holidays on Calendar</div><div class="t2">All 10 federal holidays marked (with weekend-observed shifts). Toggle off in Settings if non-US.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4F8}</div><div class="body"><div class="t1">Year-in-review shareable image</div><div class="t2">Year Review → "Share year" → 1080×1920 PNG with your stats, ready for Stories/Reels.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{2744}\u{FE0F}</div><div class="body"><div class="t1">Streak freeze</div><div class="t2">1 free skip per habit per month. Sick day, travel day, life day, streak intact.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4B5}</div><div class="body"><div class="t1">30-day cash flow forecast</div><div class="t2">Projects your bank balance forward from recurring bills + paychecks. Flags overdraft risk.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F4CA}</div><div class="body"><div class="t1">Spending heatmap (day × hour)</div><div class="t2">Find your peak spend windows, Friday night, Saturday 2pm. 7×24 grid on Stats.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F3AF}</div><div class="body"><div class="t1">Next milestone projection</div><div class="t2">"At this rate, $100k in 14 months." Uses your net-worth trend to project when you hit the next round number.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F6D1}</div><div class="body"><div class="t1">Daily spend cap</div><div class="t2">Set a daily limit in Settings → Safe-to-spend. Today shows a progress bar, push fires at 90%.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F517}</div><div class="body"><div class="t1">Plaid reconnect + bills-today push</div><div class="t2">Bank stops syncing → red banner + push. Bill due today → 9am notification.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{1F39B}\u{FE0F}</div><div class="body"><div class="t1">Settings compact mode + swipe tabs</div><div class="t2">Collapse every Settings section into a chip. Swipe horizontally between tabs.</div></div></div>' +
-      '<div class="row"><div class="lead">\u{267F}</div><div class="body"><div class="t1">Reduced-motion accessibility</div><div class="t2">Respects your OS reduce-motion setting. Skeleton shimmers + transitions disabled.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F3A9}</div><div class="body"><div class="t1">Cornileus, with a voice</div><div class="t2">He sounds like himself now. Calm, direct, never panics. No "great question!" — no exclamation points where there shouldn\'t be any. The financial mentor you\'d trust to read your numbers without flinching.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F4DC}</div><div class="body"><div class="t1">Trust receipt after bank connect</div><div class="t2">The first time you connect a bank, a short receipt confirms exactly what was encrypted, where it lives, and how to undo it. So you know.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F441}\u{FE0F}</div><div class="body"><div class="t1">The eye blinks now</div><div class="t2">Privacy mode used to flip silently. The eye icon in the top bar now blinks when you toggle, so the action feels intentional.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{2728}</div><div class="body"><div class="t1">Press feedback everywhere</div><div class="t2">Section "See all" links, delete buttons, list rows, member chips — every pressable element now responds to your touch. Invisible, but the app feels different.</div></div></div>' +
+      '<div class="row"><div class="lead">\u{1F525}</div><div class="body"><div class="t1">Snappier tour transitions</div><div class="t2">Step-to-step in the tutorial no longer waits for scrolls that aren\'t happening. Tap Next, see Next.</div></div></div>' +
     '</div>' +
-    '<div class="actions"><button class="btn secondary" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet()">Got it</button>' +
-    '<button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet();setTimeout(()=>setupHealthSheet(),120)">\u{2728} Setup health check</button></div>'
+    '<div class="actions"><button class="btn" onclick="DB.lastSeenWhatsNew=\'' + WHATS_NEW_KEY + '\';save();closeSheet()">Got it</button></div>'
   );
 }
 
@@ -39479,7 +39567,7 @@ function init() {
     helpTipsSheet, sendFeedbackSheet,
     globalSearchSheet, globalSearchOnInput, _computeSearchResults, _recordSearch, clearRecentSearches, setSearchFilter, _renderSearchChips,
     openSettings, applyTheme, toggleNotifications, scheduleReminder, exportData, importData, resetEverythingSheet, openSheet, closeSheet, toast,
-    connectBank, _openPlaidLink, bankConnectTrustSheet, dataSafetySheet,
+    connectBank, _openPlaidLink, bankConnectTrustSheet, bankConnectSuccessSheet, dataSafetySheet,
     syncNow, disconnectItem, backendLinkToken, backendExchange, backendSync, backendListItems, backendRemoveItem,
     backendHoldings, backendLiabilities, backendRecurring, backendInvestmentTransactions,
     syncHoldings, syncLiabilities, syncRecurring, syncInvestmentTransactions,
