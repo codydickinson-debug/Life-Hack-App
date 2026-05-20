@@ -123,8 +123,21 @@
 
   <details>
     <summary>How do I connect my bank?</summary>
-    <p>Settings → Show advanced features → Bank sync. Requires a backend you control (Cloudflare Worker, free tier). Full walkthrough in <a href="https://github.com/codydickinson-debug/Life-Hack-App/blob/main/DEPLOY.md" target="_blank" rel="noopener noreferrer">DEPLOY.md</a>.</p>
-    <p>Bank sync is read-only — Ascend never moves money.</p>
+    <p>Settings → Bank sync → Connect a bank. Plaid's secure window opens; your bank credentials go directly to Plaid (the same connector Robinhood, Venmo, Chime, and most major fintech apps use). Ascend never sees them.</p>
+    <p>Bank sync is read-only. Ascend never moves money, transfers anything, or initiates any write to your bank.</p>
+    <p>Want to run your own backend instead of the hosted default? Settings → "Use a custom backend" → follow the <a href="https://github.com/codydickinson-debug/Life-Hack-App/blob/main/DEPLOY.md" target="_blank" rel="noopener noreferrer">DEPLOY.md</a> walkthrough.</p>
+  </details>
+
+  <details>
+    <summary>What does Ascend actually get from my bank?</summary>
+    <p>Through Plaid: account balances, transaction history (descriptions, amounts, dates, categories), account names, and for investment accounts, holdings + investment transactions. Read-only.</p>
+    <p>What Ascend <strong>never</strong> gets: your bank login, your password, the ability to move money, your full account number for ACH purposes, or any cross-institution data.</p>
+    <p>Plaid stores an access token that Ascend can use to refresh the data. That token is AES-GCM encrypted on Ascend's Cloudflare Worker before being written to KV — a breach of the storage yields useless ciphertext.</p>
+  </details>
+
+  <details>
+    <summary>How do I disconnect a bank?</summary>
+    <p>Money → Accounts → tap the bank → Disconnect. The encrypted access token is deleted on the Worker immediately, and the upstream Plaid item is revoked. Your local transactions stay on this device until you remove them or reset.</p>
   </details>
 
   <details>
