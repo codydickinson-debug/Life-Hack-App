@@ -39328,12 +39328,13 @@ function weeklyReviewSheet() {
       '<div class="row"><div class="lead">\u{1F4B8}</div><div class="body"><div class="t1" data-priv="amount">' + fmt$0(spendThisWeek) + ' spent</div><div class="t2">past 7 days</div></div></div>' +
       '<div class="row"><div class="lead">⭐</div><div class="body"><div class="t1">' + winsThisWeek + ' wins logged</div><div class="t2">past 7 days</div></div></div>' +
     '</div>' +
-    '<label>What went well?</label>' +
-    '<textarea id="wr-good" rows="2" placeholder="One thing you\'re proud of..."></textarea>' +
+    '<label>What worked?</label>' +
+    '<textarea id="wr-good" rows="2" placeholder="One specific moment from this week."></textarea>' +
     '<label>What didn\'t?</label>' +
-    '<textarea id="wr-bad" rows="2" placeholder="One thing to change..."></textarea>' +
+    '<textarea id="wr-bad" rows="2" placeholder="One specific friction point."></textarea>' +
     '<label>Focus next week</label>' +
-    '<textarea id="wr-next" rows="2" placeholder="One thing to prioritize..."></textarea>' +
+    '<textarea id="wr-next" rows="2" placeholder="One thing to pull on."></textarea>' +
+    '<div style="margin-top:6px;font-size:12px;color:var(--t3);text-align:center"><a onclick="closeSheet();setTimeout(()=>openCounselor(\'Walk me through how last week went, based on my numbers. Where did I do well, where did I drift, and what should I focus on this coming week?\'),120)" style="color:var(--purple);text-decoration:underline;cursor:pointer">Want Cornileus to weigh in?</a></div>' +
     '<div class="actions">' +
       '<button class="btn secondary" onclick="dismissWeeklyReview();closeSheet()">Skip</button>' +
       '<button class="btn" id="wr-save">Save</button>' +
