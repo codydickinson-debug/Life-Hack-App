@@ -30997,18 +30997,18 @@ function _onboardingCelebrationSheet(snap) {
   const greeting = `Welcome, ${esc(snap.name || "you")}!`;
   const bullets = [];
   if (snap.habits && snap.habits.length) {
-    bullets.push(`✓ <b>${snap.habits.length} habit${snap.habits.length===1?"":"s"}</b> ready to check off — ${snap.habits.slice(0,3).map(h => esc(h.emoji + " " + h.name)).join(", ")}${snap.habits.length>3?`, +${snap.habits.length-3} more`:""}`);
+    bullets.push(`✓ <b>${snap.habits.length} habit${snap.habits.length===1?"":"s"}</b> ready: ${snap.habits.slice(0,3).map(h => esc(h.emoji + " " + h.name)).join(", ")}${snap.habits.length>3?`, +${snap.habits.length-3} more`:""}`);
   }
   if (snap.goal) {
-    bullets.push(`🎯 First goal set — <b>${esc(snap.goal.title)}</b>`);
+    bullets.push(`🎯 First goal: <b>${esc(snap.goal.title)}</b>`);
   }
   if (snap.notifications) {
-    bullets.push(`🔔 Reminders on — Cornileus will nudge you when it matters`);
+    bullets.push(`🔔 Reminders on. Cornileus will nudge you when it matters.`);
   }
   if (snap.bankPath) {
-    bullets.push(`🏦 Bank sync ready to set up — head to Settings → Bank sync when you're ready`);
+    bullets.push(`🏦 Bank sync ready. Settings → Bank sync when you want to wire it up.`);
   }
-  bullets.push(`✨ Cornileus is waiting — tap the floating button anytime`);
+  bullets.push(`✨ Cornileus is one tap away. The floating button, bottom-right.`);
   openSheet(`
     <div style="text-align:center;padding:8px 4px 14px">
       <div style="font-size:48px;margin-bottom:6px;line-height:1">🎉</div>
