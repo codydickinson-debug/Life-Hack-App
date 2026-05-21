@@ -517,6 +517,136 @@
   </div>
 </section>
 
+<section class="trust" id="trust">
+  <style>
+    .trust { padding: 80px 0 60px; background: linear-gradient(180deg, var(--bg) 0%, var(--bg-elev) 100%); }
+    .trust-wrap { max-width: 760px; margin: 0 auto; }
+    .trust-diagram {
+      margin: 36px auto 24px;
+      max-width: 640px;
+    }
+    .trust-device {
+      background: var(--card);
+      border: 1px solid color-mix(in srgb, var(--green) 35%, var(--sep));
+      border-radius: 18px;
+      padding: 22px 24px;
+      position: relative;
+      box-shadow: 0 0 0 1px color-mix(in srgb, var(--green) 12%, transparent),
+                  0 0 36px -10px color-mix(in srgb, var(--green) 30%, transparent);
+    }
+    .trust-device-eyebrow {
+      display: inline-flex; align-items: center; gap: 6px;
+      font-size: 11px; font-weight: 700; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--green);
+      margin-bottom: 10px;
+    }
+    .trust-device-eyebrow::before {
+      content: ""; width: 6px; height: 6px; border-radius: 50%;
+      background: var(--green); box-shadow: 0 0 8px var(--green);
+    }
+    .trust-device-title { font-size: 22px; font-weight: 800; letter-spacing: -0.02em; margin: 0 0 10px; }
+    .trust-orbs {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin: 10px 0 12px;
+    }
+    .trust-orb {
+      background: color-mix(in srgb, var(--green) 10%, var(--bg-elev));
+      color: var(--t1);
+      border: 0.5px solid color-mix(in srgb, var(--green) 28%, var(--sep));
+      border-radius: 999px;
+      padding: 6px 12px;
+      font-size: 12.5px; font-weight: 600;
+      letter-spacing: -0.005em;
+    }
+    .trust-device-foot { font-size: 12.5px; color: var(--t2); margin: 4px 0 0; line-height: 1.5; }
+    .trust-bridge {
+      display: flex; align-items: center; justify-content: center;
+      gap: 10px;
+      margin: 18px 0 14px;
+      font-size: 11.5px; font-weight: 600; color: var(--t3);
+      letter-spacing: 0.04em; text-transform: uppercase;
+    }
+    .trust-bridge::before, .trust-bridge::after {
+      content: ""; flex: 1; max-width: 80px; height: 1px;
+      background: linear-gradient(90deg, transparent, var(--sep), transparent);
+    }
+    .trust-externals {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    }
+    .trust-external {
+      background: var(--card);
+      border: 0.5px solid var(--sep);
+      border-radius: 14px;
+      padding: 14px 12px;
+      transition: border-color .2s ease, transform .2s ease;
+    }
+    .trust-external:hover { transform: translateY(-2px); }
+    .trust-external.plaid:hover     { border-color: color-mix(in srgb, var(--blue) 45%, var(--sep)); }
+    .trust-external.worker:hover    { border-color: color-mix(in srgb, var(--orange) 45%, var(--sep)); }
+    .trust-external.anthropic:hover { border-color: color-mix(in srgb, var(--purple) 45%, var(--sep)); }
+    .trust-ext-name {
+      font-size: 13px; font-weight: 700; letter-spacing: -0.01em;
+      margin: 0 0 4px;
+    }
+    .trust-external.plaid     .trust-ext-name { color: var(--blue); }
+    .trust-external.worker    .trust-ext-name { color: var(--orange); }
+    .trust-external.anthropic .trust-ext-name { color: var(--purple); }
+    .trust-ext-sub { font-size: 11.5px; color: var(--t2); line-height: 1.45; margin: 0; }
+    .trust-foot {
+      text-align: center; margin-top: 22px;
+      font-size: 13px; color: var(--t2); line-height: 1.6;
+    }
+    .trust-foot strong { color: var(--t1); font-weight: 600; }
+    @media (max-width: 540px) {
+      .trust-externals { grid-template-columns: 1fr; }
+      .trust-device-title { font-size: 19px; }
+    }
+  </style>
+  <div class="container trust-wrap">
+    <div class="section-eyebrow">Where your data lives</div>
+    <h2 class="section-h2">Yours, on your device. Three external systems only when you ask.</h2>
+    <p style="color:var(--t2);font-size:15px;line-height:1.6;text-align:center;max-width:560px;margin:14px auto 0">Most "private" finance apps still pipe your numbers to their servers. Ascend doesn't have servers for your data. Here's the actual flow.</p>
+
+    <div class="trust-diagram">
+      <div class="trust-device">
+        <div class="trust-device-eyebrow">Always on your device</div>
+        <div class="trust-device-title">📱 This phone, that's it</div>
+        <div class="trust-orbs">
+          <span class="trust-orb">Habits</span>
+          <span class="trust-orb">Goals</span>
+          <span class="trust-orb">Spending</span>
+          <span class="trust-orb">Savings</span>
+          <span class="trust-orb">Wins</span>
+          <span class="trust-orb">Mood</span>
+          <span class="trust-orb">Notes</span>
+          <span class="trust-orb">Stats</span>
+          <span class="trust-orb">Plans</span>
+        </div>
+        <p class="trust-device-foot">Stored in your browser's localStorage. Optional AES-GCM passphrase locks the whole thing. No account, no signup, no cloud copy.</p>
+      </div>
+
+      <div class="trust-bridge">Only when you opt in</div>
+
+      <div class="trust-externals">
+        <div class="trust-external plaid">
+          <p class="trust-ext-name">Plaid</p>
+          <p class="trust-ext-sub">Sees your bank login in their secure window. Never touches Ascend. Returns an access token.</p>
+        </div>
+        <div class="trust-external worker">
+          <p class="trust-ext-name">Cloudflare KV</p>
+          <p class="trust-ext-sub">Holds your Plaid token, AES-GCM encrypted with a key only the Ascend Worker knows. Useless ciphertext to anyone else.</p>
+        </div>
+        <div class="trust-external anthropic">
+          <p class="trust-ext-name">Anthropic</p>
+          <p class="trust-ext-sub">Receives your message plus an ≤18 KB financial snapshot, only when you talk to Cornileus. Per their API terms, not used for training.</p>
+        </div>
+      </div>
+    </div>
+
+    <p class="trust-foot">Skip bank sync and the AI counselor and the lower three never activate. <strong>The app works fully offline with manual entry.</strong> Choose your trust level.</p>
+  </div>
+</section>
+
 <section class="cornileus">
   <div class="container">
     <div class="corn-card">
