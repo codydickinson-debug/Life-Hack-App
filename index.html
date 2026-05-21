@@ -23664,12 +23664,6 @@ function renderSettings() {
           </div>
         ` : "";
       })()}
-      <div class="row">
-        <div class="lead">✨</div>
-        <div class="body"><div class="t1">Show Cornileus ✨ button</div><div class="t2">The floating counselor button at the bottom-right</div></div>
-        <input type="checkbox" ${(DB.counselor && DB.counselor.hideLauncher) ? '' : 'checked'}
-          onchange="toggleCounselorLauncher(this.checked)" style="width:50px;height:30px" />
-      </div>
     </div>
 
     <div id="sec-customize"></div>
@@ -23686,7 +23680,7 @@ function renderSettings() {
     <div class="section-h"><span class="lbl">Style</span><span class="act" style="color:var(--t3);cursor:default">try them on</span></div>
     <div class="list">
       ${[
-        { id: "default", emoji: "🎨", name: "Default",  desc: "Current look — dense iOS-grouped cards"           },
+        { id: "default", emoji: "🎨", name: "Default",  desc: "Dense, iOS-grouped cards (current look)"           },
         { id: "calm",    emoji: "🍃", name: "Calm",     desc: "More whitespace, flat (no shadows), muted accents" },
         { id: "bold",    emoji: "⚡", name: "Bold",     desc: "Compressed rows, bigger headlines, sharper edges"  },
       ].map(s => `
@@ -23995,6 +23989,12 @@ function renderSettings() {
           <option value="friendly"    ${DB.settings.cornileusTone==='friendly'?'selected':''}>Friendly</option>
         </select>
       </div>
+      <div class="row">
+        <div class="lead">✨</div>
+        <div class="body"><div class="t1">Show Cornileus button</div><div class="t2">The floating counselor button at the bottom-right</div></div>
+        <input type="checkbox" ${(DB.counselor && DB.counselor.hideLauncher) ? '' : 'checked'}
+          onchange="toggleCounselorLauncher(this.checked)" style="width:50px;height:30px" />
+      </div>
       <div class="row tappable" onclick="cornileusKnowsSheet()" role="button" tabindex="0">
         <div class="lead">🔍</div>
         <div class="body"><div class="t1">What Cornileus knows about you</div><div class="t2">Inspect every data point Cornileus sees, full transparency</div></div>
@@ -24002,9 +24002,9 @@ function renderSettings() {
       </div>
       <div class="row tappable" onclick="cornileusMemoriesSheet()" role="button" tabindex="0">
         <div class="lead">🧠</div>
-        <div class="body"><div class="t1">Cornileus' memory</div><div class="t2">${(() => {
+        <div class="body"><div class="t1">Cornileus's memory</div><div class="t2">${(() => {
           const n = ((DB.counselor && DB.counselor.memories) || []).length;
-          return n ? `${n} pinned memor${n===1?"y":"ies"} — facts referenced in every chat` : "Add facts Cornileus should always remember about you";
+          return n ? `${n} pinned memor${n===1?"y":"ies"}, referenced in every chat` : "Add facts Cornileus should always remember about you";
         })()}</div></div>
         <div class="trail chev"></div>
       </div>
@@ -24309,11 +24309,6 @@ function renderSettings() {
 
     <div class="section-h"><span class="lbl">About</span></div>
     <div class="list">
-      <div class="row tappable" onclick="dataSafetySheet()" role="button" tabindex="0">
-        <div class="lead">🛡️</div>
-        <div class="body"><div class="t1">Privacy &amp; Security</div><div class="t2">How your data, including bank info — is protected</div></div>
-        <div class="trail chev"></div>
-      </div>
       <div class="row"><div class="lead">★</div><div class="body"><div class="t1">Ascend · Goals made easy</div><div class="t2">v3.0 · ${DB.items?.length ? `${DB.items.length} bank${DB.items.length===1?"":"s"} connected` : "saved on this device"}</div></div></div>
       <div class="row"><div class="lead">🔖</div><div class="body"><div class="t1">Build</div><div class="t2"><code style="font-family:ui-monospace,SFMono-Regular,Menlo,monospace">${BUILD_ID || "computing…"}</code>${BUILD_DATE ? ` · ${esc(BUILD_DATE)}` : ""}</div></div></div>
     </div>
