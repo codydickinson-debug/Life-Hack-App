@@ -11872,6 +11872,19 @@ function renderMoney() {
           ${(() => {
             const plan = payoffSchedule(DB.settings.debtPayoffStrategy || "avalanche", +DB.settings.debtExtraPayment || 0);
             if (!plan) return `<div class="row"><div class="body"><div class="t2 muted">Add APR + min payment to your debts to see a payoff plan.</div></div></div>`;
+            if (plan.unrepayable) {
+              // Honest signal — minimum payment doesn't cover interest, so
+              // the balance is growing. Telling the user "X years to pay
+              // off" here would be a lie.
+              return `
+              <div class="row">
+                <div class="lead">⚠️</div>
+                <div class="body">
+                  <div class="t1">Payment doesn't cover interest</div>
+                  <div class="t2" data-priv="amount">Need +${fmt$0(plan.shortfall)}/mo more just to stop balances from growing. Increase minimum payments or add extra to start making progress.</div>
+                </div>
+              </div>`;
+            }
             return `
               <div class="row">
                 <div class="lead">📅</div>
@@ -26248,6 +26261,27 @@ function payoffSchedule(strategy = "avalanche", extra = 0) {
   let months = 0;
   let extraLeft = extra;
   const totalMin = debts.reduce((s,d)=>s+d.minPayment, 0);
+  // Unrepayability check: if monthly minPayment + extra doesn't even cover
+  // the FIRST month's total interest accrual, the balance is mathematically
+  // growing each month — the simulation loop will then run the full 600-
+  // month safety cap and return a confident "50 years to pay off" with a
+  // wildly inflated totalInterest. That's a worse lie than telling the
+  // user the truth: their current payment doesn't cover interest, and
+  // here's the shortfall. Caller can use `unrepayable` to render the
+  // honest version.
+  const monthlyInterest = debts.reduce((s,d) => s + d.balance * ((+d.apr || 0) / 100 / 12), 0);
+  const monthlyPayment = totalMin + extra;
+  if (monthlyInterest > monthlyPayment + 0.01) {
+    return {
+      unrepayable: true,
+      shortfall: monthlyInterest - monthlyPayment,
+      monthlyInterest, monthlyPayment, totalMin,
+      // Keep these for old callers that read .years / .totalInterest
+      // directly — null reads cleanly in templates; new callers should
+      // check .unrepayable first.
+      months: null, years: null, totalInterest: null,
+    };
+  }
   while (debts.some(d => d.balance > 0) && months < 600) {
     months++;
     let pool = totalMin + extra;
