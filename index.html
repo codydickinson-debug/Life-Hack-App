@@ -7590,9 +7590,9 @@ function renderToday() {
         const runwayMonths = totalSavings / fixedMonthly;
         if (runwayMonths < 1) {
           return { emoji: "⚠️",
-            text: `Runway under 1 month — savings cover only`,
+            text: `Runway under 1 month. Savings cover only`,
             amount: `${runwayMonths.toFixed(1)} months`,
-            suffix: `of fixed expenses`,
+            suffix: `of fixed expenses.`,
             onclick: `(function(){moneySub='wealth';showTab('money');})()` };
         }
       }
@@ -7609,7 +7609,7 @@ function renderToday() {
       let s = 0; try { s = streakOf(h) || 0; } catch {}
       if (s >= 7) {
         return { emoji: "🔥",
-          text: `${h.name}: ${s}-day streak — don't break it today`,
+          text: `${h.name}: ${s}-day streak. Still time today.`,
           onclick: `toggleHabit('${h.id}')` };
       }
     }
@@ -7622,9 +7622,9 @@ function renderToday() {
         const who = next.merchant || next.name || "Bill";
         const when = next.days <= 0 ? "today" : (next.days === 1 ? "tomorrow" : `in ${next.days}d`);
         return { emoji: "📆",
-          text: `${who} —`,
+          text: `${who}:`,
           amount: fmt$0(+next.amount || 0 || +next.avg_amount || 0),
-          suffix: `due ${when}`,
+          suffix: `due ${when}.`,
           onclick: `showTab('today')` };
       }
     } catch {}
@@ -7637,9 +7637,9 @@ function renderToday() {
       if (anomalies.length) {
         const top = anomalies[0];
         return { emoji: "⚠️",
-          text: `Unusual ${top.category}: ${top.tx.note || ""}`.trim() + ` —`,
+          text: `Unusual ${top.category}${top.tx.note ? ": " + top.tx.note : ""}.`.trim(),
           amount: fmt$0(top.amount),
-          suffix: `~${top.ratio.toFixed(1)}× usual`,
+          suffix: `is ~${top.ratio.toFixed(1)}× your usual.`,
           onclick: `anomaliesSheet()` };
       }
     } catch {}
@@ -7665,9 +7665,9 @@ function renderToday() {
       const pct = cur / target;
       if (remaining <= 100 || pct >= 0.95) {
         return { emoji: s.emoji || "💰",
-          text: `${s.name} —`,
+          text: `${s.name}:`,
           amount: fmt$0(remaining),
-          suffix: `from goal`,
+          suffix: `from goal.`,
           onclick: `(function(){moneySub='savings';showTab('money');})()` };
       }
     }
@@ -7697,9 +7697,9 @@ function renderToday() {
       const remaining = (+p.target_amount || 0) - _planLiveCurrent(p);
       if (tdays >= 0 && tdays <= 30 && remaining > 0) {
         return { emoji: p.emoji || "🎯",
-          text: `${p.title} —`,
+          text: `${p.title}:`,
           amount: fmt$0(remaining),
-          suffix: `to go in ${tdays}d`,
+          suffix: `to go in ${tdays}d.`,
           onclick: `showTab('planning')` };
       }
     }
@@ -7729,7 +7729,7 @@ function renderToday() {
     }
     if (wStreak >= 3) {
       return { emoji: "⭐",
-        text: `${wStreak}-day winning streak — keep capturing them`,
+        text: `${wStreak}-day winning streak. One more for today?`,
         onclick: `allWinsSheet()` };
     }
     // 4) Mood not logged today — jump straight into today's day sheet so
@@ -7755,7 +7755,7 @@ function renderToday() {
         ((+DB.settings.monthlySavingsTarget || 0) <= 0 ? 1 : 0);
       if (essentialsMissing >= 2) {
         return { emoji: "✨",
-          text: `${essentialsMissing} setup steps left — take a minute`,
+          text: `${essentialsMissing} setup steps left. Takes a minute.`,
           onclick: `setupHealthSheet()` };
       }
     }
@@ -7777,8 +7777,8 @@ function renderToday() {
         : Math.round(onboardedDays);
       return { emoji: "💾",
         text: lastExp
-          ? `It's been ${days} days — back up your data`
-          : `Back up your data — keep ${days} days of habits + finances safe`,
+          ? `It's been ${days} days since your last backup.`
+          : `Back up your data. ${days} days live only on this device.`,
         onclick: `exportData()` };
     }
     // 7) Passphrase nudge — user has been around 30+ days with data but
@@ -7789,7 +7789,7 @@ function renderToday() {
         !DB.settings._encryptNudgeDismissed &&
         ((DB.spend || []).length >= 30 || (DB.accounts || []).length > 0)) {
       return { emoji: "🔒",
-        text: `Encrypt your data — set a passphrase`,
+        text: `Set a passphrase to encrypt your data.`,
         onclick: `setupPassphraseSheet()` };
     }
     return null;
