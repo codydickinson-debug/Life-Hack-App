@@ -531,9 +531,11 @@ async function handleLinkToken(env, userId, origin) {
     products: ["transactions"],
     // `optional_products` get pulled when the institution supports them, but
     // don't restrict the link. Liabilities = credit card APRs, mortgage
-    // terms, student loan details. Investments = brokerage holdings + trades.
-    // Banks that don't support these will still link successfully.
-    optional_products: ["liabilities", "investments"],
+    // terms, student loan details. Investments was here too but is removed
+    // pending Plaid production approval for that product — including it in
+    // optional_products still triggers a per-account permission check, not
+    // just per-institution. Add back once Plaid approves Investments.
+    optional_products: ["liabilities"],
     country_codes: ["US"],
     language: "en",
   };
