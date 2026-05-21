@@ -1816,7 +1816,17 @@ async function handlePushTest(env, userId, origin) {
   if (limited) return limited;
   const raw = await env.ASCEND_KV.get(pushKey(userId));
   if (!raw) return json({ error: "Subscribe to push first via POST /push/subscribe", code: "not_subscribed" }, 400, origin);
-  const rec = JSON.parse(raw);
+  // Guard JSON.parse — a corrupted subscription record (partial KV write,
+  // manual edit, encoding bug) would otherwise throw an uncaught exception
+  // and return a generic 500 forever. Delete the broken record so the
+  // user re-subscribes cleanly on next /push/subscribe instead of being
+  // stuck in the failing-test state.
+  let rec;
+  try { rec = JSON.parse(raw); } catch {
+    await env.ASCEND_KV.delete(pushKey(userId));
+    await _removeFromPushIndex(env, userId);
+    return json({ error: "Subscription record corrupt — re-subscribe to fix", code: "subscription_corrupt" }, 410, origin);
+  }
   try {
     await sendWebPush(env, rec.subscription, {
       title: "Ascend test",
@@ -1887,7 +1897,14 @@ async function handlePushSend(request, env, userId, origin) {
   const raw = await env.ASCEND_KV.get(pushKey(userId));
   if (!raw) return json({ error: "Subscribe to push first via POST /push/subscribe", code: "not_subscribed" }, 400, origin);
   const body = await request.json().catch(() => ({}));
-  const rec = JSON.parse(raw);
+  // Same parse guard as handlePushTest — corrupt subscription record →
+  // clean it up and return 410 Gone instead of a generic 500.
+  let rec;
+  try { rec = JSON.parse(raw); } catch {
+    await env.ASCEND_KV.delete(pushKey(userId));
+    await _removeFromPushIndex(env, userId);
+    return json({ error: "Subscription record corrupt — re-subscribe to fix", code: "subscription_corrupt" }, 410, origin);
+  }
   // Type-check each field so a non-string (e.g. {a:1}) doesn't slide through
   // String(...) as the literal "[object Object]". Fall through to defaults.
   const payload = {
@@ -1932,7 +1949,13 @@ async function deliverScheduledPushes(env) {
     try {
       const raw = await env.ASCEND_KV.get(pushKey(userId));
       if (!raw) { deadSubs.push(userId); continue; }
-      const rec = JSON.parse(raw);
+      // Parse guard — without it a single corrupt record would get caught
+      // by the outer try and silently skipped every 15min, with the
+      // broken KV entry persisting indefinitely. Reap as dead instead so
+      // it's cleaned up at the bottom of this function.
+      let rec;
+      try { rec = JSON.parse(raw); }
+      catch { deadSubs.push(userId); continue; }
       const tz = rec.tz || "UTC";
       // Compute the user's local HH:MM and YYYY-MM-DD for matching + dedup.
       const local = _formatInTimeZone(now, tz);
