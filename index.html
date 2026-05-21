@@ -5175,7 +5175,7 @@ function habitDetailSheet(id) {
   `);
 }
 
-function toggleHabit(id) {
+async function toggleHabit(id) {
   const h = DB.habits.find(x => x.id === id);
   if (!h) return;
   const k = todayKey();
@@ -5206,14 +5206,21 @@ function toggleHabit(id) {
       }
     }
   } catch {}
-  save(); render();
+  // Await save before render — under encryption mode save() is async and
+  // the race window between mutation and persistence can drop the toggle
+  // (and any habit→savings auto-credit deposited just above) if the user
+  // closes the tab during encrypt. toggleHabitForDate below already does
+  // this; this is the same fix for the hot path.
+  await save();
+  render();
 }
-function setHabitCount(id, val) {
+async function setHabitCount(id, val) {
   const h = DB.habits.find(x => x.id === id); if (!h) return;
   const k = todayKey();
   const v = Math.max(0, Number(val)||0);
   if (v) h.log[k] = v; else delete h.log[k];
-  save(); render();
+  await save();
+  render();
 }
 // Backfill — toggle a habit's done state for any specific date. Used by the
 // Calendar day-detail sheet so users can retroactively mark habits done on
@@ -5244,7 +5251,7 @@ async function toggleHabitForDate(id, dateKey) {
   if (activeTab === "calendar") renderCalendar();
   if (activeTab === "today") renderToday();
 }
-function deleteHabit(id) {
+async function deleteHabit(id) {
   DB.habits = DB.habits.filter(h => h.id !== id);
   // E2: prune the deleted id from settings.habitOrder so stale ids don't
   // accumulate across the lifetime of an account. Long-tenured users would
@@ -5253,7 +5260,10 @@ function deleteHabit(id) {
   if (DB.settings && Array.isArray(DB.settings.habitOrder)) {
     DB.settings.habitOrder = DB.settings.habitOrder.filter(x => x !== id);
   }
-  save(); render();
+  // Await save before render so a tab-close during encrypt can't drop
+  // a delete and bring the habit back on next load.
+  await save();
+  render();
 }
 // Reorder habits sheet — up/down chevrons next to each row. Simpler and
 // more reliable on mobile than HTML5 drag-and-drop. Writes the resulting
