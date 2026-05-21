@@ -4922,6 +4922,16 @@ async function freezeStreakToday(id) {
 }
 
 function streakOf(h) {
+  // Render-scoped memo. Streak walks up to 400 days × runs from ~20
+  // callsites per render (Stats topStreaks ×5, achievements max-streak,
+  // Today daily-pulse, streak-milestone alerts, per-habit row, etc.).
+  // For 10 habits that's 80k+ pause/freeze/log lookups per render, all
+  // recomputing the same answer. h.log / h.pauses don't change mid-render
+  // and _renderMemo clears at the top of every render() pass.
+  if (_renderActive && typeof _renderMemo === "object" && h && h.id) {
+    const ck = "streakOf:" + h.id;
+    if (ck in _renderMemo) return _renderMemo[ck];
+  }
   let n = 0;
   let d = new Date();
   // walk back; allow today to be missing without breaking streak. Paused
@@ -4936,6 +4946,9 @@ function streakOf(h) {
     if (i === 0 && !hit) { d.setDate(d.getDate()-1); continue; }
     if (hit) { n++; started = true; d.setDate(d.getDate()-1); }
     else { break; }
+  }
+  if (_renderActive && typeof _renderMemo === "object" && h && h.id) {
+    _renderMemo["streakOf:" + h.id] = n;
   }
   return n;
 }
@@ -5832,12 +5845,20 @@ function _commitSplit(parentId) {
   toast(`Split into ${rows.length} categories`);
 }
 function monthSpend() {
+  // Render-scoped memo — called from renderMoney (multiple sub-tabs),
+  // wealth hero, Cornileus snapshot, safeToSpend, daily pulse. With
+  // 1000+ Plaid txs that's 5+ full DB.spend walks per render for the
+  // same answer. Also added the (DB.spend || []) defensive guard since
+  // a corrupt load producing spend: null would otherwise crash here.
+  if (_renderActive && typeof _renderMemo === "object" && "monthSpend" in _renderMemo) {
+    return _renderMemo.monthSpend;
+  }
   // Sum positive amounts only — by the app's convention (CLAUDE.md) positive
   // = outflow, negative = income. The "This month spent" label everywhere
   // implies outflows; summing both would return a confusing "$-1,641" net.
   // Skip split parents (the children sum to the same total, double-count risk).
   const now = new Date(), y = now.getFullYear(), m = now.getMonth();
-  return DB.spend.filter(t => {
+  const out = (DB.spend || []).filter(t => {
     // Defensive: a tx with no date or non-YYYY-MM-DD shape would NaN out
     // and silently get excluded; explicit check makes the failure mode
     // obvious if upstream code ever stores a different format.
@@ -5846,6 +5867,8 @@ function monthSpend() {
     const d = new Date(t.date+"T00:00:00");
     return d.getFullYear() === y && d.getMonth() === m && (+t.amount || 0) > 0;
   }).reduce((a,t)=>a+(+t.amount||0), 0);
+  if (_renderActive && typeof _renderMemo === "object") _renderMemo.monthSpend = out;
+  return out;
 }
 function spendCategories() {
   const cats = new Set(["Food","Gas","Groceries","Bills","Shopping","Fun","Other"]);
@@ -32256,11 +32279,20 @@ function _playsMonthlyIncome() {
   return monthlyIncome();
 }
 function _playsMonthlyFixed() {
+  // Render-scoped memo — called from ~10 sites per render (daily pulse,
+  // smart plays, what-if simulator, snapshot, plan health, several
+  // forecast paths). Result is stable per render so re-reducing
+  // budget.expenses on every call is pure overhead.
+  if (_renderActive && typeof _renderMemo === "object" && "_playsMonthlyFixed" in _renderMemo) {
+    return _renderMemo._playsMonthlyFixed;
+  }
   // Don't double-count recurring with budget.expenses — they often overlap.
   // Use the larger of the two as the conservative estimate.
   const rec = recurringMonthlyTotal("expense");
   const bud = (DB.budget?.expenses || []).reduce((s,e) => s + (+e.amount || 0), 0);
-  return Math.max(rec, bud);
+  const v = Math.max(rec, bud);
+  if (_renderActive && typeof _renderMemo === "object") _renderMemo._playsMonthlyFixed = v;
+  return v;
 }
 function _playsTotalSavings() {
   // "Total liquid assets" for runway/emergency-fund math. Savings buckets
