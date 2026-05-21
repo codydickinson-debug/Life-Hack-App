@@ -12404,9 +12404,14 @@ function renderStats() {
       const dt = new Date(start); dt.setDate(start.getDate() + w*7 + d);
       if (dt > today) { cells.push(null); continue; }
       const k = todayKey(dt);
-      if (!DB.habits.length) { cells.push(0); continue; }
-      const done = DB.habits.filter(h => h.type==="count" ? (h.log[k]||0) >= (h.target||1) : !!h.log[k]).length;
-      cells.push(Math.round(100*done/DB.habits.length));
+      // Only count habits that existed on this date — a habit created last
+      // week shouldn't be marked "not done" on a date 10 weeks ago, that
+      // deflates the heatmap. Matches the eligibility filter the "perfect
+      // days this month" calc below already uses.
+      const eligible = DB.habits.filter(h => !h.createdAt || new Date(h.createdAt) <= dt);
+      if (!eligible.length) { cells.push(0); continue; }
+      const done = eligible.filter(h => h.type==="count" ? (h.log[k]||0) >= (h.target||1) : !!h.log[k]).length;
+      cells.push(Math.round(100*done/eligible.length));
     }
     cols.push(cells);
   }
@@ -12415,7 +12420,10 @@ function renderStats() {
   const topStreaks = DB.habits.map(h => ({ h, s: streakOf(h) })).sort((a,b)=>b.s-a.s).slice(0,5);
   const goalsDone = DB.goals.filter(g=>g.done).length;
   const goalsTotal = DB.goals.length;
-  const winsM = DB.wins.filter(w => w.date.startsWith(todayKey().slice(0,7))).length;
+  // (DB.wins || []) + defensive w.date guard — every other Stats site uses
+  // the fallback; this one didn't, so a corrupt load() producing wins: null
+  // or a row with no date would crash the whole tab.
+  const winsM = (DB.wins || []).filter(w => w && w.date && w.date.startsWith(todayKey().slice(0,7))).length;
   const totalC = totalSaved(), totalT = totalTarget();
   const savPct = totalT ? Math.round(100*totalC/totalT) : 0;
 
