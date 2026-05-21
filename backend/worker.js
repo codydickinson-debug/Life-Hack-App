@@ -609,7 +609,11 @@ async function handleSync(env, userId, origin) {
     if (plaidCallsUsed >= SYNC_PLAID_CALL_BUDGET) { truncated = true; break; }
     const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!recRaw) continue;
-    const rec = JSON.parse(recRaw);
+    // Guard JSON.parse — corrupted KV record would otherwise throw mid-loop
+    // and 500 the whole /sync, taking down every other connected bank.
+    // Skip this item and move on.
+    let rec;
+    try { rec = JSON.parse(recRaw); } catch { continue; }
     let accessToken;
     try {
       accessToken = await decryptString(rec.accessTokenCipher, env.ENCRYPTION_KEY);
@@ -711,7 +715,11 @@ async function handleItems(env, userId, origin) {
   for (const itemId of itemIds) {
     const raw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!raw) continue;
-    const r = JSON.parse(raw);
+    // Guard JSON.parse — a corrupted KV record (partial write, manual
+    // edit, encoding bug) would otherwise throw and 500 the whole /items
+    // call, taking down all banks not just the broken one. Skip + move on.
+    let r;
+    try { r = JSON.parse(raw); } catch { continue; }
     // Pull the most recent Plaid webhook for this item, if any. The client
     // uses this to surface "reconnect bank" prompts when an item breaks.
     let webhook = null;
@@ -749,11 +757,16 @@ async function handleRemoveItem(url, env, userId, origin) {
 
   const raw = await env.ASCEND_KV.get(itemKey(userId, itemId));
   if (raw) {
-    const rec = JSON.parse(raw);
-    try {
-      const accessToken = await decryptString(rec.accessTokenCipher, env.ENCRYPTION_KEY);
-      await plaidCall(env, "/item/remove", { access_token: accessToken });
-    } catch { /* still proceed to delete */ }
+    // Guard JSON.parse — a corrupted record shouldn't 500 the disconnect
+    // flow. Best-effort the Plaid revoke; the KV delete below still runs.
+    let rec = null;
+    try { rec = JSON.parse(raw); } catch { rec = null; }
+    if (rec) {
+      try {
+        const accessToken = await decryptString(rec.accessTokenCipher, env.ENCRYPTION_KEY);
+        await plaidCall(env, "/item/remove", { access_token: accessToken });
+      } catch { /* still proceed to delete */ }
+    }
     await env.ASCEND_KV.delete(itemKey(userId, itemId));
   }
   await removeItemFromIndex(env, userId, itemId);
@@ -777,7 +790,11 @@ async function handleHoldings(env, userId, origin) {
     if (plaidCalls >= SYNC_PLAID_CALL_BUDGET) { truncated = true; break; }
     const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!recRaw) continue;
-    const rec = JSON.parse(recRaw);
+    // Guard JSON.parse — one corrupted KV record otherwise throws and
+    // 500s the entire handler, taking down every other healthy bank.
+    // Skip this item instead.
+    let rec;
+    try { rec = JSON.parse(recRaw); } catch { continue; }
     let accessToken;
     try { accessToken = await decryptString(rec.accessTokenCipher, env.ENCRYPTION_KEY); }
     catch { continue; }
@@ -826,7 +843,11 @@ async function handleLiabilities(env, userId, origin) {
     if (plaidCalls >= SYNC_PLAID_CALL_BUDGET) { truncated = true; break; }
     const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!recRaw) continue;
-    const rec = JSON.parse(recRaw);
+    // Guard JSON.parse — one corrupted KV record otherwise throws and
+    // 500s the entire handler, taking down every other healthy bank.
+    // Skip this item instead.
+    let rec;
+    try { rec = JSON.parse(recRaw); } catch { continue; }
     let accessToken;
     try { accessToken = await decryptString(rec.accessTokenCipher, env.ENCRYPTION_KEY); }
     catch { continue; }
@@ -942,7 +963,10 @@ async function handleRecurring(env, userId, origin) {
     if (plaidCalls + 2 > SYNC_PLAID_CALL_BUDGET) { truncated = true; break; }
     const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!recRaw) continue;
-    const rec = JSON.parse(recRaw);
+    // Guard JSON.parse — same risk as the sibling handlers; skip this
+    // item rather than 500 the whole recurring scan.
+    let rec;
+    try { rec = JSON.parse(recRaw); } catch { continue; }
     let accessToken;
     try { accessToken = await decryptString(rec.accessTokenCipher, env.ENCRYPTION_KEY); }
     catch { continue; }
@@ -1016,7 +1040,11 @@ async function handleInvestmentTransactions(request, env, userId, origin) {
     if (plaidCalls >= SYNC_PLAID_CALL_BUDGET) { truncated = true; break; }
     const recRaw = await env.ASCEND_KV.get(itemKey(userId, itemId));
     if (!recRaw) continue;
-    const rec = JSON.parse(recRaw);
+    // Guard JSON.parse — one corrupted KV record otherwise throws and
+    // 500s the entire handler, taking down every other healthy bank.
+    // Skip this item instead.
+    let rec;
+    try { rec = JSON.parse(recRaw); } catch { continue; }
     let accessToken;
     try { accessToken = await decryptString(rec.accessTokenCipher, env.ENCRYPTION_KEY); }
     catch { continue; }
