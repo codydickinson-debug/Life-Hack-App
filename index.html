@@ -29131,7 +29131,7 @@ async function syncInvestmentTransactions() {
 // Accept a Plaid-detected recurring stream into DB.recurring with a single
 // tap. Maps Plaid frequency → app cadence vocabulary. Tagged with the
 // stream_id so future syncs don't re-suggest it.
-function acceptDetectedRecurring(streamId, kind) {
+async function acceptDetectedRecurring(streamId, kind) {
   const list = kind === "income"
     ? (DB.plaidRecurringSuggestions && DB.plaidRecurringSuggestions.inflows) || []
     : (DB.plaidRecurringSuggestions && DB.plaidRecurringSuggestions.outflows) || [];
@@ -29149,10 +29149,16 @@ function acceptDetectedRecurring(streamId, kind) {
   const amount = Math.abs(+s.average_amount || +s.last_amount || 0);
   const name = (s.merchant_name || s.description || "Unknown").slice(0, 80);
   // Approximate dayOfMonth from last_date so the cashflow forecast aligns.
+  // Clamp to 28 for monthly cadence — same cap nextRecurringDate uses when
+  // computing the next fire date, since not every month has a 29/30/31.
+  // Without this clamp the Plaid-sourced record stores e.g. 31 while
+  // nextRecurringDate snaps to 28 mid-read, but the cashflow forecast
+  // (which steps via setMonth and doesn't clamp) lands on the wrong day.
   let dayOfMonth = 1;
   try {
     if (s.last_date) dayOfMonth = +s.last_date.slice(8, 10) || 1;
   } catch {}
+  if (cadence === "monthly") dayOfMonth = Math.max(1, Math.min(28, dayOfMonth));
   DB.recurring = DB.recurring || [];
   DB.recurring.push({
     id: uid(),
@@ -29173,11 +29179,12 @@ function acceptDetectedRecurring(streamId, kind) {
     const target = kind === "income" ? "inflows" : "outflows";
     DB.plaidRecurringSuggestions[target] = (DB.plaidRecurringSuggestions[target] || []).filter(x => x.stream_id !== streamId);
   }
-  save(); render();
+  await save();
+  render();
   toast(`Added ${name} · ${cadence} · ${fmt$0(amount)}`);
 }
 // Dismiss a detected recurring stream so it stops being suggested.
-function dismissDetectedRecurring(streamId) {
+async function dismissDetectedRecurring(streamId) {
   if (!DB.settings.dismissedRecurringStreams) DB.settings.dismissedRecurringStreams = [];
   if (!DB.settings.dismissedRecurringStreams.includes(streamId)) {
     DB.settings.dismissedRecurringStreams.push(streamId);
@@ -29191,7 +29198,10 @@ function dismissDetectedRecurring(streamId) {
     DB.plaidRecurringSuggestions.inflows = (DB.plaidRecurringSuggestions.inflows || []).filter(x => x.stream_id !== streamId);
     DB.plaidRecurringSuggestions.outflows = (DB.plaidRecurringSuggestions.outflows || []).filter(x => x.stream_id !== streamId);
   }
-  save(); render();
+  // Await save — a tab close between dismiss and persist would resurrect
+  // the suggestion on next render, making the dismiss feel broken.
+  await save();
+  render();
 }
 
 
@@ -38668,7 +38678,7 @@ function addRecurringSheet(existing) {
     await save(); closeSheet(); render();
   });
 }
-function deleteRecurring(id) {
+async function deleteRecurring(id) {
   DB.recurring = (DB.recurring || []).filter(r => r.id !== id);
   // Clear any subscription-audit decision tied to this recurring item —
   // otherwise the audit shows a "keep/cancel/negotiate" choice for an
@@ -38676,7 +38686,11 @@ function deleteRecurring(id) {
   if (DB.subscriptionUsage && DB.subscriptionUsage[id]) {
     delete DB.subscriptionUsage[id];
   }
-  save(); render();
+  // Await save before render — addRecurringSheet already awaits; this
+  // path was fire-and-forget so a tab-close inside the encrypt window
+  // could resurrect the deleted bill on next load.
+  await save();
+  render();
 }
 
 /* Reflection journal — encrypted with the rest of DB */
