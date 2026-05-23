@@ -2856,6 +2856,7 @@ const DEFAULT_DB = {
     monthlySavingsTarget: 0, // factored into safe-to-spend (per-month dollars set aside)
     dailySpendCap: 0,        // when >0, Today shows a progress bar and notifies at 90% usage
     celebrationsEnabled: true, // confetti on streak milestones / goal completion
+    weeklyReviewDay: 0,       // day-of-week the weekly review banner fires on (0=Sun … 6=Sat). The 7-day-gap fallback fires regardless.
     accentColor: "",          // hex string — overrides the default blue accent across the app. Empty = use default.
     recentSearches: [],       // [string] last 6 queries from global search, newest first
     _achievementsSeen: [],    // [string] — achievement ids the user has been shown the unlock toast for, to suppress re-firing
@@ -6625,7 +6626,7 @@ const TODAY_TOGGLEABLE_SECTIONS = [
   { id: "comingUp",        label: "Coming up · bills",      desc: "Bills due in the next week" },
   { id: "wealthHealth",    label: "Wealth Health card",     desc: "Overall financial health score" },
   { id: "moneyReflection", label: "Money reflection",       desc: "Rotating money question prompt" },
-  { id: "weeklyReview",    label: "Weekly review banner",   desc: "Sunday-only reminder to review your week" },
+  { id: "weeklyReview",    label: "Weekly review banner",   desc: "Reminder to review your week on your chosen day" },
   { id: "setupChecklist",  label: "Setup checklist",        desc: "Onboarding progress card" },
   { id: "counselor",       label: "Cornileus counselor card",   desc: "Talk-to-AI quick link" },
   { id: "mood",            label: "How's today? mood",      desc: "5-emoji daily mood picker" },
@@ -6657,6 +6658,14 @@ async function showAllTodaySections() {
   toast("All sections restored");
   if (activeTab === "today") renderToday();
   customizeTodaySheet();
+}
+async function setWeeklyReviewDay(v) {
+  const n = Number(v);
+  if (!Number.isInteger(n) || n < 0 || n > 6) return;
+  if (!DB.settings) DB.settings = {};
+  DB.settings.weeklyReviewDay = n;
+  try { await save(); } catch (e) { toast("Couldn't save. Please try again"); return; }
+  if (activeTab === "today") renderToday();
 }
 // Accent color — overrides the --blue CSS variable across the app. Default
 // (empty string) restores the stylesheet's blue (#2F6FEB).
@@ -7480,9 +7489,11 @@ function customizeTabsSheet() {
 
 function customizeTodaySheet() {
   const hidden = (DB.settings && DB.settings.hiddenTodaySections) || [];
+  const DAY_LABELS = ["Sunday","Monday","Tuesday","Wednesday","Thursday","Friday","Saturday"];
+  const reviewDay = weeklyReviewDay();
   const rows = TODAY_TOGGLEABLE_SECTIONS.map(s => {
     const isHidden = hidden.includes(s.id);
-    return `
+    const toggleRow = `
       <div class="row tappable" onclick="toggleTodaySection('${s.id}')" role="button" tabindex="0">
         <div class="body">
           <div class="t1">${esc(s.label)}</div>
@@ -7495,6 +7506,21 @@ function customizeTodaySheet() {
         </div>
       </div>
     `;
+    if (s.id === "weeklyReview" && !isHidden) {
+      const opts = DAY_LABELS.map((lbl, i) => `<option value="${i}" ${reviewDay === i ? 'selected' : ''}>${lbl}</option>`).join("");
+      return toggleRow + `
+        <div class="row" style="padding-left:24px">
+          <div class="body">
+            <div class="t1" style="font-size:13.5px">Review day</div>
+            <div class="t2" style="font-size:11.5px">When the banner fires. The 7-day-gap fallback still fires regardless.</div>
+          </div>
+          <select aria-label="Weekly review day" onchange="setWeeklyReviewDay(this.value)" style="background:var(--bg-elev);padding:8px;border-radius:8px;font-size:12px">
+            ${opts}
+          </select>
+        </div>
+      `;
+    }
+    return toggleRow;
   }).join("");
   openSheet(`
     <h2 style="margin-bottom:4px">Customize Today</h2>
@@ -39412,6 +39438,14 @@ async function applyGoalTemplate(idx) {
    Surface a banner on Today on Sundays (and any day if user hasn't
    reflected in 7+ days). Dismissable for the week.
 */
+function weeklyReviewDay() {
+  // Day-of-week the weekly review banner fires on. 0=Sun … 6=Sat. Defaults to
+  // Sunday so existing users see no behavior change. Clamped defensively in
+  // case a hand-edited save ends up out of range.
+  const raw = DB.settings && DB.settings.weeklyReviewDay;
+  const n = Number(raw);
+  return (Number.isInteger(n) && n >= 0 && n <= 6) ? n : 0;
+}
 function weeklyReviewDue() {
   const dow = new Date().getDay(); // 0=Sun
   const lastReflect = (DB.reflections || [])[0];
@@ -39424,7 +39458,7 @@ function weeklyReviewDue() {
     return d.getFullYear() + "-W" + Math.ceil(((d - new Date(d.getFullYear(),0,1)) / 86400000 + 1) / 7);
   })();
   if ((DB.dismissedWeeklyReview || {})[yk]) return false;
-  return dow === 0 || daysSince >= 7;
+  return dow === weeklyReviewDay() || daysSince >= 7;
 }
 function dismissWeeklyReview() {
   if (!DB.dismissedWeeklyReview) DB.dismissedWeeklyReview = {};
@@ -40028,7 +40062,7 @@ function init() {
     startingBalance, avgDailyDiscretionary, cashflowProject, cashflowSparkline, cashflowCardHtml,
     yearHeatmap, topStreaks,
     GOAL_TEMPLATES, goalTemplatesSheet, applyGoalTemplate,
-    weeklyReviewDue, dismissWeeklyReview, weeklyReviewSheet,
+    weeklyReviewDue, dismissWeeklyReview, weeklyReviewSheet, weeklyReviewDay, setWeeklyReviewDay,
     maybeShowWhatsNew, whatsNewSheet, dailyActionContextHtml,
   });
 
